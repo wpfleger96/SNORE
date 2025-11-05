@@ -5,6 +5,7 @@ Based on OSCAR's schema.h and machine_common.h definitions.
 """
 
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List
 
 # ============================================================================
@@ -393,7 +394,8 @@ EVENT_FILE_EXT = ".001"  # Event/waveform data file
 # Default Settings
 # ============================================================================
 
-DEFAULT_DATABASE_PATH = "oscar_data.db"
+# Database stored in user's home directory
+DEFAULT_DATABASE_PATH = str(Path.home() / ".oscar-mcp" / "oscar_mcp.db")
 DEFAULT_PROFILE_NAME = "Default"
 
 # Time calculations

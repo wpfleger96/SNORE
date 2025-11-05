@@ -299,38 +299,43 @@ class EDFReader:
 
         signal_info = signals[label]
         signal_index = signal_info.signal_index
+        header = self.get_header()
 
-        # Read signal data
-        # pyedflib requires explicit 0 instead of None for start
+        # pyedflib's readSignal() without parameters only reads the first data record.
+        # Work around this by reading each record individually with explicit parameters.
+
+        all_data = []
+        for record_idx in range(header.num_data_records):
+            # Calculate starting sample for this record
+            record_start = record_idx * signal_info.samples_per_record
+
+            # Read this record's data
+            if physical_units:
+                record_data = self._edf_file.readSignal(
+                    signal_index,
+                    start=record_start,
+                    n=signal_info.samples_per_record,
+                    digital=False,
+                )
+            else:
+                record_data = self._edf_file.readSignal(
+                    signal_index, start=record_start, n=signal_info.samples_per_record, digital=True
+                )
+
+            all_data.append(record_data)
+
+        # Concatenate all records
+        data = np.concatenate(all_data) if all_data else np.array([])
+
+        # Apply slicing for start_sample and num_samples
         if start_sample is None:
             start_sample = 0
 
-        # Read signal data
-        # Note: pyedflib's readSignal(signal, start, n) has a bug where the 'start' parameter
-        # doesn't work correctly - it returns all samples instead of the requested chunk.
-        # So we read the entire signal and slice it ourselves.
-
-        if num_samples is None:
-            # Read all samples at once (avoiding buggy start parameter)
-            if physical_units:
-                data = self._edf_file.readSignal(signal_index)
-            else:
-                data = self._edf_file.readSignal(signal_index, digital=True)
-
-            # Apply start_sample offset if needed
-            if start_sample > 0:
-                data = data[start_sample:]
-        else:
-            # Reading specific number of samples
-            # Read entire signal and slice it (avoiding buggy start/n parameters)
-            if physical_units:
-                data = self._edf_file.readSignal(signal_index)
-            else:
-                data = self._edf_file.readSignal(signal_index, digital=True)
-
-            # Slice to get requested range
+        if num_samples is not None:
             end_sample = start_sample + num_samples
             data = data[start_sample:end_sample]
+        elif start_sample > 0:
+            data = data[start_sample:]
 
         logger.debug(f"Read {len(data)} samples from signal '{label}'")
         return data, signal_info

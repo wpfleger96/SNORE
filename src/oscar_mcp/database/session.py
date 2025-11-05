@@ -1,53 +1,64 @@
 """Database session management for OSCAR-MCP."""
 
 import os
+import threading
 from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from oscar_mcp.constants import DEFAULT_DATABASE_PATH
-
-# Base class for all ORM models
-Base = declarative_base()
+from oscar_mcp.database.models import Base
 
 # Global engine and session factory
 _engine = None
 _SessionFactory = None
+_init_lock = threading.Lock()
 
 
 def init_database(database_path: str = None) -> None:
     """
-    Initialize the database connection.
+    Initialize the database connection in a thread-safe manner.
 
     Args:
         database_path: Path to the SQLite database file.
                       Defaults to DEFAULT_DATABASE_PATH.
+
+    Raises:
+        PermissionError: If directory cannot be created
+        ValueError: If database path is invalid
     """
     global _engine, _SessionFactory
 
-    if database_path is None:
-        database_path = DEFAULT_DATABASE_PATH
+    with _init_lock:
+        if _engine is not None and _SessionFactory is not None:
+            return
 
-    # Create directory if it doesn't exist
-    db_dir = os.path.dirname(database_path)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir)
+        if database_path is None:
+            database_path = DEFAULT_DATABASE_PATH
 
-    # Create engine with SQLite
-    database_url = f"sqlite:///{database_path}"
-    _engine = create_engine(
-        database_url,
-        echo=False,  # Set to True for SQL debugging
-        connect_args={"check_same_thread": False},  # Allow multi-threading
-    )
+        if not database_path or not isinstance(database_path, str):
+            raise ValueError(f"Invalid database path: {database_path}")
 
-    # Create session factory
-    _SessionFactory = sessionmaker(bind=_engine)
+        db_dir = os.path.dirname(database_path)
+        if db_dir:
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+            except PermissionError as e:
+                raise PermissionError(f"Cannot create database directory {db_dir}: {e}") from e
 
-    # Create all tables
-    Base.metadata.create_all(_engine)
+        database_url = f"sqlite:///{database_path}"
+
+        _engine = create_engine(
+            database_url,
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
+
+        _SessionFactory = sessionmaker(bind=_engine)
+
+        Base.metadata.create_all(_engine)
 
 
 def get_session() -> Session:

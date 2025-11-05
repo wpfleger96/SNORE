@@ -5,43 +5,8 @@ Tests the full flow from parsing → database storage → retrieval.
 """
 
 import pytest
-import tempfile
-from pathlib import Path
-from datetime import datetime
 
 from oscar_mcp.database import DatabaseManager, SessionImporter
-from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
-
-
-@pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    # Create a temp file path but don't create the file
-    temp_dir = Path(tempfile.gettempdir())
-    db_path = temp_dir / f"test_oscar_{datetime.now().timestamp()}.db"
-
-    yield db_path
-
-    # Cleanup
-    if db_path.exists():
-        db_path.unlink()
-    # Also clean up WAL files if they exist
-    for ext in ["-wal", "-shm"]:
-        wal_file = Path(str(db_path) + ext)
-        if wal_file.exists():
-            wal_file.unlink()
-
-
-@pytest.fixture
-def resmed_parser():
-    """Create ResMed parser instance."""
-    return ResmedEDFParser()
-
-
-@pytest.fixture
-def resmed_fixture_path():
-    """Path to ResMed test fixtures."""
-    return Path(__file__).parent / "fixtures" / "resmed_sample"
 
 
 class TestImportPipeline:

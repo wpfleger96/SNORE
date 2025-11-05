@@ -171,7 +171,7 @@ def list_profiles() -> List[ProfileSummary]:
                 result.append(
                     ProfileSummary(
                         id=profile.id,
-                        name=profile.name,
+                        name=profile.username,  # Map username to name for API compatibility
                         first_name=profile.first_name,
                         last_name=profile.last_name,
                         date_of_birth=profile.date_of_birth,
@@ -228,7 +228,7 @@ def get_therapy_summary(
 
         # Query days in range
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(name=profile_name).first()
+            profile = session.query(models.Profile).filter_by(username=profile_name).first()
 
             days = (
                 session.query(models.Day)
@@ -276,7 +276,7 @@ def get_day_report(*, profile_name: str, date_str: str) -> DayTextReport:
 
         # Query day
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(name=profile_name).first()
+            profile = session.query(models.Profile).filter_by(username=profile_name).first()
 
             day = (
                 session.query(models.Day)
@@ -324,7 +324,7 @@ def get_compliance_report(*, profile_name: str, start_date: str, end_date: str) 
 
         # Query days
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(name=profile_name).first()
+            profile = session.query(models.Profile).filter_by(username=profile_name).first()
 
             days = (
                 session.query(models.Day)
@@ -382,25 +382,41 @@ def list_machines(*, profile_name: str) -> List[MachineSummary]:
         validate_profile_exists(profile_name)
 
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(name=profile_name).first()
+            profile = session.query(models.Profile).filter_by(username=profile_name).first()
 
-            machines = session.query(models.Machine).filter_by(profile_id=profile.id).all()
+            devices = session.query(models.Device).filter_by(profile_id=profile.id).all()
 
             result = []
-            for machine in machines:
-                session_count = len(machine.sessions)
-                total_hours = sum(s.duration_seconds / 3600 for s in machine.sessions)
+            for device in devices:
+                session_count = len(device.sessions)
+                total_hours = sum(
+                    s.duration_seconds / 3600 for s in device.sessions if s.duration_seconds
+                )
+
+                # Construct machine_id from device info
+                machine_id = f"{device.manufacturer}_{device.model}_{device.serial_number}"
+
+                # Determine machine type (basic heuristic, can be enhanced)
+                machine_type = "CPAP"  # Default
+                if device.model:
+                    model_lower = device.model.lower()
+                    if "auto" in model_lower or "apap" in model_lower:
+                        machine_type = "AutoCPAP"
+                    elif "bipap" in model_lower or "vpap" in model_lower:
+                        machine_type = "BiPAP"
+                    elif "oximeter" in model_lower or "pulse" in model_lower:
+                        machine_type = "Oximeter"
 
                 result.append(
                     MachineSummary(
-                        id=machine.id,
-                        machine_id=machine.machine_id,
-                        serial_number=machine.serial_number,
-                        brand=machine.brand,
-                        model=machine.model,
-                        machine_type=machine.machine_type,
-                        created_at=machine.created_at,
-                        last_import=machine.last_import,
+                        id=device.id,
+                        machine_id=machine_id,
+                        serial_number=device.serial_number,
+                        brand=device.manufacturer,
+                        model=device.model,
+                        machine_type=machine_type,
+                        created_at=device.first_seen,
+                        last_import=device.last_import,
                         session_count=session_count,
                         total_hours=total_hours,
                     )

@@ -1,0 +1,20 @@
+Return JSON with this structure:
+{
+  "findings": [
+    {
+      "type": "...",
+      "confidence": 0.0-1.0,
+      "description": "...",
+      "clinical_significance": "...",
+      "timestamp": "..." // if applicable
+    }
+  ],
+  "overall_assessment": {
+    "severity": "none|mild|moderate|severe",
+    "confidence": 0.0-1.0,
+    "summary": "Brief clinical summary"
+  },
+  "flags": [
+    "List any unusual patterns or concerns"
+  ]
+}

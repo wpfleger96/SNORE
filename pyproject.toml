@@ -25,6 +25,17 @@ dependencies = [
     "pathspec>=0.12.1",
     "pytokens>=0.2.0",
     "ruff>=0.14.2",
+    "jinja2>=3.1.6",
+    "scipy>=1.16.3",
+    "anthropic>=0.72.0",
+    "pymupdf>=1.26.5",
+    "pdf2image>=1.17.0",
+    "playwright>=1.55.0",
+    "beautifulsoup4>=4.14.2",
+    "biopython>=1.86",
+    "youtube-transcript-api>=1.2.3",
+    "networkx>=3.5",
+    "scikit-learn>=1.7.2",
 ]
 
 [project.optional-dependencies]

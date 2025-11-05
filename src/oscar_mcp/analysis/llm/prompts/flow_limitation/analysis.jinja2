@@ -1,0 +1,51 @@
+{% extends "base/system_context.jinja2" %}
+
+{% block task_description %}
+Analyze these breathing patterns for flow limitation. Flow limitation occurs when
+upper airway obstruction restricts airflow during inspiration.
+{% endblock %}
+
+{% block data %}
+BREATH DATA:
+{% for breath in breath_descriptions %}
+Breath {{ breath.number }} ({{ breath.timestamp }}):
+- Visual Description: {{ breath.visual_description }}
+- Peak Flow: {{ breath.peak_flow }} L/min
+- Flatness Index: {{ breath.flatness }} ({{ breath.flatness_interpretation }})
+- Peak Count: {{ breath.peak_count }}
+- Symmetry: {{ breath.symmetry }}
+{% if breath.anomalies %}
+- Anomalies: {{ breath.anomalies|join(', ') }}
+{% endif %}
+{% endfor %}
+
+REFERENCE PATTERNS:
+{% for class_num, pattern in reference_patterns.items() %}
+Class {{ class_num }}: {{ pattern.name }}
+- Description: {{ pattern.description }}
+- Key Features: {{ pattern.key_features }}
+- Clinical Significance: {{ pattern.clinical_significance }}
+- Severity: {{ pattern.severity }}
+{% endfor %}
+{% endblock %}
+
+{% block task_instructions %}
+TASK:
+1. Classify each breath into one of the 7 flow limitation classes
+2. Assess overall flow limitation severity for this sample
+3. Note any breaths that don't fit standard classifications
+4. Provide confidence scores (0-1) for each classification
+5. Identify trends or patterns across multiple breaths
+
+CLASSIFICATION CRITERIA:
+- Consider waveform shape, peak characteristics, flatness
+- Match visual description to reference patterns
+- Weight multiple features (don't rely on single metric)
+- Lower confidence when features are borderline
+
+{% include "base/response_format.jinja2" %}
+
+ADDITIONAL FIELDS FOR FLOW LIMITATION:
+- Add "flow_limitation_class" (1-7) to each finding
+- Add "flow_limitation_index" (0-1) to overall_assessment
+{% endblock %}

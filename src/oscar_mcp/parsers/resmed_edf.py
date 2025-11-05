@@ -671,9 +671,6 @@ class ResmedEDFParser(DeviceParser):
         if "PLD" in files:
             self._parse_pressure_leak(files["PLD"], session)
 
-        if "EVE" in files:
-            self._parse_events(files["EVE"], session)
-
         return session
 
     def _parse_statistics(self, file_path: Path, session: UnifiedSession):

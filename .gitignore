@@ -206,4 +206,24 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-PLAN.md
+.claude/
+
+# OSCAR-MCP specific
+# Database files (should only exist in ~/.oscar-mcp/)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Analysis cache
+data/cache/
+
+# Large guideline files (commit selectively)
+data/guidelines/documents/*.pdf
+data/guidelines/waveforms/examples/
+
+# Database backups
+*.db.backup*
+
+# Old model files
+src/oscar_mcp/database/models.py.old

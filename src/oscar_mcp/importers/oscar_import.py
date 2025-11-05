@@ -110,14 +110,16 @@ def import_data(ctx, oscar_profile_path, profile_name, first_name, last_name):
     try:
         with session_scope() as session:
             # Check if profile already exists
-            existing_profile = session.query(models.Profile).filter_by(name=profile_name).first()
+            existing_profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
             if existing_profile:
                 click.echo(f"Profile '{profile_name}' already exists. Updating...")
                 profile = existing_profile
             else:
                 # Create new profile
                 profile = models.Profile(
-                    name=profile_name, first_name=first_name, last_name=last_name
+                    username=profile_name, first_name=first_name, last_name=last_name
                 )
                 session.add(profile)
                 session.flush()  # Get profile ID
@@ -132,24 +134,39 @@ def import_data(ctx, oscar_profile_path, profile_name, first_name, last_name):
 
             # TODO: Implement full import logic
             # For each machine:
-            #   1. Create/update Machine record
-            #   2. Scan sessions
+            #   1. Create/update Device record (link to profile.id)
+            #   2. Scan sessions from OSCAR directory
             #   3. For each session:
-            #      a. Parse summary and event files
-            #      b. Create Session record
-            #      c. Create EventData records
-            #      d. Calculate statistics
-            #      e. Create/update Day record
+            #      a. Parse summary (.000) and event (.001) files
+            #      b. Create Session record (with device_id)
+            #      c. Create Event records in database
+            #      d. Create Statistics record (1-to-1 with Session)
+            #      e. Use DayManager.link_session_to_day() to:
+            #         - Determine day date using day-splitting logic
+            #         - Create/update Day record
+            #         - Link session to day (session.day_id = day.id)
+            #         - Recalculate day statistics
+            #
+            # Example code structure:
+            #   from oscar_mcp.database.day_manager import DayManager
+            #
+            #   for machine_data in machines:
+            #       device = get_or_create_device(profile_id, machine_data)
+            #       for session_data in parse_sessions(machine_data):
+            #           session = create_session(device.id, session_data)
+            #           DayManager.link_session_to_day(session, profile, session_obj)
 
             click.echo("NOTE: Full import functionality is not yet implemented.")
             click.echo("This is a skeleton implementation showing the structure.")
             click.echo("")
             click.echo("TODO: Implement:")
-            click.echo("  - Parse OSCAR .000/.001 files")
+            click.echo("  - Parse OSCAR .000/.001 files (summary and event data)")
             click.echo("  - Extract session metadata and statistics")
-            click.echo("  - Store EventData in database")
-            click.echo("  - Calculate daily aggregates")
+            click.echo("  - Store Events and Statistics in database")
+            click.echo("  - Use DayManager to aggregate sessions into days")
             click.echo("  - Handle incremental imports (only new sessions)")
+            click.echo("")
+            click.echo("See DayManager in oscar_mcp.database.day_manager for day aggregation.")
 
     except Exception as e:
         logger.error(f"Error importing data: {e}", exc_info=True)
@@ -178,14 +195,14 @@ def status(ctx):
             click.echo("")
 
             for profile in profiles:
-                click.echo(f"  Profile: {profile.name}")
+                click.echo(f"  Profile: {profile.username}")
                 if profile.first_name or profile.last_name:
                     full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip()
                     click.echo(f"    Name: {full_name}")
 
-                # Count machines
-                machine_count = len(profile.machines)
-                click.echo(f"    Machines: {machine_count}")
+                # Count devices
+                device_count = len(profile.devices)
+                click.echo(f"    Devices: {device_count}")
 
                 # Count days and sessions
                 day_count = len(profile.days)
