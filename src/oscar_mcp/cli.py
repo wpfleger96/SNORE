@@ -161,9 +161,7 @@ def import_data(
             # Calculate actual date range using min/max
             first_date = min(s.start_time for s in sessions)
             last_date = max(s.start_time for s in sessions)
-            click.echo(
-                f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}"
-            )
+            click.echo(f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}")
         click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
         return 0
 

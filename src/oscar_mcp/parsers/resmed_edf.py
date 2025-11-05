@@ -343,6 +343,10 @@ class ResmedEDFParser(DeviceParser):
                 # Parse all segments for this night into a single session
                 session = self._parse_night_session(night_date, segments, device_info, path)
 
+                # Skip nights with no valid therapy data (device self-tests, etc.)
+                if session is None:
+                    continue
+
                 # Apply date filters again as safety check
                 if date_from:
                     if session.start_time.date() < datetime.fromisoformat(date_from).date():
@@ -469,7 +473,15 @@ class ResmedEDFParser(DeviceParser):
             f"{[seg_id for seg_id, _ in sorted_segments]}"
         )
 
-        # Parse each segment individually
+        # Collect ALL EVE files from all segments (including zero-record ones)
+        # Per OSCAR's behavior: EVE files store data for whole day and should be applied to all sessions
+        eve_files = []
+        for segment_id, files in sorted_segments:
+            if "EVE" in files:
+                eve_files.append(files["EVE"])
+                logger.debug(f"Found EVE file for segment {segment_id}: {files['EVE'].name}")
+
+        # Parse each segment individually (skipping zero-record segments)
         segment_sessions = []
         for segment_id, files in sorted_segments:
             try:
@@ -488,11 +500,21 @@ class ResmedEDFParser(DeviceParser):
                 continue
 
         if not segment_sessions:
-            raise ValueError(f"No valid segments found for night {night_date}")
+            # OSCAR allows "summary only" nights with CSL/EVE but no waveform data
+            # These occur from device self-tests, brief power-ons, or compliance checks
+            logger.warning(
+                f"Night {night_date} has no valid therapy segments (only CSL/EVE stub files). "
+                f"This is likely a device self-test or brief power-on event. Skipping night."
+            )
+            return None
 
-        # If only one segment, return it directly
+        # If only one segment, still need to parse EVE files, then return
         if len(segment_sessions) == 1:
-            return segment_sessions[0]
+            session = segment_sessions[0]
+            if eve_files:
+                logger.info(f"Parsing {len(eve_files)} EVE file(s) for night {night_date}")
+                self._parse_eve_files_for_night(eve_files, session)
+            return session
 
         # Merge multiple segments into single session
         logger.info(f"Merging {len(segment_sessions)} segments for night {night_date}")
@@ -581,6 +603,11 @@ class ResmedEDFParser(DeviceParser):
             f"Merged night {night_date}: {len(segment_sessions)} segments, "
             f"total duration {(merged_session.end_time - merged_session.start_time).total_seconds() / 3600:.2f}h"
         )
+
+        # Parse EVE files and apply events to merged session based on timestamp filtering
+        if eve_files:
+            logger.info(f"Parsing {len(eve_files)} EVE file(s) for night {night_date}")
+            self._parse_eve_files_for_night(eve_files, merged_session)
 
         return merged_session
 
@@ -1099,3 +1126,102 @@ class ResmedEDFParser(DeviceParser):
             else:
                 logger.warning(f"Failed to parse events: {e}")
                 session.data_quality_notes.append(f"EVE parsing failed: {e}")
+
+    def _parse_eve_files_for_night(self, eve_files: List[Path], session: UnifiedSession):
+        """
+        Parse all EVE files for a night and apply events to session based on timestamp filtering.
+
+        Following OSCAR's behavior: EVE files store data for the whole day, so we read all EVE files
+        and filter events to only include those within this session's time range.
+
+        Args:
+            eve_files: List of paths to EVE files for this night
+            session: The session to add events to
+        """
+        from .formats.edf import is_discontinuous_edf, EDFDiscontinuousReader, get_edf_record_count
+
+        total_events_found = 0
+        total_events_added = 0
+        total_events_filtered = 0
+
+        for eve_file in eve_files:
+            try:
+                # Check record count first
+                record_count = get_edf_record_count(eve_file)
+                if record_count == 0:
+                    logger.debug(f"Skipping zero-record EVE file: {eve_file.name}")
+                    continue
+
+                # Check if file is discontinuous
+                is_discontinuous = is_discontinuous_edf(eve_file)
+
+                # Read annotations using appropriate reader
+                if is_discontinuous:
+                    with EDFDiscontinuousReader(eve_file) as edf:
+                        annotations = edf.read_annotations()
+                        eve_start_time = edf.get_header().start_datetime
+                else:
+                    with EDFReader(eve_file) as edf:
+                        annotations = edf.read_annotations()
+                        eve_start_time = edf.get_header().start_datetime
+
+                logger.debug(
+                    f"Processing EVE file {eve_file.name} with {len(annotations)} annotation(s)"
+                )
+
+                # Process each annotation
+                for annotation in annotations:
+                    # Convert annotation onset to absolute timestamp using EVE file's start time
+                    event_timestamp = annotation.to_datetime(eve_start_time)
+
+                    # Check if event falls within session time range (OSCAR's checkInside logic)
+                    if not (session.start_time <= event_timestamp <= session.end_time):
+                        total_events_filtered += 1
+                        continue
+
+                    # Map annotation text to event type
+                    event_type = None
+
+                    for text in annotation.annotations:
+                        # Skip filtered annotations
+                        if text in self.FILTERED_ANNOTATIONS:
+                            break
+
+                        # Map to event type
+                        if text in self.EVENT_TYPE_MAP:
+                            event_type = self.EVENT_TYPE_MAP[text]
+                            break
+
+                    if event_type is None:
+                        continue
+
+                    # Handle missing or zero duration
+                    duration = annotation.duration if annotation.duration else 10.0
+
+                    # Create and add event
+                    event = RespiratoryEvent(
+                        event_type=event_type,
+                        start_time=event_timestamp,
+                        duration_seconds=duration,
+                    )
+
+                    session.add_event(event)
+                    total_events_added += 1
+                    total_events_found += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to parse EVE file {eve_file.name}: {e}")
+                continue
+
+        if total_events_added > 0:
+            logger.info(
+                f"Added {total_events_added} events to session from {len(eve_files)} EVE file(s) "
+                f"({total_events_filtered} events filtered out by timestamp)"
+            )
+        elif total_events_found == 0:
+            logger.debug(f"No events found in {len(eve_files)} EVE file(s)")
+        else:
+            logger.info(
+                f"No events within session time range (found {total_events_found} total events, "
+                f"all filtered out)"
+            )
