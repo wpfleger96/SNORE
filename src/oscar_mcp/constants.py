@@ -565,3 +565,12 @@ IMAGE_DIRS = {
 # Time calculations
 SECONDS_PER_HOUR = 3600
 MILLISECONDS_PER_SECOND = 1000
+
+# ============================================================================
+# Parser Configuration
+# ============================================================================
+
+# Directory search depth for finding CPAP data roots
+# Supports OSCAR structure: Profiles/user/device/Backup (5 levels deep)
+# Also supports raw SD card structure which is typically shallower
+PARSER_MAX_SEARCH_DEPTH = 5

@@ -69,158 +69,227 @@ def import_data(
     # Register parsers
     register_all_parsers()
 
-    # Auto-detect parser
+    # Auto-detect all available parsers and data roots
     click.echo(f"📂 Scanning {data_path}...")
-    parser = parser_registry.detect_parser(data_path)
+    results = parser_registry.detect_all_parsers(data_path)
 
-    if not parser:
+    if not results:
         click.echo("❌ Error: No compatible parser found for this data", err=True)
         click.echo("\nSupported devices:")
         for p in parser_registry.list_parsers():
             click.echo(f"  - {p.manufacturer}: {p.parser_id}")
         return 1
 
-    click.echo(f"✓ Detected: {parser.manufacturer} ({parser.parser_id})")
+    # Handle multiple data roots (e.g., multiple OSCAR profiles)
+    selected_results = []
+    if len(results) > 1:
+        click.echo(f"\nFound {len(results)} data sources:\n")
+        for i, (parser, detection) in enumerate(results, 1):
+            meta = detection.metadata or {}
+            if meta.get("profile_name"):
+                desc = f"{meta['profile_name']} ({meta.get('structure_type', 'unknown').replace('_', ' ')})"
+            else:
+                structure = meta.get("structure_type", "raw SD card").replace("_", " ")
+                serial = meta.get("device_serial", "unknown")
+                desc = f"{structure} - S/N: {serial}"
 
-    # Format date parameters for parser
-    date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
-    date_to_str = date_to.strftime("%Y-%m-%d") if date_to else None
+            click.echo(f"  {i}. {parser.manufacturer} - {desc}")
+            if meta.get("data_root"):
+                click.echo(f"     Path: {meta['data_root']}")
 
-    # Show filter summary if any filters are active
-    if limit or date_from or date_to or sort_by != "filesystem":
-        click.echo("\n📋 Import filters:")
-        if limit:
-            click.echo(f"  • Limit: {limit} sessions")
-        if sort_by != "filesystem":
-            order_desc = "oldest first" if sort_by == "date-asc" else "newest first"
-            click.echo(f"  • Sort: {order_desc}")
-        if date_from:
-            click.echo(f"  • From: {date_from:%Y-%m-%d}")
-        if date_to:
-            click.echo(f"  • To: {date_to:%Y-%m-%d}")
+        click.echo(f"  {len(results) + 1}. Import all")
 
-    # Parse sessions
-    click.echo("\n📋 Parsing sessions...")
-    try:
-        sessions = list(
-            parser.parse_sessions(
-                data_path,
-                date_from=date_from_str,
-                date_to=date_to_str,
-                limit=limit,
-                sort_by=sort_by if sort_by != "filesystem" else None,
+        choice = click.prompt("\nSelect which to import", type=int, default=1)
+
+        if choice == len(results) + 1:
+            selected_results = results
+        elif 1 <= choice <= len(results):
+            selected_results = [results[choice - 1]]
+        else:
+            click.echo(f"❌ Invalid choice: {choice}", err=True)
+            return 1
+    else:
+        selected_results = results
+
+    # Process each selected data source
+    total_imported = 0
+    total_skipped = 0
+    total_failed = 0
+
+    for parser, detection in selected_results:
+        meta = detection.metadata or {}
+        source_desc = meta.get("profile_name") or f"S/N {meta.get('device_serial', 'unknown')}"
+
+        if len(selected_results) > 1:
+            click.echo(f"\n{'=' * 60}")
+            click.echo(f"Processing: {source_desc}")
+            click.echo(f"{'=' * 60}")
+
+        click.echo(f"✓ Detected: {parser.manufacturer} ({parser.parser_id})")
+        click.echo(f"  Structure: {meta.get('structure_type', 'unknown').replace('_', ' ')}")
+        if meta.get("data_root"):
+            click.echo(f"  Data root: {meta['data_root']}")
+
+        # Format date parameters for parser
+        date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
+        date_to_str = date_to.strftime("%Y-%m-%d") if date_to else None
+
+        # Show filter summary if any filters are active
+        if limit or date_from or date_to or sort_by != "filesystem":
+            click.echo("\n📋 Import filters:")
+            if limit:
+                click.echo(f"  • Limit: {limit} sessions")
+            if sort_by != "filesystem":
+                order_desc = "oldest first" if sort_by == "date-asc" else "newest first"
+                click.echo(f"  • Sort: {order_desc}")
+            if date_from:
+                click.echo(f"  • From: {date_from:%Y-%m-%d}")
+            if date_to:
+                click.echo(f"  • To: {date_to:%Y-%m-%d}")
+
+        # Parse sessions
+        click.echo("\n📋 Parsing sessions...")
+        try:
+            sessions = list(
+                parser.parse_sessions(
+                    data_path,
+                    date_from=date_from_str,
+                    date_to=date_to_str,
+                    limit=limit,
+                    sort_by=sort_by if sort_by != "filesystem" else None,
+                )
             )
-        )
-    except Exception as e:
-        click.echo(f"❌ Error parsing sessions: {e}", err=True)
-        if logging.getLogger().level == logging.DEBUG:
-            raise
-        return 1
+        except Exception as e:
+            click.echo(f"❌ Error parsing sessions: {e}", err=True)
+            if logging.getLogger().level == logging.DEBUG:
+                raise
+            if len(selected_results) > 1:
+                continue
+            return 1
 
-    if not sessions:
-        click.echo("⚠️  No sessions found")
-        return 0
+        if not sessions:
+            click.echo("⚠️  No sessions found")
+            if len(selected_results) > 1:
+                continue
+            return 0
 
-    click.echo(f"✓ Found {len(sessions)} sessions")
+        click.echo(f"✓ Found {len(sessions)} sessions")
 
-    # Dry-run mode: show what would be imported
-    if dry_run:
-        click.echo("\n🔍 DRY RUN MODE - No data will be imported\n")
-        click.echo(f"{'Date':<12} {'Time':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}")
-        click.echo("=" * 55)
+        # Dry-run mode: show what would be imported
+        if dry_run:
+            click.echo("\n🔍 DRY RUN MODE - No data will be imported\n")
+            click.echo(f"{'Date':<12} {'Time':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}")
+            click.echo("=" * 55)
 
-        total_duration = 0.0
-        total_events = 0
+            total_duration = 0.0
+            total_events = 0
 
-        # Sort sessions by date descending for display
-        sorted_sessions = sorted(sessions, key=lambda s: s.start_time, reverse=True)
+            # Sort sessions by date descending for display
+            sorted_sessions = sorted(sessions, key=lambda s: s.start_time, reverse=True)
 
-        for session in sorted_sessions:
-            duration_hours = session.duration_seconds / 3600 if session.duration_seconds else 0
-            total_duration += duration_hours
+            for session in sorted_sessions:
+                duration_hours = session.duration_seconds / 3600 if session.duration_seconds else 0
+                total_duration += duration_hours
 
-            # Count events
-            num_events = len(session.events) if session.events else 0
-            total_events += num_events
+                # Count events
+                num_events = len(session.events) if session.events else 0
+                total_events += num_events
 
-            # Get AHI from statistics if available
-            ahi_str = "N/A"
-            if hasattr(session, "statistics") and session.statistics:
-                if session.statistics.ahi is not None:
-                    ahi_str = f"{session.statistics.ahi:.1f}"
+                # Get AHI from statistics if available
+                ahi_str = "N/A"
+                if hasattr(session, "statistics") and session.statistics:
+                    if session.statistics.ahi is not None:
+                        ahi_str = f"{session.statistics.ahi:.1f}"
 
-            click.echo(
-                f"{session.start_time:%Y-%m-%d}   {session.start_time:%H:%M:%S}  "
-                f"{duration_hours:>6.1f}h    "
-                f"{ahi_str:>5}  "
-                f"{num_events:>6}"
-            )
+                click.echo(
+                    f"{session.start_time:%Y-%m-%d}   {session.start_time:%H:%M:%S}  "
+                    f"{duration_hours:>6.1f}h    "
+                    f"{ahi_str:>5}  "
+                    f"{num_events:>6}"
+                )
 
-        click.echo("=" * 55)
-        click.echo("\n📊 Summary:")
-        click.echo(f"  • Total sessions: {len(sessions)}")
-        click.echo(f"  • Total duration: {total_duration:.1f} hours")
-        click.echo(f"  • Total events: {total_events}")
-        if sessions:
-            # Calculate actual date range using min/max
-            first_date = min(s.start_time for s in sessions)
-            last_date = max(s.start_time for s in sessions)
-            click.echo(f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}")
+            click.echo("=" * 55)
+            click.echo("\n📊 Summary:")
+            click.echo(f"  • Total sessions: {len(sessions)}")
+            click.echo(f"  • Total duration: {total_duration:.1f} hours")
+            click.echo(f"  • Total events: {total_events}")
+            if sessions:
+                # Calculate actual date range using min/max
+                first_date = min(s.start_time for s in sessions)
+                last_date = max(s.start_time for s in sessions)
+                click.echo(f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}")
+            if len(selected_results) == 1:
+                click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
+            continue
+
+        # Initialize database (only once, before first import)
+        if total_imported == 0 and total_skipped == 0:
+            db_manager = DatabaseManager(db_path=Path(db) if db else None)
+            importer = SessionImporter(db_manager)
+
+        # Import sessions
+        imported = 0
+        skipped = 0
+        failed = 0
+
+        with click.progressbar(
+            sessions,
+            label="Importing sessions",
+            show_pos=True,
+            item_show_func=lambda s: f"{s.start_time:%Y-%m-%d}" if s else "",
+        ) as bar:
+            for session in bar:
+                try:
+                    if importer.import_session(session, force=force):
+                        imported += 1
+                    else:
+                        skipped += 1
+                except Exception as e:
+                    failed += 1
+                    logger.error(f"Failed to import session {session.device_session_id}: {e}")
+
+        # Update totals
+        total_imported += imported
+        total_skipped += skipped
+        total_failed += failed
+
+        # Show per-source summary if processing multiple sources
+        if len(selected_results) > 1:
+            click.echo(f"\n{'=' * 50}")
+            click.echo(f"📊 Summary for {source_desc}")
+            click.echo(f"{'=' * 50}")
+            click.echo(f"✓ Imported: {imported} sessions")
+            if skipped > 0:
+                click.echo(f"⊝ Skipped:  {skipped} sessions")
+            if failed > 0:
+                click.echo(f"❌ Failed:   {failed} sessions")
+
+    # Final summary for dry-run mode
+    if dry_run and len(selected_results) > 1:
+        click.echo(f"\n{'=' * 50}")
+        click.echo("📊 Overall Dry Run Summary")
+        click.echo(f"{'=' * 50}")
+        click.echo(f"✓ Total data sources: {len(selected_results)}")
         click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
         return 0
+    elif dry_run:
+        return 0
 
-    # Initialize database
-    db_manager = DatabaseManager(db_path=Path(db) if db else None)
-    importer = SessionImporter(db_manager)
-
-    # Import sessions
-    imported = 0
-    skipped = 0
-    failed = 0
-
-    with click.progressbar(
-        sessions,
-        label="Importing sessions",
-        show_pos=True,
-        item_show_func=lambda s: f"{s.start_time:%Y-%m-%d}" if s else "",
-    ) as bar:
-        for session in bar:
-            try:
-                if importer.import_session(session, force=force):
-                    imported += 1
-                else:
-                    skipped += 1
-            except Exception as e:
-                failed += 1
-                logger.error(f"Failed to import session {session.device_session_id}: {e}")
-
-    # Summary
+    # Final summary for actual imports
     click.echo(f"\n{'=' * 50}")
-    click.echo("📊 Import Summary")
+    click.echo("📊 Overall Import Summary")
     click.echo(f"{'=' * 50}")
-    click.echo(f"✓ Imported: {imported} sessions")
-    if skipped > 0:
-        click.echo(f"⊝ Skipped:  {skipped} sessions (already exist, use --force to re-import)")
-    if failed > 0:
-        click.echo(f"❌ Failed:   {failed} sessions")
-
-    # Show date range of imported sessions
-    if sessions and imported > 0:
-        imported_sessions = [s for i, s in enumerate(sessions) if i < imported + skipped]
-        if imported_sessions:
-            first_date = min(s.start_time for s in imported_sessions)
-            last_date = max(s.start_time for s in imported_sessions)
-            click.echo(f"\n📅 Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}")
-
-            # Calculate total duration
-            total_hours = sum(
-                (s.duration_seconds / 3600 if s.duration_seconds else 0) for s in imported_sessions
-            )
-            click.echo(f"⏱️  Total duration: {total_hours:.1f} hours")
+    click.echo(f"✓ Imported: {total_imported} sessions")
+    if total_skipped > 0:
+        click.echo(
+            f"⊝ Skipped:  {total_skipped} sessions (already exist, use --force to re-import)"
+        )
+    if total_failed > 0:
+        click.echo(f"❌ Failed:   {total_failed} sessions")
 
     click.echo(f"{'=' * 50}")
 
-    if failed > 0:
+    if total_failed > 0:
         return 1
     return 0
 
@@ -339,7 +408,11 @@ def list_sessions(
         click.echo("=" * 70)
 
         for sess in sessions:
-            start = sess.start_time
+            start = (
+                datetime.fromisoformat(sess.start_time)
+                if isinstance(sess.start_time, str)
+                else sess.start_time
+            )
             duration_hours = sess.duration_seconds / 3600 if sess.duration_seconds else 0
             device_name = f"{sess.manufacturer} {sess.model}"
 

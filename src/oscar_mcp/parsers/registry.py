@@ -187,6 +187,73 @@ class ParserRegistry:
         logger.warning(f"No parser detected for path: {path}")
         return None
 
+    def detect_all_parsers(
+        self, path: Path, manufacturer_hint: Optional[str] = None
+    ) -> List[Tuple[DeviceParser, ParserDetectionResult]]:
+        """
+        Detect all parsers that can handle the data at the given path.
+
+        Unlike detect_parser which returns only the best match, this method
+        returns all parsers that successfully detect the data, sorted by
+        confidence (highest first).
+
+        Useful for discovering multiple profiles or data sources.
+
+        Args:
+            path: Path to data directory/file
+            manufacturer_hint: Optional manufacturer name to try first
+
+        Returns:
+            List of (DeviceParser, ParserDetectionResult) tuples, sorted by confidence
+
+        Example:
+            results = registry.detect_all_parsers(Path("~/OSCAR/Profiles"))
+            for parser, detection in results:
+                print(f"{parser.manufacturer}: {detection.message}")
+                print(f"  Data root: {detection.metadata.get('data_root')}")
+        """
+        path = Path(path)
+
+        if not path.exists():
+            logger.warning(f"Path does not exist: {path}")
+            return []
+
+        parsers_to_try = []
+
+        if manufacturer_hint:
+            hint_lower = manufacturer_hint.lower()
+            if hint_lower in self._parsers_by_manufacturer:
+                parsers_to_try.extend(self._parsers_by_manufacturer[hint_lower])
+
+        for parser in self._parsers:
+            if parser not in parsers_to_try:
+                parsers_to_try.append(parser)
+
+        matches = []
+
+        for parser in parsers_to_try:
+            try:
+                result = parser.detect(path)
+
+                if result.detected:
+                    logger.info(
+                        f"Parser {parser.parser_id} detected data with confidence {result.confidence}"
+                    )
+                    matches.append((parser, result))
+
+            except Exception as e:
+                logger.warning(f"Parser {parser.parser_id} detection failed: {e}")
+                continue
+
+        matches.sort(key=lambda x: x[1].confidence, reverse=True)
+
+        if matches:
+            logger.info(f"Found {len(matches)} parser(s) for path: {path}")
+        else:
+            logger.warning(f"No parsers detected for path: {path}")
+
+        return matches
+
     def get_parser(self, parser_id: str) -> Optional[DeviceParser]:
         """
         Get a specific parser by ID.

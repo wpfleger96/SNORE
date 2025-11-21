@@ -24,6 +24,8 @@ import numpy as np
 
 from oscar_mcp.parsers.base import DeviceParser, ParserMetadata, ParserDetectionResult, ParserError
 from oscar_mcp.parsers.formats.edf import EDFReader
+from oscar_mcp.parsers.discovery import DataRoot, DataRootFinder
+from oscar_mcp.constants import PARSER_MAX_SEARCH_DEPTH
 from oscar_mcp.models.unified import (
     UnifiedSession,
     DeviceInfo,
@@ -109,6 +111,13 @@ class ResmedEDFParser(DeviceParser):
         "SpO2 Desaturation",  # handled separately if needed
     }
 
+    def __init__(self) -> None:
+        """Initialize ResMed parser."""
+        super().__init__()
+        self._data_root: Optional[Path] = None
+        self._root_metadata: Optional[DataRoot] = None
+        self._finder = DataRootFinder()
+
     def get_metadata(self) -> ParserMetadata:
         """Return ResMed parser metadata."""
         return ParserMetadata(
@@ -135,66 +144,119 @@ class ResmedEDFParser(DeviceParser):
 
     def detect(self, path: Path) -> ParserDetectionResult:
         """
-        Detect ResMed EDF+ data structure.
+        Detect ResMed EDF+ data structure with smart path discovery.
 
-        Looks for:
-        - STR.edf file
-        - DATALOG directory
-        - Optional Identification.json
+        Searches for STR.edf + DATALOG signature in:
+        - Current path
+        - Parent directories (up to 5 levels)
+        - Child directories (up to 3 levels)
+
+        Supports both raw SD card format and OSCAR profile format.
         """
         path = Path(path)
 
         if not path.exists():
             return ParserDetectionResult(detected=False, message=f"Path does not exist: {path}")
 
-        # Check for STR.edf
-        str_file = path / "STR.edf"
-        if not str_file.exists():
-            return ParserDetectionResult(detected=False, message="STR.edf not found")
+        roots = self._finder.find_data_roots(
+            path,
+            validator_func=self._is_resmed_root,
+            metadata_extractor_func=self._create_data_root,
+            max_levels_down=PARSER_MAX_SEARCH_DEPTH,
+        )
 
-        # Validate STR.edf is actually a valid EDF file
-        try:
-            with EDFReader(str_file) as edf:
-                header = edf.get_header()
-                # Quick validation - should have signals
-                if header.num_signals == 0:
-                    return ParserDetectionResult(
-                        detected=False,
-                        confidence=0.3,
-                        message="STR.edf appears invalid (no signals)",
-                    )
-        except Exception as e:
+        if not roots:
             return ParserDetectionResult(
-                detected=False, message=f"STR.edf is not a valid EDF file: {e}"
+                detected=False,
+                message=f"No ResMed data found. Searched {path} and parent/child directories for STR.edf + DATALOG structure.",
             )
 
-        # Check for DATALOG directory
-        datalog_dir = path / "DATALOG"
-        if not datalog_dir.exists() or not datalog_dir.is_dir():
-            return ParserDetectionResult(detected=False, message="DATALOG directory not found")
+        self._data_root = roots[0].path
+        self._root_metadata = roots[0]
 
-        # Check for Identification.json (optional but good indicator)
-        id_file = path / "Identification.json"
-        has_id = id_file.exists()
+        metadata_dict = {
+            "data_root": str(self._data_root),
+            "structure_type": self._root_metadata.structure_type,
+            "profile_name": self._root_metadata.profile_name,
+            "device_serial": self._root_metadata.device_serial,
+        }
 
-        # Count EDF files in DATALOG to verify it's not empty
-        edf_files = list(datalog_dir.rglob("*.edf"))
-
-        if len(edf_files) == 0:
-            return ParserDetectionResult(
-                detected=True,
-                confidence=0.5,
-                message="Found ResMed structure but no session data files",
+        if self._data_root != path:
+            location_desc = (
+                f"in {'parent' if self._data_root in path.parents else 'child'} directory"
             )
+        else:
+            location_desc = "at provided path"
 
-        # Success! This is definitely ResMed data
-        confidence = 1.0 if has_id else 0.9
+        structure_name = self._root_metadata.structure_type.replace("_", " ")
+
+        if len(roots) > 1:
+            message = f"Found {len(roots)} ResMed data locations ({location_desc})"
+        else:
+            message = f"ResMed {structure_name} data detected ({location_desc})"
 
         return ParserDetectionResult(
             detected=True,
-            confidence=confidence,
-            message=f"ResMed EDF+ data detected ({len(edf_files)} session files)",
+            confidence=self._root_metadata.confidence,
+            message=message,
+            metadata=metadata_dict,
         )
+
+    def _is_resmed_root(self, path: Path) -> bool:
+        """Check if path contains ResMed data signature (STR.edf + DATALOG)."""
+        if not path.is_dir():
+            return False
+        return (path / "STR.edf").exists() and (path / "DATALOG").is_dir()
+
+    def _create_data_root(self, path: Path) -> DataRoot:
+        """Create DataRoot with metadata extracted from path structure."""
+        parts = path.parts
+
+        if "Profiles" in parts and "Backup" in parts:
+            try:
+                profiles_idx = parts.index("Profiles")
+                profile_name = parts[profiles_idx + 1] if profiles_idx + 1 < len(parts) else None
+                device_str = parts[profiles_idx + 2] if profiles_idx + 2 < len(parts) else None
+
+                serial = None
+                if device_str and "_" in device_str:
+                    serial = device_str.split("_", 1)[1]
+
+                return DataRoot(
+                    path=path,
+                    structure_type="oscar_profile",
+                    profile_name=profile_name,
+                    device_serial=serial,
+                    confidence=0.95,
+                )
+            except (IndexError, ValueError):
+                pass
+
+        serial = self._extract_serial_from_identification(path)
+        return DataRoot(
+            path=path,
+            structure_type="raw_sd",
+            profile_name=None,
+            device_serial=serial,
+            confidence=0.90,
+        )
+
+    def _extract_serial_from_identification(self, path: Path) -> Optional[str]:
+        """Extract device serial number from Identification.json."""
+        id_file = path / "Identification.json"
+        if not id_file.exists():
+            return None
+
+        try:
+            with open(id_file) as f:
+                data = json.load(f)
+
+            fg = data.get("FlowGenerator", {})
+            profiles = fg.get("IdentificationProfiles", {})
+            product = profiles.get("Product", {})
+            return product.get("SerialNumber")
+        except Exception:
+            return None
 
     def get_device_info(self, path: Path) -> DeviceInfo:
         """
@@ -202,7 +264,7 @@ class ResmedEDFParser(DeviceParser):
 
         Tries Identification.json first, falls back to STR.edf.
         """
-        path = Path(path)
+        path = Path(self._data_root if self._data_root else path)
 
         # Try Identification.json first (newer devices)
         id_file = path / "Identification.json"
@@ -280,7 +342,7 @@ class ResmedEDFParser(DeviceParser):
 
         Yields one UnifiedSession per therapy session.
         """
-        path = Path(path)
+        path = Path(self._data_root if self._data_root else path)
         datalog_dir = path / "DATALOG"
 
         if not datalog_dir.exists():

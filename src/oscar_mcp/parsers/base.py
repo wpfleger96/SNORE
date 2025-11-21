@@ -38,11 +38,13 @@ class ParserDetectionResult:
         confidence: float = 1.0,
         device_info: Optional[DeviceInfo] = None,
         message: str = "",
+        metadata: Optional[dict] = None,
     ):
         self.detected = detected
         self.confidence = confidence  # 0.0 to 1.0
         self.device_info = device_info
         self.message = message
+        self.metadata = metadata or {}
 
 
 class DeviceParser(ABC):
