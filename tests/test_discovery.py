@@ -1,8 +1,6 @@
 """Tests for data root discovery functionality."""
 
-import tempfile
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
