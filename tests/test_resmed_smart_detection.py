@@ -1,12 +1,5 @@
 """Tests for ResMed parser smart detection functionality."""
 
-import tempfile
-from pathlib import Path
-
-import pytest
-
-from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
-
 
 class TestResmedSmartDetection:
     """Tests for ResMed parser's smart directory detection."""

@@ -8,19 +8,31 @@ import click
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Any
+from typing import Any, Optional
 
-from oscar_mcp.database import DatabaseManager, SessionImporter
+from oscar_mcp.database.importers import SessionImporter
 from oscar_mcp.database.session import session_scope, init_database
 from oscar_mcp.database import models
 from oscar_mcp.analysis.service import AnalysisService
 from oscar_mcp.parsers.registry import parser_registry
 from oscar_mcp.parsers.register_all import register_all_parsers
-from sqlalchemy import text
+from oscar_mcp.constants import DEFAULT_LIST_SESSIONS_LIMIT
+from sqlalchemy import text, bindparam
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def ensure_profile(username: str) -> int:
+    """Get or create profile by username, return profile_id."""
+    with session_scope() as session:
+        profile = session.query(models.Profile).filter_by(username=username).first()
+        if not profile:
+            profile = models.Profile(username=username, settings={"day_split_time": "12:00:00"})
+            session.add(profile)
+            session.flush()
+        return profile.id
 
 
 @click.group()
@@ -111,6 +123,15 @@ def import_data(
     else:
         selected_results = results
 
+    # Initialize database once before processing any data sources
+    init_database(str(Path(db)) if db else None)
+
+    # Clean up any orphaned records from previous incomplete operations
+    with session_scope() as session:
+        orphaned_count = SessionImporter.cleanup_orphaned_records(session)
+        if orphaned_count > 0:
+            click.echo(f"⚠️  Cleaned up {orphaned_count} orphaned records from database")
+
     # Process each selected data source
     total_imported = 0
     total_skipped = 0
@@ -129,6 +150,12 @@ def import_data(
         click.echo(f"  Structure: {meta.get('structure_type', 'unknown').replace('_', ' ')}")
         if meta.get("data_root"):
             click.echo(f"  Data root: {meta['data_root']}")
+
+        # Handle profile if present
+        profile_id = None
+        if meta.get("profile_name"):
+            profile_id = ensure_profile(meta["profile_name"])
+            click.echo(f"  Profile: {meta['profile_name']}")
 
         # Format date parameters for parser
         date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
@@ -222,10 +249,8 @@ def import_data(
                 click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
             continue
 
-        # Initialize database (only once, before first import)
-        if total_imported == 0 and total_skipped == 0:
-            db_manager = DatabaseManager(db_path=Path(db) if db else None)
-            importer = SessionImporter(db_manager)
+        # Create importer with profile_id
+        importer = SessionImporter(profile_id=profile_id)
 
         # Import sessions
         imported = 0
@@ -358,7 +383,12 @@ def list_profiles(db: Optional[str]):
 @click.option(
     "--to-date", "to_date", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD)"
 )
-@click.option("--limit", type=int, default=20, help="Max sessions to show")
+@click.option(
+    "--limit",
+    type=int,
+    default=DEFAULT_LIST_SESSIONS_LIMIT,
+    help="Max sessions to show (use 0 for all)",
+)
 @click.option("--db", type=click.Path(), help="Database path")
 def list_sessions(
     from_date: Optional[datetime], to_date: Optional[datetime], limit: int, db: Optional[str]
@@ -370,30 +400,48 @@ def list_sessions(
         init_database()
 
     with session_scope() as session:
-        # Build query - note: may not have profiles in older databases
-        query = """
+        # Build base WHERE clause for both count and data queries
+        where_clause = "WHERE 1=1"
+        params: dict[str, Any] = {}
+
+        if from_date:
+            where_clause += " AND sessions.start_time >= :from_date"
+            params["from_date"] = from_date
+
+        if to_date:
+            where_clause += " AND sessions.start_time <= :to_date"
+            params["to_date"] = to_date
+
+        # Count total matching sessions
+        count_query = f"""
+            SELECT COUNT(*) as total
+            FROM sessions
+            JOIN devices ON sessions.device_id = devices.id
+            LEFT JOIN profiles ON devices.profile_id = profiles.id
+            {where_clause}
+        """
+        total_sessions = session.execute(text(count_query), params).scalar()
+
+        # Build main query with profile information
+        query = f"""
             SELECT
                 sessions.id as session_id,
                 sessions.start_time,
                 sessions.duration_seconds,
                 devices.manufacturer,
-                devices.model
+                devices.model,
+                profiles.username as profile_name
             FROM sessions
             JOIN devices ON sessions.device_id = devices.id
-            WHERE 1=1
+            LEFT JOIN profiles ON devices.profile_id = profiles.id
+            {where_clause}
+            ORDER BY sessions.start_time DESC
         """
-        params = {}
 
-        if from_date:
-            query += " AND sessions.start_time >= :from_date"
-            params["from_date"] = from_date
-
-        if to_date:
-            query += " AND sessions.start_time <= :to_date"
-            params["to_date"] = to_date
-
-        query += " ORDER BY sessions.start_time DESC LIMIT :limit"
-        params["limit"] = limit
+        # Add limit if specified (0 means no limit)
+        if limit > 0:
+            query += " LIMIT :limit"
+            params["limit"] = limit
 
         # Execute query
         result = session.execute(text(query), params)
@@ -404,8 +452,10 @@ def list_sessions(
             return
 
         # Display sessions
-        click.echo(f"\n{'Date':<12} {'Time':<8} {'Duration':<10} {'Device':<20} {'AHI':<6}")
-        click.echo("=" * 70)
+        click.echo(
+            f"\n{'Date':<12} {'Time':<8} {'Duration':<10} {'Profile':<15} {'Device':<20} {'AHI':<6}"
+        )
+        click.echo("=" * 85)
 
         for sess in sessions:
             start = (
@@ -415,6 +465,7 @@ def list_sessions(
             )
             duration_hours = sess.duration_seconds / 3600 if sess.duration_seconds else 0
             device_name = f"{sess.manufacturer} {sess.model}"
+            profile_name = sess.profile_name or "N/A"
 
             # Get AHI from statistics if available
             stats_result = session.execute(
@@ -427,9 +478,20 @@ def list_sessions(
             click.echo(
                 f"{start:%Y-%m-%d}   {start:%H:%M:%S}  "
                 f"{duration_hours:>6.1f}h    "
+                f"{profile_name:<15} "
                 f"{device_name:<20} "
                 f"{ahi:>5}"
             )
+
+        # Show truncation info if results were limited
+        displayed_count = len(sessions)
+        if limit > 0 and displayed_count < total_sessions:
+            click.echo(
+                f"\nShowing {displayed_count} of {total_sessions} sessions (most recent first)"
+            )
+            click.echo("💡 Tip: Use --limit <number> to see more sessions, or --limit 0 to see all")
+        elif limit == 0 and total_sessions > DEFAULT_LIST_SESSIONS_LIMIT:
+            click.echo(f"\nShowing all {total_sessions} sessions")
 
 
 @cli.command("delete-sessions")
@@ -494,7 +556,7 @@ def delete_sessions(
             JOIN devices ON sessions.device_id = devices.id
             WHERE 1=1
         """
-        params = {}
+        params: dict[str, Any] = {}
 
         # Apply filters
         if session_ids:
@@ -502,7 +564,7 @@ def delete_sessions(
             try:
                 id_list = [int(sid.strip()) for sid in session_ids.split(",")]
                 query += " AND sessions.id IN :session_ids"
-                params["session_ids"] = tuple(id_list)
+                params["session_ids"] = id_list
             except ValueError:
                 click.echo(
                     "❌ Error: Invalid session ID format. Use comma-separated integers (e.g., '1,2,3')",
@@ -521,7 +583,12 @@ def delete_sessions(
         query += " ORDER BY sessions.start_time DESC"
 
         # Execute query to get sessions
-        result = session.execute(text(query), params)
+        if "session_ids" in params:
+            result = session.execute(
+                text(query).bindparams(bindparam("session_ids", expanding=True)), params
+            )
+        else:
+            result = session.execute(text(query), params)
         sessions = result.fetchall()
 
         if not sessions:
@@ -532,18 +599,24 @@ def delete_sessions(
         session_ids_to_delete = [s.id for s in sessions]
 
         event_count = session.execute(
-            text("SELECT COUNT(*) as count FROM events WHERE session_id IN :session_ids"),
-            {"session_ids": tuple(session_ids_to_delete)},
+            text(
+                "SELECT COUNT(*) as count FROM events WHERE session_id IN :session_ids"
+            ).bindparams(bindparam("session_ids", expanding=True)),
+            {"session_ids": session_ids_to_delete},
         ).scalar()
 
         waveform_count = session.execute(
-            text("SELECT COUNT(*) as count FROM waveforms WHERE session_id IN :session_ids"),
-            {"session_ids": tuple(session_ids_to_delete)},
+            text(
+                "SELECT COUNT(*) as count FROM waveforms WHERE session_id IN :session_ids"
+            ).bindparams(bindparam("session_ids", expanding=True)),
+            {"session_ids": session_ids_to_delete},
         ).scalar()
 
         stats_count = session.execute(
-            text("SELECT COUNT(*) as count FROM statistics WHERE session_id IN :session_ids"),
-            {"session_ids": tuple(session_ids_to_delete)},
+            text(
+                "SELECT COUNT(*) as count FROM statistics WHERE session_id IN :session_ids"
+            ).bindparams(bindparam("session_ids", expanding=True)),
+            {"session_ids": session_ids_to_delete},
         ).scalar()
 
         # Display sessions to be deleted
@@ -558,7 +631,11 @@ def delete_sessions(
         click.echo("-" * 70)
 
         for sess in sessions:
-            start = sess.start_time
+            start = (
+                datetime.fromisoformat(sess.start_time)
+                if isinstance(sess.start_time, str)
+                else sess.start_time
+            )
             duration_hours = sess.duration_seconds / 3600 if sess.duration_seconds else 0
             device_name = f"{sess.manufacturer} {sess.model}"
 
@@ -593,8 +670,10 @@ def delete_sessions(
 
         # Perform deletion (CASCADE should handle related data)
         session.execute(
-            text("DELETE FROM sessions WHERE id IN :session_ids"),
-            {"session_ids": tuple(session_ids_to_delete)},
+            text("DELETE FROM sessions WHERE id IN :session_ids").bindparams(
+                bindparam("session_ids", expanding=True)
+            ),
+            {"session_ids": session_ids_to_delete},
         )
         session.commit()
 
@@ -667,7 +746,17 @@ def stats(db: Optional[str]):
         click.echo(f"Events: {event_count}")
 
         if first_session and last_session:
-            click.echo(f"\nDate range: {first_session:%Y-%m-%d} to {last_session:%Y-%m-%d}")
+            first_dt = (
+                datetime.fromisoformat(first_session)
+                if isinstance(first_session, str)
+                else first_session
+            )
+            last_dt = (
+                datetime.fromisoformat(last_session)
+                if isinstance(last_session, str)
+                else last_session
+            )
+            click.echo(f"\nDate range: {first_dt:%Y-%m-%d} to {last_dt:%Y-%m-%d}")
 
         click.echo(f"{'=' * 50}\n")
 
@@ -749,6 +838,9 @@ def analyze_session(
 
         analysis_service = AnalysisService(session)
 
+        # session_id is guaranteed to be set by this point (either from date lookup or parameter)
+        assert session_id is not None, "session_id should not be None"
+
         try:
             result = analysis_service.analyze_session(
                 session_id=session_id, store_results=not no_store
@@ -766,7 +858,7 @@ def analyze_session(
             click.echo(f"\nSession Duration: {result.duration_hours:.1f} hours")
             click.echo(f"Total Breaths: {result.total_breaths:,}")
 
-            click.echo(f"\n📈 RESPIRATORY INDICES")
+            click.echo("\n📈 RESPIRATORY INDICES")
             click.echo(f"  AHI (Apnea-Hypopnea Index): {event_timeline['ahi']:.1f} events/hour")
             click.echo(
                 f"  RDI (Respiratory Disturbance Index): {event_timeline['rdi']:.1f} events/hour"
@@ -782,7 +874,7 @@ def analyze_session(
             click.echo(f"  Hypopneas: {len(event_timeline['hypopneas'])}")
             click.echo(f"  RERAs: {len(event_timeline['reras'])}")
 
-            click.echo(f"\n💨 FLOW LIMITATION CLASSES")
+            click.echo("\n💨 FLOW LIMITATION CLASSES")
             for fl_class, count in sorted(flow_analysis["class_distribution"].items()):
                 if count > 0:
                     pct = (count / result.total_breaths) * 100
@@ -790,21 +882,21 @@ def analyze_session(
 
             if result.csr_detection:
                 csr = result.csr_detection
-                click.echo(f"\n🌊 CHEYNE-STOKES RESPIRATION")
+                click.echo("\n🌊 CHEYNE-STOKES RESPIRATION")
                 click.echo(f"  Detected: Yes (confidence: {csr['confidence']:.2f})")
                 click.echo(f"  Cycle Length: {csr['cycle_length']:.0f}s")
                 click.echo(f"  CSR Index: {csr['csr_index']:.1%}")
 
             if result.periodic_breathing:
                 periodic = result.periodic_breathing
-                click.echo(f"\n🔄 PERIODIC BREATHING")
+                click.echo("\n🔄 PERIODIC BREATHING")
                 click.echo(f"  Detected: Yes (confidence: {periodic['confidence']:.2f})")
                 click.echo(f"  Cycle Length: {periodic['cycle_length']:.0f}s")
                 click.echo(f"  Regularity: {periodic['regularity_score']:.2f}")
 
             if result.positional_analysis:
                 positional = result.positional_analysis
-                click.echo(f"\n🛏️  POSITIONAL ANALYSIS")
+                click.echo("\n🛏️  POSITIONAL ANALYSIS")
                 click.echo(f"  Event Clustering: {positional['cluster_count']} clusters")
                 click.echo(f"  Positional Likelihood: {positional['positional_likelihood']:.2f}")
 
@@ -878,7 +970,7 @@ def analyze_sessions(
                     failed += 1
                     logger.debug(f"Failed to analyze session {db_session.id}: {e}")
 
-        click.echo(f"\n✓ Analysis complete")
+        click.echo("\n✓ Analysis complete")
         click.echo(f"  Successful: {successful}")
         click.echo(f"  Failed: {failed}")
 
@@ -889,7 +981,7 @@ def analyze_sessions(
 @click.option("--end", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD)")
 @click.option("--db", type=click.Path(), help="Database path")
 @click.option("--analyzed-only", is_flag=True, help="Show only analyzed sessions")
-def list_sessions(
+def list_analyzed_sessions(
     profile: str,
     start: Optional[datetime],
     end: Optional[datetime],

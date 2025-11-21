@@ -10,8 +10,6 @@ from typing import List, Tuple
 from sqlalchemy.orm import Session
 
 from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
-from oscar_mcp.database.importers import import_session
-from oscar_mcp.database.manager import DatabaseManager
 from oscar_mcp.database.models import Session as CPAPSession
 
 
@@ -118,9 +116,8 @@ def import_to_test_db(
         Imported CPAPSession object from database
 
     Note:
-        This function bridges between SQLAlchemy test fixtures and the
-        DatabaseManager-based import system. It extracts the database path
-        from the SQLAlchemy session to create a DatabaseManager.
+        This function extracts the database path from the SQLAlchemy session
+        to initialize the database and import the session using SessionImporter.
 
     Example:
         >>> session = import_to_test_db("2025_baseline", test_db)
@@ -151,22 +148,183 @@ def import_to_test_db(
         session_id=session_id, files=files, device_info=device_info, base_path=fixture_path
     )
 
-    # Extract database path from SQLAlchemy session
-    engine = db_session.get_bind()
-    db_url = str(engine.url)
+    # Import directly into the provided test session instead of using SessionImporter
+    # which relies on the global session factory
+    from oscar_mcp.database import models
+    from oscar_mcp.database.importers import serialize_waveform
+    import json
 
-    # Extract path from sqlite:///path format
-    if db_url.startswith("sqlite:///"):
-        db_path = db_url[10:]
+    # Get or create device
+    device = (
+        db_session.query(models.Device)
+        .filter_by(serial_number=unified_session.device_info.serial_number)
+        .first()
+    )
+
+    if device:
+        device.manufacturer = unified_session.device_info.manufacturer
+        device.model = unified_session.device_info.model
+        device.firmware_version = unified_session.device_info.firmware_version
+        device.hardware_version = unified_session.device_info.hardware_version
+        device.product_code = unified_session.device_info.product_code
     else:
-        raise ValueError(f"Unsupported database URL format: {db_url}")
+        device = models.Device(
+            manufacturer=unified_session.device_info.manufacturer,
+            model=unified_session.device_info.model,
+            serial_number=unified_session.device_info.serial_number,
+            firmware_version=unified_session.device_info.firmware_version,
+            hardware_version=unified_session.device_info.hardware_version,
+            product_code=unified_session.device_info.product_code,
+        )
+        db_session.add(device)
+        db_session.flush()
 
-    # Import using DatabaseManager
-    with DatabaseManager(db_path=Path(db_path)) as db_manager:
-        success = import_session(db_manager, unified_session, force=False)
+    # Check if session already exists
+    existing = (
+        db_session.query(models.Session)
+        .filter_by(device_id=device.id, device_session_id=unified_session.device_session_id)
+        .first()
+    )
 
-        if not success:
-            raise RuntimeError(f"Failed to import session for fixture {fixture_name}")
+    if existing:
+        raise RuntimeError(
+            f"Session already exists in database: {unified_session.device_session_id}"
+        )
+
+    # Create session
+    notes_json = (
+        json.dumps(unified_session.data_quality_notes)
+        if unified_session.data_quality_notes
+        else None
+    )
+
+    new_session = models.Session(
+        device_id=device.id,
+        device_session_id=unified_session.device_session_id,
+        start_time=unified_session.start_time,
+        end_time=unified_session.end_time,
+        duration_seconds=unified_session.duration_seconds,
+        therapy_mode=unified_session.settings.mode.value if unified_session.settings else None,
+        import_source=unified_session.import_source,
+        parser_version=unified_session.parser_version,
+        data_quality_notes=notes_json,
+        has_waveform_data=unified_session.has_waveform_data,
+        has_event_data=unified_session.has_event_data,
+        has_statistics=unified_session.has_statistics,
+    )
+    db_session.add(new_session)
+    db_session.flush()
+
+    # Import waveforms
+    if unified_session.has_waveform_data:
+        for waveform_type, waveform in unified_session.waveforms.items():
+            data_blob = serialize_waveform(waveform)
+            sample_count = (
+                len(waveform.values) if isinstance(waveform.values, list) else len(waveform.values)
+            )
+
+            waveform_record = models.Waveform(
+                session_id=new_session.id,
+                waveform_type=waveform_type.value,
+                sample_rate=waveform.sample_rate,
+                unit=waveform.unit,
+                min_value=waveform.min_value,
+                max_value=waveform.max_value,
+                mean_value=waveform.mean_value,
+                data_blob=data_blob,
+                sample_count=sample_count,
+            )
+            db_session.add(waveform_record)
+
+    # Import events
+    if unified_session.has_event_data:
+        for event in unified_session.events:
+            event_record = models.Event(
+                session_id=new_session.id,
+                event_type=event.event_type.value,
+                start_time=event.start_time,
+                duration_seconds=event.duration_seconds,
+                spo2_drop=event.spo2_drop,
+                peak_flow_limitation=event.peak_flow_limitation,
+            )
+            db_session.add(event_record)
+
+    # Import statistics
+    if unified_session.has_statistics:
+        stats = unified_session.statistics
+        stats_record = models.Statistics(
+            session_id=new_session.id,
+            obstructive_apneas=stats.obstructive_apneas,
+            central_apneas=stats.central_apneas,
+            mixed_apneas=stats.mixed_apneas,
+            hypopneas=stats.hypopneas,
+            reras=stats.reras,
+            flow_limitations=stats.flow_limitations,
+            ahi=stats.ahi,
+            oai=stats.oai,
+            cai=stats.cai,
+            hi=stats.hi,
+            rei=stats.rei,
+            pressure_min=stats.pressure_min,
+            pressure_max=stats.pressure_max,
+            pressure_median=stats.pressure_median,
+            pressure_mean=stats.pressure_mean,
+            pressure_95th=stats.pressure_95th,
+            leak_min=stats.leak_min,
+            leak_max=stats.leak_max,
+            leak_median=stats.leak_median,
+            leak_mean=stats.leak_mean,
+            leak_95th=stats.leak_95th,
+            leak_percentile_70=stats.leak_percentile_70,
+            respiratory_rate_min=stats.respiratory_rate_min,
+            respiratory_rate_max=stats.respiratory_rate_max,
+            respiratory_rate_mean=stats.respiratory_rate_mean,
+            tidal_volume_min=stats.tidal_volume_min,
+            tidal_volume_max=stats.tidal_volume_max,
+            tidal_volume_mean=stats.tidal_volume_mean,
+            minute_ventilation_min=stats.minute_ventilation_min,
+            minute_ventilation_max=stats.minute_ventilation_max,
+            minute_ventilation_mean=stats.minute_ventilation_mean,
+            spo2_min=stats.spo2_min,
+            spo2_max=stats.spo2_max,
+            spo2_mean=stats.spo2_mean,
+            spo2_time_below_90=stats.spo2_time_below_90,
+            pulse_min=stats.pulse_min,
+            pulse_max=stats.pulse_max,
+            pulse_mean=stats.pulse_mean,
+            usage_hours=stats.usage_hours,
+        )
+        db_session.add(stats_record)
+
+    # Import settings
+    if unified_session.settings:
+        settings = unified_session.settings
+        settings_dict = {
+            "mode": settings.mode.value,
+            "pressure_min": settings.pressure_min,
+            "pressure_max": settings.pressure_max,
+            "pressure_fixed": settings.pressure_fixed,
+            "ipap": settings.ipap,
+            "epap": settings.epap,
+            "epr_level": settings.epr_level,
+            "ramp_time": settings.ramp_time,
+            "ramp_start_pressure": settings.ramp_start_pressure,
+            "humidity_level": settings.humidity_level,
+            "tube_temp": settings.tube_temp,
+            "mask_type": settings.mask_type,
+        }
+
+        if settings.other_settings:
+            settings_dict.update(settings.other_settings)
+
+        for key, value in settings_dict.items():
+            if value is not None:
+                setting_record = models.Setting(
+                    session_id=new_session.id, key=key, value=str(value)
+                )
+                db_session.add(setting_record)
+
+    db_session.commit()
 
     # Query the imported session from SQLAlchemy to return it
     cpap_session = (

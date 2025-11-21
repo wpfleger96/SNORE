@@ -6,7 +6,7 @@ MCP server providing tools for analyzing and inspecting OSCAR CPAP/APAP therapy 
 
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -490,6 +490,9 @@ def analyze_session(
                     raise ValueError(f"No session found for {session_date}")
 
                 session_id = db_session.id
+
+            # session_id is guaranteed to be set (either from date lookup or parameter)
+            assert session_id is not None, "session_id should not be None"
 
             analysis_service = AnalysisService(session)
             result = analysis_service.analyze_session(session_id=session_id, store_results=True)

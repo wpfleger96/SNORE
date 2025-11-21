@@ -1,6 +1,5 @@
 """Tests for parser registry multi-detection functionality."""
 
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest

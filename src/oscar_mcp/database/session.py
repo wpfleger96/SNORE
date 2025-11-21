@@ -5,7 +5,7 @@ import threading
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from oscar_mcp.constants import DEFAULT_DATABASE_PATH
@@ -54,7 +54,14 @@ def init_database(database_path: str | None = None) -> None:
             database_url,
             echo=False,
             connect_args={"check_same_thread": False},
+            pool_pre_ping=True,
         )
+
+        @event.listens_for(_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
         _SessionFactory = sessionmaker(bind=_engine)
 

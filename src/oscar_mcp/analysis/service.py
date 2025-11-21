@@ -10,7 +10,6 @@ import time
 from datetime import datetime
 from typing import Optional, List
 
-import numpy as np
 from sqlalchemy.orm import Session
 
 from oscar_mcp.analysis.data.waveform_loader import WaveformLoader
@@ -101,7 +100,8 @@ class AnalysisService:
                     "will resample or skip"
                 )
                 spo2_values = None
-            logger.info(f"Loaded SpO2 data: {len(spo2_values)} samples")
+            if spo2_values is not None:
+                logger.info(f"Loaded SpO2 data: {len(spo2_values)} samples")
         except Exception as e:
             logger.info(f"No SpO2 data available: {e}")
 

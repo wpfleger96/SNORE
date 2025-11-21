@@ -552,6 +552,9 @@ EVENT_FILE_EXT = ".001"  # Event/waveform data file
 DEFAULT_DATABASE_PATH = str(Path.home() / ".oscar-mcp" / "oscar_mcp.db")
 DEFAULT_PROFILE_NAME = "Default"
 
+# CLI display defaults
+DEFAULT_LIST_SESSIONS_LIMIT = 20
+
 # Knowledge base image paths (relative to project root)
 KNOWLEDGE_IMAGE_BASE = Path("data/guidelines/images")
 IMAGE_DIRS = {
