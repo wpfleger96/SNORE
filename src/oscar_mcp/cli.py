@@ -139,7 +139,6 @@ def import_data(
         orphaned_count = SessionImporter.cleanup_orphaned_records(session)
         if orphaned_count > 0:
             click.echo(f"⚠️  Cleaned up {orphaned_count} orphaned records from database")
-
     # Process each selected data source
     total_imported = 0
     total_skipped = 0
