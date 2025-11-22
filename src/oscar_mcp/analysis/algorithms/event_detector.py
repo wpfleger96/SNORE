@@ -179,11 +179,12 @@ class RespiratoryEventDetector:
 
         apneas = []
         for start_time, end_time, duration, indices in events:
-            flow_values[indices]
+            event_flow = flow_values[indices]
             avg_reduction = np.mean(flow_reduction[indices])
 
             event_type = self._classify_apnea_type(
-                effort_signal[indices] if effort_signal is not None else None
+                effort_signal=effort_signal[indices] if effort_signal is not None else None,
+                flow_signal=event_flow,
             )
 
             confidence = self._calculate_apnea_confidence(avg_reduction, duration, baseline_flow)
@@ -350,12 +351,24 @@ class RespiratoryEventDetector:
         )
 
     def _calculate_baseline_flow(self, flow_values: np.ndarray) -> float:
-        """Calculate baseline flow using median of peak values."""
+        """
+        Calculate baseline flow using percentile of peak inspiratory flows.
+
+        Instead of using median of all positive values (which gets pulled down by
+        low-flow periods and apneas), use the 75th percentile to better represent
+        normal breathing baseline. This gives a more realistic threshold for detecting
+        flow reduction during respiratory events.
+        """
         positive_flow = flow_values[flow_values > 0]
         if len(positive_flow) == 0:
             return 1.0
 
-        return float(np.median(positive_flow))
+        baseline = float(np.percentile(positive_flow, 75))
+
+        if baseline < 1.0:
+            baseline = 1.0
+
+        return baseline
 
     def _calculate_flow_reduction(self, flow_values: np.ndarray, baseline: float) -> np.ndarray:
         """Calculate flow reduction percentage relative to baseline."""
@@ -396,19 +409,73 @@ class RespiratoryEventDetector:
 
         return regions
 
-    def _classify_apnea_type(self, effort_signal: Optional[np.ndarray]) -> str:
-        """Classify apnea as obstructive, central, or unclassified."""
-        if effort_signal is None:
-            return "UA"
+    def _classify_apnea_type(
+        self, effort_signal: Optional[np.ndarray], flow_signal: Optional[np.ndarray] = None
+    ) -> str:
+        """
+        Classify apnea as obstructive, central, or unclassified.
 
-        effort_magnitude = np.std(effort_signal)
+        If no effort signal is available, estimates effort from flow characteristics:
+        - Obstructive Apnea (OA): Respiratory effort present but no airflow
+          Flow shows more variability from attempted breathing
+        - Central Apnea (CA): No respiratory effort, no airflow
+          Flow is very flat and stable near zero
 
-        if effort_magnitude > EDC.APNEA_EFFORT_HIGH_THRESHOLD:
-            return "OA"
-        elif effort_magnitude < EDC.APNEA_EFFORT_LOW_THRESHOLD:
-            return "CA"
-        else:
-            return "MA"
+        Args:
+            effort_signal: Direct effort measurement (from belts/sensors) if available
+            flow_signal: Flow values during the apnea event
+
+        Returns:
+            Event type code: "OA", "CA", "MA", or "UA"
+        """
+        if effort_signal is not None:
+            effort_magnitude = np.std(effort_signal)
+
+            if effort_magnitude > EDC.APNEA_EFFORT_HIGH_THRESHOLD:
+                return "OA"
+            elif effort_magnitude < EDC.APNEA_EFFORT_LOW_THRESHOLD:
+                return "CA"
+            else:
+                return "MA"
+
+        if flow_signal is not None and len(flow_signal) > 5:
+            effort_from_flow = self._estimate_effort_from_flow(flow_signal)
+
+            if effort_from_flow > 0.15:
+                return "OA"
+            elif effort_from_flow < 0.05:
+                return "CA"
+            else:
+                return "MA"
+
+        return "UA"
+
+    def _estimate_effort_from_flow(self, flow_signal: np.ndarray) -> float:
+        """
+        Estimate respiratory effort from flow signal characteristics.
+
+        During obstructive apnea, continued respiratory effort causes flow oscillations
+        even though net flow is near zero. Central apnea shows very flat flow.
+
+        Args:
+            flow_signal: Flow values during the event
+
+        Returns:
+            Estimated effort magnitude (0.0 = no effort, higher = more effort)
+        """
+        if len(flow_signal) < 5:
+            return 0.0
+
+        flow_std = np.std(flow_signal)
+        flow_range = np.ptp(flow_signal)
+
+        detrended = flow_signal - np.mean(flow_signal)
+        variations = np.abs(np.diff(detrended))
+        avg_variation = np.mean(variations) if len(variations) > 0 else 0.0
+
+        effort_score = (flow_std * 0.4) + (flow_range * 0.3) + (avg_variation * 0.3)
+
+        return float(effort_score)
 
     def _check_desaturation(self, spo2_values: np.ndarray) -> bool:
         """Check if SpO2 desaturation occurred (≥3% drop)."""

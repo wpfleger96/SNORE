@@ -8,7 +8,7 @@ analyze complete CPAP sessions.
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -71,6 +71,7 @@ class ProgrammaticAnalysisResult:
     processing_time_ms: float
     confidence_summary: Dict[str, float]
     clinical_summary: str
+    machine_events: Optional[List] = None
 
 
 class ProgrammaticAnalysisEngine:

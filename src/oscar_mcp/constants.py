@@ -395,15 +395,23 @@ class BreathSegmentationConstants:
 
 
 class EventDetectionConstants:
-    """Constants for respiratory event detection (event_detector.py)."""
+    """
+    Constants for respiratory event detection (event_detector.py).
+
+    ⚠️ IMPORTANT: This is the SINGLE SOURCE OF TRUTH for event detection thresholds.
+    The patterns.py file references these values for consistency.
+    When modifying detection behavior, change values HERE, not in patterns.py.
+
+    All threshold values are in decimal format (0.7 = 70%, 0.3 = 30%, etc.)
+    """
 
     MIN_EVENT_DURATION = 10.0
     BASELINE_WINDOW_SECONDS = 30.0
     MERGE_GAP_SECONDS = 2.0
 
-    APNEA_FLOW_REDUCTION_THRESHOLD = 0.9
+    APNEA_FLOW_REDUCTION_THRESHOLD = 0.7
     HYPOPNEA_MIN_REDUCTION = 0.3
-    HYPOPNEA_MAX_REDUCTION = 0.9
+    HYPOPNEA_MAX_REDUCTION = 0.7
 
     RERA_FLATNESS_THRESHOLD = 0.7
     RERA_MAX_FLOW_REDUCTION = 0.3

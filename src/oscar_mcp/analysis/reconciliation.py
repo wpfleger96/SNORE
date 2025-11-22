@@ -8,7 +8,7 @@ and tracking event sources.
 
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 
 from oscar_mcp.constants import (
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
@@ -56,7 +56,7 @@ class EventReconciliation:
         self,
         machine_events: List[RespiratoryEvent],
         programmatic_events: List[RespiratoryEvent],
-    ) -> Tuple[List[RespiratoryEvent], Dict]:
+    ) -> Tuple[List[RespiratoryEvent], Dict[str, Any]]:
         """
         Merge and reconcile machine and programmatic events.
 
@@ -70,7 +70,7 @@ class EventReconciliation:
             - Reconciliation statistics and discrepancies
         """
         merged_events = []
-        reconciliation_stats = {
+        reconciliation_stats: Dict[str, Any] = {
             "machine_event_count": len(machine_events),
             "programmatic_event_count": len(programmatic_events),
             "matched_events": 0,
@@ -82,7 +82,7 @@ class EventReconciliation:
         machine_events_sorted = sorted(machine_events, key=lambda e: e.start_time)
         programmatic_events_sorted = sorted(programmatic_events, key=lambda e: e.start_time)
 
-        used_programmatic_indices = set()
+        used_programmatic_indices: set[int] = set()
 
         for machine_event in machine_events_sorted:
             merged_events.append(machine_event)

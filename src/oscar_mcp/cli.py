@@ -869,7 +869,7 @@ def analyze_session(
             machine_events = getattr(result, "machine_events", [])
 
             if machine_events:
-                machine_event_counts = {}
+                machine_event_counts: dict[str, int] = {}
                 for event in machine_events:
                     machine_event_counts[event.event_type] = (
                         machine_event_counts.get(event.event_type, 0) + 1

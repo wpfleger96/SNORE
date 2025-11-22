@@ -3,9 +3,13 @@ Medical Pattern Definitions
 
 Flow limitation classes, respiratory events, and pattern characteristics
 extracted from OSCAR Guide and clinical guidelines.
+
+Note: Numeric threshold values (e.g., flow_reduction_percent) reference
+constants.py as the single source of truth for runtime configuration.
 """
 
 from typing import Dict, List, Tuple, TypedDict
+from oscar_mcp.constants import EventDetectionConstants as EDC
 
 
 class FlowLimitationClassInfo(TypedDict):
@@ -130,43 +134,43 @@ RESPIRATORY_EVENTS: Dict[str, RespiratoryEventInfo] = {
     "obstructive_apnea": {
         "name": "Obstructive Apnea (OA)",
         "abbreviation": "OA",
-        "criteria": "≥90% reduction in airflow for ≥10 seconds with continued respiratory effort",
+        "criteria": f"≥{int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100)}% reduction in airflow for ≥{int(EDC.MIN_EVENT_DURATION)} seconds with continued respiratory effort",
         "characteristics": "Flow cessation with persistent chest/abdominal movement",
         "clinical_significance": "Complete upper airway obstruction despite breathing effort",
         "severity": "severe",
-        "min_duration_seconds": 10,
-        "flow_reduction_percent": 90,
+        "min_duration_seconds": int(EDC.MIN_EVENT_DURATION),
+        "flow_reduction_percent": int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100),
     },
     "central_apnea": {
         "name": "Central Apnea (CA)",
         "abbreviation": "CA",
-        "criteria": "≥90% reduction in airflow for ≥10 seconds without respiratory effort",
+        "criteria": f"≥{int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100)}% reduction in airflow for ≥{int(EDC.MIN_EVENT_DURATION)} seconds without respiratory effort",
         "characteristics": "Both flow and effort signals cease simultaneously",
         "clinical_significance": "Loss of central drive to breathe - neurological origin",
         "severity": "severe",
-        "min_duration_seconds": 10,
-        "flow_reduction_percent": 90,
+        "min_duration_seconds": int(EDC.MIN_EVENT_DURATION),
+        "flow_reduction_percent": int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100),
     },
     "mixed_apnea": {
         "name": "Mixed Apnea",
         "abbreviation": "MA",
-        "criteria": "Begins as central apnea, transitions to obstructive pattern",
+        "criteria": f"Begins as central apnea, transitions to obstructive pattern (≥{int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100)}% flow reduction)",
         "characteristics": "Initial absence of effort, then effort resumes without airflow",
         "clinical_significance": "Combined central and obstructive pathology",
         "severity": "severe",
-        "min_duration_seconds": 10,
-        "flow_reduction_percent": 90,
+        "min_duration_seconds": int(EDC.MIN_EVENT_DURATION),
+        "flow_reduction_percent": int(EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100),
     },
     "hypopnea": {
         "name": "Hypopnea",
         "abbreviation": "H",
-        "criteria": "30-90% reduction in airflow for ≥10 seconds",
+        "criteria": f"{int(EDC.HYPOPNEA_MIN_REDUCTION * 100)}-{int(EDC.HYPOPNEA_MAX_REDUCTION * 100)}% reduction in airflow for ≥{int(EDC.MIN_EVENT_DURATION)} seconds",
         "characteristics": "Partial airflow reduction, may include arousal or desaturation",
         "clinical_significance": "Partial airway obstruction or reduced respiratory effort",
         "severity": "moderate",
-        "min_duration_seconds": 10,
-        "flow_reduction_percent_min": 30,
-        "flow_reduction_percent_max": 90,
+        "min_duration_seconds": int(EDC.MIN_EVENT_DURATION),
+        "flow_reduction_percent_min": int(EDC.HYPOPNEA_MIN_REDUCTION * 100),
+        "flow_reduction_percent_max": int(EDC.HYPOPNEA_MAX_REDUCTION * 100),
     },
     "rera": {
         "name": "Respiratory Effort Related Arousal (RERA)",

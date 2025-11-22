@@ -292,10 +292,10 @@ class BreathSegmenter:
                             i = j - 1
                             break
 
-                        # Validate amplitude (OSCAR's filter: (max - min) > 8)
+                        # Validate amplitude - lowered from 8.0 to 2.0 to detect breaths during low-flow periods
                         breath_segment = flow_data[start_idx:end_idx]
                         amplitude = np.max(breath_segment) - np.min(breath_segment)
-                        if amplitude <= 8.0:
+                        if amplitude <= 2.0:
                             # Insufficient amplitude - skip this breath
                             i = j - 1
                             break
@@ -316,12 +316,12 @@ class BreathSegmenter:
                         start_idx = crossing_idx
                         end_idx = len(flow_data) - 1  # Extend to end of data
 
-                        # Validate duration and amplitude
+                        # Validate duration and amplitude (lowered from 8.0 to 2.0)
                         duration = timestamps[end_idx] - timestamps[start_idx]
                         if self.min_breath_duration <= duration <= self.max_breath_duration:
                             breath_segment = flow_data[start_idx : end_idx + 1]
                             amplitude = np.max(breath_segment) - np.min(breath_segment)
-                            if amplitude > 8.0:
+                            if amplitude > 2.0:
                                 boundaries.append((start_idx, end_idx))
 
             i += 1
