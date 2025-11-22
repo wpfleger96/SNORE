@@ -170,14 +170,11 @@ class ProgrammaticAnalysisEngine:
         logger.info(f"Flow limitation index: {flow_analysis.flow_limitation_index:.3f}")
 
         tidal_volumes = np.array([b.tidal_volume for b in breaths])
-        baseline_flow = np.median(np.abs(flow_values[flow_values != 0]))
 
-        apneas = self.event_detector.detect_apneas(
-            timestamps, flow_values, baseline_flow=baseline_flow
-        )
+        apneas = self.event_detector.detect_apneas(timestamps, flow_values)
 
         hypopneas = self.event_detector.detect_hypopneas(
-            timestamps, flow_values, baseline_flow=baseline_flow, spo2_signal=spo2_values
+            timestamps, flow_values, spo2_signal=spo2_values
         )
 
         flatness_indices = np.array(
@@ -190,7 +187,7 @@ class ProgrammaticAnalysisEngine:
         breath_timestamps = np.array([b.start_time for b in breaths])
 
         reras = self.event_detector.detect_reras(
-            breath_timestamps, flow_values[: len(breaths)], flatness_indices, baseline_flow
+            breath_timestamps, flow_values[: len(breaths)], flatness_indices
         )
 
         event_timeline = self.event_detector.create_event_timeline(
