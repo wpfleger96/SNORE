@@ -17,6 +17,7 @@ from oscar_mcp.analysis.engines.programmatic_engine import (
     ProgrammaticAnalysisEngine,
     ProgrammaticAnalysisResult,
 )
+from oscar_mcp.analysis.reconciliation import RespiratoryEvent
 from oscar_mcp.database import models
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,39 @@ class AnalysisService:
         self.db_session = db_session
         self.waveform_loader = WaveformLoader(db_session)
         self.engine = ProgrammaticAnalysisEngine()
+
+    def _load_machine_events(self, session_id: int) -> List[RespiratoryEvent]:
+        """
+        Load machine-flagged events from database.
+
+        Args:
+            session_id: Database session ID
+
+        Returns:
+            List of respiratory events flagged by the CPAP device
+        """
+        events = (
+            self.db_session.query(models.Event)
+            .filter_by(session_id=session_id)
+            .order_by(models.Event.start_time)
+            .all()
+        )
+
+        respiratory_events = []
+        for event in events:
+            start_timestamp = event.start_time.timestamp()
+
+            respiratory_events.append(
+                RespiratoryEvent(
+                    event_type=event.event_type,
+                    start_time=start_timestamp,
+                    duration=event.duration_seconds or 10.0,
+                    source="machine",
+                    confidence=1.0,
+                )
+            )
+
+        return respiratory_events
 
     def analyze_session(
         self, session_id: int, store_results: bool = True
@@ -89,6 +123,9 @@ class AnalysisService:
             f"({len(timestamps) / sample_rate / 3600:.1f} hours)"
         )
 
+        machine_events = self._load_machine_events(session_id)
+        logger.info(f"Loaded {len(machine_events)} machine-flagged events")
+
         spo2_values = None
         try:
             _, spo2_values, _ = self.waveform_loader.load_waveform(
@@ -121,7 +158,9 @@ class AnalysisService:
         )
 
         if store_results:
-            self._store_analysis_result(session_id, result, processing_time_ms)
+            self._store_analysis_result(session_id, result, processing_time_ms, machine_events)
+
+        result.machine_events = machine_events
 
         return result
 
@@ -180,7 +219,11 @@ class AnalysisService:
         }
 
     def _store_analysis_result(
-        self, session_id: int, result: ProgrammaticAnalysisResult, processing_time_ms: int
+        self,
+        session_id: int,
+        result: ProgrammaticAnalysisResult,
+        processing_time_ms: int,
+        machine_events: List[RespiratoryEvent],
     ) -> None:
         """
         Store analysis result in database.
@@ -189,9 +232,20 @@ class AnalysisService:
             session_id: Database session ID
             result: Analysis result from engine
             processing_time_ms: Processing time in milliseconds
+            machine_events: Machine-flagged events from device
         """
         timestamp_start = datetime.fromtimestamp(result.timestamp_start)
         timestamp_end = datetime.fromtimestamp(result.timestamp_end)
+
+        machine_events_json = [
+            {
+                "event_type": event.event_type,
+                "start_time": event.start_time,
+                "duration": event.duration,
+                "source": event.source,
+            }
+            for event in machine_events
+        ]
 
         programmatic_json = {
             "flow_analysis": result.flow_analysis,
@@ -202,6 +256,7 @@ class AnalysisService:
             "total_breaths": result.total_breaths,
             "confidence_summary": result.confidence_summary,
             "clinical_summary": result.clinical_summary,
+            "machine_events": machine_events_json,
         }
 
         analysis = models.AnalysisResult(

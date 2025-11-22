@@ -16,7 +16,15 @@ from oscar_mcp.database import models
 from oscar_mcp.analysis.service import AnalysisService
 from oscar_mcp.parsers.registry import parser_registry
 from oscar_mcp.parsers.register_all import register_all_parsers
-from oscar_mcp.constants import DEFAULT_LIST_SESSIONS_LIMIT
+from oscar_mcp.constants import (
+    DEFAULT_LIST_SESSIONS_LIMIT,
+    EVENT_TYPE_OBSTRUCTIVE_APNEA,
+    EVENT_TYPE_CENTRAL_APNEA,
+    EVENT_TYPE_CLEAR_AIRWAY,
+    EVENT_TYPE_MIXED_APNEA,
+    EVENT_TYPE_HYPOPNEA,
+    EVENT_TYPE_RERA,
+)
 from sqlalchemy import text, bindparam
 
 # Setup logging
@@ -858,21 +866,64 @@ def analyze_session(
             click.echo(f"\nSession Duration: {result.duration_hours:.1f} hours")
             click.echo(f"Total Breaths: {result.total_breaths:,}")
 
-            click.echo("\n📈 RESPIRATORY INDICES")
-            click.echo(f"  AHI (Apnea-Hypopnea Index): {event_timeline['ahi']:.1f} events/hour")
-            click.echo(
-                f"  RDI (Respiratory Disturbance Index): {event_timeline['rdi']:.1f} events/hour"
-            )
-            click.echo(f"  Flow Limitation Index: {flow_analysis['fl_index']:.2f}")
+            machine_events = getattr(result, "machine_events", [])
 
-            click.echo(f"\n🫁 RESPIRATORY EVENTS (Total: {event_timeline['total_events']})")
-            click.echo(f"  Apneas: {len(event_timeline['apneas'])}")
+            if machine_events:
+                machine_event_counts = {}
+                for event in machine_events:
+                    machine_event_counts[event.event_type] = (
+                        machine_event_counts.get(event.event_type, 0) + 1
+                    )
+
+                total_machine = len(machine_events)
+                oa_count = machine_event_counts.get(EVENT_TYPE_OBSTRUCTIVE_APNEA, 0)
+                ca_count = machine_event_counts.get(EVENT_TYPE_CENTRAL_APNEA, 0)
+                caa_count = machine_event_counts.get(EVENT_TYPE_CLEAR_AIRWAY, 0)
+                ma_count = machine_event_counts.get(EVENT_TYPE_MIXED_APNEA, 0)
+                h_count = machine_event_counts.get(EVENT_TYPE_HYPOPNEA, 0)
+                re_count = machine_event_counts.get(EVENT_TYPE_RERA, 0)
+
+                machine_ahi_count = oa_count + ca_count + caa_count + ma_count + h_count
+                machine_rdi_count = machine_ahi_count + re_count
+                machine_ahi = machine_ahi_count / result.duration_hours
+                machine_rdi = machine_rdi_count / result.duration_hours
+
+                click.echo("\n📊 MACHINE-DETECTED EVENTS (from CPAP device)")
+                click.echo(f"  AHI: {machine_ahi:.1f} events/hour")
+                click.echo(f"  RDI: {machine_rdi:.1f} events/hour")
+                click.echo(f"  Total Events: {total_machine}")
+                if oa_count > 0:
+                    click.echo(f"    - Obstructive Apneas (OA): {oa_count}")
+                if caa_count > 0 or ca_count > 0:
+                    clear_airway_total = caa_count + ca_count
+                    click.echo(f"    - Clear Airway / Central Apnea (CA): {clear_airway_total}")
+                if ma_count > 0:
+                    click.echo(f"    - Mixed Apneas (MA): {ma_count}")
+                if h_count > 0:
+                    click.echo(f"    - Hypopneas (H): {h_count}")
+                if re_count > 0:
+                    click.echo(f"    - RERAs (RE): {re_count}")
+
+            click.echo("\n🔬 PROGRAMMATIC ANALYSIS (from flow waveform)")
+            click.echo(f"  AHI: {event_timeline['ahi']:.1f} events/hour")
+            click.echo(f"  RDI: {event_timeline['rdi']:.1f} events/hour")
+            click.echo(f"  Flow Limitation Index: {flow_analysis['fl_index']:.2f}")
+            click.echo(f"  Total Events: {event_timeline['total_events']}")
+            click.echo(f"    - Apneas: {len(event_timeline['apneas'])}")
             for apnea_type in ["OA", "CA", "MA", "UA"]:
                 count = sum(1 for a in event_timeline["apneas"] if a["event_type"] == apnea_type)
                 if count > 0:
-                    click.echo(f"    - {apnea_type}: {count}")
-            click.echo(f"  Hypopneas: {len(event_timeline['hypopneas'])}")
-            click.echo(f"  RERAs: {len(event_timeline['reras'])}")
+                    click.echo(f"      • {apnea_type}: {count}")
+            click.echo(f"    - Hypopneas: {len(event_timeline['hypopneas'])}")
+            click.echo(f"    - RERAs: {len(event_timeline['reras'])}")
+
+            if machine_events and event_timeline["total_events"] != total_machine:
+                discrepancy = abs(total_machine - event_timeline["total_events"])
+                click.echo(
+                    f"\n⚠️  Discrepancy: Machine detected {total_machine} events, "
+                    f"programmatic found {event_timeline['total_events']} "
+                    f"({discrepancy} difference)"
+                )
 
             click.echo("\n💨 FLOW LIMITATION CLASSES")
             for fl_class, count in sorted(flow_analysis["class_distribution"].items()):

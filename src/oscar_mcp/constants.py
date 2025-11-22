@@ -545,6 +545,45 @@ EVENT_FILE_EXT = ".001"  # Event/waveform data file
 
 
 # ============================================================================
+# Respiratory Event Types
+# ============================================================================
+
+# Event type string constants (from RespiratoryEventType enum values)
+EVENT_TYPE_OBSTRUCTIVE_APNEA = "OA"
+EVENT_TYPE_CENTRAL_APNEA = "CA"
+EVENT_TYPE_CLEAR_AIRWAY = "CAA"
+EVENT_TYPE_MIXED_APNEA = "MA"
+EVENT_TYPE_HYPOPNEA = "H"
+EVENT_TYPE_RERA = "RE"
+EVENT_TYPE_FLOW_LIMITATION = "FL"
+EVENT_TYPE_UNCLASSIFIED_APNEA = "UA"
+
+# Event type display names
+EVENT_TYPE_NAMES = {
+    EVENT_TYPE_OBSTRUCTIVE_APNEA: "Obstructive Apnea",
+    EVENT_TYPE_CENTRAL_APNEA: "Central Apnea",
+    EVENT_TYPE_CLEAR_AIRWAY: "Clear Airway",
+    EVENT_TYPE_MIXED_APNEA: "Mixed Apnea",
+    EVENT_TYPE_HYPOPNEA: "Hypopnea",
+    EVENT_TYPE_RERA: "RERA",
+    EVENT_TYPE_FLOW_LIMITATION: "Flow Limitation",
+    EVENT_TYPE_UNCLASSIFIED_APNEA: "Unclassified Apnea",
+}
+
+# Event types that count toward AHI
+AHI_EVENT_TYPES = {
+    EVENT_TYPE_OBSTRUCTIVE_APNEA,
+    EVENT_TYPE_CENTRAL_APNEA,
+    EVENT_TYPE_CLEAR_AIRWAY,
+    EVENT_TYPE_MIXED_APNEA,
+    EVENT_TYPE_HYPOPNEA,
+    EVENT_TYPE_UNCLASSIFIED_APNEA,
+}
+
+# Event types that count toward RDI (AHI + RERA)
+RDI_EVENT_TYPES = AHI_EVENT_TYPES | {EVENT_TYPE_RERA}
+
+# ============================================================================
 # Default Settings
 # ============================================================================
 
