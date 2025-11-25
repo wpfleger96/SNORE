@@ -14,7 +14,7 @@ from oscar_mcp.database.models import Session as CPAPSession
 
 
 # Path to fixtures directory
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "real_sessions"
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "recorded_sessions"
 
 
 def get_available_fixtures() -> List[str]:

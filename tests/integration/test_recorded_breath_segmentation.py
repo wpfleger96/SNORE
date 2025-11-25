@@ -1,7 +1,8 @@
 """
-Integration tests with real CPAP fixture data.
+Integration tests for breath segmentation using recorded PAP session data.
 
-Validates that processing real sessions produces reasonable results.
+Uses actual device recordings to validate breath segmentation produces
+physiologically reasonable results.
 
 Note on Expected Warnings:
     During test execution, you may see harmless warnings from pyedflib's C library:
@@ -21,10 +22,10 @@ from oscar_mcp.database.models import Session
 
 
 @pytest.mark.integration
-@pytest.mark.real_data
+@pytest.mark.recorded
 @pytest.mark.requires_fixtures
-class TestRealDataProcessing:
-    """Process each fixture and validate basic correctness."""
+class TestRecordedSessionProcessing:
+    """Process recorded sessions and validate basic correctness."""
 
     def test_baseline_fixture_breath_count(self, db_session_with_baseline_fixture):
         """Baseline fixture should produce reasonable breath count."""
@@ -78,10 +79,10 @@ class TestRealDataProcessing:
 
 
 @pytest.mark.integration
-@pytest.mark.real_data
+@pytest.mark.recorded
 @pytest.mark.requires_fixtures
 class TestMetricsRealism:
-    """Validate calculated metrics are physiologically realistic across fixtures."""
+    """Validate calculated metrics are physiologically realistic across recorded sessions."""
 
     def test_mean_respiratory_rate_in_sleep_range(self, db_session_with_baseline_fixture):
         """Mean RR should be in typical sleep range (8-25 breaths/min)."""
@@ -153,9 +154,9 @@ class TestMetricsRealism:
 
 
 @pytest.mark.integration
-@pytest.mark.real_data
+@pytest.mark.recorded
 class TestFeatureVariability:
-    """Verify features detect variation in real breathing patterns."""
+    """Verify features detect variation in recorded breathing patterns."""
 
     def test_flatness_shows_variation(self, db_session_with_baseline_fixture):
         """Flatness index should vary across breaths (not all identical)."""

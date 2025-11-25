@@ -25,6 +25,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration_features: Feature extraction integration tests")
     config.addinivalue_line("markers", "real_data: Tests that process actual CPAP session data")
     config.addinivalue_line(
+        "markers", "recorded: Tests using recorded PAP session data from device"
+    )
+    config.addinivalue_line(
         "markers", "requires_fixtures: Tests that require real session fixtures"
     )
     config.addinivalue_line("markers", "slow: Tests that take significant time (>5 seconds)")
@@ -39,7 +42,7 @@ def fixtures_dir():
 @pytest.fixture
 def resmed_fixture_path(fixtures_dir):
     """Return path to ResMed test data."""
-    return fixtures_dir / "resmed_sample"
+    return fixtures_dir / "device_data" / "resmed"
 
 
 @pytest.fixture
@@ -199,11 +202,11 @@ def test_session_factory(db_session):
 
 @pytest.fixture
 def db_session_with_baseline_fixture(db_session, fixtures_dir):
-    """Database session with baseline fixture imported (July 2025 continuous session)."""
+    """Database session with baseline fixture imported (August 2025 session)."""
     from tests.helpers.fixtures_loader import import_to_test_db
 
     try:
-        import_to_test_db("2025_july_continuous", db_session)
+        import_to_test_db("20250808", db_session)
         yield db_session
     except (ValueError, FileNotFoundError) as e:
         pytest.skip(f"Baseline fixture not available: {e}")
@@ -211,11 +214,11 @@ def db_session_with_baseline_fixture(db_session, fixtures_dir):
 
 @pytest.fixture
 def db_session_with_early_therapy_fixture(db_session, fixtures_dir):
-    """Database session with early therapy fixture imported."""
+    """Database session with early therapy fixture imported (January 2025 session)."""
     from tests.helpers.fixtures_loader import import_to_test_db
 
     try:
-        import_to_test_db("2025_early_therapy", db_session)
+        import_to_test_db("20250110", db_session)
         yield db_session
     except (ValueError, FileNotFoundError) as e:
         pytest.skip(f"Early therapy fixture not available: {e}")
@@ -223,35 +226,23 @@ def db_session_with_early_therapy_fixture(db_session, fixtures_dir):
 
 @pytest.fixture
 def db_session_with_multisegment_fixture(db_session, fixtures_dir):
-    """Database session with multi-segment fixture imported (September 2025 complex session with 4 therapy segments)."""
+    """Database session with multi-segment fixture imported (September 2025 session with 4 therapy segments)."""
     from tests.helpers.fixtures_loader import import_to_test_db
 
     try:
-        import_to_test_db("2025_september_complex", db_session)
+        import_to_test_db("20250910", db_session)
         yield db_session
     except (ValueError, FileNotFoundError) as e:
         pytest.skip(f"Multi-segment fixture not available: {e}")
 
 
 @pytest.fixture
-def db_session_with_october_recent_fixture(db_session, fixtures_dir):
-    """Database session with October 2025 recent fixture imported (most recent therapy data)."""
+def db_session_with_session_269_fixture(db_session, fixtures_dir):
+    """Database session with session 269 (October 2025) - event detection test session."""
     from tests.helpers.fixtures_loader import import_to_test_db
 
     try:
-        import_to_test_db("2025_october_recent", db_session)
+        import_to_test_db("20251025", db_session)
         yield db_session
     except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"October recent fixture not available: {e}")
-
-
-@pytest.fixture
-def db_session_with_august_extended_fixture(db_session, fixtures_dir):
-    """Database session with August 2025 extended fixture imported (longest duration session for capacity testing)."""
-    from tests.helpers.fixtures_loader import import_to_test_db
-
-    try:
-        import_to_test_db("2025_august_extended", db_session)
-        yield db_session
-    except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"August extended fixture not available: {e}")
+        pytest.skip(f"Session 269 fixture not available: {e}")
