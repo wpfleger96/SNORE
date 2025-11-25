@@ -46,9 +46,10 @@ class TestEDFSignalParsing:
 
             # Verify signal properties
             # ResMed may use L/s or L/min - both are valid
-            assert info.physical_dimension in ["L/s", "L/min"], (
-                f"Unexpected unit: {info.physical_dimension}"
-            )
+            assert info.physical_dimension in [
+                "L/s",
+                "L/min",
+            ], f"Unexpected unit: {info.physical_dimension}"
             assert len(data) > 0, "No flow data read"
 
             # Convert to L/min if needed for range checking
@@ -112,9 +113,10 @@ class TestEDFSignalParsing:
             # Read first 100 samples for testing
             leak_data, leak_info = edf.read_signal(leak_signal, start_sample=0, num_samples=100)
             # ResMed may use L/s or L/min - both are valid
-            assert leak_info.physical_dimension in ["L/s", "L/min"], (
-                f"Unexpected leak unit: {leak_info.physical_dimension}"
-            )
+            assert leak_info.physical_dimension in [
+                "L/s",
+                "L/min",
+            ], f"Unexpected leak unit: {leak_info.physical_dimension}"
             assert len(leak_data) > 0
 
             # Convert to L/min if needed for range checking

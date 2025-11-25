@@ -439,6 +439,14 @@ class EventDetectionConstants:
     RERA_HIGH_FLATNESS_THRESHOLD = 0.8
     RERA_HIGH_FLATNESS_BONUS = 0.2
 
+    SPECTRAL_MIN_SAMPLES = 50
+    BREATHING_FREQ_MIN = 0.1
+    BREATHING_FREQ_MAX = 0.5
+
+    EVENT_DURATION_RULE_THRESHOLD = 0.9
+    EVENT_TERMINATION_RECOVERY = 0.5
+    EVENT_TERMINATION_MIN_BREATHS = 2
+
 
 class PatternDetectionConstants:
     """Constants for complex pattern detection (pattern_detector.py)."""

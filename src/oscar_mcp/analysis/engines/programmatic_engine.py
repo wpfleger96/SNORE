@@ -171,24 +171,13 @@ class ProgrammaticAnalysisEngine:
 
         tidal_volumes = np.array([b.tidal_volume for b in breaths])
 
-        apneas = self.event_detector.detect_apneas(timestamps, flow_values)
+        apneas = self.event_detector.detect_apneas(breaths, flow_data=(timestamps, flow_values))
 
         hypopneas = self.event_detector.detect_hypopneas(
-            timestamps, flow_values, spo2_signal=spo2_values
+            breaths, flow_data=(timestamps, flow_values), spo2_signal=spo2_values
         )
 
-        flatness_indices = np.array(
-            [
-                breath_features[i][1].flatness_index if i < len(breath_features) else 0.0
-                for i in range(len(breaths))
-            ]
-        )
-
-        breath_timestamps = np.array([b.start_time for b in breaths])
-
-        reras = self.event_detector.detect_reras(
-            breath_timestamps, flow_values[: len(breaths)], flatness_indices
-        )
+        reras = self.event_detector.detect_reras(breaths, flow_data=(timestamps, flow_values))
 
         event_timeline = self.event_detector.create_event_timeline(
             apneas, hypopneas, reras, duration_hours

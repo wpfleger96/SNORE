@@ -147,117 +147,98 @@ class RespiratoryEventDetector:
         self.event_criteria = RESPIRATORY_EVENTS
         logger.info(f"RespiratoryEventDetector initialized (min_duration={min_event_duration}s)")
 
-    def detect_apneas(
-        self,
-        timestamps: np.ndarray,
-        flow_values: np.ndarray,
-        effort_signal: Optional[np.ndarray] = None,
-    ) -> List[ApneaEvent]:
-        """
-        Detect apnea events (≥90% flow reduction for ≥10 seconds).
-
-        Uses AASM-compliant rolling baseline calculation with 2-minute windows.
-
-        Args:
-            timestamps: Time values (seconds)
-            flow_values: Flow data (L/min)
-            effort_signal: Optional respiratory effort signal for OA/CA classification
-
-        Returns:
-            List of detected apnea events
-        """
-        logger.info(f"Detecting apneas with AASM-compliant rolling baseline (threshold={EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100}%)")
-
-        baseline_array = self._calculate_rolling_baseline(timestamps, flow_values)
-        logger.debug(f"Baseline range: {np.min(baseline_array):.1f} - {np.max(baseline_array):.1f} L/min, mean: {np.mean(baseline_array):.1f} L/min")
-
-        apnea_threshold = EDC.APNEA_FLOW_REDUCTION_THRESHOLD
-
-        flow_reduction = self._calculate_flow_reduction_array(flow_values, baseline_array)
-        logger.debug(f"Flow reduction range: {np.min(flow_reduction)*100:.1f}% - {np.max(flow_reduction)*100:.1f}%, mean: {np.mean(flow_reduction)*100:.1f}%")
-
-        is_reduced = flow_reduction >= apnea_threshold
-        logger.debug(f"Samples meeting apnea threshold: {np.sum(is_reduced)} / {len(is_reduced)} ({np.sum(is_reduced)/len(is_reduced)*100:.2f}%)")
-
-        events = self._find_continuous_regions(timestamps, is_reduced, self.min_event_duration)
-        logger.debug(f"Found {len(events)} potential apnea events (before merging)")
-
-        apneas = []
-        for start_time, end_time, duration, indices in events:
-            event_flow = flow_values[indices]
-            event_baseline = baseline_array[indices]
-            avg_baseline = float(np.mean(event_baseline))
-            avg_reduction = np.mean(flow_reduction[indices])
-
-            event_type = self._classify_apnea_type(
-                effort_signal=effort_signal[indices] if effort_signal is not None else None,
-                flow_signal=event_flow,
-            )
-
-            confidence = self._calculate_apnea_confidence(avg_reduction, duration, avg_baseline)
-
-            logger.debug(f"  Apnea at {start_time:.1f}s: type={event_type}, duration={duration:.1f}s, reduction={avg_reduction*100:.1f}%, baseline={avg_baseline:.1f} L/min, confidence={confidence:.2f}")
-
-            apneas.append(
-                ApneaEvent(
-                    start_time=start_time,
-                    end_time=end_time,
-                    duration=duration,
-                    event_type=event_type,
-                    flow_reduction=avg_reduction,
-                    confidence=confidence,
-                    baseline_flow=avg_baseline,
-                )
-            )
-
-        apneas = self._merge_adjacent_events(apneas)
-
-        logger.info(f"Detected {len(apneas)} apneas (after merging): {sum(1 for a in apneas if a.event_type == 'OA')} OA, {sum(1 for a in apneas if a.event_type == 'CA')} CA, {sum(1 for a in apneas if a.event_type == 'MA')} MA, {sum(1 for a in apneas if a.event_type == 'UA')} UA")
-
-        return apneas
-
     def detect_hypopneas(
         self,
-        timestamps: np.ndarray,
-        flow_values: np.ndarray,
+        breaths: List,
+        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
         spo2_signal: Optional[np.ndarray] = None,
     ) -> List[HypopneaEvent]:
         """
-        Detect hypopnea events (30-90% flow reduction for ≥10 seconds).
+        Detect hypopnea events using breath-by-breath analysis.
 
-        Uses AASM-compliant rolling baseline calculation with 2-minute windows.
+        Hypopnea: 30-89% flow reduction for ≥10 seconds.
+        Optionally requires SpO2 desaturation (≥3%) or arousal.
 
         Args:
-            timestamps: Time values (seconds)
-            flow_values: Flow data (L/min)
+            breaths: List of BreathMetrics objects
+            flow_data: Optional tuple of (timestamps, flow_values) for detailed analysis
             spo2_signal: Optional SpO2 data for desaturation detection
 
         Returns:
             List of detected hypopnea events
         """
-        baseline_array = self._calculate_rolling_baseline(timestamps, flow_values)
+        if not breaths:
+            return []
+
+        logger.info("Detecting hypopneas using breath-by-breath analysis")
+
+        baselines = np.zeros(len(breaths))
+        reductions = np.zeros(len(breaths))
+
+        for i, breath in enumerate(breaths):
+            baseline = self._calculate_breath_baseline(breaths, i)
+            baselines[i] = baseline
+
+            if breath.duration > 8.0:
+                reductions[i] = 1.0
+            elif baseline > 0:
+                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                baseline_per_second = baseline / 4.0
+                reduction = 1.0 - (tv_per_second / baseline_per_second)
+                reductions[i] = max(0.0, min(1.0, reduction))
+
+        logger.debug(f"Baseline range: {np.min(baselines):.1f} - {np.max(baselines):.1f} mL")
+        logger.debug(
+            f"Reduction range: {np.min(reductions) * 100:.1f}% - {np.max(reductions) * 100:.1f}%"
+        )
 
         hypopnea_min = EDC.HYPOPNEA_MIN_REDUCTION
-        hypopnea_max = EDC.HYPOPNEA_MAX_REDUCTION
+        breaths_in_range = np.sum(
+            (reductions >= hypopnea_min) & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
+        )
+        logger.debug(f"Breaths in hypopnea range (30-89%): {breaths_in_range}")
 
-        flow_reduction = self._calculate_flow_reduction_array(flow_values, baseline_array)
-
-        is_hypopnea = (flow_reduction >= hypopnea_min) & (flow_reduction < hypopnea_max)
-
-        events = self._find_continuous_regions(timestamps, is_hypopnea, self.min_event_duration)
+        regions = self._find_consecutive_reduced_breaths(
+            breaths,
+            reductions,
+            hypopnea_min,
+            self.min_event_duration,
+        )
 
         hypopneas = []
-        for start_time, end_time, duration, indices in events:
-            event_baseline = baseline_array[indices]
-            avg_baseline = float(np.mean(event_baseline))
-            avg_reduction = np.mean(flow_reduction[indices])
+        for start_idx, end_idx, duration in regions:
+            event_reductions = reductions[start_idx:end_idx]
+            avg_reduction = float(np.mean(event_reductions))
+
+            if avg_reduction >= EDC.APNEA_FLOW_REDUCTION_THRESHOLD:
+                logger.debug(
+                    f"  Skipping region {start_idx}-{end_idx}: avg reduction {avg_reduction * 100:.1f}% >= 90% (apnea, not hypopnea)"
+                )
+                continue
+
+            if not self._validate_90_percent_rule(reductions, start_idx, end_idx, hypopnea_min):
+                logger.debug(f"  Rejecting region {start_idx}-{end_idx}: fails 90% duration rule")
+                continue
+
+            event_baselines = baselines[start_idx:end_idx]
+            avg_baseline = float(np.mean(event_baselines))
+
+            start_time = breaths[start_idx].start_time
+            end_time = breaths[end_idx - 1].end_time
 
             has_desaturation = None
-            if spo2_signal is not None:
-                has_desaturation = self._check_desaturation(spo2_signal[indices])
+            if spo2_signal is not None and flow_data is not None:
+                timestamps, _ = flow_data
+                mask = (timestamps >= start_time) & (timestamps <= end_time)
+                if np.any(mask):
+                    has_desaturation = self._check_desaturation(spo2_signal[mask])
 
             confidence = self._calculate_hypopnea_confidence(
                 avg_reduction, duration, has_desaturation
+            )
+
+            logger.debug(
+                f"  Hypopnea at {start_time:.1f}s: duration={duration:.1f}s, reduction={avg_reduction * 100:.1f}%, baseline={avg_baseline:.1f} mL, confidence={confidence:.2f}"
             )
 
             hypopneas.append(
@@ -274,43 +255,97 @@ class RespiratoryEventDetector:
 
         hypopneas = self._merge_adjacent_events(hypopneas)
 
+        logger.info(f"Detected {len(hypopneas)} hypopneas (after merging)")
+
         return hypopneas
 
     def detect_reras(
         self,
-        timestamps: np.ndarray,
-        flow_values: np.ndarray,
-        flatness_indices: np.ndarray,
+        breaths: List,
+        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
     ) -> List[RERAEvent]:
         """
-        Detect RERA events (flow limitation without apnea/hypopnea criteria).
+        Detect RERA events using breath-by-breath analysis.
 
-        Uses AASM-compliant rolling baseline calculation with 2-minute windows.
+        RERA: Flow limitation (flatness >0.7) with <30% amplitude reduction.
+        Represents increased respiratory effort that doesn't meet apnea/hypopnea criteria.
 
         Args:
-            timestamps: Time values (seconds)
-            flow_values: Flow data (L/min)
-            flatness_indices: Flatness index per breath or time window
+            breaths: List of BreathMetrics objects
+            flow_data: Optional tuple of (timestamps, flow_values) for flatness calculation
 
         Returns:
             List of detected RERA events
         """
-        baseline_array = self._calculate_rolling_baseline(timestamps, flow_values)
+        if not breaths or flow_data is None:
+            logger.warning("RERA detection skipped - requires breaths and flow_data")
+            return []
 
-        is_flow_limited = flatness_indices > EDC.RERA_FLATNESS_THRESHOLD
+        logger.info("Detecting RERAs using breath-by-breath analysis")
+        timestamps, flow_values = flow_data
 
-        flow_reduction = self._calculate_flow_reduction_array(flow_values, baseline_array)
-        is_not_apnea_hypopnea = flow_reduction < EDC.RERA_MAX_FLOW_REDUCTION
+        baselines = np.zeros(len(breaths))
+        reductions = np.zeros(len(breaths))
+        flatness_indices = np.zeros(len(breaths))
 
-        is_rera = is_flow_limited & is_not_apnea_hypopnea
+        for i, breath in enumerate(breaths):
+            baseline = self._calculate_breath_baseline(breaths, i)
+            baselines[i] = baseline
 
-        events = self._find_continuous_regions(timestamps, is_rera, self.min_event_duration)
+            if breath.duration > 8.0:
+                reductions[i] = 1.0
+            elif baseline > 0:
+                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                baseline_per_second = baseline / 4.0
+                reduction = 1.0 - (tv_per_second / baseline_per_second)
+                reductions[i] = max(0.0, min(1.0, reduction))
+
+            mask = (timestamps >= breath.start_time) & (timestamps <= breath.middle_time)
+            if np.any(mask):
+                insp_flow = flow_values[mask]
+                flatness_indices[i] = self._calculate_flatness_index(insp_flow)
+
+        logger.debug(
+            f"Flatness range: {np.min(flatness_indices):.2f} - {np.max(flatness_indices):.2f}"
+        )
+        breaths_flow_limited = np.sum(
+            (flatness_indices > EDC.RERA_FLATNESS_THRESHOLD)
+            & (reductions < EDC.RERA_MAX_FLOW_REDUCTION)
+        )
+        logger.debug(
+            f"Breaths with RERA criteria (flatness >0.7, reduction <30%): {breaths_flow_limited}"
+        )
+
+        rera_min_flatness = EDC.RERA_FLATNESS_THRESHOLD
+        regions = self._find_consecutive_reduced_breaths(
+            breaths,
+            flatness_indices,
+            rera_min_flatness,
+            self.min_event_duration,
+        )
 
         reras = []
-        for start_time, end_time, duration, indices in events:
-            avg_flatness = np.mean(flatness_indices[indices])
+        for start_idx, end_idx, duration in regions:
+            event_reductions = reductions[start_idx:end_idx]
+            avg_reduction = float(np.mean(event_reductions))
+
+            if avg_reduction >= EDC.RERA_MAX_FLOW_REDUCTION:
+                logger.debug(
+                    f"  Skipping region {start_idx}-{end_idx}: avg reduction {avg_reduction * 100:.1f}% >= 30% (hypopnea/apnea, not RERA)"
+                )
+                continue
+
+            event_flatness = flatness_indices[start_idx:end_idx]
+            avg_flatness = float(np.mean(event_flatness))
+
+            start_time = breaths[start_idx].start_time
+            end_time = breaths[end_idx - 1].end_time
 
             confidence = self._calculate_rera_confidence(avg_flatness, duration)
+
+            logger.debug(
+                f"  RERA at {start_time:.1f}s: duration={duration:.1f}s, flatness={avg_flatness:.2f}, reduction={avg_reduction * 100:.1f}%, confidence={confidence:.2f}"
+            )
 
             reras.append(
                 RERAEvent(
@@ -324,6 +359,8 @@ class RespiratoryEventDetector:
             )
 
         reras = self._merge_adjacent_events(reras)
+
+        logger.info(f"Detected {len(reras)} RERAs (after merging)")
 
         return reras
 
@@ -361,130 +398,290 @@ class RespiratoryEventDetector:
             rdi=rdi,
         )
 
-    def _find_inspiratory_peaks(self, flow_values: np.ndarray) -> np.ndarray:
+    def detect_apneas(
+        self,
+        breaths: List,
+        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    ) -> List[ApneaEvent]:
         """
-        Find peak inspiratory flows (local maxima in positive flow).
+        Detect apnea events using AASM-compliant breath-by-breath amplitude analysis.
 
-        Returns array of peak flow values representing maximum inspiratory
-        flow during each breath cycle.
+        Instead of comparing instantaneous flow to baseline, this method compares each
+        breath's peak inspiratory flow to a rolling baseline of recent breath amplitudes.
+        This eliminates false positives from expiratory flow and dramatically improves
+        performance (O(n) over breaths instead of O(n²) over samples).
+
+        Args:
+            breaths: List of BreathMetrics objects
+            flow_data: Optional tuple of (timestamps, flow_values) for detailed classification
+
+        Returns:
+            List of detected apnea events
         """
-        from scipy import signal
+        if not breaths:
+            logger.warning("No breaths provided for apnea detection")
+            return []
 
-        positive_flow = np.where(flow_values > 0, flow_values, 0)
-        if len(positive_flow) < 10:
-            return positive_flow[positive_flow > 0]
-
-        peaks, properties = signal.find_peaks(
-            positive_flow, distance=10, prominence=2.0, height=5.0
+        logger.info(
+            f"Detecting apneas using breath-by-breath analysis (threshold={EDC.APNEA_FLOW_REDUCTION_THRESHOLD * 100}%)"
         )
 
-        if len(peaks) == 0:
-            return positive_flow[positive_flow > 5.0]
+        baselines = np.zeros(len(breaths))
+        reductions = np.zeros(len(breaths))
 
-        return flow_values[peaks]
+        for i, breath in enumerate(breaths):
+            baseline = self._calculate_breath_baseline(breaths, i)
+            baselines[i] = baseline
 
-    def _calculate_rolling_baseline(
-        self, timestamps: np.ndarray, flow_values: np.ndarray
-    ) -> np.ndarray:
-        """
-        Calculate rolling baseline flow using AASM-compliant method.
-
-        Uses 2-minute rolling window with 90th percentile of peak inspiratory
-        flows. This matches commercial CPAP device algorithms (ResMed AirSense).
-
-        Args:
-            timestamps: Time values in seconds
-            flow_values: Flow data in L/min
-
-        Returns:
-            Array of baseline values (one per sample) calculated from rolling window
-        """
-        window_seconds = EDC.BASELINE_WINDOW_SECONDS
-        baseline = np.zeros_like(flow_values)
-
-        peaks = self._find_inspiratory_peaks(flow_values)
-        if len(peaks) < 10:
-            fallback = float(np.percentile(flow_values[flow_values > 0], 90)) if np.any(flow_values > 0) else 30.0
-            return np.full_like(flow_values, max(fallback, 10.0))
-
-        for i in range(len(timestamps)):
-            window_start = timestamps[i] - window_seconds
-            window_mask = (timestamps >= window_start) & (timestamps < timestamps[i])
-
-            window_flow = flow_values[window_mask]
-            if len(window_flow) < 50:
-                if i > 0:
-                    baseline[i] = baseline[i - 1]
-                else:
-                    baseline[i] = 30.0
-                continue
-
-            window_peaks = self._find_inspiratory_peaks(window_flow)
-            if len(window_peaks) >= 10:
-                baseline[i] = float(np.percentile(window_peaks, 90))
-            elif i > 0:
-                baseline[i] = baseline[i - 1]
+            if breath.duration > 8.0:
+                reductions[i] = 1.0
+                logger.debug(
+                    f"  Breath {i} marked as apnea (long duration: {breath.duration:.1f}s)"
+                )
+            elif baseline > 0:
+                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                baseline_per_second = baseline / 4.0
+                reduction = 1.0 - (tv_per_second / baseline_per_second)
+                reductions[i] = max(0.0, min(1.0, reduction))
             else:
-                baseline[i] = 30.0
+                reductions[i] = 0.0
 
-            if baseline[i] < 10.0:
-                baseline[i] = 10.0
+        logger.debug(
+            f"Baseline range: {np.min(baselines):.1f} - {np.max(baselines):.1f} mL, mean: {np.mean(baselines):.1f} mL"
+        )
+        logger.debug(
+            f"Reduction range: {np.min(reductions) * 100:.1f}% - {np.max(reductions) * 100:.1f}%, mean: {np.mean(reductions) * 100:.1f}%"
+        )
+        logger.debug(f"Breaths marked as apnea (>8s duration): {np.sum(reductions >= 1.0)}")
 
-        return baseline
+        regions = self._find_consecutive_reduced_breaths(
+            breaths,
+            reductions,
+            EDC.APNEA_FLOW_REDUCTION_THRESHOLD,
+            self.min_event_duration,
+        )
 
-    def _calculate_baseline_flow(self, flow_values: np.ndarray) -> float:
+        logger.debug(f"Found {len(regions)} potential apnea events (before merging)")
+
+        apneas = []
+        for start_idx, end_idx, duration in regions:
+            event_breaths = breaths[start_idx:end_idx]
+            event_reductions = reductions[start_idx:end_idx]
+            event_baselines = baselines[start_idx:end_idx]
+
+            start_time = event_breaths[0].start_time
+            end_time = event_breaths[-1].end_time
+            avg_reduction = float(np.mean(event_reductions))
+            avg_baseline = float(np.mean(event_baselines))
+
+            flow_signal = None
+            if flow_data is not None:
+                timestamps, flow_values = flow_data
+                mask = (timestamps >= start_time) & (timestamps <= end_time)
+                flow_signal = flow_values[mask]
+
+            event_type = self._classify_apnea_type(
+                effort_signal=None,
+                flow_signal=flow_signal,
+            )
+
+            confidence = self._calculate_apnea_confidence(avg_reduction, duration, avg_baseline)
+
+            logger.debug(
+                f"  Apnea at {start_time:.1f}s: type={event_type}, duration={duration:.1f}s, reduction={avg_reduction * 100:.1f}%, baseline={avg_baseline:.1f} L/min, confidence={confidence:.2f}"
+            )
+
+            apneas.append(
+                ApneaEvent(
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration=duration,
+                    event_type=event_type,
+                    flow_reduction=avg_reduction,
+                    confidence=confidence,
+                    baseline_flow=avg_baseline,
+                )
+            )
+
+        apneas = self._merge_adjacent_events(apneas)
+
+        logger.info(
+            f"Detected {len(apneas)} apneas (after merging): {sum(1 for a in apneas if a.event_type == 'OA')} OA, {sum(1 for a in apneas if a.event_type == 'CA')} CA, {sum(1 for a in apneas if a.event_type == 'MA')} MA, {sum(1 for a in apneas if a.event_type == 'UA')} UA"
+        )
+
+        return apneas
+
+    def _calculate_breath_baseline(
+        self,
+        breaths: List,
+        current_idx: int,
+        window_breaths: int = 30,
+    ) -> float:
         """
-        Calculate single baseline flow value (legacy method for backward compatibility).
+        Calculate baseline from preceding breaths using 90th percentile.
 
-        For new code, use _calculate_rolling_baseline() instead for AASM compliance.
-        This method uses 90th percentile of peak inspiratory flows.
-        """
-        peaks = self._find_inspiratory_peaks(flow_values)
-        if len(peaks) == 0:
-            return 30.0
-
-        baseline = float(np.percentile(peaks, 90))
-
-        if baseline < 10.0:
-            baseline = 10.0
-
-        return baseline
-
-    def _calculate_flow_reduction(self, flow_values: np.ndarray, baseline: float) -> np.ndarray:
-        """Calculate flow reduction percentage relative to single baseline value."""
-        if baseline <= 0:
-            return np.zeros_like(flow_values)
-
-        absolute_flow = np.abs(flow_values)
-        reduction = 1.0 - (absolute_flow / baseline)
-        reduction_clipped: np.ndarray = np.clip(reduction, 0.0, 1.0)
-
-        return reduction_clipped
-
-    def _calculate_flow_reduction_array(
-        self, flow_values: np.ndarray, baseline_array: np.ndarray
-    ) -> np.ndarray:
-        """
-        Calculate flow reduction percentage relative to array of baseline values.
-
-        This method supports rolling baseline where each sample has its own
-        baseline value calculated from the preceding 2-minute window.
+        Uses a 2-minute window of breaths (~30 breaths at 15 breaths/min) to
+        calculate the 90th percentile of tidal volumes. Tidal volume is a better
+        indicator of actual ventilation than peak inspiratory flow, especially
+        for detecting apneas where effort may be present but airflow is minimal.
 
         Args:
-            flow_values: Flow data in L/min
-            baseline_array: Array of baseline values (one per sample)
+            breaths: List of BreathMetrics objects
+            current_idx: Index of current breath
+            window_breaths: Number of preceding breaths to include in window
 
         Returns:
-            Array of flow reduction percentages (0.0 to 1.0)
+            Baseline tidal volume (mL), minimum 100 mL
         """
-        absolute_flow = np.abs(flow_values)
+        if current_idx == 0:
+            return 300.0
 
-        baseline_safe = np.where(baseline_array > 0, baseline_array, 1.0)
+        start_idx = max(0, current_idx - window_breaths)
+        window = breaths[start_idx:current_idx]
 
-        reduction = 1.0 - (absolute_flow / baseline_safe)
-        reduction_clipped: np.ndarray = np.clip(reduction, 0.0, 1.0)
+        if len(window) < 5:
+            return 300.0
 
-        return reduction_clipped
+        tidal_volumes = [
+            b.tidal_volume for b in window if hasattr(b, "tidal_volume") and b.tidal_volume > 0
+        ]
+        if not tidal_volumes:
+            return 300.0
+
+        baseline = float(np.percentile(tidal_volumes, 90))
+        return max(baseline, 100.0)
+
+    def _validate_90_percent_rule(
+        self,
+        reductions: np.ndarray,
+        start_idx: int,
+        end_idx: int,
+        threshold: float,
+    ) -> bool:
+        """
+        Validate that 90% of breaths in event meet the reduction threshold.
+
+        Per AASM standards, at least 90% of the event duration must meet
+        the amplitude reduction criteria for the event to qualify.
+
+        Args:
+            reductions: Array of reduction values per breath (0.0-1.0)
+            start_idx: Event start index in breaths array
+            end_idx: Event end index in breaths array
+            threshold: Minimum reduction threshold (e.g., 0.9 for apnea)
+
+        Returns:
+            True if >=90% of breaths meet the threshold
+        """
+        event_reductions = reductions[start_idx:end_idx]
+        breaths_meeting = np.sum(event_reductions >= threshold)
+        total_breaths = end_idx - start_idx
+        return (
+            (breaths_meeting / total_breaths) >= EDC.EVENT_DURATION_RULE_THRESHOLD
+            if total_breaths > 0
+            else False
+        )
+
+    def _calculate_flatness_index(self, inspiratory_flow: np.ndarray) -> float:
+        """
+        Calculate flatness index from inspiratory flow waveform.
+
+        Flatness indicates flow limitation - the proportion of inspiration
+        where flow remains at or near peak (≥80% of peak).
+
+        Args:
+            inspiratory_flow: Flow values during inspiratory phase
+
+        Returns:
+            Flatness index (0.0-1.0): proportion of samples above 80% of peak
+        """
+        if len(inspiratory_flow) < 5:
+            return 0.0
+
+        max_flow = np.max(inspiratory_flow)
+        if max_flow <= 0:
+            return 0.0
+
+        threshold = 0.8 * max_flow
+        samples_above = np.sum(inspiratory_flow >= threshold)
+        return samples_above / len(inspiratory_flow)
+
+    def _find_consecutive_reduced_breaths(
+        self,
+        breaths: List,
+        reductions: np.ndarray,
+        threshold: float,
+        min_duration: float,
+    ) -> List[Tuple[int, int, float]]:
+        """
+        Find runs of consecutive breaths meeting reduction threshold with AASM-compliant termination.
+
+        Per AASM/ResMed standards, events terminate when 2+ consecutive breaths
+        fall below the recovery threshold (50% of baseline = 50% reduction).
+
+        Args:
+            breaths: List of BreathMetrics objects
+            reductions: Array of reduction values (0.0-1.0) per breath
+            threshold: Minimum reduction to qualify (e.g., 0.9 for 90%)
+            min_duration: Minimum total duration in seconds
+
+        Returns:
+            List of (start_idx, end_idx, total_duration) tuples
+        """
+        regions = []
+        in_region = False
+        region_start = 0
+        recovery_count = 0
+        recovery_threshold = EDC.EVENT_TERMINATION_RECOVERY
+        min_recovery_breaths = EDC.EVENT_TERMINATION_MIN_BREATHS
+
+        breaths_meeting_threshold = np.sum(reductions >= threshold)
+        logger.debug(
+            f"Finding consecutive reduced breaths: {breaths_meeting_threshold} breaths meet threshold >= {threshold * 100:.1f}%"
+        )
+
+        for i, reduction in enumerate(reductions):
+            if reduction >= threshold and not in_region:
+                in_region = True
+                region_start = i
+                recovery_count = 0
+                logger.debug(f"  Starting region at breath {i} (reduction={reduction * 100:.1f}%)")
+            elif in_region:
+                if reduction < recovery_threshold:
+                    recovery_count += 1
+                    logger.debug(
+                        f"  Recovery breath {recovery_count}/{min_recovery_breaths} at {i} (reduction={reduction * 100:.1f}%)"
+                    )
+                    if recovery_count >= min_recovery_breaths:
+                        end_idx = i - min_recovery_breaths + 1
+                        start_time = breaths[region_start].start_time
+                        end_time = breaths[end_idx - 1].end_time
+                        duration = end_time - start_time
+                        logger.debug(
+                            f"  Ending region at breath {end_idx - 1}: duration={duration:.1f}s (min={min_duration}s)"
+                        )
+                        if duration >= min_duration:
+                            regions.append((region_start, end_idx, duration))
+                            logger.debug(f"    ✓ Region accepted (duration >= {min_duration}s)")
+                        else:
+                            logger.debug(f"    ✗ Region rejected (duration < {min_duration}s)")
+                        in_region = False
+                        recovery_count = 0
+                else:
+                    recovery_count = 0
+
+        if in_region:
+            start_time = breaths[region_start].start_time
+            end_time = breaths[-1].end_time
+            duration = end_time - start_time
+            logger.debug(f"  Final region at end: duration={duration:.1f}s")
+            if duration >= min_duration:
+                regions.append((region_start, len(breaths), duration))
+                logger.debug("    ✓ Final region accepted")
+            else:
+                logger.debug(f"    ✗ Final region rejected (duration < {min_duration}s)")
+
+        return regions
 
     def _find_continuous_regions(
         self,
@@ -555,12 +752,52 @@ class RespiratoryEventDetector:
 
         return "UA"
 
+    def _calculate_spectral_effort(
+        self,
+        flow_signal: np.ndarray,
+        sample_rate: float = 25.0,
+    ) -> float:
+        """
+        Calculate spectral power in breathing frequency range (0.1-0.5 Hz).
+
+        OA: Continued effort creates rhythmic oscillations visible in spectrum
+        CA: No effort results in flat spectrum with no breathing frequency peaks
+
+        Args:
+            flow_signal: Flow values during the event
+            sample_rate: Sampling rate in Hz (default 25 Hz for CPAP devices)
+
+        Returns:
+            Normalized spectral power in breathing frequency range (0.0-1.0)
+        """
+        from scipy import signal
+
+        if len(flow_signal) < EDC.SPECTRAL_MIN_SAMPLES:
+            return 0.0
+
+        detrended = flow_signal - np.mean(flow_signal)
+        freqs, power = signal.periodogram(detrended, fs=sample_rate)
+
+        breathing_mask = (freqs >= EDC.BREATHING_FREQ_MIN) & (freqs <= EDC.BREATHING_FREQ_MAX)
+        breathing_power = np.sum(power[breathing_mask])
+
+        total_power = np.sum(power)
+        if total_power > 0:
+            return float(breathing_power / total_power)
+        return 0.0
+
     def _estimate_effort_from_flow(self, flow_signal: np.ndarray) -> float:
         """
         Estimate respiratory effort from flow signal characteristics.
 
         During obstructive apnea, continued respiratory effort causes flow oscillations
         even though net flow is near zero. Central apnea shows very flat flow.
+
+        Uses AASM-recommended weighting:
+        - Standard deviation (30%): Overall variability
+        - Peak-to-peak range (30%): Amplitude of oscillations
+        - Roughness/variation (20%): High-frequency changes
+        - Spectral power (20%): Rhythmic breathing frequency content
 
         Args:
             flow_signal: Flow values during the event
@@ -578,7 +815,11 @@ class RespiratoryEventDetector:
         variations = np.abs(np.diff(detrended))
         avg_variation = np.mean(variations) if len(variations) > 0 else 0.0
 
-        effort_score = (flow_std * 0.4) + (flow_range * 0.3) + (avg_variation * 0.3)
+        spectral_power = self._calculate_spectral_effort(flow_signal)
+
+        effort_score = (
+            flow_std * 0.3 + flow_range * 0.3 + avg_variation * 0.2 + spectral_power * 0.2
+        )
 
         return float(effort_score)
 
@@ -635,7 +876,13 @@ class RespiratoryEventDetector:
         return min(1.0, confidence)
 
     def _merge_adjacent_events(self, events: List) -> List:
-        """Merge events that are close together in time."""
+        """
+        Merge events that are close together in time AND of the same type.
+
+        Per AASM standards, only events of the same type should be merged.
+        Different event types (e.g., OA vs CA) should remain separate even
+        if temporally adjacent.
+        """
         if len(events) <= 1:
             return events
 
@@ -644,8 +891,11 @@ class RespiratoryEventDetector:
 
         for next_event in events[1:]:
             gap = next_event.start_time - current.end_time
+            same_type = getattr(next_event, "event_type", None) == getattr(
+                current, "event_type", None
+            )
 
-            if gap <= self.merge_gap:
+            if gap <= self.merge_gap and same_type:
                 current = self._merge_two_events(current, next_event)
             else:
                 merged.append(current)
