@@ -29,13 +29,14 @@ from oscar_mcp.database.models import Session
 class TestEndToEndPipeline:
     """Verify complete workflow processes real data successfully."""
 
-    def test_full_pipeline_baseline_session(self, db_session_with_baseline_fixture):
+    def test_full_pipeline_baseline_session(self, recorded_session):
         """Load → segment → extract features on real CPAP data."""
-        session = db_session_with_baseline_fixture.query(Session).first()
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
         assert session is not None
 
         # Load waveform
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow", apply_filter=False
         )
@@ -65,12 +66,13 @@ class TestEndToEndPipeline:
         assert peak is not None
         assert stats is not None
 
-    def test_multi_segment_discontinuity_handling(self, db_session_with_multisegment_fixture):
+    def test_multi_segment_discontinuity_handling(self, recorded_session):
         """Sessions with mask-off periods process correctly."""
-        session = db_session_with_multisegment_fixture.query(Session).first()
+        db = recorded_session("20250910")
+        session = db.query(Session).first()
         assert session is not None
 
-        loader = WaveformLoader(db_session_with_multisegment_fixture)
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -98,10 +100,11 @@ class TestEndToEndPipeline:
 class TestPhysiologicalValidation:
     """Verify real data produces physiologically realistic results."""
 
-    def test_respiratory_rate_realistic_range(self, db_session_with_baseline_fixture):
+    def test_respiratory_rate_realistic_range(self, recorded_session):
         """RR should be in normal adult range (8-25 breaths/min typical)."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -125,10 +128,11 @@ class TestPhysiologicalValidation:
             f"{len(outliers)} RR outliers ({outlier_percent:.2f}%) exceed 0.5% threshold"
         )
 
-    def test_tidal_volume_realistic_range(self, db_session_with_baseline_fixture):
+    def test_tidal_volume_realistic_range(self, recorded_session):
         """TV should be in normal adult range (300-800 mL typical)."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -148,10 +152,11 @@ class TestPhysiologicalValidation:
         in_range = sum(200 <= tv <= 1000 for tv in tv_values)
         assert in_range / len(tv_values) >= 0.95, "Too many TV outliers"
 
-    def test_peak_flows_realistic_range(self, db_session_with_baseline_fixture):
+    def test_peak_flows_realistic_range(self, recorded_session):
         """Peak inspiratory/expiratory flows should be realistic."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -171,10 +176,11 @@ class TestPhysiologicalValidation:
                 f"PEF out of range: {breath.peak_expiratory_flow}"
             )
 
-    def test_ie_ratio_realistic(self, db_session_with_baseline_fixture):
+    def test_ie_ratio_realistic(self, recorded_session):
         """I:E ratio should be in typical range (0.4-0.8 for sleep)."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -196,10 +202,11 @@ class TestPhysiologicalValidation:
 class TestOSCARAlgorithms:
     """Verify OSCAR-aligned algorithms function correctly."""
 
-    def test_amplitude_filter_8_lpm(self, db_session_with_baseline_fixture):
-        """All breaths should have amplitude > 8 L/min (OSCAR filter)."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+    def test_amplitude_filter_8_lpm(self, recorded_session):
+        """All breaths should have amplitude > 2 L/min (improved threshold)."""
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -211,12 +218,13 @@ class TestOSCARAlgorithms:
 
         # All returned breaths must pass amplitude threshold
         for breath in breaths:
-            assert breath.amplitude > 8.0, f"Breath {breath.breath_number} below 8 L/min threshold"
+            assert breath.amplitude > 2.0, f"Breath {breath.breath_number} below 2 L/min threshold"
 
-    def test_rolling_rr_more_stable_than_instantaneous(self, db_session_with_baseline_fixture):
+    def test_rolling_rr_more_stable_than_instantaneous(self, recorded_session):
         """Rolling 60s window RR should be more stable than instantaneous."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -234,10 +242,11 @@ class TestOSCARAlgorithms:
             # Rolling should have lower variance (key OSCAR algorithm property)
             assert np.std(roll_rr) < np.std(inst_rr), "Rolling RR not smoothing variability"
 
-    def test_tv_smoothing_reduces_variability(self, db_session_with_baseline_fixture):
+    def test_tv_smoothing_reduces_variability(self, recorded_session):
         """5-point weighted TV smoothing should reduce jitter."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -255,10 +264,11 @@ class TestOSCARAlgorithms:
             # Smoothed should have lower variance
             assert np.std(smoothed_tv) <= np.std(raw_tv), "TV smoothing not reducing variability"
 
-    def test_complete_breaths_have_both_phases(self, db_session_with_baseline_fixture):
+    def test_complete_breaths_have_both_phases(self, recorded_session):
         """All returned breaths must be complete (inspiration + expiration)."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -279,10 +289,11 @@ class TestOSCARAlgorithms:
 class TestFeatureExtraction:
     """Verify feature extraction produces valid results."""
 
-    def test_flatness_index_in_valid_range(self, db_session_with_baseline_fixture):
+    def test_flatness_index_in_valid_range(self, recorded_session):
         """Flatness index should be in [0, 1] range."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )

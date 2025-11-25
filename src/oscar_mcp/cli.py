@@ -693,6 +693,258 @@ def delete_sessions(
         return 0
 
 
+@cli.command("delete-analysis")
+@click.option(
+    "--session-id",
+    "session_ids",
+    type=str,
+    help="Comma-separated session IDs to delete analysis for (e.g., '1,2,3')",
+)
+@click.option(
+    "--from-date",
+    "from_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Delete analysis for sessions from this date (YYYY-MM-DD)",
+)
+@click.option(
+    "--to-date",
+    "to_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Delete analysis for sessions up to this date (YYYY-MM-DD)",
+)
+@click.option("--all", "delete_all", is_flag=True, help="Delete all analysis results")
+@click.option(
+    "--all-versions",
+    is_flag=True,
+    help="Delete all analysis versions (default: only latest)",
+)
+@click.option("--dry-run", is_flag=True, help="Preview what would be deleted without deleting")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+@click.option("--db", type=click.Path(), help="Database path")
+def delete_analysis(
+    session_ids: Optional[str],
+    from_date: Optional[datetime],
+    to_date: Optional[datetime],
+    delete_all: bool,
+    all_versions: bool,
+    dry_run: bool,
+    force: bool,
+    db: Optional[str],
+):
+    """Delete analysis results without deleting the sessions themselves."""
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    # Validate that at least one filter is provided
+    if not any([session_ids, from_date, to_date, delete_all]):
+        raise click.ClickException(
+            "You must specify at least one filter:\n"
+            "  • --session-id <ids>\n"
+            "  • --from-date <date>\n"
+            "  • --to-date <date>\n"
+            "  • --all"
+        )
+
+    with session_scope() as session:
+        # Build query to select sessions with analysis
+        query = """
+            SELECT DISTINCT
+                sessions.id,
+                sessions.device_session_id,
+                sessions.start_time,
+                devices.manufacturer,
+                devices.model
+            FROM sessions
+            JOIN devices ON sessions.device_id = devices.id
+            JOIN analysis_results ON sessions.id = analysis_results.session_id
+            WHERE 1=1
+        """
+        params: dict[str, Any] = {}
+
+        # Apply filters
+        if session_ids:
+            # Parse comma-separated IDs
+            try:
+                id_list = [int(sid.strip()) for sid in session_ids.split(",")]
+                query += " AND sessions.id IN :session_ids"
+                params["session_ids"] = id_list
+            except ValueError:
+                click.echo(
+                    "❌ Error: Invalid session ID format. Use comma-separated integers (e.g., '1,2,3')",
+                    err=True,
+                )
+                return 1
+
+        if from_date:
+            query += " AND sessions.start_time >= :from_date"
+            params["from_date"] = from_date
+
+        if to_date:
+            query += " AND sessions.start_time <= :to_date"
+            params["to_date"] = to_date
+
+        query += " ORDER BY sessions.start_time DESC"
+
+        # Execute query to get sessions with analysis
+        if "session_ids" in params:
+            result = session.execute(
+                text(query).bindparams(bindparam("session_ids", expanding=True)), params
+            )
+        else:
+            result = session.execute(text(query), params)
+        sessions_with_analysis = result.fetchall()
+
+        if not sessions_with_analysis:
+            click.echo("⚠️  No sessions with analysis results found matching the specified criteria")
+            return 0
+
+        # Get session IDs
+        session_ids_list = [s.id for s in sessions_with_analysis]
+
+        # Count analysis records per session
+        analysis_counts = session.execute(
+            text(
+                """
+                SELECT session_id, COUNT(*) as count
+                FROM analysis_results
+                WHERE session_id IN :session_ids
+                GROUP BY session_id
+            """
+            ).bindparams(bindparam("session_ids", expanding=True)),
+            {"session_ids": session_ids_list},
+        ).fetchall()
+
+        analysis_count_dict = {row.session_id: row.count for row in analysis_counts}
+
+        total_analysis_records = sum(analysis_count_dict.values())
+        records_to_delete = total_analysis_records if all_versions else len(sessions_with_analysis)
+
+        # Get detected patterns count (for display)
+        patterns_count = session.execute(
+            text(
+                """
+                SELECT COUNT(*) as count
+                FROM detected_patterns
+                WHERE analysis_result_id IN (
+                    SELECT id FROM analysis_results WHERE session_id IN :session_ids
+                )
+            """
+            ).bindparams(bindparam("session_ids", expanding=True)),
+            {"session_ids": session_ids_list},
+        ).scalar()
+
+        # Display analysis to be deleted
+        click.echo(f"\n{'=' * 80}")
+        if dry_run:
+            click.echo("🔍 DRY RUN MODE - No data will be deleted")
+        else:
+            click.echo("⚠️  Analysis Results to be DELETED")
+        click.echo(f"{'=' * 80}\n")
+
+        click.echo(f"{'Sess ID':<8} {'Date':<12} {'Time':<8} {'Versions':<10} {'Device':<25}")
+        click.echo("-" * 80)
+
+        for sess in sessions_with_analysis:
+            start = (
+                datetime.fromisoformat(sess.start_time)
+                if isinstance(sess.start_time, str)
+                else sess.start_time
+            )
+            device_name = f"{sess.manufacturer} {sess.model}"
+            version_count = analysis_count_dict.get(sess.id, 0)
+
+            click.echo(
+                f"{sess.id:<8} "
+                f"{start:%Y-%m-%d}   {start:%H:%M:%S}  "
+                f"{version_count:<10} "
+                f"{device_name:<25}"
+            )
+
+        # Display summary
+        click.echo("\n" + "=" * 80)
+        click.echo("📊 Deletion Summary")
+        click.echo("=" * 80)
+        click.echo(f"Sessions with analysis:          {len(sessions_with_analysis)}")
+        click.echo(
+            f"Total analysis records:          {total_analysis_records}"
+            + (
+                " (all versions)"
+                if all_versions or total_analysis_records == len(sessions_with_analysis)
+                else ""
+            )
+        )
+        click.echo(
+            f"Analysis records to delete:      {records_to_delete}"
+            + (
+                " (latest only)"
+                if not all_versions and total_analysis_records > len(sessions_with_analysis)
+                else ""
+            )
+        )
+        click.echo(f"Detected patterns to delete:     {patterns_count} (cascade delete)")
+        click.echo("=" * 80 + "\n")
+
+        # Dry-run mode: exit without deleting
+        if dry_run:
+            click.echo("✓ Dry run complete. Use without --dry-run to delete.")
+            return 0
+
+        # Confirmation prompt (unless --force)
+        if not force:
+            click.echo("⚠️  WARNING: This will delete analysis results but keep the sessions!")
+            if not click.confirm("Are you sure you want to delete these analysis results?"):
+                click.echo("Deletion cancelled")
+                return 0
+
+        # Perform deletion
+        if all_versions:
+            # Delete all analysis records for matching sessions
+            session.execute(
+                text("DELETE FROM analysis_results WHERE session_id IN :session_ids").bindparams(
+                    bindparam("session_ids", expanding=True)
+                ),
+                {"session_ids": session_ids_list},
+            )
+            deleted_count = records_to_delete
+        else:
+            # Delete only the latest analysis record per session
+            deleted_count = 0
+            for session_id in session_ids_list:
+                # Get the latest analysis ID for this session
+                latest_result = session.execute(
+                    text(
+                        """
+                        SELECT id FROM analysis_results
+                        WHERE session_id = :session_id
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """
+                    ),
+                    {"session_id": session_id},
+                ).fetchone()
+
+                if latest_result:
+                    session.execute(
+                        text("DELETE FROM analysis_results WHERE id = :analysis_id"),
+                        {"analysis_id": latest_result.id},
+                    )
+                    deleted_count += 1
+
+        session.commit()
+
+        click.echo(
+            f"\n✓ Successfully deleted {deleted_count} analysis record(s) for {len(sessions_with_analysis)} session(s)"
+        )
+
+        # Suggest vacuum for large deletions
+        if deleted_count > 10:
+            click.echo("\n💡 Tip: Run 'oscar-mcp db vacuum' to reclaim disk space")
+
+        return 0
+
+
 @cli.group()
 def db():
     """Database management commands."""

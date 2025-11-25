@@ -95,5 +95,6 @@ disallow_untyped_defs = false
 [dependency-groups]
 dev = [
     "mypy>=1.18.2",
+    "pytest-xdist>=3.8.0",
     "scipy-stubs>=1.16.3.0",
 ]

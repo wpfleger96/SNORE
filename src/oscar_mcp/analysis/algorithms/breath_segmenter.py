@@ -12,6 +12,8 @@ from typing import List, Tuple
 
 import numpy as np
 
+from oscar_mcp.constants import BreathSegmentationConstants
+
 logger = logging.getLogger(__name__)
 
 
@@ -251,7 +253,7 @@ class BreathSegmenter:
         A complete breath cycle is: positive → negative → positive
         (expiration → inspiration → expiration)
 
-        Applies OSCAR's amplitude filter: (max - min) > 8 L/min
+        Applies amplitude filter: (max - min) > 2 L/min
 
         Args:
             crossings: List of (index, direction) from detect_zero_crossings
@@ -295,7 +297,7 @@ class BreathSegmenter:
                         # Validate amplitude - lowered from 8.0 to 2.0 to detect breaths during low-flow periods
                         breath_segment = flow_data[start_idx:end_idx]
                         amplitude = np.max(breath_segment) - np.min(breath_segment)
-                        if amplitude <= 2.0:
+                        if amplitude <= BreathSegmentationConstants.MIN_BREATH_AMPLITUDE:
                             # Insufficient amplitude - skip this breath
                             i = j - 1
                             break
@@ -321,7 +323,7 @@ class BreathSegmenter:
                         if self.min_breath_duration <= duration <= self.max_breath_duration:
                             breath_segment = flow_data[start_idx : end_idx + 1]
                             amplitude = np.max(breath_segment) - np.min(breath_segment)
-                            if amplitude > 2.0:
+                            if amplitude > BreathSegmentationConstants.MIN_BREATH_AMPLITUDE:
                                 boundaries.append((start_idx, end_idx))
 
             i += 1

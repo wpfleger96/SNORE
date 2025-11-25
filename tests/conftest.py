@@ -1,9 +1,14 @@
 """Pytest configuration and fixtures for OSCAR-MCP tests."""
 
 from pathlib import Path
+import sqlite3
 import tempfile
 from datetime import datetime, timedelta
 import pytest
+
+# Register datetime adapters for SQLite (Python 3.12+)
+sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
+sqlite3.register_converter("DATETIME", lambda s: datetime.fromisoformat(s.decode()))
 
 
 def pytest_configure(config):
@@ -201,48 +206,27 @@ def test_session_factory(db_session):
 
 
 @pytest.fixture
-def db_session_with_baseline_fixture(db_session, fixtures_dir):
-    """Database session with baseline fixture imported (August 2025 session)."""
+def recorded_session(db_session):
+    """Factory for loading recorded session fixtures by YYYYMMDD ID.
+
+    Usage:
+        def test_something(self, recorded_session):
+            db = recorded_session("20250808")
+            session = db.query(Session).first()
+
+    Available sessions:
+        - 20250110: Early therapy session (January 2025)
+        - 20250808: Baseline session (August 2025)
+        - 20250910: Multi-segment session (September 2025, 4 therapy segments)
+        - 20251025: Event detection test session (October 2025)
+    """
     from tests.helpers.fixtures_loader import import_to_test_db
 
-    try:
-        import_to_test_db("20250808", db_session)
-        yield db_session
-    except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"Baseline fixture not available: {e}")
+    def _load(session_id: str):
+        try:
+            import_to_test_db(session_id, db_session)
+            return db_session
+        except (ValueError, FileNotFoundError) as e:
+            pytest.skip(f"Fixture {session_id} not available: {e}")
 
-
-@pytest.fixture
-def db_session_with_early_therapy_fixture(db_session, fixtures_dir):
-    """Database session with early therapy fixture imported (January 2025 session)."""
-    from tests.helpers.fixtures_loader import import_to_test_db
-
-    try:
-        import_to_test_db("20250110", db_session)
-        yield db_session
-    except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"Early therapy fixture not available: {e}")
-
-
-@pytest.fixture
-def db_session_with_multisegment_fixture(db_session, fixtures_dir):
-    """Database session with multi-segment fixture imported (September 2025 session with 4 therapy segments)."""
-    from tests.helpers.fixtures_loader import import_to_test_db
-
-    try:
-        import_to_test_db("20250910", db_session)
-        yield db_session
-    except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"Multi-segment fixture not available: {e}")
-
-
-@pytest.fixture
-def db_session_with_session_269_fixture(db_session, fixtures_dir):
-    """Database session with session 269 (October 2025) - event detection test session."""
-    from tests.helpers.fixtures_loader import import_to_test_db
-
-    try:
-        import_to_test_db("20251025", db_session)
-        yield db_session
-    except (ValueError, FileNotFoundError) as e:
-        pytest.skip(f"Session 269 fixture not available: {e}")
+    return _load

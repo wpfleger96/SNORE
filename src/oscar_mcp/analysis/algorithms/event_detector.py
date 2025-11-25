@@ -208,6 +208,8 @@ class RespiratoryEventDetector:
         hypopneas = []
         for start_idx, end_idx, duration in regions:
             event_reductions = reductions[start_idx:end_idx]
+            if len(event_reductions) == 0:
+                continue
             avg_reduction = float(np.mean(event_reductions))
 
             if avg_reduction >= EDC.APNEA_FLOW_REDUCTION_THRESHOLD:
@@ -221,6 +223,8 @@ class RespiratoryEventDetector:
                 continue
 
             event_baselines = baselines[start_idx:end_idx]
+            if len(event_baselines) == 0:
+                continue
             avg_baseline = float(np.mean(event_baselines))
 
             start_time = breaths[start_idx].start_time
@@ -327,6 +331,8 @@ class RespiratoryEventDetector:
         reras = []
         for start_idx, end_idx, duration in regions:
             event_reductions = reductions[start_idx:end_idx]
+            if len(event_reductions) == 0:
+                continue
             avg_reduction = float(np.mean(event_reductions))
 
             if avg_reduction >= EDC.RERA_MAX_FLOW_REDUCTION:
@@ -336,6 +342,8 @@ class RespiratoryEventDetector:
                 continue
 
             event_flatness = flatness_indices[start_idx:end_idx]
+            if len(event_flatness) == 0:
+                continue
             avg_flatness = float(np.mean(event_flatness))
 
             start_time = breaths[start_idx].start_time
@@ -468,6 +476,9 @@ class RespiratoryEventDetector:
             event_breaths = breaths[start_idx:end_idx]
             event_reductions = reductions[start_idx:end_idx]
             event_baselines = baselines[start_idx:end_idx]
+
+            if len(event_breaths) == 0 or len(event_reductions) == 0 or len(event_baselines) == 0:
+                continue
 
             start_time = event_breaths[0].start_time
             end_time = event_breaths[-1].end_time
@@ -604,7 +615,7 @@ class RespiratoryEventDetector:
 
         threshold = 0.8 * max_flow
         samples_above = np.sum(inspiratory_flow >= threshold)
-        return samples_above / len(inspiratory_flow)
+        return float(samples_above / len(inspiratory_flow))
 
     def _find_consecutive_reduced_breaths(
         self,

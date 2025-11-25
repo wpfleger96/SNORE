@@ -131,12 +131,12 @@ class TestBreathBoundaryIdentification:
         assert len(breaths) == 0
 
     def test_amplitude_filter_rejects_small_breaths(self):
-        """Breaths with amplitude <= 8 L/min should be rejected."""
+        """Breaths with amplitude <= 2 L/min should be rejected."""
         segmenter = BreathSegmenter()
 
-        # Create breath with small amplitude (5 L/min)
+        # Create breath with small amplitude (1.5 L/min)
         t = np.linspace(0, 4, 100)
-        flow = 3.0 * np.sin(2 * np.pi * t / 4)  # Amplitude = 3
+        flow = 0.75 * np.sin(2 * np.pi * t / 4)  # Amplitude = 1.5
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 

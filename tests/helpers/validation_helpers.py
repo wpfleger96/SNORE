@@ -19,7 +19,7 @@ def assert_breath_valid(
     breath: BreathMetrics,
     min_duration: float = 1.0,
     max_duration: float = 20.0,
-    min_amplitude: float = 8.0,
+    min_amplitude: float = 2.0,
 ) -> None:
     """
     Assert that a breath has valid physiological characteristics.

@@ -314,3 +314,309 @@ class TestListSessionsCommand:
 
         assert result.exit_code == 0
         assert "Showing" not in result.output or "Showing all" in result.output
+
+
+@pytest.fixture
+def db_with_analysis(temp_db):
+    """Create a database populated with sessions and analysis results."""
+    init_database(str(temp_db))
+
+    with session_scope() as session:
+        profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+        session.add(profile)
+        session.flush()
+
+        device = models.Device(
+            profile_id=profile.id,
+            manufacturer="ResMed",
+            model="AirSense 10",
+            serial_number="TEST12345",
+        )
+        session.add(device)
+        session.flush()
+
+        base_time = datetime(2025, 10, 1, 22, 0, 0)
+        for i in range(5):
+            start_time = base_time + timedelta(days=i)
+            end_time = start_time + timedelta(hours=8)
+
+            sess = models.Session(
+                device_id=device.id,
+                device_session_id=f"test_session_{i}",
+                start_time=start_time,
+                end_time=end_time,
+                duration_seconds=8 * 3600,
+            )
+            session.add(sess)
+            session.flush()
+
+            # Add multiple analysis results for first two sessions (to test --all-versions)
+            num_analyses = 3 if i < 2 else 1
+            for j in range(num_analyses):
+                analysis = models.AnalysisResult(
+                    session_id=sess.id,
+                    timestamp_start=start_time,
+                    timestamp_end=end_time,
+                    programmatic_result_json={"test": f"analysis_{j}"},
+                    processing_time_ms=100,
+                    engine_versions_json={"version": "1.0.0"},
+                    created_at=start_time + timedelta(minutes=j),
+                )
+                session.add(analysis)
+                session.flush()
+
+                # Add detected patterns for each analysis
+                pattern = models.DetectedPattern(
+                    analysis_result_id=analysis.id,
+                    pattern_id="TEST_PATTERN",
+                    start_time=start_time,
+                    duration=8 * 3600,  # 8 hours in seconds
+                    confidence=0.95,
+                    detected_by="programmatic",
+                    metrics_json={"test": "pattern"},
+                )
+                session.add(pattern)
+
+        session.commit()
+
+    return temp_db
+
+
+class TestDeleteAnalysisCommand:
+    """Test delete-analysis command with various scenarios."""
+
+    def test_delete_analysis_single_session(self, cli_runner, db_with_analysis):
+        """Test deleting analysis for a single session (latest only)."""
+        # Verify initial state
+        with session_scope() as session:
+            analysis_before = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            assert analysis_before == 3  # Session 1 has 3 analysis versions
+
+        result = cli_runner.invoke(
+            cli,
+            ["delete-analysis", "--db", str(db_with_analysis), "--session-id", "1", "--force"],
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully deleted 1 analysis record(s)" in result.output
+
+        # Verify only latest was deleted
+        with session_scope() as session:
+            analysis_after = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            assert analysis_after == 2  # Should have 2 remaining (deleted latest)
+
+            # Verify session still exists
+            sess = session.query(models.Session).filter_by(id=1).first()
+            assert sess is not None
+
+    def test_delete_analysis_all_versions(self, cli_runner, db_with_analysis):
+        """Test deleting all analysis versions for a session."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1",
+                "--all-versions",
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully deleted 3 analysis record(s)" in result.output
+
+        with session_scope() as session:
+            analysis_after = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            assert analysis_after == 0
+
+            # Verify session still exists
+            sess = session.query(models.Session).filter_by(id=1).first()
+            assert sess is not None
+
+    def test_delete_analysis_multiple_sessions(self, cli_runner, db_with_analysis):
+        """Test deleting analysis for multiple sessions."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1,2,3",
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully deleted 3 analysis record(s)" in result.output
+        assert "3 session(s)" in result.output
+
+        with session_scope() as session:
+            # Latest deleted from each session
+            analysis_1 = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            analysis_2 = session.query(models.AnalysisResult).filter_by(session_id=2).count()
+            analysis_3 = session.query(models.AnalysisResult).filter_by(session_id=3).count()
+
+            assert analysis_1 == 2  # Had 3, deleted latest
+            assert analysis_2 == 2  # Had 3, deleted latest
+            assert analysis_3 == 0  # Had 1, deleted it
+
+    def test_delete_analysis_date_range(self, cli_runner, db_with_analysis):
+        """Test deleting analysis by date range."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--from-date",
+                "2025-10-01",
+                "--to-date",
+                "2025-10-03",  # Changed to 10-03 to include session 1 (starts at 22:00 on 10-02)
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully deleted" in result.output
+
+        with session_scope() as session:
+            # Sessions 0 and 1 should have had analysis deleted
+            total_analysis = session.query(models.AnalysisResult).count()
+            # Started with 3+3+1+1+1=9, deleted 2 (one from each of first two sessions)
+            assert total_analysis == 7
+
+    def test_delete_analysis_dry_run(self, cli_runner, db_with_analysis):
+        """Test dry-run mode doesn't actually delete."""
+        with session_scope() as session:
+            analysis_before = session.query(models.AnalysisResult).count()
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "DRY RUN MODE" in result.output
+        assert "Dry run complete" in result.output
+
+        with session_scope() as session:
+            analysis_after = session.query(models.AnalysisResult).count()
+            assert analysis_after == analysis_before  # Nothing deleted
+
+    def test_delete_analysis_cancellation(self, cli_runner, db_with_analysis):
+        """Test that user can cancel deletion."""
+        result = cli_runner.invoke(
+            cli,
+            ["delete-analysis", "--db", str(db_with_analysis), "--session-id", "1"],
+            input="n\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Deletion cancelled" in result.output
+
+        with session_scope() as session:
+            analysis = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            assert analysis == 3  # Nothing deleted
+
+    def test_delete_analysis_no_filter_error(self, cli_runner, db_with_analysis):
+        """Test that command errors when no filter is provided."""
+        result = cli_runner.invoke(cli, ["delete-analysis", "--db", str(db_with_analysis)])
+
+        assert result.exit_code == 1
+        assert "must specify at least one filter" in result.output
+
+    def test_delete_analysis_no_sessions_found(self, cli_runner, temp_db):
+        """Test graceful handling when no sessions have analysis."""
+        init_database(str(temp_db))
+
+        with session_scope() as session:
+            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            session.add(profile)
+            session.flush()
+
+            device = models.Device(
+                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST"
+            )
+            session.add(device)
+            session.flush()
+
+            # Create session without analysis
+            sess = models.Session(
+                device_id=device.id,
+                device_session_id="test_session_1",
+                start_time=datetime(2025, 10, 1, 22, 0, 0),
+                end_time=datetime(2025, 10, 2, 6, 0, 0),
+                duration_seconds=8 * 3600,
+            )
+            session.add(sess)
+            session.commit()
+
+        result = cli_runner.invoke(
+            cli,
+            ["delete-analysis", "--db", str(temp_db), "--session-id", "1"],
+        )
+
+        assert result.exit_code == 0
+        assert "No sessions with analysis results found" in result.output
+
+    def test_delete_analysis_cascades_to_patterns(self, cli_runner, db_with_analysis):
+        """Test that deleting analysis cascades to detected patterns."""
+        with session_scope() as session:
+            # Get analysis ID for session 1
+            analysis = (
+                session.query(models.AnalysisResult)
+                .filter_by(session_id=1)
+                .order_by(models.AnalysisResult.created_at.desc())
+                .first()
+            )
+            latest_analysis_id = analysis.id
+
+            patterns_before = (
+                session.query(models.DetectedPattern)
+                .filter_by(analysis_result_id=latest_analysis_id)
+                .count()
+            )
+            assert patterns_before > 0
+
+        result = cli_runner.invoke(
+            cli,
+            ["delete-analysis", "--db", str(db_with_analysis), "--session-id", "1", "--force"],
+        )
+
+        assert result.exit_code == 0
+
+        with session_scope() as session:
+            # Verify patterns were deleted
+            patterns_after = (
+                session.query(models.DetectedPattern)
+                .filter_by(analysis_result_id=latest_analysis_id)
+                .count()
+            )
+            assert patterns_after == 0
+
+    def test_delete_analysis_all_flag(self, cli_runner, db_with_analysis):
+        """Test deleting all analysis results."""
+        result = cli_runner.invoke(
+            cli,
+            ["delete-analysis", "--db", str(db_with_analysis), "--all", "--force"],
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully deleted 5 analysis record(s)" in result.output
+        assert "5 session(s)" in result.output
+
+        with session_scope() as session:
+            # Latest from each session deleted
+            total_analysis = session.query(models.AnalysisResult).count()
+            # Started with 9 (3+3+1+1+1), deleted 5 latest
+            assert total_analysis == 4  # 2 remaining from session 1, 2 from session 2

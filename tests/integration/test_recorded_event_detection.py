@@ -18,10 +18,11 @@ from oscar_mcp.database.models import Session
 class TestEventDetectionOnRecordedSessions:
     """Validate event detection on recorded PAP session data."""
 
-    def test_session_269_detects_events(self, db_session_with_session_269_fixture):
-        """Session 269 should detect respiratory events."""
-        session = db_session_with_session_269_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_session_269_fixture)
+    def test_20251025_detects_events(self, recorded_session):
+        """Session 20251025 should detect respiratory events."""
+        db = recorded_session("20251025")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )
@@ -44,10 +45,11 @@ class TestEventDetectionOnRecordedSessions:
         # Processing should complete in reasonable time
         assert result.processing_time_ms < 60000
 
-    def test_baseline_fixture_event_detection(self, db_session_with_baseline_fixture):
+    def test_baseline_fixture_event_detection(self, recorded_session):
         """Baseline fixture should produce physiologically reasonable event counts."""
-        session = db_session_with_baseline_fixture.query(Session).first()
-        loader = WaveformLoader(db_session_with_baseline_fixture)
+        db = recorded_session("20250808")
+        session = db.query(Session).first()
+        loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow"
         )

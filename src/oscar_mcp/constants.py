@@ -389,6 +389,7 @@ class BreathSegmentationConstants:
     MIN_BREATH_DURATION = 1.0
     MAX_BREATH_DURATION = 20.0
     ZERO_CROSSING_HYSTERESIS = 2.0
+    MIN_BREATH_AMPLITUDE = 2.0  # Lowered from 8.0 to detect breaths during low-flow periods
 
     TIDAL_VOLUME_SMOOTHING_POINTS = 5
     RESPIRATORY_RATE_WINDOW_SECONDS = 60.0
