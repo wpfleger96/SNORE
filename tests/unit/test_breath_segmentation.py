@@ -6,7 +6,6 @@ and edge case handling.
 """
 
 import numpy as np
-import pytest
 
 from oscar_mcp.analysis.algorithms.breath_segmenter import BreathSegmenter
 from tests.helpers.synthetic_data import (
@@ -14,7 +13,6 @@ from tests.helpers.synthetic_data import (
 )
 
 
-@pytest.mark.unit
 class TestZeroCrossingDetection:
     """Test zero-crossing detection with hysteresis."""
 
@@ -77,7 +75,6 @@ class TestZeroCrossingDetection:
         assert len(crossings) >= 1
 
 
-@pytest.mark.unit
 class TestBreathBoundaryIdentification:
     """Test breath boundary identification from crossings."""
 
@@ -170,7 +167,6 @@ class TestBreathBoundaryIdentification:
         assert len(breaths) >= 0
 
 
-@pytest.mark.unit
 class TestBreathSegmentationEdgeCases:
     """Test edge cases in breath segmentation."""
 

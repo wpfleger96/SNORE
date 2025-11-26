@@ -56,6 +56,10 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=oscar_mcp --cov-report=term-missing"
+markers = [
+    "unit: marks tests as unit tests (run in parallel)",
+    "integration: marks tests as integration tests (run sequentially)",
+]
 
 [tool.ruff.lint]
 select = ["I", "F", "UP", "B"]  # isort, pyflakes, pyupgrade, bugbear

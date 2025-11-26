@@ -22,7 +22,6 @@ from oscar_mcp.analysis.data.waveform_loader import (
 )
 
 
-@pytest.mark.unit
 class TestWaveformDeserialization:
     """Test waveform blob deserialization."""
 
@@ -80,7 +79,6 @@ class TestWaveformDeserialization:
         np.testing.assert_array_equal(result_v, values)
 
 
-@pytest.mark.unit
 class TestWaveformLoading:
     """Test loading waveforms from database."""
 
@@ -129,7 +127,6 @@ class TestWaveformLoading:
         assert metadata["sample_count"] == 3
 
 
-@pytest.mark.unit
 class TestNoiseFiltering:
     """Test Butterworth noise filtering."""
 
@@ -162,7 +159,6 @@ class TestNoiseFiltering:
             apply_noise_filter(data, sample_rate, cutoff_hz=6.0)
 
 
-@pytest.mark.unit
 class TestSampleRateConversion:
     """Test sample rate conversion (resampling)."""
 
@@ -205,7 +201,6 @@ class TestSampleRateConversion:
         np.testing.assert_array_equal(new_v, values)
 
 
-@pytest.mark.unit
 class TestArtifactDetection:
     """Test artifact detection in waveforms."""
 
@@ -276,7 +271,6 @@ class TestArtifactDetection:
         assert not np.any(artifacts)
 
 
-@pytest.mark.unit
 class TestDiscontinuityHandling:
     """Test handling of discontinuities (mask-off events)."""
 

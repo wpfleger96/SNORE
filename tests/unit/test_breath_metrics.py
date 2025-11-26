@@ -12,7 +12,6 @@ from tests.helpers.synthetic_data import create_session, generate_sinusoidal_bre
 from tests.helpers.validation_helpers import assert_breath_valid
 
 
-@pytest.mark.unit
 class TestTidalVolumeCalculation:
     """Test tidal volume numerical integration."""
 
@@ -51,7 +50,6 @@ class TestTidalVolumeCalculation:
             assert breaths2[0].tidal_volume > breaths1[0].tidal_volume
 
 
-@pytest.mark.unit
 class TestRespiratoryRateCalculation:
     """Test respiratory rate calculations."""
 
@@ -108,7 +106,6 @@ class TestRespiratoryRateCalculation:
             assert np.std(roll_rr) <= np.std(inst_rr)
 
 
-@pytest.mark.unit
 class TestIERatioCalculation:
     """Test inspiration:expiration ratio calculation."""
 
@@ -136,7 +133,6 @@ class TestIERatioCalculation:
             assert 0.8 <= breaths[0].i_e_ratio <= 1.2
 
 
-@pytest.mark.unit
 class TestAmplitudeCalculation:
     """Test peak-to-peak amplitude calculation."""
 
@@ -166,7 +162,6 @@ class TestAmplitudeCalculation:
             assert breath.amplitude > 8.0
 
 
-@pytest.mark.unit
 class TestBreathCompleteness:
     """Test breath completeness checking."""
 
@@ -194,7 +189,6 @@ class TestBreathCompleteness:
             assert breath.is_complete
 
 
-@pytest.mark.unit
 class TestBreathDurationValidation:
     """Test breath duration validation."""
 
@@ -220,7 +214,6 @@ class TestBreathDurationValidation:
             assert 1.0 <= breath.duration <= 20.0
 
 
-@pytest.mark.unit
 class TestBreathValidationHelpers:
     """Test breath validation helper functions."""
 

@@ -21,7 +21,6 @@ from oscar_mcp.analysis.data.waveform_loader import WaveformLoader
 from oscar_mcp.database.models import Session
 
 
-@pytest.mark.integration
 @pytest.mark.recorded
 @pytest.mark.requires_fixtures
 class TestRecordedSessionProcessing:
@@ -81,7 +80,6 @@ class TestRecordedSessionProcessing:
         assert len(breaths) > 0, "No breaths detected in multi-segment session"
 
 
-@pytest.mark.integration
 @pytest.mark.recorded
 @pytest.mark.requires_fixtures
 class TestMetricsRealism:
@@ -160,7 +158,6 @@ class TestMetricsRealism:
             )
 
 
-@pytest.mark.integration
 @pytest.mark.recorded
 class TestFeatureVariability:
     """Verify features detect variation in recorded breathing patterns."""

@@ -24,7 +24,6 @@ from oscar_mcp.analysis.data.waveform_loader import WaveformLoader
 from oscar_mcp.database.models import Session
 
 
-@pytest.mark.integration
 @pytest.mark.integration_pipeline
 class TestEndToEndPipeline:
     """Verify complete workflow processes real data successfully."""
@@ -95,7 +94,6 @@ class TestEndToEndPipeline:
         assert len(breaths) > 0
 
 
-@pytest.mark.integration
 @pytest.mark.integration_pipeline
 class TestPhysiologicalValidation:
     """Verify real data produces physiologically realistic results."""
@@ -197,7 +195,6 @@ class TestPhysiologicalValidation:
         assert 0.3 <= mean_ie <= 2.0, f"Mean I:E ratio unusual: {mean_ie}"
 
 
-@pytest.mark.integration
 @pytest.mark.integration_pipeline
 class TestOSCARAlgorithms:
     """Verify OSCAR-aligned algorithms function correctly."""
@@ -292,7 +289,6 @@ class TestOSCARAlgorithms:
             assert breath.expiration_time > 0, "Missing expiration phase"
 
 
-@pytest.mark.integration
 @pytest.mark.integration_features
 class TestFeatureExtraction:
     """Verify feature extraction produces valid results."""

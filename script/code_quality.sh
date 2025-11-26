@@ -26,6 +26,9 @@ if [ -n "$STAGED_FILES" ]; then
 fi
 
 if [ -n "${RUN_TESTS:-}" ]; then
-    echo "Running tests"
-    uv run pytest
+    echo "Running unit tests"
+    uv run pytest -m unit -n auto
+
+    echo "Running integration tests"
+    uv run pytest -m integration
 fi

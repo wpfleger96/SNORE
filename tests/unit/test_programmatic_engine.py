@@ -239,13 +239,17 @@ class TestProgrammaticAnalysisEngine:
         timestamps = np.arange(0, 100, 0.04)
         flow_values = np.arange(0, 50, 0.04)
 
-        with pytest.raises((ValueError, IndexError)):
-            engine.analyze_session(
-                session_id=123,
-                timestamps=timestamps,
-                flow_values=flow_values,
-                sample_rate=25.0,
-            )
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with pytest.raises((ValueError, IndexError)):
+                engine.analyze_session(
+                    session_id=123,
+                    timestamps=timestamps,
+                    flow_values=flow_values,
+                    sample_rate=25.0,
+                )
 
     def _generate_synthetic_flow(
         self, timestamps: np.ndarray, breaths_per_min: float

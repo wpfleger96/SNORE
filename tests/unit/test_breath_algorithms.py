@@ -10,7 +10,6 @@ This module tests core breath processing algorithms including:
 """
 
 import numpy as np
-import pytest
 
 from oscar_mcp.analysis.algorithms.breath_segmenter import (
     BreathMetrics,
@@ -18,7 +17,6 @@ from oscar_mcp.analysis.algorithms.breath_segmenter import (
 )
 
 
-@pytest.mark.unit
 class TestBreathAmplitudeValidation:
     """Test breath amplitude filtering and validation."""
 
@@ -59,7 +57,6 @@ class TestBreathAmplitudeValidation:
             )
 
 
-@pytest.mark.unit
 class TestRollingWindowCalculation:
     """Test rolling window calculations for respiratory rate."""
 
@@ -107,7 +104,6 @@ class TestRollingWindowCalculation:
         )
 
 
-@pytest.mark.unit
 class TestWeightedAverageSmoothing:
     """Test weighted averaging for tidal volume smoothing."""
 
@@ -155,7 +151,6 @@ class TestWeightedAverageSmoothing:
         assert abs(smoothed_2 - expected_2) < 0.1
 
 
-@pytest.mark.unit
 class TestPercentileBasedEventDetection:
     """Test percentile-based flow restriction detection."""
 
@@ -223,7 +218,6 @@ class TestPercentileBasedEventDetection:
             assert duration >= 10.0, f"Restriction duration {duration}s should be ≥ 10s"
 
 
-@pytest.mark.unit
 class TestEndToEndBreathSegmentation:
     """Integration test for complete breath segmentation pipeline."""
 

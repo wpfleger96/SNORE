@@ -6,7 +6,6 @@ and spectral analysis.
 """
 
 import numpy as np
-import pytest
 
 from oscar_mcp.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
 from tests.helpers.synthetic_data import (
@@ -17,7 +16,6 @@ from tests.helpers.synthetic_data import (
 from tests.helpers.validation_helpers import assert_features_in_range
 
 
-@pytest.mark.unit
 class TestFlatnessIndexCalculation:
     """Test flatness index extraction."""
 
@@ -71,7 +69,6 @@ class TestFlatnessIndexCalculation:
         assert 0 <= shape.flatness_index <= 1
 
 
-@pytest.mark.unit
 class TestPlateauDetection:
     """Test plateau duration detection."""
 
@@ -116,7 +113,6 @@ class TestPlateauDetection:
         assert shape.plateau_duration < 2.0
 
 
-@pytest.mark.unit
 class TestPeakDetection:
     """Test peak detection and analysis."""
 
@@ -191,7 +187,6 @@ class TestPeakDetection:
             assert prom > 0
 
 
-@pytest.mark.unit
 class TestStatisticalFeatures:
     """Test statistical feature extraction."""
 
@@ -258,7 +253,6 @@ class TestStatisticalFeatures:
         assert abs(stats.coefficient_of_variation - expected_cv) < 0.01
 
 
-@pytest.mark.unit
 class TestSpectralFeatures:
     """Test spectral (frequency domain) features."""
 
@@ -310,7 +304,6 @@ class TestSpectralFeatures:
         assert spectral is not None
 
 
-@pytest.mark.unit
 class TestAllFeaturesExtraction:
     """Test extracting all features at once."""
 
@@ -355,7 +348,6 @@ class TestAllFeaturesExtraction:
         assert_features_in_range(shape=shape, peak=peak, statistical=stats)
 
 
-@pytest.mark.unit
 class TestFeatureExtractionEdgeCases:
     """Test edge cases in feature extraction."""
 

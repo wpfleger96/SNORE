@@ -5,8 +5,6 @@ Tests rule-based classification of breaths into 7 flow limitation classes,
 confidence scoring, and session-level flow limitation index calculation.
 """
 
-import pytest
-
 from oscar_mcp.analysis.algorithms.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
@@ -23,7 +21,6 @@ from tests.helpers.synthetic_data import (
 )
 
 
-@pytest.mark.unit
 class TestClass1Sinusoidal:
     """Test classification of Class 1 (normal sinusoidal) breaths."""
 
@@ -72,7 +69,6 @@ class TestClass1Sinusoidal:
         )
 
 
-@pytest.mark.unit
 class TestClass2DoublePeak:
     """Test classification of Class 2 (double peak) breaths."""
 
@@ -135,7 +131,6 @@ class TestClass2DoublePeak:
         assert pattern.flow_class != 2
 
 
-@pytest.mark.unit
 class TestClass3MultiplePeaks:
     """Test classification of Class 3 (multiple tiny peaks)."""
 
@@ -164,7 +159,6 @@ class TestClass3MultiplePeaks:
             assert pattern.severity in ["mild-moderate", "mild"]
 
 
-@pytest.mark.unit
 class TestClass4EarlyPeak:
     """Test classification of Class 4 (peak during initial phase)."""
 
@@ -200,7 +194,6 @@ class TestClass4EarlyPeak:
         assert "early_peak" in pattern.matched_features
 
 
-@pytest.mark.unit
 class TestClass5MidPeak:
     """Test classification of Class 5 (peak at midpoint)."""
 
@@ -236,7 +229,6 @@ class TestClass5MidPeak:
         assert "central_peak" in pattern.matched_features
 
 
-@pytest.mark.unit
 class TestClass6LatePeak:
     """Test classification of Class 6 (peak during late phase)."""
 
@@ -272,7 +264,6 @@ class TestClass6LatePeak:
         assert "late_peak" in pattern.matched_features
 
 
-@pytest.mark.unit
 class TestClass7PlateauThroughout:
     """Test classification of Class 7 (plateau throughout)."""
 
@@ -330,7 +321,6 @@ class TestClass7PlateauThroughout:
         assert pattern.confidence >= 0.7
 
 
-@pytest.mark.unit
 class TestConfidenceScoring:
     """Test confidence score calculation."""
 
@@ -382,7 +372,6 @@ class TestConfidenceScoring:
         assert 0.0 <= pattern.confidence <= 1.0
 
 
-@pytest.mark.unit
 class TestFlowLimitationIndex:
     """Test session-level flow limitation index calculation."""
 
@@ -455,7 +444,6 @@ class TestFlowLimitationIndex:
         assert fli == 0.0
 
 
-@pytest.mark.unit
 class TestSessionAnalysis:
     """Test complete session analysis."""
 

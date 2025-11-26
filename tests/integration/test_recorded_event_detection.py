@@ -12,7 +12,6 @@ from oscar_mcp.analysis.engines.programmatic_engine import ProgrammaticAnalysisE
 from oscar_mcp.database.models import Session
 
 
-@pytest.mark.integration
 @pytest.mark.recorded
 @pytest.mark.requires_fixtures
 class TestEventDetectionOnRecordedSessions:
