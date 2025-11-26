@@ -10,9 +10,9 @@ import pytest
 
 from oscar_mcp.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
 from tests.helpers.synthetic_data import (
-    generate_sinusoidal_breath,
     generate_flattened_breath,
     generate_multi_peak_breath,
+    generate_sinusoidal_breath,
 )
 from tests.helpers.validation_helpers import assert_features_in_range
 

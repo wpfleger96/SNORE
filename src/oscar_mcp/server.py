@@ -6,40 +6,42 @@ MCP server providing tools for analyzing and inspecting OSCAR CPAP/APAP therapy 
 
 import json
 import logging
+
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Any
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from oscar_mcp.analysis.calculations import (
+    assess_therapy_effectiveness,
+    calculate_average_ahi,
+    calculate_average_hours_per_day,
+    calculate_compliance_rate,
+    calculate_total_hours,
+    get_date_range,
+)
+from oscar_mcp.analysis.service import AnalysisService
+from oscar_mcp.analysis.summaries import generate_day_summary, generate_period_summary
 from oscar_mcp.constants import (
     CHANNEL_DEFINITIONS,
     COMPLIANCE_MIN_HOURS,
 )
-from oscar_mcp.database.session import session_scope
 from oscar_mcp.database import models
-from oscar_mcp.models.profile import ProfileSummary
-from oscar_mcp.models.machine import MachineSummary
-from oscar_mcp.models.day import DayTextReport
-from oscar_mcp.models.statistics import TherapySummary, ComplianceReport
-from oscar_mcp.utils.validation import (
-    validate_profile_exists,
-    validate_date_format,
-    validate_date_range,
-)
-from oscar_mcp.analysis.summaries import generate_day_summary, generate_period_summary
-from oscar_mcp.analysis.calculations import (
-    calculate_compliance_rate,
-    calculate_average_ahi,
-    assess_therapy_effectiveness,
-    calculate_total_hours,
-    calculate_average_hours_per_day,
-    get_date_range,
-)
-from oscar_mcp.analysis.service import AnalysisService
+from oscar_mcp.database.session import session_scope
 from oscar_mcp.models.analysis import (
     AnalysisSummary,
     DetailedAnalysisResult,
+    FlowLimitationSummary,
     SessionAnalysisStatus,
+)
+from oscar_mcp.models.day import DayTextReport
+from oscar_mcp.models.machine import MachineSummary
+from oscar_mcp.models.profile import ProfileSummary
+from oscar_mcp.models.statistics import ComplianceReport, TherapySummary
+from oscar_mcp.utils.validation import (
+    validate_date_format,
+    validate_date_range,
+    validate_profile_exists,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,7 +162,7 @@ def get_compliance_info() -> str:
 
 
 @server.tool("list_profiles")
-def list_profiles() -> List[ProfileSummary]:
+def list_profiles() -> list[ProfileSummary]:
     """
     List all available profiles in the database.
 
@@ -174,7 +176,7 @@ def list_profiles() -> List[ProfileSummary]:
             result = []
             for profile in profiles:
                 # Calculate summary information
-                machine_count = len(profile.machines)
+                machine_count = len(profile.devices)
                 total_days = len(profile.days)
 
                 date_range = get_date_range(profile.days)
@@ -202,12 +204,12 @@ def list_profiles() -> List[ProfileSummary]:
 
     except Exception as e:
         logger.error(f"Error listing profiles: {e}", exc_info=True)
-        raise ValueError(f"Error listing profiles: {e}")
+        raise ValueError(f"Error listing profiles: {e}") from e
 
 
 @server.tool("get_therapy_summary")
 def get_therapy_summary(
-    *, profile_name: str, start_date: Optional[str] = None, end_date: Optional[str] = None
+    *, profile_name: str, start_date: str | None = None, end_date: str | None = None
 ) -> TherapySummary:
     """
     Get comprehensive therapy summary with human-readable text.
@@ -241,7 +243,11 @@ def get_therapy_summary(
 
         # Query days in range
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
             days = (
                 session.query(models.Day)
@@ -267,7 +273,7 @@ def get_therapy_summary(
         raise e
     except Exception as e:
         logger.error(f"Error generating therapy summary: {e}", exc_info=True)
-        raise ValueError(f"Error generating therapy summary: {e}")
+        raise ValueError(f"Error generating therapy summary: {e}") from e
 
 
 @server.tool("get_day_report")
@@ -289,11 +295,17 @@ def get_day_report(*, profile_name: str, date_str: str) -> DayTextReport:
 
         # Query day
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
             day = (
                 session.query(models.Day)
-                .filter(models.Day.profile_id == profile.id, models.Day.date == query_date)
+                .filter(
+                    models.Day.profile_id == profile.id, models.Day.date == query_date
+                )
                 .first()
             )
 
@@ -312,11 +324,13 @@ def get_day_report(*, profile_name: str, date_str: str) -> DayTextReport:
         raise e
     except Exception as e:
         logger.error(f"Error generating day report: {e}", exc_info=True)
-        raise ValueError(f"Error generating day report: {e}")
+        raise ValueError(f"Error generating day report: {e}") from e
 
 
 @server.tool("get_compliance")
-def get_compliance_report(*, profile_name: str, start_date: str, end_date: str) -> ComplianceReport:
+def get_compliance_report(
+    *, profile_name: str, start_date: str, end_date: str
+) -> ComplianceReport:
     """
     Get compliance report for a date range.
 
@@ -337,7 +351,11 @@ def get_compliance_report(*, profile_name: str, start_date: str, end_date: str) 
 
         # Query days
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
             days = (
                 session.query(models.Day)
@@ -376,11 +394,11 @@ def get_compliance_report(*, profile_name: str, start_date: str, end_date: str) 
         raise e
     except Exception as e:
         logger.error(f"Error generating compliance report: {e}", exc_info=True)
-        raise ValueError(f"Error generating compliance report: {e}")
+        raise ValueError(f"Error generating compliance report: {e}") from e
 
 
 @server.tool("list_machines")
-def list_machines(*, profile_name: str) -> List[MachineSummary]:
+def list_machines(*, profile_name: str) -> list[MachineSummary]:
     """
     List devices for a profile.
 
@@ -395,19 +413,29 @@ def list_machines(*, profile_name: str) -> List[MachineSummary]:
         validate_profile_exists(profile_name)
 
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
-            devices = session.query(models.Device).filter_by(profile_id=profile.id).all()
+            devices = (
+                session.query(models.Device).filter_by(profile_id=profile.id).all()
+            )
 
             result = []
             for device in devices:
                 session_count = len(device.sessions)
                 total_hours = sum(
-                    s.duration_seconds / 3600 for s in device.sessions if s.duration_seconds
+                    s.duration_seconds / 3600
+                    for s in device.sessions
+                    if s.duration_seconds
                 )
 
                 # Construct machine_id from device info
-                machine_id = f"{device.manufacturer}_{device.model}_{device.serial_number}"
+                machine_id = (
+                    f"{device.manufacturer}_{device.model}_{device.serial_number}"
+                )
 
                 # Determine machine type (basic heuristic, can be enhanced)
                 machine_type = "CPAP"  # Default
@@ -441,12 +469,12 @@ def list_machines(*, profile_name: str) -> List[MachineSummary]:
         raise e
     except Exception as e:
         logger.error(f"Error listing machines: {e}", exc_info=True)
-        raise ValueError(f"Error listing machines: {e}")
+        raise ValueError(f"Error listing machines: {e}") from e
 
 
 @server.tool("analyze_session")
 def analyze_session(
-    profile_name: str, session_date: Optional[str] = None, session_id: Optional[int] = None
+    profile_name: str, session_date: str | None = None, session_id: int | None = None
 ) -> AnalysisSummary:
     """
     Run comprehensive programmatic analysis on a CPAP session.
@@ -475,14 +503,21 @@ def analyze_session(
             raise ValueError("Must provide either session_date or session_id")
 
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
             if session_date:
                 parsed_date = date.fromisoformat(session_date)
                 db_session = (
                     session.query(models.Session)
                     .join(models.Day)
-                    .filter(models.Day.profile_id == profile.id, models.Day.date == parsed_date)
+                    .filter(
+                        models.Day.profile_id == profile.id,
+                        models.Day.date == parsed_date,
+                    )
                     .first()
                 )
 
@@ -495,7 +530,9 @@ def analyze_session(
             assert session_id is not None, "session_id should not be None"
 
             analysis_service = AnalysisService(session)
-            result = analysis_service.analyze_session(session_id=session_id, store_results=True)
+            result = analysis_service.analyze_session(
+                session_id=session_id, store_results=True
+            )
 
             flow_analysis = result.flow_analysis
             event_timeline = result.event_timeline
@@ -522,8 +559,12 @@ def analyze_session(
             else:
                 overall_severity = "severe"
 
+            stored_result = analysis_service.get_analysis_result(session_id)
+            analysis_id = stored_result["analysis_id"] if stored_result else None
+
             summary = AnalysisSummary(
                 session_id=result.session_id,
+                analysis_id=analysis_id,
                 timestamp_start=datetime.fromtimestamp(result.timestamp_start),
                 timestamp_end=datetime.fromtimestamp(result.timestamp_end),
                 duration_hours=result.duration_hours,
@@ -539,12 +580,8 @@ def analyze_session(
                 periodic_breathing_detected=result.periodic_breathing is not None,
                 positional_events_detected=result.positional_analysis is not None,
                 severity_assessment=overall_severity,
-                processing_time_ms=result.processing_time_ms,
+                processing_time_ms=int(result.processing_time_ms),
             )
-
-            stored_result = analysis_service.get_analysis_result(session_id)
-            if stored_result:
-                summary.analysis_id = stored_result["analysis_id"]
 
             return summary
 
@@ -552,7 +589,7 @@ def analyze_session(
         raise e
     except Exception as e:
         logger.error(f"Error analyzing session: {e}", exc_info=True)
-        raise ValueError(f"Error analyzing session: {e}")
+        raise ValueError(f"Error analyzing session: {e}") from e
 
 
 @server.tool("get_analysis_results")
@@ -601,19 +638,25 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
                     hypopnea_count=len(prog_result["event_timeline"]["hypopneas"]),
                     rera_count=len(prog_result["event_timeline"]["reras"]),
                     csr_detected=prog_result["csr_detection"] is not None,
-                    periodic_breathing_detected=prog_result["periodic_breathing"] is not None,
-                    positional_events_detected=prog_result["positional_analysis"] is not None,
+                    periodic_breathing_detected=prog_result["periodic_breathing"]
+                    is not None,
+                    positional_events_detected=prog_result["positional_analysis"]
+                    is not None,
                     severity_assessment="",
                     processing_time_ms=stored["processing_time_ms"],
                 ),
                 event_timeline=prog_result["event_timeline"],
-                flow_limitation={
-                    "flow_limitation_index": prog_result["flow_analysis"]["fl_index"],
-                    "total_breaths": prog_result["flow_analysis"]["total_breaths"],
-                    "class_distribution": prog_result["flow_analysis"]["class_distribution"],
-                    "average_confidence": prog_result["flow_analysis"]["average_confidence"],
-                    "severity": "",
-                },
+                flow_limitation=FlowLimitationSummary(
+                    flow_limitation_index=prog_result["flow_analysis"]["fl_index"],
+                    total_breaths=prog_result["flow_analysis"]["total_breaths"],
+                    class_distribution=prog_result["flow_analysis"][
+                        "class_distribution"
+                    ],
+                    average_confidence=prog_result["flow_analysis"][
+                        "average_confidence"
+                    ],
+                    severity="",
+                ),
                 csr_detection=prog_result["csr_detection"],
                 periodic_breathing=prog_result["periodic_breathing"],
                 positional_analysis=prog_result["positional_analysis"],
@@ -625,13 +668,13 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
         raise e
     except Exception as e:
         logger.error(f"Error retrieving analysis results: {e}", exc_info=True)
-        raise ValueError(f"Error retrieving analysis results: {e}")
+        raise ValueError(f"Error retrieving analysis results: {e}") from e
 
 
 @server.tool("list_analysis_sessions")
 def list_analysis_sessions(
-    profile_name: str, start_date: Optional[str] = None, end_date: Optional[str] = None
-) -> List[SessionAnalysisStatus]:
+    profile_name: str, start_date: str | None = None, end_date: str | None = None
+) -> list[SessionAnalysisStatus]:
     """
     List sessions with their analysis status.
 
@@ -654,7 +697,11 @@ def list_analysis_sessions(
             validate_date_format(end_date)
 
         with session_scope() as session:
-            profile = session.query(models.Profile).filter_by(username=profile_name).first()
+            profile = (
+                session.query(models.Profile).filter_by(username=profile_name).first()
+            )
+            if profile is None:
+                raise ValueError(f"Profile '{profile_name}' not found")
 
             query = (
                 session.query(models.Session)
@@ -679,7 +726,9 @@ def list_analysis_sessions(
                 )
 
                 duration_hours = (
-                    db_session.duration_seconds / 3600 if db_session.duration_seconds else 0.0
+                    db_session.duration_seconds / 3600
+                    if db_session.duration_seconds
+                    else 0.0
                 )
 
                 result.append(
@@ -699,4 +748,4 @@ def list_analysis_sessions(
         raise e
     except Exception as e:
         logger.error(f"Error listing analysis sessions: {e}", exc_info=True)
-        raise ValueError(f"Error listing analysis sessions: {e}")
+        raise ValueError(f"Error listing analysis sessions: {e}") from e

@@ -9,11 +9,12 @@ and implement these methods - the rest of the system automatically works.
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Iterator, List, Optional, Dict, Any
+from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from oscar_mcp.models.unified import UnifiedSession, DeviceInfo
+from oscar_mcp.models.unified import DeviceInfo, UnifiedSession
 
 
 @dataclass
@@ -23,10 +24,10 @@ class ParserMetadata:
     parser_id: str  # Unique identifier (e.g., "resmed_edf")
     parser_version: str  # Version of this parser implementation
     manufacturer: str  # Device manufacturer name
-    supported_formats: List[str]  # File formats this parser handles
-    supported_models: List[str]  # Device models supported
+    supported_formats: list[str]  # File formats this parser handles
+    supported_models: list[str]  # Device models supported
     description: str  # Human-readable description
-    requires_libraries: List[str] | None = None  # External dependencies
+    requires_libraries: list[str] | None = None  # External dependencies
 
 
 class ParserDetectionResult:
@@ -36,9 +37,9 @@ class ParserDetectionResult:
         self,
         detected: bool,
         confidence: float = 1.0,
-        device_info: Optional[DeviceInfo] = None,
+        device_info: DeviceInfo | None = None,
         message: str = "",
-        metadata: Optional[dict] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.detected = detected
         self.confidence = confidence  # 0.0 to 1.0
@@ -67,7 +68,7 @@ class DeviceParser(ABC):
     The rest of the system doesn't need to know anything about ResMed!
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the parser."""
         self._metadata = self.get_metadata()
 
@@ -142,10 +143,10 @@ class DeviceParser(ABC):
     def parse_sessions(
         self,
         path: Path,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
-        limit: Optional[int] = None,
-        sort_by: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int | None = None,
+        sort_by: str | None = None,
     ) -> Iterator[UnifiedSession]:
         """
         Parse all sessions from the given path and yield unified sessions.
@@ -181,7 +182,9 @@ class DeviceParser(ABC):
         """
         pass
 
-    def parse_single_session(self, path: Path, session_id: str) -> Optional[UnifiedSession]:
+    def parse_single_session(
+        self, path: Path, session_id: str
+    ) -> UnifiedSession | None:
         """
         Parse a single specific session by ID.
 
@@ -200,7 +203,7 @@ class DeviceParser(ABC):
                 return session
         return None
 
-    def validate_data(self, path: Path) -> Dict[str, Any]:
+    def validate_data(self, path: Path) -> dict[str, Any]:
         """
         Validate the data at the given path.
 
@@ -245,7 +248,7 @@ class DeviceParser(ABC):
         return self._metadata.manufacturer
 
     @property
-    def supported_formats(self) -> List[str]:
+    def supported_formats(self) -> list[str]:
         """Get list of file formats this parser supports."""
         return self._metadata.supported_formats
 
@@ -261,6 +264,6 @@ class DeviceParser(ABC):
 class ParserError(Exception):
     """Base exception for parser errors."""
 
-    def __init__(self, message: str, parser: Optional[DeviceParser] = None):
+    def __init__(self, message: str, parser: DeviceParser | None = None):
         super().__init__(message)
         self.parser = parser

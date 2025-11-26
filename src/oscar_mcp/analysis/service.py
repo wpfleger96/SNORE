@@ -7,8 +7,9 @@ analysis, loading data from the database, and storing results.
 
 import logging
 import time
+
 from datetime import datetime
-from typing import Optional, List
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -50,7 +51,7 @@ class AnalysisService:
         self.waveform_loader = WaveformLoader(db_session)
         self.engine = ProgrammaticAnalysisEngine()
 
-    def _load_machine_events(self, session_id: int) -> List[AnalysisEvent]:
+    def _load_machine_events(self, session_id: int) -> list[AnalysisEvent]:
         """
         Load machine-flagged events from database.
 
@@ -112,7 +113,9 @@ class AnalysisService:
             )
         except Exception as e:
             logger.error(f"Failed to load flow waveform for session {session_id}: {e}")
-            raise ValueError(f"No flow waveform data available for session {session_id}")
+            raise ValueError(
+                f"No flow waveform data available for session {session_id}"
+            ) from e
 
         if len(timestamps) == 0:
             raise ValueError(f"Empty flow waveform data for session {session_id}")
@@ -158,15 +161,17 @@ class AnalysisService:
         )
 
         if store_results:
-            self._store_analysis_result(session_id, result, processing_time_ms, machine_events)
+            self._store_analysis_result(
+                session_id, result, processing_time_ms, machine_events
+            )
 
         result.machine_events = machine_events
 
         return result
 
     def analyze_sessions(
-        self, session_ids: List[int], store_results: bool = True
-    ) -> List[ProgrammaticAnalysisResult]:
+        self, session_ids: list[int], store_results: bool = True
+    ) -> list[ProgrammaticAnalysisResult]:
         """
         Run analysis on multiple sessions.
 
@@ -188,7 +193,7 @@ class AnalysisService:
 
         return results
 
-    def get_analysis_result(self, session_id: int) -> Optional[dict]:
+    def get_analysis_result(self, session_id: int) -> dict[str, Any] | None:
         """
         Retrieve stored analysis result for a session.
 
@@ -223,7 +228,7 @@ class AnalysisService:
         session_id: int,
         result: ProgrammaticAnalysisResult,
         processing_time_ms: int,
-        machine_events: List[AnalysisEvent],
+        machine_events: list[AnalysisEvent],
     ) -> None:
         """
         Store analysis result in database.

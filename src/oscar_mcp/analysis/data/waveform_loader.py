@@ -7,9 +7,11 @@ and resampling.
 """
 
 import logging
-from typing import Optional, Tuple
+
+from typing import Any
 
 import numpy as np
+
 from scipy import signal
 from sqlalchemy.orm import Session
 
@@ -45,9 +47,9 @@ class WaveformLoader:
         session_id: int,
         waveform_type: str,
         apply_filter: bool = False,
-        target_sample_rate: Optional[float] = None,
+        target_sample_rate: float | None = None,
         detect_artifacts: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, dict]:
+    ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         """
         Load waveform from database with optional preprocessing.
 
@@ -113,7 +115,9 @@ class WaveformLoader:
         return timestamps, values, metadata
 
 
-def deserialize_waveform_blob(blob_data: bytes, sample_count: int) -> Tuple[np.ndarray, np.ndarray]:
+def deserialize_waveform_blob(
+    blob_data: bytes, sample_count: int
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Deserialize waveform blob data into timestamps and values arrays.
 
@@ -172,7 +176,7 @@ def deserialize_waveform_blob(blob_data: bytes, sample_count: int) -> Tuple[np.n
 
 def load_waveform_from_db(
     db_session: Session, session_id: int, waveform_type: str
-) -> Tuple[np.ndarray, np.ndarray, dict]:
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """
     Load waveform from database and deserialize.
 
@@ -203,10 +207,14 @@ def load_waveform_from_db(
     )
 
     if not waveform:
-        raise ValueError(f"Waveform not found: session_id={session_id}, type={waveform_type}")
+        raise ValueError(
+            f"Waveform not found: session_id={session_id}, type={waveform_type}"
+        )
 
     # Deserialize blob
-    timestamps, values = deserialize_waveform_blob(waveform.data_blob, waveform.sample_count)
+    timestamps, values = deserialize_waveform_blob(
+        waveform.data_blob, waveform.sample_count or 0
+    )
 
     # Build metadata dict
     metadata = {
@@ -286,7 +294,7 @@ def handle_sample_rate_conversion(
     values: np.ndarray,
     from_rate: float,
     to_rate: float,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Resample waveform to a different sample rate.
 
@@ -390,7 +398,7 @@ def handle_discontinuities(
     timestamps: np.ndarray,
     values: np.ndarray,
     gap_threshold: float = 60.0,
-) -> list[Tuple[np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """
     Split waveform into continuous segments at discontinuities.
 

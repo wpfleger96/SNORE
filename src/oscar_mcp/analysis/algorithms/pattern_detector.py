@@ -7,10 +7,11 @@ using time-series analysis and clustering techniques.
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import numpy as np
+
 from scipy import signal, stats
 
 from oscar_mcp.constants import PatternDetectionConstants as PDC
@@ -77,8 +78,8 @@ class PositionalAnalysis:
         total_clusters: Number of clusters identified
     """
 
-    cluster_times: List[Tuple[float, float]]
-    cluster_event_counts: List[int]
+    cluster_times: list[tuple[float, float]]
+    cluster_event_counts: list[int]
     positional_likelihood: float
     confidence: float
     total_clusters: int
@@ -121,7 +122,7 @@ class ComplexPatternDetector:
         timestamps: np.ndarray,
         tidal_volumes: np.ndarray,
         window_minutes: float = 10.0,
-    ) -> Optional[CSRDetection]:
+    ) -> CSRDetection | None:
         """
         Detect Cheyne-Stokes Respiration pattern.
 
@@ -139,11 +140,15 @@ class ComplexPatternDetector:
         min_cycle = PDC.CSR_MIN_CYCLE_LENGTH
         max_cycle = PDC.CSR_MAX_CYCLE_LENGTH
 
-        smoothed_tv = self._smooth_signal(tidal_volumes, window_size=PDC.SIGNAL_SMOOTHING_WINDOW)
+        smoothed_tv = self._smooth_signal(
+            tidal_volumes, window_size=PDC.SIGNAL_SMOOTHING_WINDOW
+        )
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        cycle_length = self._find_dominant_cycle(autocorr, timestamps, min_cycle, max_cycle)
+        cycle_length = self._find_dominant_cycle(
+            autocorr, timestamps, min_cycle, max_cycle
+        )
 
         if cycle_length is None:
             return None
@@ -181,7 +186,7 @@ class ComplexPatternDetector:
         timestamps: np.ndarray,
         tidal_volumes: np.ndarray,
         respiratory_rate: np.ndarray,
-    ) -> Optional[PeriodicBreathingDetection]:
+    ) -> PeriodicBreathingDetection | None:
         """
         Detect periodic breathing pattern.
 
@@ -199,11 +204,15 @@ class ComplexPatternDetector:
         min_cycle = PDC.PERIODIC_MIN_CYCLE
         max_cycle = PDC.PERIODIC_MAX_CYCLE
 
-        smoothed_tv = self._smooth_signal(tidal_volumes, window_size=PDC.SIGNAL_SMOOTHING_WINDOW)
+        smoothed_tv = self._smooth_signal(
+            tidal_volumes, window_size=PDC.SIGNAL_SMOOTHING_WINDOW
+        )
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        cycle_length = self._find_dominant_cycle(autocorr, timestamps, min_cycle, max_cycle)
+        cycle_length = self._find_dominant_cycle(
+            autocorr, timestamps, min_cycle, max_cycle
+        )
 
         if cycle_length is None:
             return None
@@ -215,7 +224,9 @@ class ComplexPatternDetector:
 
         has_apneas = self._check_for_apneas(tidal_volumes)
 
-        confidence = self._calculate_periodic_confidence(cycle_length, regularity, has_apneas)
+        confidence = self._calculate_periodic_confidence(
+            cycle_length, regularity, has_apneas
+        )
 
         return PeriodicBreathingDetection(
             start_time=float(timestamps[0]),
@@ -228,10 +239,10 @@ class ComplexPatternDetector:
 
     def detect_positional_events(
         self,
-        event_timestamps: List[float],
+        event_timestamps: list[float],
         session_duration: float,
         cluster_threshold: float = PDC.CLUSTER_THRESHOLD_SECONDS,
-    ) -> Optional[PositionalAnalysis]:
+    ) -> PositionalAnalysis | None:
         """
         Detect temporal clustering of events suggesting positional apnea.
 
@@ -280,7 +291,9 @@ class ComplexPatternDetector:
             total_clusters=len(clusters),
         )
 
-    def _smooth_signal(self, signal_data: np.ndarray, window_size: int = 5) -> np.ndarray:
+    def _smooth_signal(
+        self, signal_data: np.ndarray, window_size: int = 5
+    ) -> np.ndarray:
         """Apply moving average smoothing to signal."""
         if len(signal_data) < window_size:
             return signal_data
@@ -307,7 +320,7 @@ class ComplexPatternDetector:
         timestamps: np.ndarray,
         min_period: float,
         max_period: float,
-    ) -> Optional[float]:
+    ) -> float | None:
         """Find dominant cycle length from autocorrelation."""
         if len(autocorr) < 10 or len(timestamps) < 2:
             return None
@@ -322,7 +335,9 @@ class ComplexPatternDetector:
 
         search_region = autocorr[min_lag:max_lag]
 
-        peaks, properties = signal.find_peaks(search_region, height=self.autocorr_threshold)
+        peaks, properties = signal.find_peaks(
+            search_region, height=self.autocorr_threshold
+        )
 
         if len(peaks) == 0:
             return None
@@ -334,7 +349,9 @@ class ComplexPatternDetector:
 
         return float(cycle_length)
 
-    def _detect_waxing_waning(self, signal_data: np.ndarray, cycle_length: float) -> float:
+    def _detect_waxing_waning(
+        self, signal_data: np.ndarray, cycle_length: float
+    ) -> float:
         """Detect crescendo-decrescendo (waxing-waning) pattern."""
         if len(signal_data) < 10:
             return 0.0
@@ -355,7 +372,9 @@ class ComplexPatternDetector:
 
         return float(min(1.0, alternation_score * 2))
 
-    def _extract_envelope(self, signal_data: np.ndarray, upper: bool = True) -> np.ndarray:
+    def _extract_envelope(
+        self, signal_data: np.ndarray, upper: bool = True
+    ) -> np.ndarray:
         """Extract upper or lower envelope of signal."""
         if upper:
             peaks, _ = signal.find_peaks(signal_data)
@@ -365,11 +384,15 @@ class ComplexPatternDetector:
         if len(peaks) < 2:
             return signal_data
 
-        envelope: np.ndarray = np.interp(np.arange(len(signal_data)), peaks, signal_data[peaks])
+        envelope: np.ndarray = np.interp(
+            np.arange(len(signal_data)), peaks, signal_data[peaks]
+        )
 
         return envelope
 
-    def _calculate_csr_time_percentage(self, signal_data: np.ndarray, cycle_length: float) -> float:
+    def _calculate_csr_time_percentage(
+        self, signal_data: np.ndarray, cycle_length: float
+    ) -> float:
         """Calculate percentage of time spent in CSR pattern."""
         envelope = self._extract_envelope(signal_data, upper=True)
         threshold = np.median(envelope) * PDC.CSR_THRESHOLD_FACTOR
@@ -378,7 +401,9 @@ class ComplexPatternDetector:
 
         return float(np.mean(in_csr))
 
-    def _calculate_regularity_score(self, signal_data: np.ndarray, cycle_length: float) -> float:
+    def _calculate_regularity_score(
+        self, signal_data: np.ndarray, cycle_length: float
+    ) -> float:
         """Calculate regularity score using spectral concentration."""
         if len(signal_data) < 10:
             return 0.0
@@ -405,7 +430,9 @@ class ComplexPatternDetector:
 
         return bool(has_apneas)
 
-    def _identify_clusters(self, event_times: np.ndarray, max_gap: float) -> List[np.ndarray]:
+    def _identify_clusters(
+        self, event_times: np.ndarray, max_gap: float
+    ) -> list[np.ndarray]:
         """Identify temporal clusters of events."""
         if len(event_times) == 0:
             return []
@@ -420,7 +447,7 @@ class ComplexPatternDetector:
 
     def _calculate_positional_likelihood(
         self,
-        clusters: List[np.ndarray],
+        clusters: list[np.ndarray],
         session_duration: float,
         all_events: np.ndarray,
     ) -> float:
@@ -496,7 +523,7 @@ class ComplexPatternDetector:
     def _calculate_positional_confidence(
         self,
         cluster_count: int,
-        cluster_sizes: List[int],
+        cluster_sizes: list[int],
         likelihood: float,
     ) -> float:
         """Calculate confidence score for positional event detection."""

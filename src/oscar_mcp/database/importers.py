@@ -4,21 +4,24 @@ Session import functionality for converting UnifiedSession to database records.
 Handles the complete import process including waveforms, events, and statistics.
 """
 
-import logging
 import json
-import numpy as np
-from typing import Optional
-from datetime import datetime, UTC
+import logging
 
-from oscar_mcp.models.unified import UnifiedSession
-from oscar_mcp.database.session import session_scope
+from datetime import UTC, datetime
+
+import numpy as np
+
+from sqlalchemy.orm import Session
+
 from oscar_mcp.database import models
 from oscar_mcp.database.day_manager import DayManager
+from oscar_mcp.database.session import session_scope
+from oscar_mcp.models.unified import UnifiedSession, WaveformData
 
 logger = logging.getLogger(__name__)
 
 
-def serialize_waveform(waveform) -> bytes:
+def serialize_waveform(waveform: WaveformData) -> bytes:
     """
     Serialize waveform data to bytes for database storage.
 
@@ -48,7 +51,7 @@ def serialize_waveform(waveform) -> bytes:
 class SessionImporter:
     """Handles importing UnifiedSession objects to database using SQLAlchemy."""
 
-    def __init__(self, profile_id: Optional[int] = None):
+    def __init__(self, profile_id: int | None = None):
         """
         Initialize importer.
 
@@ -58,7 +61,7 @@ class SessionImporter:
         self.profile_id = profile_id
 
     @staticmethod
-    def cleanup_orphaned_records(db) -> int:
+    def cleanup_orphaned_records(db: Session) -> int:
         """
         Remove orphaned records from child tables that reference non-existent sessions.
 
@@ -77,9 +80,11 @@ class SessionImporter:
 
         for table in tables:
             result = db.execute(
-                text(f"DELETE FROM {table} WHERE session_id NOT IN (SELECT id FROM sessions)")
+                text(
+                    f"DELETE FROM {table} WHERE session_id NOT IN (SELECT id FROM sessions)"
+                )
             )
-            count = result.rowcount
+            count = result.rowcount if hasattr(result, "rowcount") else 0
             if count > 0:
                 logger.info(f"Cleaned {count} orphaned records from {table}")
                 total_cleaned += count
@@ -131,16 +136,23 @@ class SessionImporter:
 
             existing = (
                 db.query(models.Session)
-                .filter_by(device_id=device.id, device_session_id=session_data.device_session_id)
+                .filter_by(
+                    device_id=device.id,
+                    device_session_id=session_data.device_session_id,
+                )
                 .first()
             )
 
             if existing and not force:
-                logger.debug(f"Session {session_data.device_session_id} already exists, skipping")
+                logger.debug(
+                    f"Session {session_data.device_session_id} already exists, skipping"
+                )
                 return False
 
             if existing and force:
-                logger.info(f"Force re-importing session {session_data.device_session_id}")
+                logger.info(
+                    f"Force re-importing session {session_data.device_session_id}"
+                )
                 db.delete(existing)
                 db.flush()
 
@@ -156,7 +168,9 @@ class SessionImporter:
                 start_time=session_data.start_time,
                 end_time=session_data.end_time,
                 duration_seconds=session_data.duration_seconds,
-                therapy_mode=session_data.settings.mode.value if session_data.settings else None,
+                therapy_mode=session_data.settings.mode.value
+                if session_data.settings
+                else None,
                 import_source=session_data.import_source,
                 parser_version=session_data.parser_version,
                 data_quality_notes=notes_json,
@@ -170,8 +184,12 @@ class SessionImporter:
             if device.profile_id:
                 profile = db.query(models.Profile).get(device.profile_id)
                 if profile:
-                    day_date = DayManager.get_day_for_session(session_data.start_time, profile)
-                    day = DayManager.create_or_update_day(device.profile_id, day_date, db)
+                    day_date = DayManager.get_day_for_session(
+                        session_data.start_time, profile
+                    )
+                    day = DayManager.create_or_update_day(
+                        device.profile_id, day_date, db
+                    )
                     new_session.day_id = day.id
 
             if session_data.has_waveform_data:
@@ -191,7 +209,9 @@ class SessionImporter:
         )
         return True
 
-    def _import_waveforms(self, db, session_id: int, session_data: UnifiedSession):
+    def _import_waveforms(
+        self, db: Session, session_id: int, session_data: UnifiedSession
+    ) -> None:
         """Import all waveforms for session."""
         if not session_data.waveforms:
             return
@@ -200,7 +220,9 @@ class SessionImporter:
         for waveform_type, waveform in session_data.waveforms.items():
             data_blob = serialize_waveform(waveform)
             sample_count = (
-                len(waveform.values) if isinstance(waveform.values, list) else len(waveform.values)
+                len(waveform.values)
+                if isinstance(waveform.values, list)
+                else len(waveform.values)
             )
 
             waveform_records.append(
@@ -220,7 +242,9 @@ class SessionImporter:
         db.bulk_save_objects(waveform_records)
         logger.debug(f"Bulk imported {len(waveform_records)} waveforms")
 
-    def _import_events(self, db, session_id: int, session_data: UnifiedSession):
+    def _import_events(
+        self, db: Session, session_id: int, session_data: UnifiedSession
+    ) -> None:
         """Import all respiratory events for session."""
         if not session_data.events:
             return
@@ -240,7 +264,9 @@ class SessionImporter:
 
         logger.debug(f"Bulk imported {len(event_records)} events")
 
-    def _import_statistics(self, db, session_id: int, session_data: UnifiedSession):
+    def _import_statistics(
+        self, db: Session, session_id: int, session_data: UnifiedSession
+    ) -> None:
         """Import session statistics."""
         stats = session_data.statistics
 
@@ -290,7 +316,9 @@ class SessionImporter:
 
         logger.debug("Imported session statistics")
 
-    def _import_settings(self, db, session_id: int, session_data: UnifiedSession):
+    def _import_settings(
+        self, db: Session, session_id: int, session_data: UnifiedSession
+    ) -> None:
         """Import session settings."""
         settings = session_data.settings
 
@@ -317,14 +345,16 @@ class SessionImporter:
 
         for key, value in settings_dict.items():
             if value is not None:
-                setting_record = models.Setting(session_id=session_id, key=key, value=str(value))
+                setting_record = models.Setting(
+                    session_id=session_id, key=key, value=str(value)
+                )
                 db.add(setting_record)
 
         logger.debug(f"Imported {len(settings_dict)} settings")
 
 
 def import_session(
-    session_data: UnifiedSession, profile_id: Optional[int] = None, force: bool = False
+    session_data: UnifiedSession, profile_id: int | None = None, force: bool = False
 ) -> bool:
     """
     Convenience function to import a session.

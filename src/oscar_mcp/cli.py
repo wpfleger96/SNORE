@@ -4,29 +4,32 @@ Command-line interface for OSCAR-MCP.
 Provides commands for importing CPAP data, querying sessions, and database management.
 """
 
-import click
 import logging
 import sys
-from pathlib import Path
-from datetime import datetime
-from typing import Any, Optional
 
-from oscar_mcp.database.importers import SessionImporter
-from oscar_mcp.database.session import session_scope, init_database
-from oscar_mcp.database import models
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import click
+
+from sqlalchemy import bindparam, text
+
 from oscar_mcp.analysis.service import AnalysisService
-from oscar_mcp.parsers.registry import parser_registry
-from oscar_mcp.parsers.register_all import register_all_parsers
 from oscar_mcp.constants import (
     DEFAULT_LIST_SESSIONS_LIMIT,
-    EVENT_TYPE_OBSTRUCTIVE_APNEA,
     EVENT_TYPE_CENTRAL_APNEA,
     EVENT_TYPE_CLEAR_AIRWAY,
-    EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_HYPOPNEA,
+    EVENT_TYPE_MIXED_APNEA,
+    EVENT_TYPE_OBSTRUCTIVE_APNEA,
     EVENT_TYPE_RERA,
 )
-from sqlalchemy import text, bindparam
+from oscar_mcp.database import models
+from oscar_mcp.database.importers import SessionImporter
+from oscar_mcp.database.session import init_database, session_scope
+from oscar_mcp.parsers.register_all import register_all_parsers
+from oscar_mcp.parsers.registry import parser_registry
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -38,7 +41,9 @@ def ensure_profile(username: str) -> int:
     with session_scope() as session:
         profile = session.query(models.Profile).filter_by(username=username).first()
         if not profile:
-            profile = models.Profile(username=username, settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username=username, settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
         return profile.id
@@ -46,7 +51,7 @@ def ensure_profile(username: str) -> int:
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def cli(verbose):
+def cli(verbose: bool) -> None:
     """OSCAR-MCP: CPAP Data Management Tool"""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -55,7 +60,9 @@ def cli(verbose):
 @cli.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--force", is_flag=True, help="Re-import existing sessions")
-@click.option("--db", type=click.Path(), help="Database path (default: ~/.oscar-mcp/oscar_mcp.db)")
+@click.option(
+    "--db", type=click.Path(), help="Database path (default: ~/.oscar-mcp/oscar_mcp.db)"
+)
 @click.option("--limit", "-n", type=int, help="Limit to first N sessions")
 @click.option(
     "--sort-by",
@@ -73,17 +80,19 @@ def cli(verbose):
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="Import sessions up to this date (YYYY-MM-DD)",
 )
-@click.option("--dry-run", is_flag=True, help="Show what would be imported without importing")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be imported without importing"
+)
 def import_data(
     path: str,
     force: bool,
-    db: Optional[str],
-    limit: Optional[int],
+    db: str | None,
+    limit: int | None,
     sort_by: str,
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
+    date_from: datetime | None,
+    date_to: datetime | None,
     dry_run: bool,
-):
+) -> int:
     """Import CPAP data from device SD card or directory."""
     data_path = Path(path)
 
@@ -147,7 +156,9 @@ def import_data(
 
     for parser, detection in selected_results:
         meta = detection.metadata or {}
-        source_desc = meta.get("profile_name") or f"S/N {meta.get('device_serial', 'unknown')}"
+        source_desc = (
+            meta.get("profile_name") or f"S/N {meta.get('device_serial', 'unknown')}"
+        )
 
         if len(selected_results) > 1:
             click.echo(f"\n{'=' * 60}")
@@ -155,7 +166,9 @@ def import_data(
             click.echo(f"{'=' * 60}")
 
         click.echo(f"✓ Detected: {parser.manufacturer} ({parser.parser_id})")
-        click.echo(f"  Structure: {meta.get('structure_type', 'unknown').replace('_', ' ')}")
+        click.echo(
+            f"  Structure: {meta.get('structure_type', 'unknown').replace('_', ' ')}"
+        )
         if meta.get("data_root"):
             click.echo(f"  Data root: {meta['data_root']}")
 
@@ -213,7 +226,9 @@ def import_data(
         # Dry-run mode: show what would be imported
         if dry_run:
             click.echo("\n🔍 DRY RUN MODE - No data will be imported\n")
-            click.echo(f"{'Date':<12} {'Time':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}")
+            click.echo(
+                f"{'Date':<12} {'Time':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}"
+            )
             click.echo("=" * 55)
 
             total_duration = 0.0
@@ -222,22 +237,31 @@ def import_data(
             # Sort sessions by date descending for display
             sorted_sessions = sorted(sessions, key=lambda s: s.start_time, reverse=True)
 
-            for session in sorted_sessions:
-                duration_hours = session.duration_seconds / 3600 if session.duration_seconds else 0
+            for unified_session in sorted_sessions:
+                duration_hours = (
+                    unified_session.duration_seconds / 3600
+                    if unified_session.duration_seconds
+                    else 0
+                )
                 total_duration += duration_hours
 
                 # Count events
-                num_events = len(session.events) if session.events else 0
+                num_events = (
+                    len(unified_session.events) if unified_session.events else 0
+                )
                 total_events += num_events
 
                 # Get AHI from statistics if available
                 ahi_str = "N/A"
-                if hasattr(session, "statistics") and session.statistics:
-                    if session.statistics.ahi is not None:
-                        ahi_str = f"{session.statistics.ahi:.1f}"
+                if (
+                    hasattr(unified_session, "statistics")
+                    and unified_session.statistics
+                ):
+                    if unified_session.statistics.ahi is not None:
+                        ahi_str = f"{unified_session.statistics.ahi:.1f}"
 
                 click.echo(
-                    f"{session.start_time:%Y-%m-%d}   {session.start_time:%H:%M:%S}  "
+                    f"{unified_session.start_time:%Y-%m-%d}   {unified_session.start_time:%H:%M:%S}  "
                     f"{duration_hours:>6.1f}h    "
                     f"{ahi_str:>5}  "
                     f"{num_events:>6}"
@@ -252,7 +276,9 @@ def import_data(
                 # Calculate actual date range using min/max
                 first_date = min(s.start_time for s in sessions)
                 last_date = max(s.start_time for s in sessions)
-                click.echo(f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}")
+                click.echo(
+                    f"  • Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}"
+                )
             if len(selected_results) == 1:
                 click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
             continue
@@ -271,15 +297,17 @@ def import_data(
             show_pos=True,
             item_show_func=lambda s: f"{s.start_time:%Y-%m-%d}" if s else "",
         ) as bar:
-            for session in bar:
+            for unified_session in bar:
                 try:
-                    if importer.import_session(session, force=force):
+                    if importer.import_session(unified_session, force=force):
                         imported += 1
                     else:
                         skipped += 1
                 except Exception as e:
                     failed += 1
-                    logger.error(f"Failed to import session {session.device_session_id}: {e}")
+                    logger.error(
+                        f"Failed to import session {unified_session.device_session_id}: {e}"
+                    )
 
         # Update totals
         total_imported += imported
@@ -329,7 +357,7 @@ def import_data(
 
 @cli.command("list-profiles")
 @click.option("--db", type=click.Path(), help="Database path")
-def list_profiles(db: Optional[str]):
+def list_profiles(db: str | None) -> None:
     """List all available profiles in the database."""
     if db:
         init_database(str(Path(db)))
@@ -361,7 +389,9 @@ def list_profiles(db: Optional[str]):
             )
 
             day_count = (
-                session.query(models.Day).filter(models.Day.profile_id == profile.id).count()
+                session.query(models.Day)
+                .filter(models.Day.profile_id == profile.id)
+                .count()
             )
 
             click.echo(f"  Sessions: {session_count}")
@@ -389,7 +419,10 @@ def list_profiles(db: Optional[str]):
     help="Start date (YYYY-MM-DD)",
 )
 @click.option(
-    "--to-date", "to_date", type=click.DateTime(formats=["%Y-%m-%d"]), help="End date (YYYY-MM-DD)"
+    "--to-date",
+    "to_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date (YYYY-MM-DD)",
 )
 @click.option(
     "--limit",
@@ -399,8 +432,8 @@ def list_profiles(db: Optional[str]):
 )
 @click.option("--db", type=click.Path(), help="Database path")
 def list_sessions(
-    from_date: Optional[datetime], to_date: Optional[datetime], limit: int, db: Optional[str]
-):
+    from_date: datetime | None, to_date: datetime | None, limit: int, db: str | None
+) -> None:
     """List imported sessions."""
     if db:
         init_database(str(Path(db)))
@@ -428,7 +461,7 @@ def list_sessions(
             LEFT JOIN profiles ON devices.profile_id = profiles.id
             {where_clause}
         """
-        total_sessions = session.execute(text(count_query), params).scalar()
+        total_sessions = session.execute(text(count_query), params).scalar() or 0
 
         # Build main query with profile information
         query = f"""
@@ -471,7 +504,9 @@ def list_sessions(
                 if isinstance(sess.start_time, str)
                 else sess.start_time
             )
-            duration_hours = sess.duration_seconds / 3600 if sess.duration_seconds else 0
+            duration_hours = (
+                sess.duration_seconds / 3600 if sess.duration_seconds else 0
+            )
             device_name = f"{sess.manufacturer} {sess.model}"
             profile_name = sess.profile_name or "N/A"
 
@@ -497,7 +532,9 @@ def list_sessions(
             click.echo(
                 f"\nShowing {displayed_count} of {total_sessions} sessions (most recent first)"
             )
-            click.echo("💡 Tip: Use --limit <number> to see more sessions, or --limit 0 to see all")
+            click.echo(
+                "💡 Tip: Use --limit <number> to see more sessions, or --limit 0 to see all"
+            )
         elif limit == 0 and total_sessions > DEFAULT_LIST_SESSIONS_LIMIT:
             click.echo(f"\nShowing all {total_sessions} sessions")
 
@@ -522,18 +559,20 @@ def list_sessions(
     help="Delete sessions up to this date (YYYY-MM-DD)",
 )
 @click.option("--all", "delete_all", is_flag=True, help="Delete all sessions")
-@click.option("--dry-run", is_flag=True, help="Preview what would be deleted without deleting")
+@click.option(
+    "--dry-run", is_flag=True, help="Preview what would be deleted without deleting"
+)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @click.option("--db", type=click.Path(), help="Database path")
 def delete_sessions(
-    session_ids: Optional[str],
-    from_date: Optional[datetime],
-    to_date: Optional[datetime],
+    session_ids: str | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
     delete_all: bool,
     dry_run: bool,
     force: bool,
-    db: Optional[str],
-):
+    db: str | None,
+) -> int | None:
     """Delete sessions from the database."""
     if db:
         init_database(str(Path(db)))
@@ -635,7 +674,9 @@ def delete_sessions(
             click.echo("⚠️  Sessions to be DELETED")
         click.echo(f"{'=' * 70}\n")
 
-        click.echo(f"{'ID':<5} {'Date':<12} {'Time':<8} {'Duration':<10} {'Device':<25}")
+        click.echo(
+            f"{'ID':<5} {'Date':<12} {'Time':<8} {'Duration':<10} {'Device':<25}"
+        )
         click.echo("-" * 70)
 
         for sess in sessions:
@@ -644,7 +685,9 @@ def delete_sessions(
                 if isinstance(sess.start_time, str)
                 else sess.start_time
             )
-            duration_hours = sess.duration_seconds / 3600 if sess.duration_seconds else 0
+            duration_hours = (
+                sess.duration_seconds / 3600 if sess.duration_seconds else 0
+            )
             device_name = f"{sess.manufacturer} {sess.model}"
 
             click.echo(
@@ -685,7 +728,9 @@ def delete_sessions(
         )
         session.commit()
 
-        click.echo(f"\n✓ Successfully deleted {len(sessions)} session(s) and related data")
+        click.echo(
+            f"\n✓ Successfully deleted {len(sessions)} session(s) and related data"
+        )
 
         # Suggest vacuum for large deletions
         if len(sessions) > 10:
@@ -719,19 +764,21 @@ def delete_sessions(
     is_flag=True,
     help="Delete all analysis versions (default: only latest)",
 )
-@click.option("--dry-run", is_flag=True, help="Preview what would be deleted without deleting")
+@click.option(
+    "--dry-run", is_flag=True, help="Preview what would be deleted without deleting"
+)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 @click.option("--db", type=click.Path(), help="Database path")
 def delete_analysis(
-    session_ids: Optional[str],
-    from_date: Optional[datetime],
-    to_date: Optional[datetime],
+    session_ids: str | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
     delete_all: bool,
     all_versions: bool,
     dry_run: bool,
     force: bool,
-    db: Optional[str],
-):
+    db: str | None,
+) -> int | None:
     """Delete analysis results without deleting the sessions themselves."""
     if db:
         init_database(str(Path(db)))
@@ -798,7 +845,9 @@ def delete_analysis(
         sessions_with_analysis = result.fetchall()
 
         if not sessions_with_analysis:
-            click.echo("⚠️  No sessions with analysis results found matching the specified criteria")
+            click.echo(
+                "⚠️  No sessions with analysis results found matching the specified criteria"
+            )
             return 0
 
         # Get session IDs
@@ -817,10 +866,12 @@ def delete_analysis(
             {"session_ids": session_ids_list},
         ).fetchall()
 
-        analysis_count_dict = {row.session_id: row.count for row in analysis_counts}
+        analysis_count_dict = {row[0]: int(row[1]) for row in analysis_counts}
 
         total_analysis_records = sum(analysis_count_dict.values())
-        records_to_delete = total_analysis_records if all_versions else len(sessions_with_analysis)
+        records_to_delete = (
+            total_analysis_records if all_versions else len(sessions_with_analysis)
+        )
 
         # Get detected patterns count (for display)
         patterns_count = session.execute(
@@ -844,7 +895,9 @@ def delete_analysis(
             click.echo("⚠️  Analysis Results to be DELETED")
         click.echo(f"{'=' * 80}\n")
 
-        click.echo(f"{'Sess ID':<8} {'Date':<12} {'Time':<8} {'Versions':<10} {'Device':<25}")
+        click.echo(
+            f"{'Sess ID':<8} {'Date':<12} {'Time':<8} {'Versions':<10} {'Device':<25}"
+        )
         click.echo("-" * 80)
 
         for sess in sessions_with_analysis:
@@ -880,11 +933,14 @@ def delete_analysis(
             f"Analysis records to delete:      {records_to_delete}"
             + (
                 " (latest only)"
-                if not all_versions and total_analysis_records > len(sessions_with_analysis)
+                if not all_versions
+                and total_analysis_records > len(sessions_with_analysis)
                 else ""
             )
         )
-        click.echo(f"Detected patterns to delete:     {patterns_count} (cascade delete)")
+        click.echo(
+            f"Detected patterns to delete:     {patterns_count} (cascade delete)"
+        )
         click.echo("=" * 80 + "\n")
 
         # Dry-run mode: exit without deleting
@@ -894,8 +950,12 @@ def delete_analysis(
 
         # Confirmation prompt (unless --force)
         if not force:
-            click.echo("⚠️  WARNING: This will delete analysis results but keep the sessions!")
-            if not click.confirm("Are you sure you want to delete these analysis results?"):
+            click.echo(
+                "⚠️  WARNING: This will delete analysis results but keep the sessions!"
+            )
+            if not click.confirm(
+                "Are you sure you want to delete these analysis results?"
+            ):
                 click.echo("Deletion cancelled")
                 return 0
 
@@ -903,9 +963,9 @@ def delete_analysis(
         if all_versions:
             # Delete all analysis records for matching sessions
             session.execute(
-                text("DELETE FROM analysis_results WHERE session_id IN :session_ids").bindparams(
-                    bindparam("session_ids", expanding=True)
-                ),
+                text(
+                    "DELETE FROM analysis_results WHERE session_id IN :session_ids"
+                ).bindparams(bindparam("session_ids", expanding=True)),
                 {"session_ids": session_ids_list},
             )
             deleted_count = records_to_delete
@@ -947,14 +1007,14 @@ def delete_analysis(
 
 
 @cli.group()
-def db():
+def db() -> None:
     """Database management commands."""
     pass
 
 
 @db.command()
 @click.option("--db", type=click.Path(), help="Database path")
-def init(db: Optional[str]):
+def init(db: str | None) -> int | None:
     """Initialize database (creates tables if needed)."""
     from oscar_mcp.constants import DEFAULT_DATABASE_PATH
 
@@ -965,14 +1025,16 @@ def init(db: Optional[str]):
 
     init_database(db_path)
     click.echo(f"✓ Database initialized at {db_path}")
+    return None
 
 
 @db.command()
 @click.option("--db", type=click.Path(), help="Database path")
-def stats(db: Optional[str]):
+def stats(db: str | None) -> None:
     """Show database statistics."""
-    from oscar_mcp.constants import DEFAULT_DATABASE_PATH
     import os
+
+    from oscar_mcp.constants import DEFAULT_DATABASE_PATH
 
     if db:
         init_database(str(Path(db)))
@@ -1024,7 +1086,7 @@ def stats(db: Optional[str]):
 @db.command()
 @click.option("--db", type=click.Path(), help="Database path")
 @click.confirmation_option(prompt="Are you sure you want to vacuum the database?")
-def vacuum(db: Optional[str]):
+def vacuum(db: str | None) -> None:
     """Optimize database (reclaim space after deletions)."""
     if db:
         init_database(str(Path(db)))
@@ -1058,25 +1120,32 @@ def vacuum(db: Optional[str]):
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="End date for batch analysis (YYYY-MM-DD)",
 )
-@click.option("--all", "analyze_all", is_flag=True, help="Analyze all sessions for profile")
 @click.option(
-    "--list", "list_mode", is_flag=True, help="Show analysis status instead of running analysis"
+    "--all", "analyze_all", is_flag=True, help="Analyze all sessions for profile"
+)
+@click.option(
+    "--list",
+    "list_mode",
+    is_flag=True,
+    help="Show analysis status instead of running analysis",
 )
 @click.option("--db", type=click.Path(), help="Database path")
 @click.option("--no-store", is_flag=True, help="Don't store results in database")
-@click.option("--analyzed-only", is_flag=True, help="Show only analyzed sessions (with --list)")
+@click.option(
+    "--analyzed-only", is_flag=True, help="Show only analyzed sessions (with --list)"
+)
 def analyze(
     profile: str,
-    session_id: Optional[int],
-    date: Optional[datetime],
-    start: Optional[datetime],
-    end: Optional[datetime],
+    session_id: int | None,
+    date: datetime | None,
+    start: datetime | None,
+    end: datetime | None,
     analyze_all: bool,
     list_mode: bool,
-    db: Optional[str],
+    db: str | None,
     no_store: bool,
     analyzed_only: bool,
-):
+) -> int | None:
     """Run programmatic analysis on CPAP sessions."""
     # Initialize database
     if db:
@@ -1124,12 +1193,14 @@ def analyze(
         else:
             _analyze_batch(session, prof, start, end, analyze_all, no_store)
 
+    return None
+
 
 def _analyze_single_session(
     session: Any,
     prof: Any,
-    session_id: Optional[int],
-    date: Optional[datetime],
+    session_id: int | None,
+    date: datetime | None,
     no_store: bool,
 ) -> None:
     """Analyze a single session and display detailed report."""
@@ -1159,7 +1230,9 @@ def _analyze_single_session(
     assert session_id is not None, "session_id should not be None"
 
     try:
-        result = analysis_service.analyze_session(session_id=session_id, store_results=not no_store)
+        result = analysis_service.analyze_session(
+            session_id=session_id, store_results=not no_store
+        )
 
         click.echo(f"✓ Analysis complete in {result.processing_time_ms}ms\n")
 
@@ -1203,7 +1276,9 @@ def _analyze_single_session(
                 click.echo(f"    - Obstructive Apneas (OA): {oa_count}")
             if caa_count > 0 or ca_count > 0:
                 clear_airway_total = caa_count + ca_count
-                click.echo(f"    - Clear Airway / Central Apnea (CA): {clear_airway_total}")
+                click.echo(
+                    f"    - Clear Airway / Central Apnea (CA): {clear_airway_total}"
+                )
             if ma_count > 0:
                 click.echo(f"    - Mixed Apneas (MA): {ma_count}")
             if h_count > 0:
@@ -1218,7 +1293,9 @@ def _analyze_single_session(
         click.echo(f"  Total Events: {event_timeline['total_events']}")
         click.echo(f"    - Apneas: {len(event_timeline['apneas'])}")
         for apnea_type in ["OA", "CA", "MA", "UA"]:
-            count = sum(1 for a in event_timeline["apneas"] if a["event_type"] == apnea_type)
+            count = sum(
+                1 for a in event_timeline["apneas"] if a["event_type"] == apnea_type
+            )
             if count > 0:
                 click.echo(f"      • {apnea_type}: {count}")
         click.echo(f"    - Hypopneas: {len(event_timeline['hypopneas'])}")
@@ -1256,12 +1333,16 @@ def _analyze_single_session(
             positional = result.positional_analysis
             click.echo("\nPOSITIONAL ANALYSIS")
             click.echo(f"  Event Clustering: {positional['total_clusters']} clusters")
-            click.echo(f"  Positional Likelihood: {positional['positional_likelihood']:.2f}")
+            click.echo(
+                f"  Positional Likelihood: {positional['positional_likelihood']:.2f}"
+            )
 
         if not no_store:
             stored = analysis_service.get_analysis_result(session_id)
             if stored:
-                click.echo(f"\nResults stored with analysis ID: {stored['analysis_id']}")
+                click.echo(
+                    f"\nResults stored with analysis ID: {stored['analysis_id']}"
+                )
 
         click.echo("\n" + "=" * 60)
 
@@ -1274,13 +1355,17 @@ def _analyze_single_session(
 def _analyze_batch(
     session: Any,
     prof: Any,
-    start: Optional[datetime],
-    end: Optional[datetime],
+    start: datetime | None,
+    end: datetime | None,
     analyze_all: bool,
     no_store: bool,
 ) -> None:
     """Analyze multiple sessions with progress bar."""
-    query = session.query(models.Session).join(models.Day).filter(models.Day.profile_id == prof.id)
+    query = (
+        session.query(models.Session)
+        .join(models.Day)
+        .filter(models.Day.profile_id == prof.id)
+    )
 
     if not analyze_all:
         if start:
@@ -1319,13 +1404,17 @@ def _analyze_batch(
 def _list_sessions(
     session: Any,
     prof: Any,
-    start: Optional[datetime],
-    end: Optional[datetime],
+    start: datetime | None,
+    end: datetime | None,
     list_all: bool,
     analyzed_only: bool,
 ) -> None:
     """List sessions and their analysis status."""
-    query = session.query(models.Session).join(models.Day).filter(models.Day.profile_id == prof.id)
+    query = (
+        session.query(models.Session)
+        .join(models.Day)
+        .filter(models.Day.profile_id == prof.id)
+    )
 
     if not list_all:
         if start:
@@ -1340,7 +1429,9 @@ def _list_sessions(
         return
 
     click.echo(f"\nSession Analysis Status ({len(sessions)} sessions)\n")
-    click.echo(f"{'Date':<12} {'ID':<6} {'Duration':<10} {'Analyzed':<10} {'Analysis ID':<12}")
+    click.echo(
+        f"{'Date':<12} {'ID':<6} {'Duration':<10} {'Analyzed':<10} {'Analysis ID':<12}"
+    )
     click.echo("-" * 60)
 
     for db_session in sessions:
@@ -1357,7 +1448,9 @@ def _list_sessions(
             continue
 
         duration = (
-            f"{db_session.duration_seconds / 3600:.1f}h" if db_session.duration_seconds else "N/A"
+            f"{db_session.duration_seconds / 3600:.1f}h"
+            if db_session.duration_seconds
+            else "N/A"
         )
         analyzed_str = "✓" if has_analysis else "✗"
         analysis_id_str = str(analysis.id) if analysis else "-"
@@ -1368,7 +1461,7 @@ def _list_sessions(
         )
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     cli()
 

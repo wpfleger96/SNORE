@@ -7,8 +7,9 @@ analyze complete CPAP sessions.
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -23,8 +24,8 @@ from oscar_mcp.analysis.algorithms.flow_limitation import (
     SessionFlowAnalysis,
 )
 from oscar_mcp.analysis.algorithms.pattern_detector import (
-    CSRDetection,
     ComplexPatternDetector,
+    CSRDetection,
     PeriodicBreathingDetection,
     PositionalAnalysis,
 )
@@ -61,17 +62,17 @@ class ProgrammaticAnalysisResult:
     timestamp_end: float
     duration_hours: float
 
-    flow_analysis: dict
-    event_timeline: dict
-    csr_detection: Optional[dict]
-    periodic_breathing: Optional[dict]
-    positional_analysis: Optional[dict]
+    flow_analysis: dict[str, Any]
+    event_timeline: dict[str, Any]
+    csr_detection: dict[str, Any] | None
+    periodic_breathing: dict[str, Any] | None
+    positional_analysis: dict[str, Any] | None
 
     total_breaths: int
     processing_time_ms: float
-    confidence_summary: Dict[str, float]
+    confidence_summary: dict[str, float]
     clinical_summary: str
-    machine_events: Optional[List] = None
+    machine_events: list[Any] | None = None
 
 
 class ProgrammaticAnalysisEngine:
@@ -109,8 +110,12 @@ class ProgrammaticAnalysisEngine:
         """
         self.breath_segmenter = BreathSegmenter(min_breath_duration=min_breath_duration)
         self.feature_extractor = WaveformFeatureExtractor()
-        self.flow_classifier = FlowLimitationClassifier(confidence_threshold=confidence_threshold)
-        self.event_detector = RespiratoryEventDetector(min_event_duration=min_event_duration)
+        self.flow_classifier = FlowLimitationClassifier(
+            confidence_threshold=confidence_threshold
+        )
+        self.event_detector = RespiratoryEventDetector(
+            min_event_duration=min_event_duration
+        )
         self.pattern_detector = ComplexPatternDetector()
 
         logger.info("ProgrammaticAnalysisEngine initialized")
@@ -121,7 +126,7 @@ class ProgrammaticAnalysisEngine:
         timestamps: np.ndarray,
         flow_values: np.ndarray,
         sample_rate: float = AEC.DEFAULT_SAMPLE_RATE,
-        spo2_values: Optional[np.ndarray] = None,
+        spo2_values: np.ndarray | None = None,
     ) -> ProgrammaticAnalysisResult:
         """
         Perform complete programmatic analysis of a CPAP session.
@@ -146,7 +151,9 @@ class ProgrammaticAnalysisEngine:
         timestamp_end = float(timestamps[-1])
         duration_hours = (timestamp_end - timestamp_start) / 3600.0
 
-        breaths = self.breath_segmenter.segment_breaths(timestamps, flow_values, sample_rate)
+        breaths = self.breath_segmenter.segment_breaths(
+            timestamps, flow_values, sample_rate
+        )
 
         logger.info(f"Segmented {len(breaths)} breaths")
 
@@ -160,8 +167,12 @@ class ProgrammaticAnalysisEngine:
             insp_flow = breath_flow[breath_flow > 0]
 
             if len(insp_flow) > 10:
-                shape = self.feature_extractor.extract_shape_features(insp_flow, sample_rate)
-                peaks = self.feature_extractor.extract_peak_features(insp_flow, sample_rate)
+                shape = self.feature_extractor.extract_shape_features(
+                    insp_flow, sample_rate
+                )
+                peaks = self.feature_extractor.extract_peak_features(
+                    insp_flow, sample_rate
+                )
 
                 breath_features.append((breath.breath_number, shape, peaks))
 
@@ -171,13 +182,17 @@ class ProgrammaticAnalysisEngine:
 
         tidal_volumes = np.array([b.tidal_volume for b in breaths])
 
-        apneas = self.event_detector.detect_apneas(breaths, flow_data=(timestamps, flow_values))
+        apneas = self.event_detector.detect_apneas(
+            breaths, flow_data=(timestamps, flow_values)
+        )
 
         hypopneas = self.event_detector.detect_hypopneas(
             breaths, flow_data=(timestamps, flow_values), spo2_signal=spo2_values
         )
 
-        reras = self.event_detector.detect_reras(breaths, flow_data=(timestamps, flow_values))
+        reras = self.event_detector.detect_reras(
+            breaths, flow_data=(timestamps, flow_values)
+        )
 
         event_timeline = self.event_detector.create_event_timeline(
             apneas, hypopneas, reras, duration_hours
@@ -199,7 +214,9 @@ class ProgrammaticAnalysisEngine:
             breath_timestamps, tidal_volumes, respiratory_rates
         )
 
-        all_event_times = [a.start_time for a in apneas] + [h.start_time for h in hypopneas]
+        all_event_times = [a.start_time for a in apneas] + [
+            h.start_time for h in hypopneas
+        ]
 
         positional_analysis = None
         if len(all_event_times) >= 5:
@@ -212,7 +229,11 @@ class ProgrammaticAnalysisEngine:
         )
 
         clinical_summary = self._generate_clinical_summary(
-            flow_analysis, event_timeline, csr_detection, periodic_breathing, positional_analysis
+            flow_analysis,
+            event_timeline,
+            csr_detection,
+            periodic_breathing,
+            positional_analysis,
         )
 
         processing_time = (time.time() - start_time) * 1000
@@ -228,7 +249,9 @@ class ProgrammaticAnalysisEngine:
             event_timeline=self._serialize_event_timeline(event_timeline),
             csr_detection=self._serialize_csr_detection(csr_detection),
             periodic_breathing=self._serialize_periodic_breathing(periodic_breathing),
-            positional_analysis=self._serialize_positional_analysis(positional_analysis),
+            positional_analysis=self._serialize_positional_analysis(
+                positional_analysis
+            ),
             total_breaths=len(breaths),
             processing_time_ms=processing_time,
             confidence_summary=confidence_summary,
@@ -239,9 +262,9 @@ class ProgrammaticAnalysisEngine:
         self,
         flow_analysis: SessionFlowAnalysis,
         event_timeline: EventTimeline,
-        csr: Optional[CSRDetection],
-        periodic: Optional[PeriodicBreathingDetection],
-    ) -> Dict[str, float]:
+        csr: CSRDetection | None,
+        periodic: PeriodicBreathingDetection | None,
+    ) -> dict[str, float]:
         """Calculate average confidence scores by analysis type."""
         summary = {}
 
@@ -270,9 +293,9 @@ class ProgrammaticAnalysisEngine:
         self,
         flow_analysis: SessionFlowAnalysis,
         event_timeline: EventTimeline,
-        csr: Optional[CSRDetection],
-        periodic: Optional[PeriodicBreathingDetection],
-        positional: Optional[PositionalAnalysis],
+        csr: CSRDetection | None,
+        periodic: PeriodicBreathingDetection | None,
+        positional: PositionalAnalysis | None,
     ) -> str:
         """Generate human-readable clinical summary."""
         lines = []
@@ -296,7 +319,9 @@ class ProgrammaticAnalysisEngine:
             class_dist = flow_analysis.class_distribution
             major_classes = [c for c in range(1, 8) if class_dist[c] > 0]
             if major_classes:
-                lines.append(f"  Classes detected: {', '.join(map(str, major_classes))}")
+                lines.append(
+                    f"  Classes detected: {', '.join(map(str, major_classes))}"
+                )
 
         if event_timeline:
             ahi = event_timeline.ahi
@@ -334,7 +359,7 @@ class ProgrammaticAnalysisEngine:
 
         return "\n".join(lines)
 
-    def _serialize_flow_analysis(self, analysis: SessionFlowAnalysis) -> dict:
+    def _serialize_flow_analysis(self, analysis: SessionFlowAnalysis) -> dict[str, Any]:
         """Convert flow analysis to dictionary."""
         return {
             "total_breaths": analysis.total_breaths,
@@ -353,7 +378,7 @@ class ProgrammaticAnalysisEngine:
             ],
         }
 
-    def _serialize_event_timeline(self, timeline: EventTimeline) -> dict:
+    def _serialize_event_timeline(self, timeline: EventTimeline) -> dict[str, Any]:
         """Convert event timeline to dictionary."""
         return {
             "ahi": timeline.ahi,
@@ -394,7 +419,9 @@ class ProgrammaticAnalysisEngine:
             ],
         }
 
-    def _serialize_csr_detection(self, csr: Optional[CSRDetection]) -> Optional[dict]:
+    def _serialize_csr_detection(
+        self, csr: CSRDetection | None
+    ) -> dict[str, Any] | None:
         """Convert CSR detection to dictionary."""
         if csr is None:
             return None
@@ -410,8 +437,8 @@ class ProgrammaticAnalysisEngine:
         }
 
     def _serialize_periodic_breathing(
-        self, periodic: Optional[PeriodicBreathingDetection]
-    ) -> Optional[dict]:
+        self, periodic: PeriodicBreathingDetection | None
+    ) -> dict[str, Any] | None:
         """Convert periodic breathing detection to dictionary."""
         if periodic is None:
             return None
@@ -426,8 +453,8 @@ class ProgrammaticAnalysisEngine:
         }
 
     def _serialize_positional_analysis(
-        self, positional: Optional[PositionalAnalysis]
-    ) -> Optional[dict]:
+        self, positional: PositionalAnalysis | None
+    ) -> dict[str, Any] | None:
         """Convert positional analysis to dictionary."""
         if positional is None:
             return None

@@ -33,7 +33,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert isinstance(result, ProgrammaticAnalysisResult)
@@ -49,11 +52,16 @@ class TestProgrammaticAnalysisEngine:
         flow_values[3000:3250] = 1.0
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert result.total_breaths > 0
-        assert "event_timeline" in result.event_timeline or isinstance(result.event_timeline, dict)
+        assert "event_timeline" in result.event_timeline or isinstance(
+            result.event_timeline, dict
+        )
 
     def test_analyze_session_with_spo2(self, engine):
         timestamps = np.arange(0, 300, 0.04)
@@ -76,7 +84,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert result is not None
@@ -87,7 +98,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert hasattr(result, "session_id")
@@ -106,7 +120,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert result.processing_time_ms > 0
@@ -116,7 +133,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert isinstance(result.confidence_summary, dict)
@@ -126,7 +146,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert isinstance(result.clinical_summary, str)
@@ -137,7 +160,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert isinstance(result.flow_analysis, dict)
@@ -147,7 +173,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert isinstance(result.event_timeline, dict)
@@ -157,7 +186,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         assert result.timestamp_start == pytest.approx(timestamps[0], abs=0.1)
@@ -168,7 +200,10 @@ class TestProgrammaticAnalysisEngine:
         flow_values = self._generate_synthetic_flow(timestamps, breaths_per_min=15)
 
         result = engine.analyze_session(
-            session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+            session_id=123,
+            timestamps=timestamps,
+            flow_values=flow_values,
+            sample_rate=25.0,
         )
 
         expected_hours = (timestamps[-1] - timestamps[0]) / 3600.0
@@ -194,7 +229,10 @@ class TestProgrammaticAnalysisEngine:
 
         with pytest.raises((ValueError, IndexError, ZeroDivisionError)):
             engine.analyze_session(
-                session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+                session_id=123,
+                timestamps=timestamps,
+                flow_values=flow_values,
+                sample_rate=25.0,
             )
 
     def test_mismatched_lengths_handled(self, engine):
@@ -203,7 +241,10 @@ class TestProgrammaticAnalysisEngine:
 
         with pytest.raises((ValueError, IndexError)):
             engine.analyze_session(
-                session_id=123, timestamps=timestamps, flow_values=flow_values, sample_rate=25.0
+                session_id=123,
+                timestamps=timestamps,
+                flow_values=flow_values,
+                sample_rate=25.0,
             )
 
     def _generate_synthetic_flow(

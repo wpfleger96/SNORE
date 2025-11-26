@@ -11,9 +11,9 @@ these unified structures - they never see parser-specific formats.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Union
 from enum import Enum
 from uuid import UUID, uuid4
+
 import numpy as np
 
 
@@ -69,10 +69,10 @@ class DeviceInfo:
     serial_number: str  # Device serial number
 
     # Optional fields
-    firmware_version: Optional[str] = None
-    hardware_version: Optional[str] = None
-    product_code: Optional[str] = None
-    manufacturing_date: Optional[datetime] = None
+    firmware_version: str | None = None
+    hardware_version: str | None = None
+    product_code: str | None = None
+    manufacturing_date: datetime | None = None
 
 
 @dataclass
@@ -82,29 +82,29 @@ class TherapySettings:
     mode: TherapyMode
 
     # Pressure settings (in cmH2O)
-    pressure_min: Optional[float] = None
-    pressure_max: Optional[float] = None
-    pressure_fixed: Optional[float] = None  # For CPAP mode
+    pressure_min: float | None = None
+    pressure_max: float | None = None
+    pressure_fixed: float | None = None  # For CPAP mode
 
     # BiPAP settings
-    ipap: Optional[float] = None  # Inspiratory pressure
-    epap: Optional[float] = None  # Expiratory pressure
-    ps: Optional[float] = None  # Pressure support (IPAP - EPAP)
+    ipap: float | None = None  # Inspiratory pressure
+    epap: float | None = None  # Expiratory pressure
+    ps: float | None = None  # Pressure support (IPAP - EPAP)
 
     # Comfort settings
-    epr_level: Optional[int] = None  # Expiratory pressure relief (0-3)
-    ramp_time: Optional[int] = None  # Minutes
-    ramp_start_pressure: Optional[float] = None
+    epr_level: int | None = None  # Expiratory pressure relief (0-3)
+    ramp_time: int | None = None  # Minutes
+    ramp_start_pressure: float | None = None
 
     # Humidifier
-    humidity_level: Optional[int] = None  # 0-8 or device-specific scale
-    tube_temp: Optional[float] = None  # Celsius
+    humidity_level: int | None = None  # 0-8 or device-specific scale
+    tube_temp: float | None = None  # Celsius
 
     # Mask settings
-    mask_type: Optional[str] = None  # "Full Face", "Nasal", etc.
+    mask_type: str | None = None  # "Full Face", "Nasal", etc.
 
     # Other settings stored as key-value pairs
-    other_settings: Dict[str, str] = field(default_factory=dict)
+    other_settings: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -120,52 +120,52 @@ class SessionStatistics:
     flow_limitations: int = 0
 
     # Indices (events per hour)
-    ahi: Optional[float] = None  # Apnea-Hypopnea Index
-    oai: Optional[float] = None  # Obstructive Apnea Index
-    cai: Optional[float] = None  # Central Apnea Index
-    hi: Optional[float] = None  # Hypopnea Index
-    rei: Optional[float] = None  # Respiratory Event Index
+    ahi: float | None = None  # Apnea-Hypopnea Index
+    oai: float | None = None  # Obstructive Apnea Index
+    cai: float | None = None  # Central Apnea Index
+    hi: float | None = None  # Hypopnea Index
+    rei: float | None = None  # Respiratory Event Index
 
     # Pressure statistics (cmH2O)
-    pressure_min: Optional[float] = None
-    pressure_max: Optional[float] = None
-    pressure_median: Optional[float] = None
-    pressure_mean: Optional[float] = None
-    pressure_95th: Optional[float] = None
+    pressure_min: float | None = None
+    pressure_max: float | None = None
+    pressure_median: float | None = None
+    pressure_mean: float | None = None
+    pressure_95th: float | None = None
 
     # Leak statistics (L/min)
-    leak_min: Optional[float] = None
-    leak_max: Optional[float] = None
-    leak_median: Optional[float] = None
-    leak_mean: Optional[float] = None
-    leak_95th: Optional[float] = None
-    leak_percentile_70: Optional[float] = None  # Some devices use 70th percentile
+    leak_min: float | None = None
+    leak_max: float | None = None
+    leak_median: float | None = None
+    leak_mean: float | None = None
+    leak_95th: float | None = None
+    leak_percentile_70: float | None = None  # Some devices use 70th percentile
 
     # Respiratory statistics
-    respiratory_rate_min: Optional[float] = None
-    respiratory_rate_max: Optional[float] = None
-    respiratory_rate_mean: Optional[float] = None
+    respiratory_rate_min: float | None = None
+    respiratory_rate_max: float | None = None
+    respiratory_rate_mean: float | None = None
 
-    tidal_volume_min: Optional[float] = None  # mL
-    tidal_volume_max: Optional[float] = None
-    tidal_volume_mean: Optional[float] = None
+    tidal_volume_min: float | None = None  # mL
+    tidal_volume_max: float | None = None
+    tidal_volume_mean: float | None = None
 
-    minute_ventilation_min: Optional[float] = None  # L/min
-    minute_ventilation_max: Optional[float] = None
-    minute_ventilation_mean: Optional[float] = None
+    minute_ventilation_min: float | None = None  # L/min
+    minute_ventilation_max: float | None = None
+    minute_ventilation_mean: float | None = None
 
     # SpO2 statistics (if oximetry available)
-    spo2_min: Optional[float] = None
-    spo2_max: Optional[float] = None
-    spo2_mean: Optional[float] = None
-    spo2_time_below_90: Optional[int] = None  # Seconds
+    spo2_min: float | None = None
+    spo2_max: float | None = None
+    spo2_mean: float | None = None
+    spo2_time_below_90: int | None = None  # Seconds
 
-    pulse_min: Optional[float] = None  # BPM
-    pulse_max: Optional[float] = None
-    pulse_mean: Optional[float] = None
+    pulse_min: float | None = None  # BPM
+    pulse_max: float | None = None
+    pulse_mean: float | None = None
 
     # Usage
-    usage_hours: Optional[float] = None
+    usage_hours: float | None = None
 
 
 @dataclass
@@ -177,9 +177,9 @@ class RespiratoryEvent:
     duration_seconds: float
 
     # Optional additional data
-    peak_flow_limitation: Optional[float] = None
-    spo2_drop: Optional[float] = None
-    end_time: Optional[datetime] = None
+    peak_flow_limitation: float | None = None
+    spo2_drop: float | None = None
+    end_time: datetime | None = None
 
 
 @dataclass
@@ -199,15 +199,15 @@ class WaveformData:
     unit: str  # "L/min", "cmH2O", "%", etc.
 
     # Time-series data - MUST be seconds offset from session start (not datetime!)
-    timestamps: Union[List[float], np.ndarray]  # Seconds from session start
-    values: Union[List[float], np.ndarray]
+    timestamps: list[float] | np.ndarray  # Seconds from session start
+    values: list[float] | np.ndarray
 
     # Statistics for this waveform
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    mean_value: Optional[float] = None
+    min_value: float | None = None
+    max_value: float | None = None
+    mean_value: float | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Convert lists to numpy arrays for efficiency."""
         # Convert to numpy arrays
         if isinstance(self.timestamps, list):
@@ -255,30 +255,32 @@ class UnifiedSession:
     end_time: datetime = field(default_factory=datetime.now)
 
     # Therapy data
-    settings: TherapySettings = field(default_factory=lambda: TherapySettings(TherapyMode.CPAP))
+    settings: TherapySettings = field(
+        default_factory=lambda: TherapySettings(TherapyMode.CPAP)
+    )
     statistics: SessionStatistics = field(default_factory=SessionStatistics)
 
     # Time-series data
-    waveforms: Dict[WaveformType, WaveformData] = field(default_factory=dict)
-    events: List[RespiratoryEvent] = field(default_factory=list)
+    waveforms: dict[WaveformType, WaveformData] = field(default_factory=dict)
+    events: list[RespiratoryEvent] = field(default_factory=list)
 
     # Import metadata
     import_source: str = ""  # "resmed_edf", "oscar_binary", "philips_binary"
     import_date: datetime = field(default_factory=datetime.now)
-    raw_data_path: Optional[str] = None  # Path to original files
+    raw_data_path: str | None = None  # Path to original files
     parser_version: str = ""  # Version of parser that created this
 
     # Data quality flags
     has_waveform_data: bool = False
     has_event_data: bool = False
     has_statistics: bool = False
-    data_quality_notes: List[str] = field(default_factory=list)
+    data_quality_notes: list[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate session data after initialization."""
         self._validate()
 
-    def _validate(self):
+    def _validate(self) -> None:
         """Validate session data consistency."""
         errors = []
 
@@ -317,7 +319,10 @@ class UnifiedSession:
                         errors.append(
                             f"{waveform_type.value}: last timestamp offset {last_offset:.2f}s exceeds session duration {duration:.2f}s"
                         )
-                elif isinstance(waveform.timestamps, list) and len(waveform.timestamps) > 0:
+                elif (
+                    isinstance(waveform.timestamps, list)
+                    and len(waveform.timestamps) > 0
+                ):
                     # Datetime objects - validate against session start/end
                     first_ts = waveform.timestamps[0]
                     last_ts = waveform.timestamps[-1]
@@ -334,7 +339,9 @@ class UnifiedSession:
                             )
 
         if errors:
-            raise ValueError("Session validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
+            raise ValueError(
+                "Session validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            )
 
     @property
     def duration_hours(self) -> float:
@@ -348,17 +355,17 @@ class UnifiedSession:
         delta = self.end_time - self.start_time
         return delta.total_seconds()
 
-    def add_waveform(self, waveform: WaveformData):
+    def add_waveform(self, waveform: WaveformData) -> None:
         """Add a waveform to this session."""
         self.waveforms[waveform.waveform_type] = waveform
         self.has_waveform_data = True
 
-    def add_event(self, event: RespiratoryEvent):
+    def add_event(self, event: RespiratoryEvent) -> None:
         """Add a respiratory event to this session."""
         self.events.append(event)
         self.has_event_data = True
 
-    def get_waveform(self, waveform_type: WaveformType) -> Optional[WaveformData]:
+    def get_waveform(self, waveform_type: WaveformType) -> WaveformData | None:
         """Get a specific waveform by type."""
         return self.waveforms.get(waveform_type)
 
@@ -368,6 +375,6 @@ class UnifiedSession:
 
 
 # Type aliases for convenience
-SessionList = List[UnifiedSession]
-WaveformDict = Dict[WaveformType, WaveformData]
-EventList = List[RespiratoryEvent]
+SessionList = list[UnifiedSession]
+WaveformDict = dict[WaveformType, WaveformData]
+EventList = list[RespiratoryEvent]

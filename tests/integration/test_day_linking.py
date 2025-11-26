@@ -8,12 +8,13 @@ These tests verify that:
 - list-profiles shows correct counts after import
 """
 
-import pytest
 from datetime import datetime, timedelta
 
-from oscar_mcp.database.session import init_database, session_scope, cleanup_database
-from oscar_mcp.database.day_manager import DayManager
+import pytest
+
 from oscar_mcp.database import models
+from oscar_mcp.database.day_manager import DayManager
+from oscar_mcp.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture(autouse=True)
@@ -30,12 +31,17 @@ def profile_with_device(temp_db):
     init_database(str(temp_db))
 
     with session_scope() as session:
-        profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+        profile = models.Profile(
+            username="testuser", settings={"day_split_time": "12:00:00"}
+        )
         session.add(profile)
         session.flush()
 
         device = models.Device(
-            profile_id=profile.id, manufacturer="Test", model="Test Model", serial_number="TEST123"
+            profile_id=profile.id,
+            manufacturer="Test",
+            model="Test Model",
+            serial_number="TEST123",
         )
         session.add(device)
         session.commit()
@@ -154,7 +160,9 @@ class TestDaySplittingLogic:
             expected_date = datetime(2025, 10, 15).date()
             assert day_date == expected_date
 
-    def test_session_before_noon_belongs_to_previous_day(self, temp_db, profile_with_device):
+    def test_session_before_noon_belongs_to_previous_day(
+        self, temp_db, profile_with_device
+    ):
         """Test that session starting before noon belongs to previous day."""
         profile_id, device_id = profile_with_device
 
@@ -177,7 +185,9 @@ class TestDaySplittingLogic:
 
         with session_scope() as session:
             # Profile with 14:00 (2pm) split time
-            profile = models.Profile(username="testuser", settings={"day_split_time": "14:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "14:00:00"}
+            )
             session.add(profile)
             session.commit()
 
@@ -195,7 +205,9 @@ class TestDaySplittingLogic:
 class TestListProfilesIntegration:
     """Test that list-profiles shows correct counts after import."""
 
-    def test_list_profiles_shows_correct_session_count(self, temp_db, profile_with_device):
+    def test_list_profiles_shows_correct_session_count(
+        self, temp_db, profile_with_device
+    ):
         """Test that list-profiles queries work correctly with day-linked sessions."""
         profile_id, device_id = profile_with_device
 
@@ -230,10 +242,14 @@ class TestListProfilesIntegration:
                 .count()
             )
 
-            assert total_sessions == 3, "Should find all 3 sessions through Day relationship"
+            assert total_sessions == 3, (
+                "Should find all 3 sessions through Day relationship"
+            )
 
             # Count days
-            days_count = session.query(models.Day).filter_by(profile_id=profile_id).count()
+            days_count = (
+                session.query(models.Day).filter_by(profile_id=profile_id).count()
+            )
             assert days_count == 3, "Should have 3 separate days"
 
     def test_sessions_without_day_id_not_counted(self, temp_db, profile_with_device):
@@ -262,10 +278,14 @@ class TestListProfilesIntegration:
             )
 
             # Should be 0 because session has no day_id
-            assert sessions_through_day == 0, "Sessions without day_id should not be counted"
+            assert sessions_through_day == 0, (
+                "Sessions without day_id should not be counted"
+            )
 
             # But direct query should find it
-            direct_count = session.query(models.Session).filter_by(device_id=device_id).count()
+            direct_count = (
+                session.query(models.Session).filter_by(device_id=device_id).count()
+            )
             assert direct_count == 1, "Direct query should still find the session"
 
 
@@ -277,7 +297,9 @@ class TestDayManagerFunctions:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.commit()
 
@@ -293,7 +315,9 @@ class TestDayManagerFunctions:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.commit()
 
@@ -313,7 +337,9 @@ class TestDayManagerFunctions:
 
             # Should not exist yet
             existing = (
-                session.query(models.Day).filter_by(profile_id=profile_id, date=day_date).first()
+                session.query(models.Day)
+                .filter_by(profile_id=profile_id, date=day_date)
+                .first()
             )
             assert existing is None
 
@@ -346,6 +372,8 @@ class TestDayManagerFunctions:
 
             # Should not have created duplicate
             count = (
-                session.query(models.Day).filter_by(profile_id=profile_id, date=day_date).count()
+                session.query(models.Day)
+                .filter_by(profile_id=profile_id, date=day_date)
+                .count()
             )
             assert count == 1

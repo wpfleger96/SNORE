@@ -6,8 +6,9 @@ Supports Qt 4.6 format with little-endian byte order.
 """
 
 import struct
-from typing import BinaryIO, Any, Dict, List
+
 from enum import IntEnum
+from typing import Any, BinaryIO, cast
 
 
 class QVariantType(IntEnum):
@@ -54,47 +55,47 @@ class QDataStreamReader:
 
     def read_bool(self) -> bool:
         """Read boolean (1 byte)."""
-        return struct.unpack(f"{self.byte_order}?", self.read_bytes(1))[0]
+        return cast(bool, struct.unpack(f"{self.byte_order}?", self.read_bytes(1))[0])
 
     def read_int8(self) -> int:
         """Read signed 8-bit integer."""
-        return struct.unpack(f"{self.byte_order}b", self.read_bytes(1))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}b", self.read_bytes(1))[0])
 
     def read_uint8(self) -> int:
         """Read unsigned 8-bit integer."""
-        return struct.unpack(f"{self.byte_order}B", self.read_bytes(1))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}B", self.read_bytes(1))[0])
 
     def read_int16(self) -> int:
         """Read signed 16-bit integer."""
-        return struct.unpack(f"{self.byte_order}h", self.read_bytes(2))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}h", self.read_bytes(2))[0])
 
     def read_uint16(self) -> int:
         """Read unsigned 16-bit integer."""
-        return struct.unpack(f"{self.byte_order}H", self.read_bytes(2))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}H", self.read_bytes(2))[0])
 
     def read_int32(self) -> int:
         """Read signed 32-bit integer."""
-        return struct.unpack(f"{self.byte_order}i", self.read_bytes(4))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}i", self.read_bytes(4))[0])
 
     def read_uint32(self) -> int:
         """Read unsigned 32-bit integer."""
-        return struct.unpack(f"{self.byte_order}I", self.read_bytes(4))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}I", self.read_bytes(4))[0])
 
     def read_int64(self) -> int:
         """Read signed 64-bit integer."""
-        return struct.unpack(f"{self.byte_order}q", self.read_bytes(8))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}q", self.read_bytes(8))[0])
 
     def read_uint64(self) -> int:
         """Read unsigned 64-bit integer."""
-        return struct.unpack(f"{self.byte_order}Q", self.read_bytes(8))[0]
+        return cast(int, struct.unpack(f"{self.byte_order}Q", self.read_bytes(8))[0])
 
     def read_float(self) -> float:
         """Read 32-bit float."""
-        return struct.unpack(f"{self.byte_order}f", self.read_bytes(4))[0]
+        return cast(float, struct.unpack(f"{self.byte_order}f", self.read_bytes(4))[0])
 
     def read_double(self) -> float:
         """Read 64-bit double."""
-        return struct.unpack(f"{self.byte_order}d", self.read_bytes(8))[0]
+        return cast(float, struct.unpack(f"{self.byte_order}d", self.read_bytes(8))[0])
 
     def read_qstring(self) -> str | None:
         """
@@ -167,10 +168,12 @@ class QDataStreamReader:
             # For now, return None and log warning
             import warnings
 
-            warnings.warn(f"Skipping unsupported QVariant type: {type_code}")
+            warnings.warn(
+                f"Skipping unsupported QVariant type: {type_code}", stacklevel=2
+            )
             return None
 
-    def skip_qhash_uint32_qvariant(self):
+    def skip_qhash_uint32_qvariant(self) -> None:
         """
         Skip QHash<quint32, QVariant> without parsing values.
 
@@ -210,7 +213,7 @@ class QDataStreamReader:
             # For unknown types, we can't reliably skip them
             # So this method only works if all types are known
 
-    def read_qhash_uint32_qvariant(self) -> Dict[int, Any]:
+    def read_qhash_uint32_qvariant(self) -> dict[int, Any]:
         """
         Read QHash<quint32, QVariant>.
 
@@ -230,7 +233,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qhash_uint32_float(self) -> Dict[int, float]:
+    def read_qhash_uint32_float(self) -> dict[int, float]:
         """
         Read QHash<quint32, EventDataType> where EventDataType is float.
 
@@ -250,7 +253,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qhash_uint32_double(self) -> Dict[int, float]:
+    def read_qhash_uint32_double(self) -> dict[int, float]:
         """
         Read QHash<quint32, double>.
 
@@ -269,7 +272,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qhash_uint32_uint64(self) -> Dict[int, int]:
+    def read_qhash_uint32_uint64(self) -> dict[int, int]:
         """
         Read QHash<quint32, quint64>.
 
@@ -289,7 +292,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qhash_nested(self) -> Dict[int, Dict[int, int]]:
+    def read_qhash_nested(self) -> dict[int, dict[int, int]]:
         """
         Read nested QHash<quint32, QHash<EventStoreType, EventStoreType>>.
 
@@ -315,7 +318,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qhash_nested_time(self) -> Dict[int, Dict[int, int]]:
+    def read_qhash_nested_time(self) -> dict[int, dict[int, int]]:
         """
         Read nested QHash<quint32, QHash<EventStoreType, quint32>>.
 
@@ -341,7 +344,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qlist_uint32(self) -> List[int]:
+    def read_qlist_uint32(self) -> list[int]:
         """
         Read QList<quint32>.
 
@@ -360,7 +363,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qvector_int16(self) -> List[int]:
+    def read_qvector_int16(self) -> list[int]:
         """
         Read QVector<qint16> (EventStoreType array).
 
@@ -380,7 +383,7 @@ class QDataStreamReader:
 
         return result
 
-    def read_qvector_uint32(self) -> List[int]:
+    def read_qvector_uint32(self) -> list[int]:
         """
         Read QVector<quint32> (time delta array).
 
@@ -400,7 +403,7 @@ class QDataStreamReader:
 
         return result
 
-    def skip_bytes(self, count: int):
+    def skip_bytes(self, count: int) -> None:
         """Skip specified number of bytes."""
         self.stream.seek(count, 1)
 
@@ -408,6 +411,6 @@ class QDataStreamReader:
         """Get current position in stream."""
         return self.stream.tell()
 
-    def seek(self, position: int, whence: int = 0):
+    def seek(self, position: int, whence: int = 0) -> None:
         """Seek to position in stream."""
         self.stream.seek(position, whence)

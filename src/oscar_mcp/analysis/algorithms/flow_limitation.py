@@ -7,8 +7,9 @@ normal (Class 1) to severe flow limitation (Class 7).
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Any
 
 import numpy as np
 
@@ -17,8 +18,8 @@ from oscar_mcp.analysis.algorithms.feature_extractors import (
     ShapeFeatures,
     StatisticalFeatures,
 )
-from oscar_mcp.constants import FlowLimitationConstants as FLC
 from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
+from oscar_mcp.constants import FlowLimitationConstants as FLC
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class FlowPattern:
     flow_class: int
     class_name: str
     confidence: float
-    matched_features: dict
+    matched_features: dict[str, Any]
     severity: str
 
 
@@ -59,10 +60,10 @@ class SessionFlowAnalysis:
     """
 
     total_breaths: int
-    class_distribution: dict
+    class_distribution: dict[int, int]
     flow_limitation_index: float
     average_confidence: float
-    patterns: List[FlowPattern]
+    patterns: list[FlowPattern]
 
 
 class FlowLimitationClassifier:
@@ -92,14 +93,16 @@ class FlowLimitationClassifier:
         """
         self.confidence_threshold = confidence_threshold
         self.classes = FLOW_LIMITATION_CLASSES
-        logger.info(f"FlowLimitationClassifier initialized with {len(self.classes)} classes")
+        logger.info(
+            f"FlowLimitationClassifier initialized with {len(self.classes)} classes"
+        )
 
     def classify_flow_pattern(
         self,
         breath_number: int,
         shape_features: ShapeFeatures,
         peak_features: PeakFeatures,
-        statistical_features: Optional[StatisticalFeatures] = None,
+        statistical_features: StatisticalFeatures | None = None,
     ) -> FlowPattern:
         """
         Classify a single breath into one of 7 flow limitation classes.
@@ -113,7 +116,7 @@ class FlowLimitationClassifier:
         Returns:
             FlowPattern with classification and confidence score
         """
-        matched_features: Dict[str, Union[float, int, str]] = {}
+        matched_features: dict[str, float | int | str] = {}
 
         flow_class = self._apply_classification_rules(
             shape_features, peak_features, matched_features
@@ -136,7 +139,7 @@ class FlowLimitationClassifier:
         self,
         shape: ShapeFeatures,
         peaks: PeakFeatures,
-        matched_features: dict,
+        matched_features: dict[str, Any],
     ) -> int:
         """
         Apply rule-based logic to determine flow limitation class.
@@ -161,7 +164,10 @@ class FlowLimitationClassifier:
 
         peak_position = peak_positions[0] if peak_positions else 0.5
 
-        if flatness > FLC.FL_CLASS7_FLATNESS_MIN and plateau > FLC.FL_CLASS7_PLATEAU_MIN:
+        if (
+            flatness > FLC.FL_CLASS7_FLATNESS_MIN
+            and plateau > FLC.FL_CLASS7_PLATEAU_MIN
+        ):
             matched_features["flatness_very_high"] = flatness
             matched_features["plateau_extensive"] = plateau
             return 7
@@ -179,7 +185,9 @@ class FlowLimitationClassifier:
         if (
             flatness > FLC.FL_CLASS5_FLATNESS_MIN
             and peak_count == 1
-            and FLC.FL_CLASS5_PEAK_POSITION_MIN <= peak_position <= FLC.FL_CLASS5_PEAK_POSITION_MAX
+            and FLC.FL_CLASS5_PEAK_POSITION_MIN
+            <= peak_position
+            <= FLC.FL_CLASS5_PEAK_POSITION_MAX
             and plateau > FLC.FL_CLASS5_PLATEAU_MIN
         ):
             matched_features["flatness_high"] = flatness
@@ -197,8 +205,13 @@ class FlowLimitationClassifier:
             matched_features["flatness_moderate"] = flatness
             return 4
 
-        if peak_count >= FLC.FL_CLASS3_PEAK_COUNT_MIN and flatness > FLC.FL_CLASS3_FLATNESS_MIN:
-            max_prominence = max(peaks.peak_prominences) if peaks.peak_prominences else 0
+        if (
+            peak_count >= FLC.FL_CLASS3_PEAK_COUNT_MIN
+            and flatness > FLC.FL_CLASS3_FLATNESS_MIN
+        ):
+            max_prominence = (
+                max(peaks.peak_prominences) if peaks.peak_prominences else 0
+            )
             if max_prominence < FLC.FL_CLASS3_PROMINENCE_MAX:
                 matched_features["multiple_small_peaks"] = peak_count
                 matched_features["low_prominence"] = max_prominence
@@ -231,7 +244,9 @@ class FlowLimitationClassifier:
         else:
             return 7
 
-    def _calculate_confidence(self, flow_class: int, matched_features: dict) -> float:
+    def _calculate_confidence(
+        self, flow_class: int, matched_features: dict[str, Any]
+    ) -> float:
         """
         Calculate confidence score for classification.
 
@@ -270,7 +285,7 @@ class FlowLimitationClassifier:
 
         return base_confidence
 
-    def calculate_flow_limitation_index(self, patterns: List[FlowPattern]) -> float:
+    def calculate_flow_limitation_index(self, patterns: list[FlowPattern]) -> float:
         """
         Calculate session-level flow limitation index.
 
@@ -295,7 +310,7 @@ class FlowLimitationClassifier:
 
     def analyze_session(
         self,
-        breath_features: List[tuple],
+        breath_features: list[tuple[Any, ...]],
     ) -> SessionFlowAnalysis:
         """
         Analyze all breaths in a session.
@@ -311,7 +326,9 @@ class FlowLimitationClassifier:
         class_distribution = {i: 0 for i in range(1, 8)}
 
         for breath_number, shape_features, peak_features in breath_features:
-            pattern = self.classify_flow_pattern(breath_number, shape_features, peak_features)
+            pattern = self.classify_flow_pattern(
+                breath_number, shape_features, peak_features
+            )
             patterns.append(pattern)
             class_distribution[pattern.flow_class] += 1
 

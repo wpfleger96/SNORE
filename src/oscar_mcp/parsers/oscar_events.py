@@ -5,17 +5,18 @@ Parses .001 files containing waveform and event data.
 Format version 10 (current OSCAR version).
 """
 
-import struct
 import io
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, BinaryIO
-from dataclasses import dataclass, field
-from enum import IntEnum
+import struct
 
-from oscar_mcp.parsers.qdatastream import QDataStreamReader
-from oscar_mcp.parsers.compression import qUncompress, QtCompressionError
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import IntEnum
+from pathlib import Path
+from typing import Any, BinaryIO
+
 from oscar_mcp.constants import OSCAR_MAGIC_NUMBER
+from oscar_mcp.parsers.compression import QtCompressionError, qUncompress
+from oscar_mcp.parsers.qdatastream import QDataStreamReader
 
 
 class OscarEventsParseError(Exception):
@@ -56,11 +57,17 @@ class EventList:
     max_value2: float = 0.0
 
     # Data arrays
-    data: List[int] = field(default_factory=list)  # Primary data (EventStoreType = int16)
-    data2: List[int] = field(default_factory=list)  # Secondary data (if has_second_field)
-    time_deltas: List[int] = field(default_factory=list)  # Time offsets in ms (for events)
+    data: list[int] = field(
+        default_factory=list
+    )  # Primary data (EventStoreType = int16)
+    data2: list[int] = field(
+        default_factory=list
+    )  # Secondary data (if has_second_field)
+    time_deltas: list[int] = field(
+        default_factory=list
+    )  # Time offsets in ms (for events)
 
-    def get_actual_values(self) -> List[float]:
+    def get_actual_values(self) -> list[float]:
         """
         Convert stored int16 values to actual float values using gain/offset.
 
@@ -69,7 +76,7 @@ class EventList:
         """
         return [v * self.gain + self.offset for v in self.data]
 
-    def get_actual_values2(self) -> List[float]:
+    def get_actual_values2(self) -> list[float]:
         """
         Convert stored int16 values to actual float values for secondary field.
 
@@ -80,7 +87,7 @@ class EventList:
             return []
         return [v * self.gain + self.offset for v in self.data2]
 
-    def get_timestamps(self) -> List[int]:
+    def get_timestamps(self) -> list[int]:
         """
         Get actual timestamps for each data point.
 
@@ -96,7 +103,9 @@ class EventList:
                 return []
 
             interval_ms = 1000.0 / self.sample_rate
-            return [int(self.first_timestamp + i * interval_ms) for i in range(self.count)]
+            return [
+                int(self.first_timestamp + i * interval_ms) for i in range(self.count)
+            ]
         else:
             # Use delta times
             return [self.first_timestamp + delta for delta in self.time_deltas]
@@ -129,7 +138,7 @@ class SessionEvents:
     crc16: int
 
     # Channel data
-    event_lists: Dict[int, List[EventList]] = field(default_factory=dict)
+    event_lists: dict[int, list[EventList]] = field(default_factory=dict)
 
     @property
     def start_time(self) -> datetime:
@@ -151,7 +160,7 @@ class SessionEvents:
         """Get session duration in hours."""
         return self.duration_seconds / 3600.0
 
-    def get_channel_event_lists(self, channel_id: int) -> List[EventList]:
+    def get_channel_event_lists(self, channel_id: int) -> list[EventList]:
         """
         Get all EventLists for a specific channel.
 
@@ -164,7 +173,7 @@ class SessionEvents:
         return self.event_lists.get(channel_id, [])
 
     @property
-    def available_channels(self) -> List[int]:
+    def available_channels(self) -> list[int]:
         """Get list of channel IDs that have data."""
         return list(self.event_lists.keys())
 
@@ -256,7 +265,7 @@ class OscarEventsParser:
 
         return events
 
-    def _parse_header(self, stream: BinaryIO) -> Dict:
+    def _parse_header(self, stream: BinaryIO) -> dict[str, Any]:
         """
         Parse 42-byte header from events file.
 
@@ -306,7 +315,9 @@ class OscarEventsParser:
 
         # Validate file type
         if file_type != 1:
-            raise OscarEventsParseError(f"Invalid file type: {file_type} (expected 1 for events)")
+            raise OscarEventsParseError(
+                f"Invalid file type: {file_type} (expected 1 for events)"
+            )
 
         return {
             "magic": magic,
@@ -322,7 +333,9 @@ class OscarEventsParser:
             "crc16": crc16,
         }
 
-    def _parse_channel_metadata(self, reader: QDataStreamReader, version: int) -> List[Dict]:
+    def _parse_channel_metadata(
+        self, reader: QDataStreamReader, version: int
+    ) -> list[dict[str, Any]]:
         """
         Parse channel metadata section.
 
@@ -362,7 +375,8 @@ class OscarEventsParser:
                     import warnings
 
                     warnings.warn(
-                        f"Unknown event type {event_type} (0x{event_type:02x}), treating as WAVEFORM"
+                        f"Unknown event type {event_type} (0x{event_type:02x}), treating as WAVEFORM",
+                        stacklevel=2,
                     )
                     parsed_event_type = EventListType.WAVEFORM
 
@@ -396,8 +410,8 @@ class OscarEventsParser:
         return metadata_list
 
     def _parse_channel_data(
-        self, reader: QDataStreamReader, metadata_list: List[Dict]
-    ) -> Dict[int, List[EventList]]:
+        self, reader: QDataStreamReader, metadata_list: list[dict[str, Any]]
+    ) -> dict[int, list[EventList]]:
         """
         Parse actual channel data arrays.
 
@@ -406,7 +420,7 @@ class OscarEventsParser:
         Returns:
             Dictionary mapping channel IDs to lists of EventLists
         """
-        result: Dict[int, List[EventList]] = {}
+        result: dict[int, list[EventList]] = {}
 
         for metadata in metadata_list:
             # Read primary data array

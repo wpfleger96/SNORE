@@ -71,7 +71,11 @@ class TestMultiParserDetection:
         assert results[0][1].confidence == 0.95
 
     def test_detect_all_parsers_sorted_results(
-        self, registry, mock_parser_high_confidence, mock_parser_low_confidence, tmp_path
+        self,
+        registry,
+        mock_parser_high_confidence,
+        mock_parser_low_confidence,
+        tmp_path,
     ):
         """Test that results are sorted by confidence (highest first)."""
         registry.register(mock_parser_low_confidence)

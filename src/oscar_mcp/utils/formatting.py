@@ -1,7 +1,6 @@
 """Formatting utilities for OSCAR-MCP."""
 
 from datetime import date
-from typing import Optional
 
 
 def format_duration(hours: float) -> str:
@@ -28,7 +27,7 @@ def format_duration(hours: float) -> str:
         return f"{minutes}m"
 
 
-def format_ahi(ahi: Optional[float]) -> str:
+def format_ahi(ahi: float | None) -> str:
     """
     Format AHI value with severity assessment.
 
@@ -65,7 +64,7 @@ def get_ahi_severity(ahi: float) -> str:
         return "severe"
 
 
-def format_pressure(pressure: Optional[float]) -> str:
+def format_pressure(pressure: float | None) -> str:
     """
     Format pressure value with units.
 
@@ -80,7 +79,7 @@ def format_pressure(pressure: Optional[float]) -> str:
     return f"{pressure:.1f} cmH₂O"
 
 
-def format_leak(leak: Optional[float]) -> str:
+def format_leak(leak: float | None) -> str:
     """
     Format leak rate with assessment.
 

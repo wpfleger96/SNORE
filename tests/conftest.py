@@ -1,9 +1,12 @@
 """Pytest configuration and fixtures for OSCAR-MCP tests."""
 
-from pathlib import Path
 import sqlite3
 import tempfile
+
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
 import pytest
 
 # Register datetime adapters for SQLite (Python 3.12+)
@@ -13,7 +16,9 @@ sqlite3.register_converter("DATETIME", lambda s: datetime.fromisoformat(s.decode
 
 def pytest_configure(config):
     """Register custom test markers."""
-    config.addinivalue_line("markers", "unit: Unit tests that do not require external dependencies")
+    config.addinivalue_line(
+        "markers", "unit: Unit tests that do not require external dependencies"
+    )
     config.addinivalue_line("markers", "parser: Tests for device parsers")
     config.addinivalue_line(
         "markers", "business_logic: Tests for core business logic and algorithms"
@@ -27,15 +32,21 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration_metrics: Breath metrics calculation and validation"
     )
-    config.addinivalue_line("markers", "integration_features: Feature extraction integration tests")
-    config.addinivalue_line("markers", "real_data: Tests that process actual CPAP session data")
+    config.addinivalue_line(
+        "markers", "integration_features: Feature extraction integration tests"
+    )
+    config.addinivalue_line(
+        "markers", "real_data: Tests that process actual CPAP session data"
+    )
     config.addinivalue_line(
         "markers", "recorded: Tests using recorded PAP session data from device"
     )
     config.addinivalue_line(
         "markers", "requires_fixtures: Tests that require real session fixtures"
     )
-    config.addinivalue_line("markers", "slow: Tests that take significant time (>5 seconds)")
+    config.addinivalue_line(
+        "markers", "slow: Tests that take significant time (>5 seconds)"
+    )
 
 
 @pytest.fixture
@@ -61,8 +72,8 @@ def resmed_parser():
 @pytest.fixture
 def parser_registry():
     """Return the global parser registry with parsers registered."""
-    from oscar_mcp.parsers.registry import parser_registry
     from oscar_mcp.parsers.register_all import register_all_parsers
+    from oscar_mcp.parsers.registry import parser_registry
 
     # Explicitly register parsers for testing
     register_all_parsers()
@@ -96,9 +107,10 @@ def temp_db():
 @pytest.fixture
 def db_session(temp_db):
     """Create fresh database session for each test with proper isolation."""
-    from oscar_mcp.database.models import Base
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
+    from oscar_mcp.database.models import Base
 
     # Create engine with SQLite
     engine = create_engine(f"sqlite:///{temp_db}")
@@ -120,7 +132,11 @@ def db_session(temp_db):
 @pytest.fixture
 def initialized_db(temp_db):
     """Create database initialized with global session factory (for validation tests)."""
-    from oscar_mcp.database.session import init_database, session_scope, cleanup_database
+    from oscar_mcp.database.session import (
+        cleanup_database,
+        init_database,
+        session_scope,
+    )
 
     # Initialize database with global session factory
     init_database(str(temp_db))
@@ -137,13 +153,16 @@ def initialized_db(temp_db):
 def test_profile_factory(db_session):
     """Factory for creating test profiles with auto-generated unique usernames."""
     import uuid
+
     from oscar_mcp.database.models import Profile
 
     def _create_profile(username=None, day_split_time="12:00:00", **kwargs):
         if username is None:
             username = f"test_user_{uuid.uuid4().hex[:8]}"
 
-        profile = Profile(username=username, settings={"day_split_time": day_split_time}, **kwargs)
+        profile = Profile(
+            username=username, settings={"day_split_time": day_split_time}, **kwargs
+        )
         db_session.add(profile)
         db_session.flush()
         return profile
@@ -155,6 +174,7 @@ def test_profile_factory(db_session):
 def test_device(db_session, test_profile_factory):
     """Create a test device linked to a test profile."""
     import uuid
+
     from oscar_mcp.database.models import Device
 
     profile = test_profile_factory()  # Will auto-generate unique username
@@ -173,6 +193,7 @@ def test_device(db_session, test_profile_factory):
 def test_session_factory(db_session):
     """Factory for creating test sessions with statistics."""
     import uuid
+
     from oscar_mcp.database.models import Session, Statistics
 
     def _create_session(device_id, start_time, duration_hours=8.0, **stats_kwargs):
@@ -222,7 +243,7 @@ def recorded_session(db_session):
     """
     from tests.helpers.fixtures_loader import import_to_test_db
 
-    def _load(session_id: str):
+    def _load(session_id: str) -> Any:
         try:
             import_to_test_db(session_id, db_session)
             return db_session

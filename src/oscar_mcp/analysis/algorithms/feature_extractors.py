@@ -8,10 +8,11 @@ classification and respiratory pattern analysis.
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import List, Optional
 
 import numpy as np
+
 from scipy import signal, stats
 
 logger = logging.getLogger(__name__)
@@ -62,9 +63,9 @@ class PeakFeatures:
     """
 
     peak_count: int
-    peak_positions: List[float]
-    peak_prominences: List[float]
-    inter_peak_intervals: List[float]
+    peak_positions: list[float]
+    peak_prominences: list[float]
+    inter_peak_intervals: list[float]
 
 
 @dataclass
@@ -153,7 +154,9 @@ class WaveformFeatureExtractor:
         waveform: np.ndarray,
         sample_rate: float,
         include_spectral: bool = False,
-    ) -> tuple[ShapeFeatures, PeakFeatures, StatisticalFeatures, Optional[SpectralFeatures]]:
+    ) -> tuple[
+        ShapeFeatures, PeakFeatures, StatisticalFeatures, SpectralFeatures | None
+    ]:
         """
         Extract all features from a waveform.
 
@@ -182,7 +185,9 @@ class WaveformFeatureExtractor:
 
         return shape, peak, statistical, spectral
 
-    def extract_shape_features(self, waveform: np.ndarray, sample_rate: float) -> ShapeFeatures:
+    def extract_shape_features(
+        self, waveform: np.ndarray, sample_rate: float
+    ) -> ShapeFeatures:
         """
         Extract shape characteristics from waveform.
 
@@ -336,7 +341,9 @@ class WaveformFeatureExtractor:
 
         return float((idx_10 - idx_90) / sample_rate)
 
-    def extract_peak_features(self, waveform: np.ndarray, sample_rate: float) -> PeakFeatures:
+    def extract_peak_features(
+        self, waveform: np.ndarray, sample_rate: float
+    ) -> PeakFeatures:
         """
         Extract peak analysis features from waveform.
 
@@ -364,7 +371,9 @@ class WaveformFeatureExtractor:
 
         # Find peaks with prominence threshold
         min_prominence = self.peak_prominence_threshold * peak_flow
-        peaks, properties = signal.find_peaks(waveform, prominence=min_prominence, distance=5)
+        peaks, properties = signal.find_peaks(
+            waveform, prominence=min_prominence, distance=5
+        )
 
         peak_count = len(peaks)
 
@@ -463,7 +472,9 @@ class WaveformFeatureExtractor:
             return SpectralFeatures(0.0, 0.0, np.array([]))
 
         # Compute power spectral density using Welch's method
-        frequencies, psd = signal.welch(waveform, fs=sample_rate, nperseg=min(len(waveform), 256))
+        frequencies, psd = signal.welch(
+            waveform, fs=sample_rate, nperseg=min(len(waveform), 256)
+        )
 
         # Find dominant frequency (excluding DC component)
         if len(frequencies) > 1:

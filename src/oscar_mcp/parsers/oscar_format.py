@@ -22,9 +22,10 @@ Full implementation will require:
 import logging
 import os
 import struct
-from typing import Any, Dict, List, Tuple
 
-from oscar_mcp.constants import OSCAR_MAGIC_NUMBER, EVENT_FILE_EXT, SUMMARY_FILE_EXT
+from typing import Any
+
+from oscar_mcp.constants import EVENT_FILE_EXT, OSCAR_MAGIC_NUMBER, SUMMARY_FILE_EXT
 from oscar_mcp.parsers.compression import (
     decompress_gzip,
 )
@@ -54,7 +55,7 @@ class SessionFileParser:
         self.summary_path = os.path.join(base_path, f"{session_id}{SUMMARY_FILE_EXT}")
         self.event_path = os.path.join(base_path, f"{session_id}{EVENT_FILE_EXT}")
 
-    def parse_summary(self) -> Dict[str, Any]:
+    def parse_summary(self) -> dict[str, Any]:
         """
         Parse session summary file (.000).
 
@@ -79,7 +80,7 @@ class SessionFileParser:
             try:
                 decompressed = decompress_gzip(compressed_data)
             except Exception as e:
-                raise OscarParseError(f"Failed to decompress summary data: {e}")
+                raise OscarParseError(f"Failed to decompress summary data: {e}") from e
 
             # Parse QDataStream content
             # TODO: Implement full QDataStream parser
@@ -103,9 +104,9 @@ class SessionFileParser:
 
         except Exception as e:
             logger.error(f"Error parsing summary file {self.summary_path}: {e}")
-            raise OscarParseError(f"Failed to parse summary: {e}")
+            raise OscarParseError(f"Failed to parse summary: {e}") from e
 
-    def parse_events(self) -> Dict[int, Dict[str, Any]]:
+    def parse_events(self) -> dict[int, dict[str, Any]]:
         """
         Parse session event/waveform file (.001).
 
@@ -129,9 +130,11 @@ class SessionFileParser:
             # Decompress content
             compressed_data = data[8:]
             try:
-                _decompressed = decompress_gzip(compressed_data)  # Will be used in TODO below
+                _decompressed = decompress_gzip(
+                    compressed_data
+                )  # Will be used in TODO below
             except Exception as e:
-                raise OscarParseError(f"Failed to decompress event data: {e}")
+                raise OscarParseError(f"Failed to decompress event data: {e}") from e
 
             # TODO: Parse QDataStream content to extract:
             # - Channel ID
@@ -141,15 +144,15 @@ class SessionFileParser:
             # - Gain, offset, min, max
             # - Sample rate (for waveforms)
 
-            events: Dict[str, List] = {}
+            events: dict[int, dict[str, Any]] = {}
             logger.info(f"Parsed events for session {self.session_id}")
-            return events  # type: ignore[return-value]
+            return events
 
         except Exception as e:
             logger.error(f"Error parsing event file {self.event_path}: {e}")
-            raise OscarParseError(f"Failed to parse events: {e}")
+            raise OscarParseError(f"Failed to parse events: {e}") from e
 
-    def _parse_header(self, data: bytes) -> Tuple[int, int]:
+    def _parse_header(self, data: bytes) -> tuple[int, int]:
         """
         Parse OSCAR file header (magic number and version).
 
@@ -190,7 +193,7 @@ class MachineDirectoryScanner:
         self.summaries_path = os.path.join(machine_path, "Summaries")
         self.events_path = os.path.join(machine_path, "Events")
 
-    def scan_sessions(self) -> List[str]:
+    def scan_sessions(self) -> list[str]:
         """
         Scan for available session files.
 
@@ -240,7 +243,7 @@ class ProfileScanner:
         """
         self.profile_path = profile_path
 
-    def scan_machines(self) -> List[str]:
+    def scan_machines(self) -> list[str]:
         """
         Scan for machine directories in the profile.
 
@@ -283,7 +286,7 @@ class ProfileScanner:
 # Helper functions for common operations
 
 
-def scan_oscar_profile(profile_path: str) -> Dict[str, List[str]]:
+def scan_oscar_profile(profile_path: str) -> dict[str, list[str]]:
     """
     Scan an OSCAR profile and list all machines and sessions.
 
@@ -305,7 +308,9 @@ def scan_oscar_profile(profile_path: str) -> Dict[str, List[str]]:
     return result
 
 
-def parse_session_files(machine_path: str, session_id: str) -> Tuple[Dict, Dict]:
+def parse_session_files(
+    machine_path: str, session_id: str
+) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
     """
     Parse both summary and event files for a session.
 

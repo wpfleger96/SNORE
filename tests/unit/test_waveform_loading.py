@@ -7,17 +7,18 @@ Tests the waveform_loader module's ability to:
 - Handle errors and edge cases
 """
 
-import numpy as np
-import pytest
 from unittest.mock import Mock
 
+import numpy as np
+import pytest
+
 from oscar_mcp.analysis.data.waveform_loader import (
-    deserialize_waveform_blob,
-    load_waveform_from_db,
     apply_noise_filter,
-    handle_sample_rate_conversion,
+    deserialize_waveform_blob,
     detect_and_mark_artifacts,
     handle_discontinuities,
+    handle_sample_rate_conversion,
+    load_waveform_from_db,
 )
 
 
@@ -170,7 +171,9 @@ class TestSampleRateConversion:
         timestamps = np.array([0.0, 1.0, 2.0, 3.0])
         values = np.array([1.0, 2.0, 3.0, 2.0])
 
-        new_t, new_v = handle_sample_rate_conversion(timestamps, values, from_rate=1.0, to_rate=2.0)
+        new_t, new_v = handle_sample_rate_conversion(
+            timestamps, values, from_rate=1.0, to_rate=2.0
+        )
 
         # Should have ~2x samples
         assert len(new_v) > len(values)
@@ -194,7 +197,9 @@ class TestSampleRateConversion:
         timestamps = np.array([0.0, 1.0, 2.0])
         values = np.array([1.0, 2.0, 1.0])
 
-        new_t, new_v = handle_sample_rate_conversion(timestamps, values, from_rate=1.0, to_rate=1.0)
+        new_t, new_v = handle_sample_rate_conversion(
+            timestamps, values, from_rate=1.0, to_rate=1.0
+        )
 
         np.testing.assert_array_equal(new_t, timestamps)
         np.testing.assert_array_equal(new_v, values)
@@ -206,7 +211,9 @@ class TestArtifactDetection:
 
     def test_detect_out_of_range_values(self):
         """Should detect values outside physiological range."""
-        flow_data = np.array([10.0, 20.0, 150.0, 15.0, -200.0])  # Spikes at indices 2, 4
+        flow_data = np.array(
+            [10.0, 20.0, 150.0, 15.0, -200.0]
+        )  # Spikes at indices 2, 4
 
         artifacts = detect_and_mark_artifacts(flow_data, "flow")
 
@@ -238,7 +245,21 @@ class TestArtifactDetection:
         # Normal gradual changes (realistic breath pattern), then sudden jump
         # Need >10 samples for jump detection to work
         data = np.array(
-            [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 100.0, 11.0]
+            [
+                10.0,
+                11.0,
+                12.0,
+                13.0,
+                14.0,
+                15.0,
+                14.0,
+                13.0,
+                12.0,
+                11.0,
+                10.0,
+                100.0,
+                11.0,
+            ]
         )  # Jump at index 11
 
         artifacts = detect_and_mark_artifacts(data, "flow")

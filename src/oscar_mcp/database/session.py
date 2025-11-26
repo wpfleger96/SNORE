@@ -2,10 +2,12 @@
 
 import os
 import threading
-from contextlib import contextmanager
-from typing import Generator
 
-from sqlalchemy import create_engine, event
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Any
+
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from oscar_mcp.constants import DEFAULT_DATABASE_PATH
@@ -46,7 +48,9 @@ def init_database(database_path: str | None = None) -> None:
             try:
                 os.makedirs(db_dir, exist_ok=True)
             except PermissionError as e:
-                raise PermissionError(f"Cannot create database directory {db_dir}: {e}") from e
+                raise PermissionError(
+                    f"Cannot create database directory {db_dir}: {e}"
+                ) from e
 
         database_url = f"sqlite:///{database_path}"
 
@@ -58,7 +62,7 @@ def init_database(database_path: str | None = None) -> None:
         )
 
         @event.listens_for(_engine, "connect")
-        def set_sqlite_pragma(dbapi_conn, connection_record):
+        def set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
@@ -85,7 +89,7 @@ def get_session() -> Session:
 
 
 @contextmanager
-def session_scope() -> Generator[Session, None, None]:
+def session_scope() -> Generator[Session]:
     """
     Provide a transactional scope for database operations.
 
@@ -108,7 +112,7 @@ def session_scope() -> Generator[Session, None, None]:
         session.close()
 
 
-def get_engine():
+def get_engine() -> Engine:
     """Get the database engine."""
     if _engine is None:
         raise RuntimeError("Database not initialized. Call init_database() first.")

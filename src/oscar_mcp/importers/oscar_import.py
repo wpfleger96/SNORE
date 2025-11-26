@@ -9,11 +9,13 @@ import logging
 import os
 import sys
 
+from typing import Any
+
 import click
 
-from oscar_mcp.constants import DEFAULT_DATABASE_PATH, COMPLIANCE_MIN_HOURS
-from oscar_mcp.database.session import init_database, session_scope
+from oscar_mcp.constants import COMPLIANCE_MIN_HOURS, DEFAULT_DATABASE_PATH
 from oscar_mcp.database import models
+from oscar_mcp.database.session import init_database, session_scope
 from oscar_mcp.parsers.oscar_format import ProfileScanner
 
 logging.basicConfig(
@@ -25,7 +27,7 @@ logger = logging.getLogger("oscar-import")
 @click.group()
 @click.option("--database", default=DEFAULT_DATABASE_PATH, help="Path to database file")
 @click.pass_context
-def cli(ctx, database):
+def cli(ctx: Any, database: str | None) -> None:
     """OSCAR data import utility for OSCAR-MCP."""
     ctx.ensure_object(dict)
     ctx.obj["database"] = database
@@ -38,7 +40,7 @@ def cli(ctx, database):
 @cli.command()
 @click.argument("oscar_profile_path")
 @click.pass_context
-def scan(ctx, oscar_profile_path):
+def scan(ctx: Any, oscar_profile_path: str) -> None:
     """
     Scan an OSCAR profile directory and display available data.
 
@@ -46,7 +48,9 @@ def scan(ctx, oscar_profile_path):
     (e.g., ~/.local/share/OSCAR/Profiles/ProfileName/)
     """
     if not os.path.exists(oscar_profile_path):
-        click.echo(f"Error: Profile path does not exist: {oscar_profile_path}", err=True)
+        click.echo(
+            f"Error: Profile path does not exist: {oscar_profile_path}", err=True
+        )
         sys.exit(1)
 
     click.echo(f"Scanning OSCAR profile: {oscar_profile_path}")
@@ -76,10 +80,14 @@ def scan(ctx, oscar_profile_path):
                 click.echo(f"    Last:  {sessions[-1]}")
             click.echo("")
 
-        click.echo(f"Total: {total_sessions} session(s) across {len(machines)} machine(s)")
+        click.echo(
+            f"Total: {total_sessions} session(s) across {len(machines)} machine(s)"
+        )
         click.echo("")
         click.echo("To import this data, run:")
-        click.echo(f"  oscar-import import '{oscar_profile_path}' --profile-name 'Your Name'")
+        click.echo(
+            f"  oscar-import import '{oscar_profile_path}' --profile-name 'Your Name'"
+        )
 
     except Exception as e:
         logger.error(f"Error scanning profile: {e}", exc_info=True)
@@ -89,18 +97,28 @@ def scan(ctx, oscar_profile_path):
 
 @cli.command()
 @click.argument("oscar_profile_path")
-@click.option("--profile-name", required=True, help="Name for this profile in the database")
+@click.option(
+    "--profile-name", required=True, help="Name for this profile in the database"
+)
 @click.option("--first-name", help="User first name")
 @click.option("--last-name", help="User last name")
 @click.pass_context
-def import_data(ctx, oscar_profile_path, profile_name, first_name, last_name):
+def import_data(
+    ctx: Any,
+    oscar_profile_path: str,
+    profile_name: str,
+    first_name: str | None,
+    last_name: str | None,
+) -> None:
     """
     Import OSCAR data from a profile directory into the database.
 
     OSCAR_PROFILE_PATH: Path to OSCAR profile directory
     """
     if not os.path.exists(oscar_profile_path):
-        click.echo(f"Error: Profile path does not exist: {oscar_profile_path}", err=True)
+        click.echo(
+            f"Error: Profile path does not exist: {oscar_profile_path}", err=True
+        )
         sys.exit(1)
 
     click.echo(f"Importing OSCAR profile: {oscar_profile_path}")
@@ -166,7 +184,9 @@ def import_data(ctx, oscar_profile_path, profile_name, first_name, last_name):
             click.echo("  - Use DayManager to aggregate sessions into days")
             click.echo("  - Handle incremental imports (only new sessions)")
             click.echo("")
-            click.echo("See DayManager in oscar_mcp.database.day_manager for day aggregation.")
+            click.echo(
+                "See DayManager in oscar_mcp.database.day_manager for day aggregation."
+            )
 
     except Exception as e:
         logger.error(f"Error importing data: {e}", exc_info=True)
@@ -176,7 +196,7 @@ def import_data(ctx, oscar_profile_path, profile_name, first_name, last_name):
 
 @cli.command()
 @click.pass_context
-def status(ctx):
+def status(ctx: Any) -> None:
     """Display status of imported data in the database."""
     try:
         with session_scope() as session:
@@ -197,7 +217,9 @@ def status(ctx):
             for profile in profiles:
                 click.echo(f"  Profile: {profile.username}")
                 if profile.first_name or profile.last_name:
-                    full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip()
+                    full_name = (
+                        f"{profile.first_name or ''} {profile.last_name or ''}".strip()
+                    )
                     click.echo(f"    Name: {full_name}")
 
                 # Count devices
@@ -238,7 +260,7 @@ def status(ctx):
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     """Entry point for the oscar-import CLI."""
     cli(obj={})
 

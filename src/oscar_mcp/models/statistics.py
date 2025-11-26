@@ -1,7 +1,6 @@
 """Pydantic models for Statistics and aggregate data."""
 
 from datetime import date
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,22 +15,26 @@ class PeriodStatistics(BaseModel):
     # Compliance metrics
     days_used: int = Field(default=0, description="Number of days with therapy")
     days_in_period: int = Field(default=0, description="Total days in period")
-    avg_hours_per_day: Optional[float] = Field(
+    avg_hours_per_day: float | None = Field(
         default=None, description="Average hours per day used"
     )
-    compliance_rate: Optional[float] = Field(
+    compliance_rate: float | None = Field(
         default=None, description="Percentage of days with >4 hours"
     )
 
     # Therapy metrics
-    avg_ahi: Optional[float] = Field(default=None, description="Average AHI")
-    median_ahi: Optional[float] = Field(default=None, description="Median AHI")
-    avg_pressure: Optional[float] = Field(default=None, description="Average pressure (cmH₂O)")
-    avg_leak: Optional[float] = Field(default=None, description="Average leak rate (L/min)")
+    avg_ahi: float | None = Field(default=None, description="Average AHI")
+    median_ahi: float | None = Field(default=None, description="Median AHI")
+    avg_pressure: float | None = Field(
+        default=None, description="Average pressure (cmH₂O)"
+    )
+    avg_leak: float | None = Field(
+        default=None, description="Average leak rate (L/min)"
+    )
 
     # SpO2 metrics (if available)
-    avg_spo2: Optional[float] = Field(default=None, description="Average SpO₂ (%)")
-    min_spo2: Optional[float] = Field(default=None, description="Minimum SpO₂ (%)")
+    avg_spo2: float | None = Field(default=None, description="Average SpO₂ (%)")
+    min_spo2: float | None = Field(default=None, description="Minimum SpO₂ (%)")
 
     class Config:
         json_schema_extra = {
@@ -61,13 +64,17 @@ class ComplianceReport(BaseModel):
     days_in_period: int
     days_used: int
     days_compliant: int = Field(description="Days with >= 4 hours usage")
-    compliance_percentage: float = Field(description="Percentage of days with >= 4 hours usage")
+    compliance_percentage: float = Field(
+        description="Percentage of days with >= 4 hours usage"
+    )
     total_hours: float = Field(description="Total therapy hours in period")
     avg_hours_per_night: float = Field(description="Average hours per night used")
 
     # Clinical summary
-    avg_ahi: Optional[float] = None
-    therapy_effectiveness: str = Field(description="Assessment: excellent, good, fair, poor")
+    avg_ahi: float | None = None
+    therapy_effectiveness: str = Field(
+        description="Assessment: excellent, good, fair, poor"
+    )
 
     class Config:
         json_schema_extra = {

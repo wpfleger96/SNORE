@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from oscar_mcp.analysis.algorithms.breath_segmenter import BreathSegmenter
-from tests.helpers.synthetic_data import generate_sinusoidal_breath, create_session
+from tests.helpers.synthetic_data import create_session, generate_sinusoidal_breath
 from tests.helpers.validation_helpers import assert_breath_valid
 
 
@@ -68,7 +68,9 @@ class TestRespiratoryRateCalculation:
     def test_respiratory_rate_fast_breathing(self):
         """Fast breathing (short duration) should give high RR."""
         segmenter = BreathSegmenter()
-        t, flow = generate_sinusoidal_breath(duration=2.0, amplitude=30.0)  # 30 breaths/min
+        t, flow = generate_sinusoidal_breath(
+            duration=2.0, amplitude=30.0
+        )  # 30 breaths/min
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
@@ -79,7 +81,9 @@ class TestRespiratoryRateCalculation:
     def test_respiratory_rate_slow_breathing(self):
         """Slow breathing (long duration) should give low RR."""
         segmenter = BreathSegmenter()
-        t, flow = generate_sinusoidal_breath(duration=6.0, amplitude=30.0)  # 10 breaths/min
+        t, flow = generate_sinusoidal_breath(
+            duration=6.0, amplitude=30.0
+        )  # 10 breaths/min
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
@@ -90,7 +94,9 @@ class TestRespiratoryRateCalculation:
     def test_rolling_rr_vs_instantaneous(self):
         """Rolling RR should be more stable than instantaneous."""
         segmenter = BreathSegmenter()
-        t, flow = create_session(num_breaths=30, duration_variability=1.0, sample_rate=25.0)
+        t, flow = create_session(
+            num_breaths=30, duration_variability=1.0, sample_rate=25.0
+        )
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 

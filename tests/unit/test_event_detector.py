@@ -142,7 +142,9 @@ class TestHypopneaDetection:
             breaths[i].tidal_volume *= 0.5
             breaths[i].peak_inspiratory_flow *= 0.5
 
-        hypopneas = detector.detect_hypopneas(breaths, flow_data=(timestamps, flow_values))
+        hypopneas = detector.detect_hypopneas(
+            breaths, flow_data=(timestamps, flow_values)
+        )
 
         # Detection may not trigger with simple synthetic data due to baseline calculations
         # Real integration tests will validate with actual recorded data
@@ -159,7 +161,9 @@ class TestHypopneaDetection:
             breaths[i].tidal_volume *= 0.05
             breaths[i].peak_inspiratory_flow *= 0.05
 
-        hypopneas = detector.detect_hypopneas(breaths, flow_data=(timestamps, flow_values))
+        hypopneas = detector.detect_hypopneas(
+            breaths, flow_data=(timestamps, flow_values)
+        )
 
         # Should not detect as hypopnea (it's an apnea)
         assert len(hypopneas) == 0
@@ -272,7 +276,9 @@ class TestEventTimeline:
 
         session_duration_hours = 8.0
 
-        timeline = detector.create_event_timeline(apneas, hypopneas, reras, session_duration_hours)
+        timeline = detector.create_event_timeline(
+            apneas, hypopneas, reras, session_duration_hours
+        )
 
         assert timeline.total_events == 4
         assert len(timeline.apneas) == 2
@@ -294,7 +300,9 @@ class TestEventTimeline:
 
         session_duration_hours = 2.0
 
-        timeline = detector.create_event_timeline(apneas, hypopneas, reras, session_duration_hours)
+        timeline = detector.create_event_timeline(
+            apneas, hypopneas, reras, session_duration_hours
+        )
 
         assert timeline.ahi == 4.0 / 2.0
         assert timeline.ahi == 2.0
@@ -306,7 +314,9 @@ class TestEventTimeline:
 
         session_duration_hours = 0.0
 
-        timeline = detector.create_event_timeline(apneas, hypopneas, reras, session_duration_hours)
+        timeline = detector.create_event_timeline(
+            apneas, hypopneas, reras, session_duration_hours
+        )
 
         assert timeline.ahi == 0.0
         assert timeline.rdi == 0.0

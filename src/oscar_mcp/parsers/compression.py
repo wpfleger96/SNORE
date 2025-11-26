@@ -3,7 +3,6 @@
 import gzip
 import struct
 import zlib
-from typing import List
 
 
 class QtCompressionError(Exception):
@@ -38,7 +37,7 @@ def compress_gzip(data: bytes) -> bytes:
     return gzip.compress(data)
 
 
-def encode_int16_array(values: List[int]) -> bytes:
+def encode_int16_array(values: list[int]) -> bytes:
     """
     Encode a list of integers as int16 array.
 
@@ -51,7 +50,7 @@ def encode_int16_array(values: List[int]) -> bytes:
     return struct.pack(f"<{len(values)}h", *values)
 
 
-def decode_int16_array(data: bytes) -> List[int]:
+def decode_int16_array(data: bytes) -> list[int]:
     """
     Decode int16 array from binary data.
 
@@ -65,7 +64,7 @@ def decode_int16_array(data: bytes) -> List[int]:
     return list(struct.unpack(f"<{count}h", data))
 
 
-def encode_delta_times(timestamps: List[int]) -> bytes:
+def encode_delta_times(timestamps: list[int]) -> bytes:
     """
     Encode timestamps using delta encoding.
 
@@ -93,7 +92,7 @@ def encode_delta_times(timestamps: List[int]) -> bytes:
     return struct.pack(f"<{len(deltas)}I", *deltas)
 
 
-def decode_delta_times(data: bytes) -> List[int]:
+def decode_delta_times(data: bytes) -> list[int]:
     """
     Decode delta-encoded timestamps.
 
@@ -122,7 +121,7 @@ def decode_delta_times(data: bytes) -> List[int]:
     return timestamps
 
 
-def apply_gain_offset(values: List[int], gain: float, offset: float) -> List[float]:
+def apply_gain_offset(values: list[int], gain: float, offset: float) -> list[float]:
     """
     Apply gain and offset transformation to integer values.
 
@@ -140,7 +139,7 @@ def apply_gain_offset(values: List[int], gain: float, offset: float) -> List[flo
     return [(v * gain) + offset for v in values]
 
 
-def remove_gain_offset(values: List[float], gain: float, offset: float) -> List[int]:
+def remove_gain_offset(values: list[float], gain: float, offset: float) -> list[int]:
     """
     Remove gain and offset to convert to integer storage values.
 

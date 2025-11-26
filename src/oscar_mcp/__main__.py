@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+
 from importlib.metadata import version
 
 from oscar_mcp.constants import DEFAULT_DATABASE_PATH
@@ -14,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger("oscar-mcp")
 
 
-def main():
+def main() -> int:
     """Main entry point for OSCAR-MCP server."""
     parser = argparse.ArgumentParser(
         description="OSCAR-MCP: MCP server for OSCAR CPAP/APAP therapy data"
@@ -37,12 +38,11 @@ def main():
         # Run server
         logger.info("Starting MCP server...")
         server.run()
+        return 0
 
     except Exception as e:
         logger.error(f"Server failed to start: {e}", exc_info=True)
         return 1
-
-    return 0
 
 
 if __name__ == "__main__":

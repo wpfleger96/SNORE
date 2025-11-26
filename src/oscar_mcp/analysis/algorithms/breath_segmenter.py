@@ -7,8 +7,8 @@ calculating breath-level metrics.
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import List, Tuple
 
 import numpy as np
 
@@ -118,7 +118,7 @@ class BreathSegmenter:
         timestamps: np.ndarray,
         flow_data: np.ndarray,
         sample_rate: float,
-    ) -> List[BreathMetrics]:
+    ) -> list[BreathMetrics]:
         """
         Segment flow waveform into individual breaths.
 
@@ -147,13 +147,15 @@ class BreathSegmenter:
         crossings = self.detect_zero_crossings(flow_data)
 
         # Identify breath boundaries
-        boundaries = self.identify_breath_boundaries(crossings, timestamps, sample_rate, flow_data)
+        boundaries = self.identify_breath_boundaries(
+            crossings, timestamps, sample_rate, flow_data
+        )
 
         logger.debug(f"Identified {len(boundaries)} potential breaths")
 
         # Process each breath with rolling calculations
-        breaths: List[BreathMetrics] = []
-        tv_history: List[float] = []  # For 5-point TV smoothing
+        breaths: list[BreathMetrics] = []
+        tv_history: list[float] = []  # For 5-point TV smoothing
 
         for idx, (start_idx, end_idx) in enumerate(boundaries):
             breath_segment = flow_data[start_idx:end_idx]
@@ -187,7 +189,7 @@ class BreathSegmenter:
 
         return breaths
 
-    def detect_zero_crossings(self, flow_data: np.ndarray) -> List[Tuple[int, str]]:
+    def detect_zero_crossings(self, flow_data: np.ndarray) -> list[tuple[int, str]]:
         """
         Detect zero crossings in flow data with hysteresis.
 
@@ -242,11 +244,11 @@ class BreathSegmenter:
 
     def identify_breath_boundaries(
         self,
-        crossings: List[Tuple[int, str]],
+        crossings: list[tuple[int, str]],
         timestamps: np.ndarray,
         sample_rate: float,
         flow_data: np.ndarray,
-    ) -> List[Tuple[int, int]]:
+    ) -> list[tuple[int, int]]:
         """
         Group zero crossings into complete breath boundaries.
 
@@ -289,7 +291,11 @@ class BreathSegmenter:
 
                         # Validate duration
                         duration = timestamps[end_idx] - timestamps[start_idx]
-                        if not (self.min_breath_duration <= duration <= self.max_breath_duration):
+                        if not (
+                            self.min_breath_duration
+                            <= duration
+                            <= self.max_breath_duration
+                        ):
                             # Move to this crossing for next iteration
                             i = j - 1
                             break
@@ -297,7 +303,10 @@ class BreathSegmenter:
                         # Validate amplitude - lowered from 8.0 to 2.0 to detect breaths during low-flow periods
                         breath_segment = flow_data[start_idx:end_idx]
                         amplitude = np.max(breath_segment) - np.min(breath_segment)
-                        if amplitude <= BreathSegmentationConstants.MIN_BREATH_AMPLITUDE:
+                        if (
+                            amplitude
+                            <= BreathSegmentationConstants.MIN_BREATH_AMPLITUDE
+                        ):
                             # Insufficient amplitude - skip this breath
                             i = j - 1
                             break
@@ -320,10 +329,17 @@ class BreathSegmenter:
 
                         # Validate duration and amplitude (lowered from 8.0 to 2.0)
                         duration = timestamps[end_idx] - timestamps[start_idx]
-                        if self.min_breath_duration <= duration <= self.max_breath_duration:
+                        if (
+                            self.min_breath_duration
+                            <= duration
+                            <= self.max_breath_duration
+                        ):
                             breath_segment = flow_data[start_idx : end_idx + 1]
                             amplitude = np.max(breath_segment) - np.min(breath_segment)
-                            if amplitude > BreathSegmentationConstants.MIN_BREATH_AMPLITUDE:
+                            if (
+                                amplitude
+                                > BreathSegmentationConstants.MIN_BREATH_AMPLITUDE
+                            ):
                                 boundaries.append((start_idx, end_idx))
 
             i += 1
@@ -370,8 +386,8 @@ class BreathSegmenter:
         timestamps: np.ndarray,
         flow_values: np.ndarray,
         sample_rate: float,
-        tv_history: List[float],
-        all_breaths: List[BreathMetrics],
+        tv_history: list[float],
+        all_breaths: list[BreathMetrics],
     ) -> BreathMetrics:
         """
         Calculate comprehensive metrics for a single breath.
@@ -458,7 +474,9 @@ class BreathSegmenter:
             tidal_volume = 0.0
 
         # Calculate smoothed tidal volume (OSCAR's 5-point weighted average)
-        tidal_volume_smoothed = self.calculate_smoothed_tidal_volume(tv_history, tidal_volume)
+        tidal_volume_smoothed = self.calculate_smoothed_tidal_volume(
+            tv_history, tidal_volume
+        )
 
         # Calculate respiratory rates
         # Instantaneous rate (simple)
@@ -476,7 +494,9 @@ class BreathSegmenter:
         # Calculate minute ventilation using rolling RR (more stable)
         # MV = tidal_volume_smoothed (mL) × respiratory_rate_rolling (breaths/min)
         if respiratory_rate_rolling > 0:
-            minute_ventilation = (tidal_volume_smoothed / 1000.0) * respiratory_rate_rolling
+            minute_ventilation = (
+                tidal_volume_smoothed / 1000.0
+            ) * respiratory_rate_rolling
         else:
             # Fallback to instantaneous if rolling not available
             minute_ventilation = (tidal_volume_smoothed / 1000.0) * respiratory_rate
@@ -503,7 +523,7 @@ class BreathSegmenter:
 
     def calculate_rolling_respiratory_rate(
         self,
-        breaths: List[BreathMetrics],
+        breaths: list[BreathMetrics],
         current_breath_idx: int,
         window_seconds: float = 60.0,
     ) -> float:
@@ -555,7 +575,9 @@ class BreathSegmenter:
             actual_window = current_breath.end_time - current_breath.start_time
         else:
             first_breath = breaths[0]
-            actual_window = current_breath.end_time - max(first_breath.start_time, window_start)
+            actual_window = current_breath.end_time - max(
+                first_breath.start_time, window_start
+            )
 
         # Normalize to full minute if window is shorter
         if actual_window < window_seconds and actual_window > 0:
@@ -563,7 +585,9 @@ class BreathSegmenter:
 
         return breath_count
 
-    def calculate_smoothed_tidal_volume(self, tv_history: List[float], current_tv: float) -> float:
+    def calculate_smoothed_tidal_volume(
+        self, tv_history: list[float], current_tv: float
+    ) -> float:
         """
         Calculate smoothed tidal volume using 5-point weighted average.
 
@@ -590,14 +614,16 @@ class BreathSegmenter:
             return (tv_history[0] + tv_history[1] + current_tv * 2) / 4
         else:
             # Full 5-point average (last 3 + current*2)
-            return (tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2) / 5
+            return (
+                tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2
+            ) / 5
 
     def detect_flow_restriction(
         self,
-        breaths: List[BreathMetrics],
+        breaths: list[BreathMetrics],
         restriction_percent: float = 50.0,
         duration_threshold: float = 10.0,
-    ) -> List[Tuple[int, int]]:
+    ) -> list[tuple[int, int]]:
         """
         Detect flow restriction events using OSCAR's percentile-based algorithm.
 
@@ -677,7 +703,9 @@ class BreathSegmenter:
 
         return restriction_events
 
-    def handle_incomplete_breaths(self, breaths: List[BreathMetrics]) -> List[BreathMetrics]:
+    def handle_incomplete_breaths(
+        self, breaths: list[BreathMetrics]
+    ) -> list[BreathMetrics]:
         """
         Filter or merge incomplete breaths.
 

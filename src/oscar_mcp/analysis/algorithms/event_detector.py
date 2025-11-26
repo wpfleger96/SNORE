@@ -7,8 +7,9 @@ reduction patterns and duration criteria.
 """
 
 import logging
+
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -63,8 +64,8 @@ class HypopneaEvent:
     flow_reduction: float
     confidence: float
     baseline_flow: float
-    has_arousal: Optional[bool] = None
-    has_desaturation: Optional[bool] = None
+    has_arousal: bool | None = None
+    has_desaturation: bool | None = None
 
 
 @dataclass
@@ -103,9 +104,9 @@ class EventTimeline:
         rdi: Respiratory Disturbance Index (includes RERAs)
     """
 
-    apneas: List[ApneaEvent]
-    hypopneas: List[HypopneaEvent]
-    reras: List[RERAEvent]
+    apneas: list[ApneaEvent]
+    hypopneas: list[HypopneaEvent]
+    reras: list[RERAEvent]
     total_events: int
     ahi: float
     rdi: float
@@ -143,14 +144,16 @@ class RespiratoryEventDetector:
         self.min_event_duration = min_event_duration
         self.baseline_window = baseline_window
         self.merge_gap = merge_gap
-        logger.info(f"RespiratoryEventDetector initialized (min_duration={min_event_duration}s)")
+        logger.info(
+            f"RespiratoryEventDetector initialized (min_duration={min_event_duration}s)"
+        )
 
     def detect_hypopneas(
         self,
-        breaths: List,
-        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-        spo2_signal: Optional[np.ndarray] = None,
-    ) -> List[HypopneaEvent]:
+        breaths: list[Any],
+        flow_data: tuple[np.ndarray, np.ndarray] | None = None,
+        spo2_signal: np.ndarray | None = None,
+    ) -> list[HypopneaEvent]:
         """
         Detect hypopnea events using breath-by-breath analysis.
 
@@ -180,19 +183,24 @@ class RespiratoryEventDetector:
             if breath.duration > 8.0:
                 reductions[i] = 1.0
             elif baseline > 0:
-                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                tv_per_second = (
+                    breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                )
                 baseline_per_second = baseline / 4.0
                 reduction = 1.0 - (tv_per_second / baseline_per_second)
                 reductions[i] = max(0.0, min(1.0, reduction))
 
-        logger.debug(f"Baseline range: {np.min(baselines):.1f} - {np.max(baselines):.1f} mL")
+        logger.debug(
+            f"Baseline range: {np.min(baselines):.1f} - {np.max(baselines):.1f} mL"
+        )
         logger.debug(
             f"Reduction range: {np.min(reductions) * 100:.1f}% - {np.max(reductions) * 100:.1f}%"
         )
 
         hypopnea_min = EDC.HYPOPNEA_MIN_REDUCTION
         breaths_in_range = np.sum(
-            (reductions >= hypopnea_min) & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
+            (reductions >= hypopnea_min)
+            & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
         )
         logger.debug(f"Breaths in hypopnea range (30-89%): {breaths_in_range}")
 
@@ -216,8 +224,12 @@ class RespiratoryEventDetector:
                 )
                 continue
 
-            if not self._validate_90_percent_rule(reductions, start_idx, end_idx, hypopnea_min):
-                logger.debug(f"  Rejecting region {start_idx}-{end_idx}: fails 90% duration rule")
+            if not self._validate_90_percent_rule(
+                reductions, start_idx, end_idx, hypopnea_min
+            ):
+                logger.debug(
+                    f"  Rejecting region {start_idx}-{end_idx}: fails 90% duration rule"
+                )
                 continue
 
             event_baselines = baselines[start_idx:end_idx]
@@ -263,9 +275,9 @@ class RespiratoryEventDetector:
 
     def detect_reras(
         self,
-        breaths: List,
-        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-    ) -> List[RERAEvent]:
+        breaths: list[Any],
+        flow_data: tuple[np.ndarray, np.ndarray] | None = None,
+    ) -> list[RERAEvent]:
         """
         Detect RERA events using breath-by-breath analysis.
 
@@ -297,12 +309,16 @@ class RespiratoryEventDetector:
             if breath.duration > 8.0:
                 reductions[i] = 1.0
             elif baseline > 0:
-                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                tv_per_second = (
+                    breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                )
                 baseline_per_second = baseline / 4.0
                 reduction = 1.0 - (tv_per_second / baseline_per_second)
                 reductions[i] = max(0.0, min(1.0, reduction))
 
-            mask = (timestamps >= breath.start_time) & (timestamps <= breath.middle_time)
+            mask = (timestamps >= breath.start_time) & (
+                timestamps <= breath.middle_time
+            )
             if np.any(mask):
                 insp_flow = flow_values[mask]
                 flatness_indices[i] = self._calculate_flatness_index(insp_flow)
@@ -372,9 +388,9 @@ class RespiratoryEventDetector:
 
     def create_event_timeline(
         self,
-        apneas: List[ApneaEvent],
-        hypopneas: List[HypopneaEvent],
-        reras: List[RERAEvent],
+        apneas: list[ApneaEvent],
+        hypopneas: list[HypopneaEvent],
+        reras: list[RERAEvent],
         session_duration_hours: float,
     ) -> EventTimeline:
         """
@@ -392,8 +408,14 @@ class RespiratoryEventDetector:
         total_ah_events = len(apneas) + len(hypopneas)
         total_events = total_ah_events + len(reras)
 
-        ahi = total_ah_events / session_duration_hours if session_duration_hours > 0 else 0.0
-        rdi = total_events / session_duration_hours if session_duration_hours > 0 else 0.0
+        ahi = (
+            total_ah_events / session_duration_hours
+            if session_duration_hours > 0
+            else 0.0
+        )
+        rdi = (
+            total_events / session_duration_hours if session_duration_hours > 0 else 0.0
+        )
 
         return EventTimeline(
             apneas=apneas,
@@ -406,9 +428,9 @@ class RespiratoryEventDetector:
 
     def detect_apneas(
         self,
-        breaths: List,
-        flow_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-    ) -> List[ApneaEvent]:
+        breaths: list[Any],
+        flow_data: tuple[np.ndarray, np.ndarray] | None = None,
+    ) -> list[ApneaEvent]:
         """
         Detect apnea events using AASM-compliant breath-by-breath amplitude analysis.
 
@@ -445,7 +467,9 @@ class RespiratoryEventDetector:
                     f"  Breath {i} marked as apnea (long duration: {breath.duration:.1f}s)"
                 )
             elif baseline > 0:
-                tv_per_second = breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                tv_per_second = (
+                    breath.tidal_volume / breath.duration if breath.duration > 0 else 0
+                )
                 baseline_per_second = baseline / 4.0
                 reduction = 1.0 - (tv_per_second / baseline_per_second)
                 reductions[i] = max(0.0, min(1.0, reduction))
@@ -458,7 +482,9 @@ class RespiratoryEventDetector:
         logger.debug(
             f"Reduction range: {np.min(reductions) * 100:.1f}% - {np.max(reductions) * 100:.1f}%, mean: {np.mean(reductions) * 100:.1f}%"
         )
-        logger.debug(f"Breaths marked as apnea (>8s duration): {np.sum(reductions >= 1.0)}")
+        logger.debug(
+            f"Breaths marked as apnea (>8s duration): {np.sum(reductions >= 1.0)}"
+        )
 
         regions = self._find_consecutive_reduced_breaths(
             breaths,
@@ -475,7 +501,11 @@ class RespiratoryEventDetector:
             event_reductions = reductions[start_idx:end_idx]
             event_baselines = baselines[start_idx:end_idx]
 
-            if len(event_breaths) == 0 or len(event_reductions) == 0 or len(event_baselines) == 0:
+            if (
+                len(event_breaths) == 0
+                or len(event_reductions) == 0
+                or len(event_baselines) == 0
+            ):
                 continue
 
             start_time = event_breaths[0].start_time
@@ -494,7 +524,9 @@ class RespiratoryEventDetector:
                 flow_signal=flow_signal,
             )
 
-            confidence = self._calculate_apnea_confidence(avg_reduction, duration, avg_baseline)
+            confidence = self._calculate_apnea_confidence(
+                avg_reduction, duration, avg_baseline
+            )
 
             logger.debug(
                 f"  Apnea at {start_time:.1f}s: type={event_type}, duration={duration:.1f}s, reduction={avg_reduction * 100:.1f}%, baseline={avg_baseline:.1f} L/min, confidence={confidence:.2f}"
@@ -522,7 +554,7 @@ class RespiratoryEventDetector:
 
     def _calculate_breath_baseline(
         self,
-        breaths: List,
+        breaths: list[Any],
         current_idx: int,
         window_breaths: int = 30,
     ) -> float:
@@ -552,7 +584,9 @@ class RespiratoryEventDetector:
             return 300.0
 
         tidal_volumes = [
-            b.tidal_volume for b in window if hasattr(b, "tidal_volume") and b.tidal_volume > 0
+            b.tidal_volume
+            for b in window
+            if hasattr(b, "tidal_volume") and b.tidal_volume > 0
         ]
         if not tidal_volumes:
             return 300.0
@@ -585,7 +619,7 @@ class RespiratoryEventDetector:
         event_reductions = reductions[start_idx:end_idx]
         breaths_meeting = np.sum(event_reductions >= threshold)
         total_breaths = end_idx - start_idx
-        return (
+        return bool(
             (breaths_meeting / total_breaths) >= EDC.EVENT_DURATION_RULE_THRESHOLD
             if total_breaths > 0
             else False
@@ -617,11 +651,11 @@ class RespiratoryEventDetector:
 
     def _find_consecutive_reduced_breaths(
         self,
-        breaths: List,
+        breaths: list[Any],
         reductions: np.ndarray,
         threshold: float,
         min_duration: float,
-    ) -> List[Tuple[int, int, float]]:
+    ) -> list[tuple[int, int, float]]:
         """
         Find runs of consecutive breaths meeting reduction threshold with AASM-compliant termination.
 
@@ -654,7 +688,9 @@ class RespiratoryEventDetector:
                 in_region = True
                 region_start = i
                 recovery_count = 0
-                logger.debug(f"  Starting region at breath {i} (reduction={reduction * 100:.1f}%)")
+                logger.debug(
+                    f"  Starting region at breath {i} (reduction={reduction * 100:.1f}%)"
+                )
             elif in_region:
                 if reduction < recovery_threshold:
                     recovery_count += 1
@@ -671,9 +707,13 @@ class RespiratoryEventDetector:
                         )
                         if duration >= min_duration:
                             regions.append((region_start, end_idx, duration))
-                            logger.debug(f"    ✓ Region accepted (duration >= {min_duration}s)")
+                            logger.debug(
+                                f"    ✓ Region accepted (duration >= {min_duration}s)"
+                            )
                         else:
-                            logger.debug(f"    ✗ Region rejected (duration < {min_duration}s)")
+                            logger.debug(
+                                f"    ✗ Region rejected (duration < {min_duration}s)"
+                            )
                         in_region = False
                         recovery_count = 0
                 else:
@@ -688,7 +728,9 @@ class RespiratoryEventDetector:
                 regions.append((region_start, len(breaths), duration))
                 logger.debug("    ✓ Final region accepted")
             else:
-                logger.debug(f"    ✗ Final region rejected (duration < {min_duration}s)")
+                logger.debug(
+                    f"    ✗ Final region rejected (duration < {min_duration}s)"
+                )
 
         return regions
 
@@ -697,16 +739,18 @@ class RespiratoryEventDetector:
         timestamps: np.ndarray,
         condition: np.ndarray,
         min_duration: float,
-    ) -> List[Tuple[float, float, float, np.ndarray]]:
+    ) -> list[tuple[float, float, float, np.ndarray]]:
         """Find continuous regions where condition is True and duration >= min_duration."""
         regions = []
 
-        starts = np.where(np.diff(np.concatenate([[False], condition, [False]]).astype(int)) == 1)[
-            0
-        ]
-        ends = np.where(np.diff(np.concatenate([[False], condition, [False]]).astype(int)) == -1)[0]
+        starts = np.where(
+            np.diff(np.concatenate([[False], condition, [False]]).astype(int)) == 1
+        )[0]
+        ends = np.where(
+            np.diff(np.concatenate([[False], condition, [False]]).astype(int)) == -1
+        )[0]
 
-        for start_idx, end_idx in zip(starts, ends):
+        for start_idx, end_idx in zip(starts, ends, strict=False):
             indices = np.arange(start_idx, end_idx)
             if len(indices) == 0:
                 continue
@@ -721,7 +765,7 @@ class RespiratoryEventDetector:
         return regions
 
     def _classify_apnea_type(
-        self, effort_signal: Optional[np.ndarray], flow_signal: Optional[np.ndarray] = None
+        self, effort_signal: np.ndarray | None, flow_signal: np.ndarray | None = None
     ) -> str:
         """
         Classify apnea as obstructive, central, or unclassified.
@@ -787,7 +831,9 @@ class RespiratoryEventDetector:
         detrended = flow_signal - np.mean(flow_signal)
         freqs, power = signal.periodogram(detrended, fs=sample_rate)
 
-        breathing_mask = (freqs >= EDC.BREATHING_FREQ_MIN) & (freqs <= EDC.BREATHING_FREQ_MAX)
+        breathing_mask = (freqs >= EDC.BREATHING_FREQ_MIN) & (
+            freqs <= EDC.BREATHING_FREQ_MAX
+        )
         breathing_power = np.sum(power[breathing_mask])
 
         total_power = np.sum(power)
@@ -827,7 +873,10 @@ class RespiratoryEventDetector:
         spectral_power = self._calculate_spectral_effort(flow_signal)
 
         effort_score = (
-            flow_std * 0.3 + flow_range * 0.3 + avg_variation * 0.2 + spectral_power * 0.2
+            flow_std * 0.3
+            + flow_range * 0.3
+            + avg_variation * 0.2
+            + spectral_power * 0.2
         )
 
         return float(effort_score)
@@ -859,12 +908,16 @@ class RespiratoryEventDetector:
         return min(1.0, confidence)
 
     def _calculate_hypopnea_confidence(
-        self, reduction: float, duration: float, has_desaturation: Optional[bool]
+        self, reduction: float, duration: float, has_desaturation: bool | None
     ) -> float:
         """Calculate confidence score for hypopnea detection."""
         confidence = EDC.HYPOPNEA_BASE_CONFIDENCE
 
-        if EDC.HYPOPNEA_IDEAL_MIN_REDUCTION <= reduction <= EDC.HYPOPNEA_IDEAL_MAX_REDUCTION:
+        if (
+            EDC.HYPOPNEA_IDEAL_MIN_REDUCTION
+            <= reduction
+            <= EDC.HYPOPNEA_IDEAL_MAX_REDUCTION
+        ):
             confidence += 0.1
         if duration > EDC.HYPOPNEA_LONG_DURATION_THRESHOLD:
             confidence += 0.1
@@ -884,7 +937,7 @@ class RespiratoryEventDetector:
 
         return min(1.0, confidence)
 
-    def _merge_adjacent_events(self, events: List) -> List:
+    def _merge_adjacent_events(self, events: list[Any]) -> list[Any]:
         """
         Merge events that are close together in time AND of the same type.
 
@@ -918,7 +971,7 @@ class RespiratoryEventDetector:
         self,
         event1: Any,
         event2: Any,
-    ) -> Union[ApneaEvent, HypopneaEvent, RERAEvent]:
+    ) -> ApneaEvent | HypopneaEvent | RERAEvent:
         """Merge two adjacent events of the same type."""
         merged_duration = event2.end_time - event1.start_time
 
@@ -950,8 +1003,9 @@ class RespiratoryEventDetector:
                 duration=merged_duration,
                 flatness_index=(event1.flatness_index + event2.flatness_index) / 2,
                 confidence=min(event1.confidence, event2.confidence),
-                terminated_by_arousal=event1.terminated_by_arousal or event2.terminated_by_arousal,
+                terminated_by_arousal=event1.terminated_by_arousal
+                or event2.terminated_by_arousal,
             )
 
-        event_typed: Union[ApneaEvent, HypopneaEvent, RERAEvent] = event1
+        event_typed: ApneaEvent | HypopneaEvent | RERAEvent = event1
         return event_typed

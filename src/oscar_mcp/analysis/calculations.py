@@ -1,13 +1,14 @@
 """Statistical calculations for OSCAR therapy data."""
 
 from datetime import date
-from typing import List, Optional, Tuple
 
 from oscar_mcp.constants import COMPLIANCE_MIN_HOURS
 from oscar_mcp.database import models
 
 
-def calculate_ahi(obstructive: int, hypopnea: int, central: int, duration_hours: float) -> float:
+def calculate_ahi(
+    obstructive: int, hypopnea: int, central: int, duration_hours: float
+) -> float:
     """
     Calculate Apnea-Hypopnea Index (AHI).
 
@@ -54,7 +55,7 @@ def calculate_rdi(
     return total_events / duration_hours
 
 
-def is_compliant(hours: Optional[float]) -> bool:
+def is_compliant(hours: float | None) -> bool:
     """
     Check if usage meets compliance requirements.
 
@@ -69,7 +70,7 @@ def is_compliant(hours: Optional[float]) -> bool:
     return hours >= COMPLIANCE_MIN_HOURS
 
 
-def calculate_compliance_rate(days: List[models.Day]) -> Tuple[float, int, int]:
+def calculate_compliance_rate(days: list[models.Day]) -> tuple[float, int, int]:
     """
     Calculate compliance rate for a set of days.
 
@@ -89,7 +90,7 @@ def calculate_compliance_rate(days: List[models.Day]) -> Tuple[float, int, int]:
     return compliance_percentage, compliant_days, total_days
 
 
-def calculate_average_ahi(days: List[models.Day]) -> Optional[float]:
+def calculate_average_ahi(days: list[models.Day]) -> float | None:
     """
     Calculate average AHI across multiple days.
 
@@ -106,7 +107,7 @@ def calculate_average_ahi(days: List[models.Day]) -> Optional[float]:
     return sum(ahi_values) / len(ahi_values)
 
 
-def calculate_total_hours(days: List[models.Day]) -> float:
+def calculate_total_hours(days: list[models.Day]) -> float:
     """
     Calculate total therapy hours across multiple days.
 
@@ -119,7 +120,7 @@ def calculate_total_hours(days: List[models.Day]) -> float:
     return sum(day.total_therapy_hours or 0 for day in days)
 
 
-def calculate_average_hours_per_day(days: List[models.Day]) -> float:
+def calculate_average_hours_per_day(days: list[models.Day]) -> float:
     """
     Calculate average therapy hours per day.
 
@@ -142,7 +143,7 @@ def calculate_average_hours_per_day(days: List[models.Day]) -> float:
     return total_hours / len(days_with_usage)
 
 
-def assess_therapy_effectiveness(avg_ahi: Optional[float]) -> str:
+def assess_therapy_effectiveness(avg_ahi: float | None) -> str:
     """
     Assess therapy effectiveness based on AHI.
 
@@ -165,7 +166,7 @@ def assess_therapy_effectiveness(avg_ahi: Optional[float]) -> str:
         return "poor"
 
 
-def get_date_range(days: List[models.Day]) -> Optional[Tuple[date, date]]:
+def get_date_range(days: list[models.Day]) -> tuple[date, date] | None:
     """
     Get date range from list of days.
 

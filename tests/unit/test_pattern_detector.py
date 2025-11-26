@@ -20,7 +20,9 @@ class TestCSRDetection:
     def test_detect_csr_with_valid_pattern(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_csr_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_csr_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
 
         csr = detector.detect_csr(timestamps, tidal_volumes, window_minutes=10.0)
 
@@ -34,7 +36,9 @@ class TestCSRDetection:
     def test_detect_csr_too_few_cycles(self, detector):
         timestamps = np.arange(0, 120, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_csr_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_csr_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
 
         csr = detector.detect_csr(timestamps, tidal_volumes, window_minutes=10.0)
 
@@ -51,7 +55,9 @@ class TestCSRDetection:
     def test_detect_csr_cycle_length_out_of_range(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 120.0
-        tidal_volumes = self._generate_csr_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_csr_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
 
         csr = detector.detect_csr(timestamps, tidal_volumes, window_minutes=10.0)
 
@@ -60,7 +66,9 @@ class TestCSRDetection:
     def test_csr_amplitude_variation(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_csr_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_csr_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
 
         csr = detector.detect_csr(timestamps, tidal_volumes, window_minutes=10.0)
 
@@ -70,7 +78,9 @@ class TestCSRDetection:
     def test_csr_index_calculation(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_csr_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_csr_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
 
         csr = detector.detect_csr(timestamps, tidal_volumes, window_minutes=10.0)
 
@@ -81,7 +91,9 @@ class TestCSRDetection:
         self, timestamps: np.ndarray, cycle_length: float, amplitude: float
     ) -> np.ndarray:
         breath_freq = 0.25
-        breaths = amplitude / 2 + amplitude / 2 * np.sin(2 * np.pi * breath_freq * timestamps)
+        breaths = amplitude / 2 + amplitude / 2 * np.sin(
+            2 * np.pi * breath_freq * timestamps
+        )
         csr_envelope = 0.2 + 0.8 * np.abs(np.sin(2 * np.pi * timestamps / cycle_length))
         tidal_volumes = breaths * csr_envelope
         noise = np.random.normal(0, amplitude * 0.03, len(timestamps))
@@ -98,10 +110,14 @@ class TestPeriodicBreathingDetection:
     def test_detect_periodic_breathing_valid(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_periodic_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_periodic_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
         respiratory_rate = np.ones(len(timestamps)) * 15.0
 
-        periodic = detector.detect_periodic_breathing(timestamps, tidal_volumes, respiratory_rate)
+        periodic = detector.detect_periodic_breathing(
+            timestamps, tidal_volumes, respiratory_rate
+        )
 
         assert periodic is not None
         assert 30 <= periodic.cycle_length <= 120
@@ -111,12 +127,16 @@ class TestPeriodicBreathingDetection:
     def test_detect_periodic_breathing_with_apneas(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_periodic_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_periodic_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
         for i in range(0, 600, 50):
             tidal_volumes[i : i + 10] = 5.0
         respiratory_rate = np.ones(len(timestamps)) * 15.0
 
-        periodic = detector.detect_periodic_breathing(timestamps, tidal_volumes, respiratory_rate)
+        periodic = detector.detect_periodic_breathing(
+            timestamps, tidal_volumes, respiratory_rate
+        )
 
         assert periodic is not None
         assert periodic.has_apneas
@@ -126,17 +146,23 @@ class TestPeriodicBreathingDetection:
         tidal_volumes = np.random.normal(500, 50, len(timestamps))
         respiratory_rate = np.ones(len(timestamps)) * 15.0
 
-        periodic = detector.detect_periodic_breathing(timestamps, tidal_volumes, respiratory_rate)
+        periodic = detector.detect_periodic_breathing(
+            timestamps, tidal_volumes, respiratory_rate
+        )
 
         assert periodic is None
 
     def test_periodic_breathing_regularity_score(self, detector):
         timestamps = np.arange(0, 600, 1.0)
         cycle_length = 60.0
-        tidal_volumes = self._generate_periodic_pattern(timestamps, cycle_length, amplitude=500.0)
+        tidal_volumes = self._generate_periodic_pattern(
+            timestamps, cycle_length, amplitude=500.0
+        )
         respiratory_rate = np.ones(len(timestamps)) * 15.0
 
-        periodic = detector.detect_periodic_breathing(timestamps, tidal_volumes, respiratory_rate)
+        periodic = detector.detect_periodic_breathing(
+            timestamps, tidal_volumes, respiratory_rate
+        )
 
         assert periodic is not None
         assert 0.0 <= periodic.regularity_score <= 1.0
@@ -360,21 +386,27 @@ class TestHelperMethods:
     def test_calculate_regularity_score_regular(self, detector):
         signal_data = np.sin(2 * np.pi * np.arange(0, 100, 0.1) / 10)
 
-        regularity = detector._calculate_regularity_score(signal_data, cycle_length=10.0)
+        regularity = detector._calculate_regularity_score(
+            signal_data, cycle_length=10.0
+        )
 
         assert 0.0 <= regularity <= 1.0
 
     def test_calculate_regularity_score_irregular(self, detector):
         signal_data = np.random.normal(0, 1, 1000)
 
-        regularity = detector._calculate_regularity_score(signal_data, cycle_length=10.0)
+        regularity = detector._calculate_regularity_score(
+            signal_data, cycle_length=10.0
+        )
 
         assert 0.0 <= regularity <= 1.0
 
     def test_calculate_regularity_score_short_signal(self, detector):
         signal_data = np.array([1.0, 2.0, 3.0])
 
-        regularity = detector._calculate_regularity_score(signal_data, cycle_length=10.0)
+        regularity = detector._calculate_regularity_score(
+            signal_data, cycle_length=10.0
+        )
 
         assert regularity == 0.0
 
@@ -496,6 +528,8 @@ class TestHelperMethods:
     def test_calculate_csr_time_percentage(self, detector):
         signal_data = np.concatenate([np.ones(50) * 500, np.ones(50) * 100])
 
-        csr_time = detector._calculate_csr_time_percentage(signal_data, cycle_length=60.0)
+        csr_time = detector._calculate_csr_time_percentage(
+            signal_data, cycle_length=60.0
+        )
 
         assert 0.0 <= csr_time <= 1.0

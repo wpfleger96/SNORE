@@ -6,7 +6,6 @@ API responses, CLI output, and report generation.
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict
 
 from pydantic import BaseModel, Field
 
@@ -51,9 +50,9 @@ class EventTimeline(BaseModel):
     ahi: float = Field(description="Apnea-Hypopnea Index (events per hour)")
     rdi: float = Field(description="Respiratory Disturbance Index (events per hour)")
     total_events: int = Field(description="Total number of respiratory events")
-    apneas: List[ApneaSummary] = Field(default_factory=list)
-    hypopneas: List[HypopneaSummary] = Field(default_factory=list)
-    reras: List[RERASummary] = Field(default_factory=list)
+    apneas: list[ApneaSummary] = Field(default_factory=list)
+    hypopneas: list[HypopneaSummary] = Field(default_factory=list)
+    reras: list[RERASummary] = Field(default_factory=list)
 
 
 class FlowLimitationSummary(BaseModel):
@@ -61,7 +60,9 @@ class FlowLimitationSummary(BaseModel):
 
     flow_limitation_index: float = Field(description="Flow Limitation Index (0-1)")
     total_breaths: int = Field(description="Total breaths analyzed")
-    class_distribution: Dict[int, int] = Field(description="Breath count by flow class (1-7)")
+    class_distribution: dict[int, int] = Field(
+        description="Breath count by flow class (1-7)"
+    )
     average_confidence: float = Field(description="Average classification confidence")
     severity: str = Field(description="Overall severity (minimal/mild/moderate/severe)")
 
@@ -70,32 +71,34 @@ class CSRDetection(BaseModel):
     """Cheyne-Stokes Respiration pattern detection."""
 
     detected: bool = Field(description="Whether CSR was detected")
-    cycle_length: Optional[float] = Field(None, description="CSR cycle length (seconds)")
-    amplitude_variation: Optional[float] = Field(None, description="Amplitude variation (0-1)")
-    csr_index: Optional[float] = Field(None, description="Percentage of time in CSR (0-1)")
-    confidence: Optional[float] = Field(None, description="Detection confidence (0-1)")
-    cycle_count: Optional[int] = Field(None, description="Number of CSR cycles detected")
+    cycle_length: float | None = Field(None, description="CSR cycle length (seconds)")
+    amplitude_variation: float | None = Field(
+        None, description="Amplitude variation (0-1)"
+    )
+    csr_index: float | None = Field(None, description="Percentage of time in CSR (0-1)")
+    confidence: float | None = Field(None, description="Detection confidence (0-1)")
+    cycle_count: int | None = Field(None, description="Number of CSR cycles detected")
 
 
 class PeriodicBreathingDetection(BaseModel):
     """Periodic breathing pattern detection."""
 
     detected: bool = Field(description="Whether periodic breathing was detected")
-    cycle_length: Optional[float] = Field(None, description="Cycle length (seconds)")
-    regularity_score: Optional[float] = Field(None, description="Regularity score (0-1)")
-    confidence: Optional[float] = Field(None, description="Detection confidence (0-1)")
-    has_apneas: Optional[bool] = Field(None, description="Whether pattern includes apneas")
+    cycle_length: float | None = Field(None, description="Cycle length (seconds)")
+    regularity_score: float | None = Field(None, description="Regularity score (0-1)")
+    confidence: float | None = Field(None, description="Detection confidence (0-1)")
+    has_apneas: bool | None = Field(None, description="Whether pattern includes apneas")
 
 
 class PositionalAnalysis(BaseModel):
     """Positional apnea clustering analysis."""
 
     detected: bool = Field(description="Whether positional clustering was detected")
-    cluster_count: Optional[int] = Field(None, description="Number of event clusters")
-    positional_likelihood: Optional[float] = Field(
+    cluster_count: int | None = Field(None, description="Number of event clusters")
+    positional_likelihood: float | None = Field(
         None, description="Likelihood of positional OSA (0-1)"
     )
-    confidence: Optional[float] = Field(None, description="Detection confidence (0-1)")
+    confidence: float | None = Field(None, description="Detection confidence (0-1)")
 
 
 class AnalysisSummary(BaseModel):
@@ -106,7 +109,7 @@ class AnalysisSummary(BaseModel):
     """
 
     session_id: int = Field(description="Database session ID")
-    analysis_id: Optional[int] = Field(None, description="Database analysis result ID")
+    analysis_id: int | None = Field(None, description="Database analysis result ID")
     timestamp_start: datetime = Field(description="Analysis start time")
     timestamp_end: datetime = Field(description="Analysis end time")
     duration_hours: float = Field(description="Session duration (hours)")
@@ -123,10 +126,16 @@ class AnalysisSummary(BaseModel):
 
     csr_detected: bool = Field(description="Cheyne-Stokes Respiration detected")
     periodic_breathing_detected: bool = Field(description="Periodic breathing detected")
-    positional_events_detected: bool = Field(description="Positional event clustering detected")
+    positional_events_detected: bool = Field(
+        description="Positional event clustering detected"
+    )
 
-    severity_assessment: str = Field(description="Overall severity (normal/mild/moderate/severe)")
-    processing_time_ms: int = Field(description="Analysis processing time (milliseconds)")
+    severity_assessment: str = Field(
+        description="Overall severity (normal/mild/moderate/severe)"
+    )
+    processing_time_ms: int = Field(
+        description="Analysis processing time (milliseconds)"
+    )
 
 
 class DetailedAnalysisResult(BaseModel):
@@ -139,15 +148,21 @@ class DetailedAnalysisResult(BaseModel):
 
     summary: AnalysisSummary = Field(description="High-level summary")
     event_timeline: EventTimeline = Field(description="All respiratory events")
-    flow_limitation: FlowLimitationSummary = Field(description="Flow limitation analysis")
-    csr_detection: Optional[CSRDetection] = Field(None, description="CSR pattern detection")
-    periodic_breathing: Optional[PeriodicBreathingDetection] = Field(
+    flow_limitation: FlowLimitationSummary = Field(
+        description="Flow limitation analysis"
+    )
+    csr_detection: CSRDetection | None = Field(
+        None, description="CSR pattern detection"
+    )
+    periodic_breathing: PeriodicBreathingDetection | None = Field(
         None, description="Periodic breathing detection"
     )
-    positional_analysis: Optional[PositionalAnalysis] = Field(
+    positional_analysis: PositionalAnalysis | None = Field(
         None, description="Positional event analysis"
     )
-    confidence_scores: Dict[str, float] = Field(description="Confidence scores by analysis type")
+    confidence_scores: dict[str, float] = Field(
+        description="Confidence scores by analysis type"
+    )
     clinical_summary: str = Field(description="Human-readable clinical summary")
 
 
@@ -158,8 +173,10 @@ class SessionAnalysisStatus(BaseModel):
     session_date: datetime = Field(description="Session date")
     duration_hours: float = Field(description="Session duration (hours)")
     has_analysis: bool = Field(description="Whether analysis has been run")
-    analysis_id: Optional[int] = Field(None, description="Analysis result ID if available")
-    analyzed_at: Optional[datetime] = Field(None, description="When analysis was performed")
+    analysis_id: int | None = Field(None, description="Analysis result ID if available")
+    analyzed_at: datetime | None = Field(
+        None, description="When analysis was performed"
+    )
 
 
 class BatchAnalysisResult(BaseModel):
@@ -168,5 +185,7 @@ class BatchAnalysisResult(BaseModel):
     total_sessions: int = Field(description="Total sessions processed")
     successful: int = Field(description="Successfully analyzed sessions")
     failed: int = Field(description="Failed analysis attempts")
-    session_results: List[AnalysisSummary] = Field(description="Individual session results")
+    session_results: list[AnalysisSummary] = Field(
+        description="Individual session results"
+    )
     total_processing_time_ms: int = Field(description="Total processing time")

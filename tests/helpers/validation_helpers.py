@@ -4,13 +4,14 @@ Validation helper functions for testing breath and feature data.
 Provides assertion helpers and validation utilities for test assertions.
 """
 
+from typing import Any
+
 import numpy as np
-from typing import Optional, Dict, Any
 
 from oscar_mcp.analysis.algorithms.breath_segmenter import BreathMetrics
 from oscar_mcp.analysis.algorithms.feature_extractors import (
-    ShapeFeatures,
     PeakFeatures,
+    ShapeFeatures,
     StatisticalFeatures,
 )
 
@@ -53,7 +54,9 @@ def assert_breath_valid(
 
     # Tidal volume checks
     assert breath.tidal_volume >= 0, "Tidal volume must be non-negative"
-    assert breath.tidal_volume_smoothed >= 0, "Smoothed tidal volume must be non-negative"
+    assert breath.tidal_volume_smoothed >= 0, (
+        "Smoothed tidal volume must be non-negative"
+    )
 
     # Flow checks
     assert breath.peak_inspiratory_flow > 0, "Peak inspiratory flow must be positive"
@@ -82,9 +85,9 @@ def assert_breath_valid(
 
 
 def assert_features_in_range(
-    shape: Optional[ShapeFeatures] = None,
-    peak: Optional[PeakFeatures] = None,
-    statistical: Optional[StatisticalFeatures] = None,
+    shape: ShapeFeatures | None = None,
+    peak: PeakFeatures | None = None,
+    statistical: StatisticalFeatures | None = None,
 ) -> None:
     """
     Assert that extracted features are within valid ranges.
@@ -105,7 +108,9 @@ def assert_features_in_range(
 
         # Plateau duration: non-negative, reasonable
         assert shape.plateau_duration >= 0, "Plateau duration must be non-negative"
-        assert shape.plateau_duration < 10, f"Plateau duration {shape.plateau_duration}s too long"
+        assert shape.plateau_duration < 10, (
+            f"Plateau duration {shape.plateau_duration}s too long"
+        )
 
         # Symmetry score: -1 to 1
         assert -1 <= shape.symmetry_score <= 1, (
@@ -113,7 +118,9 @@ def assert_features_in_range(
         )
 
         # Kurtosis: reasonable range
-        assert -10 <= shape.kurtosis <= 10, f"Kurtosis {shape.kurtosis} outside reasonable range"
+        assert -10 <= shape.kurtosis <= 10, (
+            f"Kurtosis {shape.kurtosis} outside reasonable range"
+        )
 
         # Rise/fall times: non-negative, reasonable
         assert shape.rise_time >= 0, "Rise time must be non-negative"
@@ -136,7 +143,9 @@ def assert_features_in_range(
 
         # Inter-peak intervals: positive
         for i, interval in enumerate(peak.inter_peak_intervals):
-            assert interval > 0, f"Inter-peak interval {i} = {interval} must be positive"
+            assert interval > 0, (
+                f"Inter-peak interval {i} = {interval} must be positive"
+            )
 
     if statistical is not None:
         # Mean and median: should be reasonable for flow
@@ -216,16 +225,20 @@ def compare_breaths(
     Returns:
         Dict with comparison results and similarity scores
     """
-    results: Dict[str, Any] = {
-        "duration_match": abs(breath1.duration - breath2.duration) / breath1.duration < tolerance,
-        "amplitude_match": abs(breath1.amplitude - breath2.amplitude) / breath1.amplitude
+    results: dict[str, Any] = {
+        "duration_match": abs(breath1.duration - breath2.duration) / breath1.duration
         < tolerance,
-        "tv_match": abs(breath1.tidal_volume - breath2.tidal_volume) / breath1.tidal_volume
+        "amplitude_match": abs(breath1.amplitude - breath2.amplitude)
+        / breath1.amplitude
+        < tolerance,
+        "tv_match": abs(breath1.tidal_volume - breath2.tidal_volume)
+        / breath1.tidal_volume
         < tolerance,
         "rr_match": abs(breath1.respiratory_rate - breath2.respiratory_rate)
         / breath1.respiratory_rate
         < tolerance,
-        "ie_match": abs(breath1.i_e_ratio - breath2.i_e_ratio) / max(breath1.i_e_ratio, 0.1)
+        "ie_match": abs(breath1.i_e_ratio - breath2.i_e_ratio)
+        / max(breath1.i_e_ratio, 0.1)
         < tolerance,
     }
 
@@ -251,7 +264,9 @@ def assert_smoothed_close_to_raw(
     Raises:
         AssertionError: If smoothing deviates too much
     """
-    assert len(raw_values) == len(smoothed_values), "Raw and smoothed arrays must have same length"
+    assert len(raw_values) == len(smoothed_values), (
+        "Raw and smoothed arrays must have same length"
+    )
 
     deviations = np.abs(raw_values - smoothed_values) / np.abs(raw_values + 1e-10)
     max_deviation = np.max(deviations) * 100
@@ -278,7 +293,9 @@ def assert_rolling_window_accurate(
     Raises:
         AssertionError: If rolling values deviate too much
     """
-    assert len(instantaneous_values) == len(rolling_values), "Arrays must have same length"
+    assert len(instantaneous_values) == len(rolling_values), (
+        "Arrays must have same length"
+    )
 
     # Rolling should smooth out extremes
     inst_std = np.std(instantaneous_values)

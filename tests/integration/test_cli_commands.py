@@ -9,14 +9,16 @@ These tests verify the command-line interface functionality including:
 """
 
 from datetime import datetime, timedelta
+
 import pytest
+
 from click.testing import CliRunner
 from sqlalchemy import text
 
 from oscar_mcp.cli import cli
-from oscar_mcp.database.session import init_database, session_scope, cleanup_database
 from oscar_mcp.database import models
 from oscar_mcp.database.day_manager import DayManager
+from oscar_mcp.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture
@@ -39,7 +41,9 @@ def populated_test_db(temp_db):
     init_database(str(temp_db))
 
     with session_scope() as session:
-        profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+        profile = models.Profile(
+            username="testuser", settings={"day_split_time": "12:00:00"}
+        )
         session.add(profile)
         session.flush()
 
@@ -113,7 +117,13 @@ class TestDeleteSessionsCommand:
         """Test deleting multiple sessions by ID (tests SQL IN clause fix)."""
         result = cli_runner.invoke(
             cli,
-            ["delete-sessions", "--db", str(populated_test_db), "--session-id", "1,2,3"],
+            [
+                "delete-sessions",
+                "--db",
+                str(populated_test_db),
+                "--session-id",
+                "1,2,3",
+            ],
             input="y\n",
         )
 
@@ -122,7 +132,9 @@ class TestDeleteSessionsCommand:
 
         with session_scope() as session:
             remaining = (
-                session.query(models.Session).filter(models.Session.id.in_([1, 2, 3])).count()
+                session.query(models.Session)
+                .filter(models.Session.id.in_([1, 2, 3]))
+                .count()
             )
             assert remaining == 0
 
@@ -197,9 +209,13 @@ class TestDeleteSessionsCommand:
 class TestListProfilesCommand:
     """Test list-profiles command."""
 
-    def test_list_profiles_shows_correct_session_count(self, cli_runner, populated_test_db):
+    def test_list_profiles_shows_correct_session_count(
+        self, cli_runner, populated_test_db
+    ):
         """Test that list-profiles shows correct session count (tests day linking fix)."""
-        result = cli_runner.invoke(cli, ["list-profiles", "--db", str(populated_test_db)])
+        result = cli_runner.invoke(
+            cli, ["list-profiles", "--db", str(populated_test_db)]
+        )
 
         assert result.exit_code == 0
         assert "testuser" in result.output
@@ -247,13 +263,17 @@ class TestListSessionsCommand:
 
     def test_list_sessions_default_limit(self, cli_runner, populated_test_db):
         """Test list-sessions uses default limit of 20."""
-        result = cli_runner.invoke(cli, ["list-sessions", "--db", str(populated_test_db)])
+        result = cli_runner.invoke(
+            cli, ["list-sessions", "--db", str(populated_test_db)]
+        )
 
         assert result.exit_code == 0
         assert "testuser" in result.output
 
         session_rows = [
-            line for line in result.output.split("\n") if "2025-10-" in line and "testuser" in line
+            line
+            for line in result.output.split("\n")
+            if "2025-10-" in line and "testuser" in line
         ]
         assert len(session_rows) == 10
 
@@ -266,7 +286,9 @@ class TestListSessionsCommand:
         assert result.exit_code == 0
 
         session_rows = [
-            line for line in result.output.split("\n") if "2025-10-" in line and "testuser" in line
+            line
+            for line in result.output.split("\n")
+            if "2025-10-" in line and "testuser" in line
         ]
         assert len(session_rows) == 5
         assert "Showing 5 of 10 sessions" in result.output
@@ -280,7 +302,9 @@ class TestListSessionsCommand:
 
         assert result.exit_code == 0
         session_rows = [
-            line for line in result.output.split("\n") if "2025-10-" in line and "testuser" in line
+            line
+            for line in result.output.split("\n")
+            if "2025-10-" in line and "testuser" in line
         ]
         assert len(session_rows) == 10
 
@@ -289,12 +313,17 @@ class TestListSessionsCommand:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST",
             )
             session.add(device)
             session.flush()
@@ -322,7 +351,9 @@ def db_with_analysis(temp_db):
     init_database(str(temp_db))
 
     with session_scope() as session:
-        profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+        profile = models.Profile(
+            username="testuser", settings={"day_split_time": "12:00:00"}
+        )
         session.add(profile)
         session.flush()
 
@@ -394,12 +425,21 @@ class TestDeleteAnalysisCommand:
         """Test deleting analysis for a single session (latest only)."""
         # Verify initial state
         with session_scope() as session:
-            analysis_before = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            analysis_before = (
+                session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            )
             assert analysis_before == 3  # Session 1 has 3 analysis versions
 
         result = cli_runner.invoke(
             cli,
-            ["delete-analysis", "--db", str(db_with_analysis), "--session-id", "1", "--force"],
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1",
+                "--force",
+            ],
         )
 
         assert result.exit_code == 0
@@ -407,7 +447,9 @@ class TestDeleteAnalysisCommand:
 
         # Verify only latest was deleted
         with session_scope() as session:
-            analysis_after = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            analysis_after = (
+                session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            )
             assert analysis_after == 2  # Should have 2 remaining (deleted latest)
 
             # Verify session still exists
@@ -433,7 +475,9 @@ class TestDeleteAnalysisCommand:
         assert "Successfully deleted 3 analysis record(s)" in result.output
 
         with session_scope() as session:
-            analysis_after = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            analysis_after = (
+                session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            )
             assert analysis_after == 0
 
             # Verify session still exists
@@ -460,9 +504,15 @@ class TestDeleteAnalysisCommand:
 
         with session_scope() as session:
             # Latest deleted from each session
-            analysis_1 = session.query(models.AnalysisResult).filter_by(session_id=1).count()
-            analysis_2 = session.query(models.AnalysisResult).filter_by(session_id=2).count()
-            analysis_3 = session.query(models.AnalysisResult).filter_by(session_id=3).count()
+            analysis_1 = (
+                session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            )
+            analysis_2 = (
+                session.query(models.AnalysisResult).filter_by(session_id=2).count()
+            )
+            analysis_3 = (
+                session.query(models.AnalysisResult).filter_by(session_id=3).count()
+            )
 
             assert analysis_1 == 2  # Had 3, deleted latest
             assert analysis_2 == 2  # Had 3, deleted latest
@@ -530,12 +580,16 @@ class TestDeleteAnalysisCommand:
         assert "Deletion cancelled" in result.output
 
         with session_scope() as session:
-            analysis = session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            analysis = (
+                session.query(models.AnalysisResult).filter_by(session_id=1).count()
+            )
             assert analysis == 3  # Nothing deleted
 
     def test_delete_analysis_no_filter_error(self, cli_runner, db_with_analysis):
         """Test that command errors when no filter is provided."""
-        result = cli_runner.invoke(cli, ["delete-analysis", "--db", str(db_with_analysis)])
+        result = cli_runner.invoke(
+            cli, ["delete-analysis", "--db", str(db_with_analysis)]
+        )
 
         assert result.exit_code == 1
         assert "must specify at least one filter" in result.output
@@ -545,12 +599,17 @@ class TestDeleteAnalysisCommand:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST",
             )
             session.add(device)
             session.flush()
@@ -595,7 +654,14 @@ class TestDeleteAnalysisCommand:
 
         result = cli_runner.invoke(
             cli,
-            ["delete-analysis", "--db", str(db_with_analysis), "--session-id", "1", "--force"],
+            [
+                "delete-analysis",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1",
+                "--force",
+            ],
         )
 
         assert result.exit_code == 0

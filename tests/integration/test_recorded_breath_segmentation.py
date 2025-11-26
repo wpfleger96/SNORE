@@ -179,7 +179,9 @@ class TestFeatureVariability:
             timestamps, flow_values, sample_rate=metadata["sample_rate"]
         )
 
-        from oscar_mcp.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
+        from oscar_mcp.analysis.algorithms.feature_extractors import (
+            WaveformFeatureExtractor,
+        )
 
         extractor = WaveformFeatureExtractor()
         flatness_values = []

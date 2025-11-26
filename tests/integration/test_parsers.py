@@ -9,12 +9,13 @@ Tests verify the critical EDF parsing logic with real data:
 - Unified format conversion
 """
 
-import pytest
-import numpy as np
 from datetime import datetime
 
+import numpy as np
+import pytest
+
+from oscar_mcp.models.unified import RespiratoryEventType, UnifiedSession, WaveformType
 from oscar_mcp.parsers.formats.edf import EDFReader
-from oscar_mcp.models.unified import UnifiedSession, WaveformType, RespiratoryEventType
 
 
 class TestEDFSignalParsing:
@@ -39,7 +40,9 @@ class TestEDFSignalParsing:
                     flow_signal = sig
                     break
 
-            assert flow_signal is not None, f"No Flow signal found. Available: {signals}"
+            assert flow_signal is not None, (
+                f"No Flow signal found. Available: {signals}"
+            )
 
             # Read flow signal (read first 100 samples for testing)
             data, info = edf.read_signal(flow_signal, start_sample=0, num_samples=100)
@@ -59,8 +62,12 @@ class TestEDFSignalParsing:
                 data_lmin = data
 
             # Verify data is in reasonable range for flow (-60 to +60 L/min)
-            assert -6000 < np.min(data_lmin) < 6000, f"Flow min out of range: {np.min(data_lmin)}"
-            assert -6000 < np.max(data_lmin) < 6000, f"Flow max out of range: {np.max(data_lmin)}"
+            assert -6000 < np.min(data_lmin) < 6000, (
+                f"Flow min out of range: {np.min(data_lmin)}"
+            )
+            assert -6000 < np.max(data_lmin) < 6000, (
+                f"Flow max out of range: {np.max(data_lmin)}"
+            )
 
             # Verify sample rate
             sample_rate = edf.get_sample_rate(flow_signal)
@@ -111,7 +118,9 @@ class TestEDFSignalParsing:
             assert leak_signal is not None, f"No leak signal found in {signals}"
 
             # Read first 100 samples for testing
-            leak_data, leak_info = edf.read_signal(leak_signal, start_sample=0, num_samples=100)
+            leak_data, leak_info = edf.read_signal(
+                leak_signal, start_sample=0, num_samples=100
+            )
             # ResMed may use L/s or L/min - both are valid
             assert leak_info.physical_dimension in [
                 "L/s",
@@ -129,7 +138,9 @@ class TestEDFSignalParsing:
             assert 0 <= np.min(leak_data_lmin) <= 200, (
                 f"Leak out of range: {np.min(leak_data_lmin)}"
             )
-            assert np.max(leak_data_lmin) < 300, f"Leak too high: {np.max(leak_data_lmin)}"
+            assert np.max(leak_data_lmin) < 300, (
+                f"Leak too high: {np.max(leak_data_lmin)}"
+            )
 
     @pytest.mark.parser
     def test_parse_statistics_from_sa2(self, resmed_fixture_path):
@@ -150,7 +161,9 @@ class TestEDFSignalParsing:
                     continue
 
                 # Read first 10 samples for testing
-                data, info = edf.read_signal(signal_name, start_sample=0, num_samples=10)
+                data, info = edf.read_signal(
+                    signal_name, start_sample=0, num_samples=10
+                )
                 if len(data) > 0:
                     # Statistics should have reasonable values (not all zero/NaN)
                     if not np.isnan(data).all() and not (data == 0).all():
@@ -193,14 +206,18 @@ class TestWaveformConversion:
                         # Timestamps are seconds offset
                         delta = float(flow.timestamps[i] - flow.timestamps[i - 1])
                     else:
-                        delta = (flow.timestamps[i] - flow.timestamps[i - 1]).total_seconds()
+                        delta = (
+                            flow.timestamps[i] - flow.timestamps[i - 1]
+                        ).total_seconds()
                     # Allow 10% tolerance for timing precision
                     assert abs(delta - expected_interval) < (expected_interval * 0.1), (
                         f"Timestamp delta {delta} doesn't match expected {expected_interval}"
                     )
 
             # Verify values are in physical units (L/min)
-            assert all(-100 < v < 100 for v in flow.values[:100]), "Flow values out of range"
+            assert all(-100 < v < 100 for v in flow.values[:100]), (
+                "Flow values out of range"
+            )
 
         # Check pressure waveform if present
         if WaveformType.MASK_PRESSURE in session.waveforms:
@@ -211,7 +228,9 @@ class TestWaveformConversion:
 
             # Check first 100 samples are in reasonable range
             sample_check = pressure.values[: min(100, len(pressure.values))]
-            assert all(0 <= v <= 40 for v in sample_check), "Pressure values out of range"
+            assert all(0 <= v <= 40 for v in sample_check), (
+                "Pressure values out of range"
+            )
 
     @pytest.mark.parser
     def test_values_in_physical_units(self, resmed_parser, resmed_fixture_path):
@@ -283,7 +302,9 @@ class TestSessionParsing:
 
         # Duration should be calculated from actual data
         assert session.duration_hours > 0, "Duration should be positive"
-        assert session.duration_hours < 24, f"Duration too long: {session.duration_hours} hours"
+        assert session.duration_hours < 24, (
+            f"Duration too long: {session.duration_hours} hours"
+        )
 
         # Start and end times should make sense
         assert session.end_time > session.start_time
@@ -296,7 +317,9 @@ class TestSessionParsing:
                     session_duration = session.duration_seconds
 
                     # They should be close (within 5% tolerance)
-                    relative_diff = abs(waveform_duration - session_duration) / session_duration
+                    relative_diff = (
+                        abs(waveform_duration - session_duration) / session_duration
+                    )
                     assert relative_diff < 0.05, (
                         f"{waveform_type}: waveform duration {waveform_duration}s vs session {session_duration}s"
                     )
@@ -450,7 +473,9 @@ class TestEVEEventParsing:
         # Verify event types are valid
         valid_event_types = set(RespiratoryEventType)
         for event in session.events:
-            assert event.event_type in valid_event_types, f"Invalid event type: {event.event_type}"
+            assert event.event_type in valid_event_types, (
+                f"Invalid event type: {event.event_type}"
+            )
 
     @pytest.mark.parser
     def test_eve_event_timestamps(self, resmed_parser, resmed_fixture_path):

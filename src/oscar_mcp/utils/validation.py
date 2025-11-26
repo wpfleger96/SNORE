@@ -2,8 +2,8 @@
 
 from datetime import date, datetime
 
-from oscar_mcp.database.session import session_scope
 from oscar_mcp.database import models
+from oscar_mcp.database.session import session_scope
 
 
 def validate_profile_exists(profile_name: str) -> models.Profile:
@@ -49,7 +49,7 @@ def validate_date_format(date_str: str) -> date:
     except ValueError:
         raise ValueError(
             f"Invalid date format: '{date_str}'. Expected format: YYYY-MM-DD (e.g., 2024-01-15)"
-        )
+        ) from None
 
 
 def validate_date_range(start_date: date, end_date: date) -> bool:

@@ -5,13 +5,15 @@ Tests the validation functions that ensure data integrity and provide
 helpful error messages for invalid inputs.
 """
 
-import pytest
 from datetime import date
+
+import pytest
+
 from oscar_mcp.utils.validation import (
-    validate_profile_exists,
     validate_date_format,
     validate_date_range,
     validate_period_type,
+    validate_profile_exists,
 )
 
 
@@ -23,7 +25,9 @@ class TestProfileValidation:
         from oscar_mcp.database.models import Profile
 
         # Create a test profile
-        profile = Profile(username="test_user_validation", first_name="Test", last_name="User")
+        profile = Profile(
+            username="test_user_validation", first_name="Test", last_name="User"
+        )
         initialized_db.add(profile)
         initialized_db.commit()
 

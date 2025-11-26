@@ -1,7 +1,6 @@
 """Pydantic models for Day/Daily report data."""
 
 from datetime import date
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,9 +10,13 @@ class DaySummary(BaseModel):
 
     id: int
     date: date
-    total_therapy_hours: Optional[float] = Field(default=None, description="Total hours of therapy")
-    ahi: Optional[float] = Field(default=None, description="Apnea-Hypopnea Index")
-    compliance: bool = Field(default=False, description="Met minimum 4-hour usage requirement")
+    total_therapy_hours: float | None = Field(
+        default=None, description="Total hours of therapy"
+    )
+    ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
+    compliance: bool = Field(
+        default=False, description="Met minimum 4-hour usage requirement"
+    )
 
     class Config:
         json_schema_extra = {
@@ -32,12 +35,12 @@ class DayReport(BaseModel):
 
     id: int
     date: date
-    total_therapy_hours: Optional[float] = None
+    total_therapy_hours: float | None = None
     session_count: int = Field(default=0, description="Number of therapy sessions")
 
     # Indices
-    ahi: Optional[float] = Field(default=None, description="Apnea-Hypopnea Index")
-    rdi: Optional[float] = Field(default=None, description="Respiratory Disturbance Index")
+    ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
+    rdi: float | None = Field(default=None, description="Respiratory Disturbance Index")
 
     # Event counts
     obstructive_apneas: int = 0
@@ -47,27 +50,39 @@ class DayReport(BaseModel):
     flow_limitations: int = 0
 
     # Pressure statistics
-    pressure_median: Optional[float] = Field(default=None, description="Median pressure (cmH₂O)")
-    pressure_95th: Optional[float] = Field(
+    pressure_median: float | None = Field(
+        default=None, description="Median pressure (cmH₂O)"
+    )
+    pressure_95th: float | None = Field(
         default=None, description="95th percentile pressure (cmH₂O)"
     )
-    pressure_max: Optional[float] = Field(default=None, description="Maximum pressure (cmH₂O)")
+    pressure_max: float | None = Field(
+        default=None, description="Maximum pressure (cmH₂O)"
+    )
 
     # Leak statistics
-    leak_median: Optional[float] = Field(default=None, description="Median leak rate (L/min)")
-    leak_95th: Optional[float] = Field(
+    leak_median: float | None = Field(
+        default=None, description="Median leak rate (L/min)"
+    )
+    leak_95th: float | None = Field(
         default=None, description="95th percentile leak rate (L/min)"
     )
-    leak_max: Optional[float] = Field(default=None, description="Maximum leak rate (L/min)")
+    leak_max: float | None = Field(
+        default=None, description="Maximum leak rate (L/min)"
+    )
 
     # SpO2 statistics (if available)
-    spo2_avg: Optional[float] = Field(default=None, description="Average SpO₂ (%)")
-    spo2_min: Optional[float] = Field(default=None, description="Minimum SpO₂ (%)")
-    spo2_median: Optional[float] = Field(default=None, description="Median SpO₂ (%)")
-    pulse_avg: Optional[float] = Field(default=None, description="Average pulse rate (bpm)")
+    spo2_avg: float | None = Field(default=None, description="Average SpO₂ (%)")
+    spo2_min: float | None = Field(default=None, description="Minimum SpO₂ (%)")
+    spo2_median: float | None = Field(default=None, description="Median SpO₂ (%)")
+    pulse_avg: float | None = Field(
+        default=None, description="Average pulse rate (bpm)"
+    )
 
     # Compliance
-    compliant: bool = Field(default=False, description="Met minimum 4-hour usage requirement")
+    compliant: bool = Field(
+        default=False, description="Met minimum 4-hour usage requirement"
+    )
 
     class Config:
         json_schema_extra = {

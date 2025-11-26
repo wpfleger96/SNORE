@@ -178,7 +178,9 @@ class TestBreathSegmentationEdgeCases:
         """Empty arrays should return no breaths."""
         segmenter = BreathSegmenter()
 
-        breaths = segmenter.segment_breaths(np.array([]), np.array([]), sample_rate=25.0)
+        breaths = segmenter.segment_breaths(
+            np.array([]), np.array([]), sample_rate=25.0
+        )
 
         assert len(breaths) == 0
 
@@ -186,7 +188,9 @@ class TestBreathSegmentationEdgeCases:
         """Single sample should return no breaths."""
         segmenter = BreathSegmenter()
 
-        breaths = segmenter.segment_breaths(np.array([0.0]), np.array([10.0]), sample_rate=25.0)
+        breaths = segmenter.segment_breaths(
+            np.array([0.0]), np.array([10.0]), sample_rate=25.0
+        )
 
         assert len(breaths) == 0
 

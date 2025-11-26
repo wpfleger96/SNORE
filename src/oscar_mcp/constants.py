@@ -6,7 +6,7 @@ Based on OSCAR's schema.h and machine_common.h definitions.
 
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, TypedDict
+from typing import TypedDict
 
 # ============================================================================
 # Machine Types
@@ -132,7 +132,7 @@ class ChannelDefinition:
         channel_type: ChannelType,
         unit: str = "",
         default_color: str = "#ffffff",
-        calculations: List[CalculationType] | None = None,
+        calculations: list[CalculationType] | None = None,
     ):
         self.channel_id = channel_id
         self.code = code
@@ -145,7 +145,7 @@ class ChannelDefinition:
 
 
 # Map of channel IDs to their definitions
-CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
+CHANNEL_DEFINITIONS: dict[int, ChannelDefinition] = {
     # Pressure channels
     CPAP_PRESSURE: ChannelDefinition(
         CPAP_PRESSURE,
@@ -155,7 +155,12 @@ CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
         ChannelType.WAVEFORM,
         "cmH₂O",
         "#00ff00",
-        [CalculationType.MIN, CalculationType.MAX, CalculationType.MEDIAN, CalculationType.P95],
+        [
+            CalculationType.MIN,
+            CalculationType.MAX,
+            CalculationType.MEDIAN,
+            CalculationType.P95,
+        ],
     ),
     CPAP_IPAP: ChannelDefinition(
         CPAP_IPAP,
@@ -165,7 +170,12 @@ CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
         ChannelType.WAVEFORM,
         "cmH₂O",
         "#00ff00",
-        [CalculationType.MIN, CalculationType.MAX, CalculationType.MEDIAN, CalculationType.P95],
+        [
+            CalculationType.MIN,
+            CalculationType.MAX,
+            CalculationType.MEDIAN,
+            CalculationType.P95,
+        ],
     ),
     CPAP_EPAP: ChannelDefinition(
         CPAP_EPAP,
@@ -175,7 +185,12 @@ CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
         ChannelType.WAVEFORM,
         "cmH₂O",
         "#0080ff",
-        [CalculationType.MIN, CalculationType.MAX, CalculationType.MEDIAN, CalculationType.P95],
+        [
+            CalculationType.MIN,
+            CalculationType.MAX,
+            CalculationType.MEDIAN,
+            CalculationType.P95,
+        ],
     ),
     # Event flags
     CPAP_OBSTRUCTIVE: ChannelDefinition(
@@ -257,7 +272,12 @@ CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
         ChannelType.WAVEFORM,
         "L/min",
         "#ff0000",
-        [CalculationType.MIN, CalculationType.MAX, CalculationType.MEDIAN, CalculationType.P95],
+        [
+            CalculationType.MIN,
+            CalculationType.MAX,
+            CalculationType.MEDIAN,
+            CalculationType.P95,
+        ],
     ),
     CPAP_RESPRATE: ChannelDefinition(
         CPAP_RESPRATE,
@@ -319,7 +339,12 @@ CHANNEL_DEFINITIONS: Dict[int, ChannelDefinition] = {
         ChannelType.WAVEFORM,
         "%",
         "#0080ff",
-        [CalculationType.MIN, CalculationType.MAX, CalculationType.AVG, CalculationType.MEDIAN],
+        [
+            CalculationType.MIN,
+            CalculationType.MAX,
+            CalculationType.AVG,
+            CalculationType.MEDIAN,
+        ],
     ),
     OXI_PULSE: ChannelDefinition(
         OXI_PULSE,
@@ -389,7 +414,9 @@ class BreathSegmentationConstants:
     MIN_BREATH_DURATION = 1.0
     MAX_BREATH_DURATION = 20.0
     ZERO_CROSSING_HYSTERESIS = 2.0
-    MIN_BREATH_AMPLITUDE = 2.0  # Lowered from 8.0 to detect breaths during low-flow periods
+    MIN_BREATH_AMPLITUDE = (
+        2.0  # Lowered from 8.0 to detect breaths during low-flow periods
+    )
 
     TIDAL_VOLUME_SMOOTHING_POINTS = 5
     RESPIRATORY_RATE_WINDOW_SECONDS = 60.0
@@ -567,7 +594,7 @@ class FlowLimitationClassInfo(TypedDict):
     reference_section: str
 
 
-FLOW_LIMITATION_CLASSES: Dict[int, FlowLimitationClassInfo] = {
+FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
     1: {
         "name": "Sinusoidal",
         "description": "Normal, rounded inspiration with smooth sinusoidal curve",

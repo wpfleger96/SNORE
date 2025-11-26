@@ -102,7 +102,9 @@ class TestRollingWindowCalculation:
 
         # In last 60 seconds (from 15s to 75s), there are 20 breaths
         # RR should be 20 breaths/min
-        assert 19.0 <= rolling_rr <= 21.0, f"Rolling RR {rolling_rr} should be ~20 breaths/min"
+        assert 19.0 <= rolling_rr <= 21.0, (
+            f"Rolling RR {rolling_rr} should be ~20 breaths/min"
+        )
 
 
 @pytest.mark.unit
@@ -124,8 +126,12 @@ class TestWeightedAverageSmoothing:
         smoothed = segmenter.calculate_smoothed_tidal_volume(tv_history, current_tv)
 
         # Expected: (455 + 465 + 470 + 470*2) / 5 = 2330 / 5 = 466
-        expected = (tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2) / 5
-        assert abs(smoothed - expected) < 0.1, f"Smoothed TV {smoothed} should equal {expected}"
+        expected = (
+            tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2
+        ) / 5
+        assert abs(smoothed - expected) < 0.1, (
+            f"Smoothed TV {smoothed} should equal {expected}"
+        )
 
     def test_smoothing_with_no_history(self):
         """First breath should return raw value (no smoothing possible)."""
@@ -204,10 +210,16 @@ class TestPercentileBasedEventDetection:
         if len(restrictions) > 0:
             start_idx, end_idx = restrictions[0]
             # Check that it captures the restricted breaths
-            assert start_idx >= 4, f"Restriction should start around breath 5, got {start_idx}"
-            assert end_idx <= 11, f"Restriction should end around breath 10, got {end_idx}"
+            assert start_idx >= 4, (
+                f"Restriction should start around breath 5, got {start_idx}"
+            )
+            assert end_idx <= 11, (
+                f"Restriction should end around breath 10, got {end_idx}"
+            )
             # Duration should be at least 10 seconds
-            duration = sum(mock_breaths[i].duration for i in range(start_idx, end_idx + 1))
+            duration = sum(
+                mock_breaths[i].duration for i in range(start_idx, end_idx + 1)
+            )
             assert duration >= 10.0, f"Restriction duration {duration}s should be ≥ 10s"
 
 
@@ -234,7 +246,9 @@ class TestEndToEndBreathSegmentation:
 
         for i in range(num_breaths):
             breath_start = i * breath_duration
-            t = np.linspace(breath_start, breath_start + breath_duration, samples_per_breath)
+            t = np.linspace(
+                breath_start, breath_start + breath_duration, samples_per_breath
+            )
 
             # Sinusoidal breath: inspiration (0-2s), expiration (2-4s)
             half = samples_per_breath // 2
@@ -257,16 +271,28 @@ class TestEndToEndBreathSegmentation:
 
         # Check that all breaths have valid metrics
         for breath in breaths:
-            assert breath.is_complete, f"Breath {breath.breath_number} should be complete"
-            assert breath.amplitude > 8.0, f"Breath {breath.breath_number} amplitude too low"
-            assert breath.duration > 1.0, f"Breath {breath.breath_number} duration too short"
-            assert breath.tidal_volume > 0, f"Breath {breath.breath_number} has no volume"
-            assert breath.respiratory_rate_rolling >= 0, "Rolling RR should be non-negative"
+            assert breath.is_complete, (
+                f"Breath {breath.breath_number} should be complete"
+            )
+            assert breath.amplitude > 8.0, (
+                f"Breath {breath.breath_number} amplitude too low"
+            )
+            assert breath.duration > 1.0, (
+                f"Breath {breath.breath_number} duration too short"
+            )
+            assert breath.tidal_volume > 0, (
+                f"Breath {breath.breath_number} has no volume"
+            )
+            assert breath.respiratory_rate_rolling >= 0, (
+                "Rolling RR should be non-negative"
+            )
 
         # Check smoothing is applied (later breaths have smoothed TV)
         if len(breaths) >= 5:
             # 5th breath should have smoothing
-            assert breaths[4].tidal_volume_smoothed > 0, "Smoothed TV should be positive"
+            assert breaths[4].tidal_volume_smoothed > 0, (
+                "Smoothed TV should be positive"
+            )
             # Smoothed value should be close to raw (in stable breathing)
             assert (
                 abs(breaths[4].tidal_volume - breaths[4].tidal_volume_smoothed)

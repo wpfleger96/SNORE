@@ -5,19 +5,17 @@ Provides functions to load real session fixtures and import them to test databas
 """
 
 from pathlib import Path
-from typing import List, Tuple
 
 from sqlalchemy.orm import Session
 
-from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
 from oscar_mcp.database.models import Session as CPAPSession
-
+from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
 
 # Path to fixtures directory
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "recorded_sessions"
 
 
-def get_available_fixtures() -> List[str]:
+def get_available_fixtures() -> list[str]:
     """
     Get list of available real session fixtures.
 
@@ -27,7 +25,11 @@ def get_available_fixtures() -> List[str]:
     if not FIXTURES_DIR.exists():
         return []
 
-    return [d.name for d in FIXTURES_DIR.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    return [
+        d.name
+        for d in FIXTURES_DIR.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
+    ]
 
 
 def get_fixture_path(fixture_name: str) -> Path:
@@ -77,7 +79,7 @@ def get_fixture_files(fixture_name: str) -> dict:
     return files
 
 
-def load_real_session(fixture_name: str) -> Tuple[Path, dict]:
+def load_real_session(fixture_name: str) -> tuple[Path, dict]:
     """
     Load a real session fixture.
 
@@ -145,14 +147,18 @@ def import_to_test_db(
     # Parse using ResMed parser's internal method
     parser = ResmedEDFParser()
     unified_session = parser._parse_session_group(
-        session_id=session_id, files=files, device_info=device_info, base_path=fixture_path
+        session_id=session_id,
+        files=files,
+        device_info=device_info,
+        base_path=fixture_path,
     )
 
     # Import directly into the provided test session instead of using SessionImporter
     # which relies on the global session factory
+    import json
+
     from oscar_mcp.database import models
     from oscar_mcp.database.importers import serialize_waveform
-    import json
 
     # Get or create device
     device = (
@@ -182,7 +188,9 @@ def import_to_test_db(
     # Check if session already exists
     existing = (
         db_session.query(models.Session)
-        .filter_by(device_id=device.id, device_session_id=unified_session.device_session_id)
+        .filter_by(
+            device_id=device.id, device_session_id=unified_session.device_session_id
+        )
         .first()
     )
 
@@ -204,7 +212,9 @@ def import_to_test_db(
         start_time=unified_session.start_time,
         end_time=unified_session.end_time,
         duration_seconds=unified_session.duration_seconds,
-        therapy_mode=unified_session.settings.mode.value if unified_session.settings else None,
+        therapy_mode=unified_session.settings.mode.value
+        if unified_session.settings
+        else None,
         import_source=unified_session.import_source,
         parser_version=unified_session.parser_version,
         data_quality_notes=notes_json,
@@ -220,7 +230,9 @@ def import_to_test_db(
         for waveform_type, waveform in unified_session.waveforms.items():
             data_blob = serialize_waveform(waveform)
             sample_count = (
-                len(waveform.values) if isinstance(waveform.values, list) else len(waveform.values)
+                len(waveform.values)
+                if isinstance(waveform.values, list)
+                else len(waveform.values)
             )
 
             waveform_record = models.Waveform(
@@ -378,7 +390,7 @@ def get_fixture_metadata(fixture_name: str) -> dict:
     }
 
 
-def list_fixtures_with_metadata() -> List[dict]:
+def list_fixtures_with_metadata() -> list[dict]:
     """
     List all available fixtures with their metadata.
 

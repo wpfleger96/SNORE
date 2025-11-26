@@ -218,7 +218,9 @@ class TestOSCARAlgorithms:
 
         # All returned breaths must pass amplitude threshold
         for breath in breaths:
-            assert breath.amplitude > 2.0, f"Breath {breath.breath_number} below 2 L/min threshold"
+            assert breath.amplitude > 2.0, (
+                f"Breath {breath.breath_number} below 2 L/min threshold"
+            )
 
     def test_rolling_rr_more_stable_than_instantaneous(self, recorded_session):
         """Rolling 60s window RR should be more stable than instantaneous."""
@@ -240,7 +242,9 @@ class TestOSCARAlgorithms:
             roll_rr = [b.respiratory_rate_rolling for b in breaths[10:]]
 
             # Rolling should have lower variance (key OSCAR algorithm property)
-            assert np.std(roll_rr) < np.std(inst_rr), "Rolling RR not smoothing variability"
+            assert np.std(roll_rr) < np.std(inst_rr), (
+                "Rolling RR not smoothing variability"
+            )
 
     def test_tv_smoothing_reduces_variability(self, recorded_session):
         """5-point weighted TV smoothing should reduce jitter."""
@@ -262,7 +266,9 @@ class TestOSCARAlgorithms:
             smoothed_tv = [b.tidal_volume_smoothed for b in breaths[5:]]
 
             # Smoothed should have lower variance
-            assert np.std(smoothed_tv) <= np.std(raw_tv), "TV smoothing not reducing variability"
+            assert np.std(smoothed_tv) <= np.std(raw_tv), (
+                "TV smoothing not reducing variability"
+            )
 
     def test_complete_breaths_have_both_phases(self, recorded_session):
         """All returned breaths must be complete (inspiration + expiration)."""
@@ -279,7 +285,9 @@ class TestOSCARAlgorithms:
         )
 
         for breath in breaths:
-            assert breath.is_complete, f"Incomplete breath returned: {breath.breath_number}"
+            assert breath.is_complete, (
+                f"Incomplete breath returned: {breath.breath_number}"
+            )
             assert breath.inspiration_time > 0, "Missing inspiration phase"
             assert breath.expiration_time > 0, "Missing expiration phase"
 

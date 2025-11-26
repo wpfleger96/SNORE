@@ -5,7 +5,6 @@ Provides functions to generate controlled, reproducible test data for unit testi
 """
 
 import numpy as np
-from typing import Tuple, List
 
 
 def generate_sinusoidal_breath(
@@ -13,7 +12,7 @@ def generate_sinusoidal_breath(
     amplitude: float = 30.0,
     sample_rate: float = 25.0,
     baseline: float = 0.0,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate a perfect sinusoidal breath waveform.
 
@@ -41,7 +40,7 @@ def generate_noisy_breath(
     amplitude: float = 30.0,
     sample_rate: float = 25.0,
     snr_db: float = 20.0,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate a breath waveform with controlled noise level.
 
@@ -54,7 +53,9 @@ def generate_noisy_breath(
     Returns:
         Tuple of (timestamps, flow_values)
     """
-    timestamps, clean_signal = generate_sinusoidal_breath(duration, amplitude, sample_rate)
+    timestamps, clean_signal = generate_sinusoidal_breath(
+        duration, amplitude, sample_rate
+    )
 
     # Calculate noise power from SNR
     signal_power = np.mean(clean_signal**2)
@@ -74,7 +75,7 @@ def generate_flattened_breath(
     amplitude: float = 30.0,
     sample_rate: float = 25.0,
     flatness_index: float = 0.7,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate a flow-limited breath with specified flatness.
 
@@ -118,7 +119,7 @@ def generate_multi_peak_breath(
     amplitude: float = 30.0,
     sample_rate: float = 25.0,
     peak_count: int = 2,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate a breath with multiple peaks during inspiration.
 
@@ -164,7 +165,7 @@ def create_session(
     amplitude_variability: float = 5.0,
     sample_rate: float = 25.0,
     breath_type: str = "sinusoidal",
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate a complete session with multiple breaths.
 
@@ -184,7 +185,7 @@ def create_session(
     all_flow_values = []
     current_time = 0.0
 
-    for i in range(num_breaths):
+    for _i in range(num_breaths):
         # Vary duration and amplitude
         duration = np.random.normal(avg_duration, duration_variability)
         duration = max(1.0, duration)  # Minimum 1 second
@@ -277,7 +278,7 @@ def create_multi_segment_session(
     breaths_per_segment: int = 20,
     gap_duration: float = 60.0,
     sample_rate: float = 25.0,
-) -> Tuple[np.ndarray, np.ndarray, List[Tuple[float, float]]]:
+) -> tuple[np.ndarray, np.ndarray, list[tuple[float, float]]]:
     """
     Generate a session with multiple segments (mask-off events).
 
@@ -298,7 +299,9 @@ def create_multi_segment_session(
 
     for i in range(segment_count):
         # Generate segment
-        t, flow = create_session(num_breaths=breaths_per_segment, sample_rate=sample_rate)
+        t, flow = create_session(
+            num_breaths=breaths_per_segment, sample_rate=sample_rate
+        )
 
         # Offset to current time
         t = t + current_time

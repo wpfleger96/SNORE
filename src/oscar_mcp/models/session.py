@@ -1,7 +1,5 @@
 """Pydantic models for Session data."""
 
-from typing import Dict, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -10,18 +8,26 @@ class SessionSummary(BaseModel):
 
     id: int
     session_id: str = Field(description="Unique session identifier from OSCAR")
-    machine_brand: Optional[str] = None
-    machine_model: Optional[str] = None
+    machine_brand: str | None = None
+    machine_model: str | None = None
 
     # Timing
-    start_time: int = Field(description="Session start time (Unix timestamp in milliseconds)")
-    end_time: int = Field(description="Session end time (Unix timestamp in milliseconds)")
+    start_time: int = Field(
+        description="Session start time (Unix timestamp in milliseconds)"
+    )
+    end_time: int = Field(
+        description="Session end time (Unix timestamp in milliseconds)"
+    )
     duration_hours: float = Field(description="Session duration in hours")
 
     # Key metrics
-    ahi: Optional[float] = Field(default=None, description="Apnea-Hypopnea Index")
-    pressure_median: Optional[float] = Field(default=None, description="Median pressure (cmH₂O)")
-    leak_median: Optional[float] = Field(default=None, description="Median leak rate (L/min)")
+    ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
+    pressure_median: float | None = Field(
+        default=None, description="Median pressure (cmH₂O)"
+    )
+    leak_median: float | None = Field(
+        default=None, description="Median leak rate (L/min)"
+    )
 
     class Config:
         json_schema_extra = {
@@ -45,8 +51,8 @@ class SessionDetail(BaseModel):
 
     id: int
     session_id: str
-    machine_brand: Optional[str] = None
-    machine_model: Optional[str] = None
+    machine_brand: str | None = None
+    machine_model: str | None = None
 
     # Timing
     start_time: int = Field(description="Unix timestamp in milliseconds")
@@ -60,31 +66,31 @@ class SessionDetail(BaseModel):
     reras: int = 0
 
     # Indices
-    ahi: Optional[float] = None
+    ahi: float | None = None
 
     # Pressure statistics
-    pressure_min: Optional[float] = None
-    pressure_max: Optional[float] = None
-    pressure_median: Optional[float] = None
-    pressure_95th: Optional[float] = None
+    pressure_min: float | None = None
+    pressure_max: float | None = None
+    pressure_median: float | None = None
+    pressure_95th: float | None = None
 
     # Leak statistics
-    leak_median: Optional[float] = None
-    leak_95th: Optional[float] = None
-    leak_max: Optional[float] = None
+    leak_median: float | None = None
+    leak_95th: float | None = None
+    leak_max: float | None = None
 
     # Respiratory statistics
-    resp_rate_avg: Optional[float] = None
-    tidal_volume_avg: Optional[float] = None
-    minute_vent_avg: Optional[float] = None
+    resp_rate_avg: float | None = None
+    tidal_volume_avg: float | None = None
+    minute_vent_avg: float | None = None
 
     # SpO2 statistics (if available)
-    spo2_avg: Optional[float] = None
-    spo2_min: Optional[float] = None
-    pulse_avg: Optional[float] = None
+    spo2_avg: float | None = None
+    spo2_min: float | None = None
+    pulse_avg: float | None = None
 
     # Settings
-    settings: Dict[str, str] = Field(default_factory=dict)
+    settings: dict[str, str] = Field(default_factory=dict)
 
     class Config:
         json_schema_extra = {

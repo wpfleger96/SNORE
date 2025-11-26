@@ -39,7 +39,9 @@ class TestDataRootFinder:
 
         return extractor
 
-    def test_find_root_from_exact_path(self, finder, mock_validator, mock_extractor, tmp_path):
+    def test_find_root_from_exact_path(
+        self, finder, mock_validator, mock_extractor, tmp_path
+    ):
         """Test finding data root when given the exact root path."""
         root = tmp_path / "data"
         root.mkdir()
@@ -51,7 +53,9 @@ class TestDataRootFinder:
         assert results[0].path == root
         assert results[0].device_serial == "12345"
 
-    def test_find_root_from_child_path(self, finder, mock_validator, mock_extractor, tmp_path):
+    def test_find_root_from_child_path(
+        self, finder, mock_validator, mock_extractor, tmp_path
+    ):
         """Test finding data root when given a child directory path."""
         root = tmp_path / "data"
         root.mkdir()
@@ -65,7 +69,9 @@ class TestDataRootFinder:
         assert len(results) == 1
         assert results[0].path == root
 
-    def test_find_root_from_parent_path(self, finder, mock_validator, mock_extractor, tmp_path):
+    def test_find_root_from_parent_path(
+        self, finder, mock_validator, mock_extractor, tmp_path
+    ):
         """Test finding data root when given a parent directory path."""
         parent = tmp_path / "parent"
         parent.mkdir()
@@ -74,7 +80,9 @@ class TestDataRootFinder:
         root.mkdir()
         (root / "marker.txt").touch()
 
-        results = finder.find_data_roots(parent, mock_validator, mock_extractor, max_levels_down=2)
+        results = finder.find_data_roots(
+            parent, mock_validator, mock_extractor, max_levels_down=2
+        )
 
         assert len(results) == 1
         assert results[0].path == root
@@ -102,7 +110,9 @@ class TestDataRootFinder:
                 confidence=confidence,
             )
 
-        results = finder.find_data_roots(tmp_path, validator, extractor, max_levels_down=2)
+        results = finder.find_data_roots(
+            tmp_path, validator, extractor, max_levels_down=2
+        )
 
         assert len(results) == 2
         assert results[0].path == root2
@@ -110,7 +120,9 @@ class TestDataRootFinder:
         assert results[1].path == root1
         assert results[1].confidence == 0.85
 
-    def test_no_valid_root_found(self, finder, mock_validator, mock_extractor, tmp_path):
+    def test_no_valid_root_found(
+        self, finder, mock_validator, mock_extractor, tmp_path
+    ):
         """Test that empty list is returned when no valid root is found."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()

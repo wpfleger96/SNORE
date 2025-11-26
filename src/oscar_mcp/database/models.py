@@ -6,22 +6,23 @@ Defines the complete database schema including:
 - Medical analysis infrastructure (knowledge base, patterns, analysis results)
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime
+from typing import Any
+
 from sqlalchemy import (
-    Column,
-    Integer,
-    Float,
-    String,
-    Text,
+    Boolean,
+    CheckConstraint,
     Date,
     DateTime,
-    Boolean,
+    Float,
     ForeignKey,
+    Integer,
     LargeBinary,
-    CheckConstraint,
+    String,
+    Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from oscar_mcp.database.types import ValidatedJSON, ValidatedJSONWithDefault
 
@@ -33,9 +34,9 @@ class Base(DeclarativeBase):
 
 
 # Standardized datetime helpers
-def utc_now():
+def utc_now() -> datetime:
     """Return current UTC timestamp for database defaults."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Profile(Base):
@@ -43,15 +44,21 @@ class Profile(Base):
 
     __tablename__ = "profiles"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String(100), unique=True, nullable=False)
-    first_name = Column(String(100))
-    last_name = Column(String(100))
-    date_of_birth = Column(Date)
-    height_cm = Column(Integer)
-    settings = Column(ValidatedJSONWithDefault)  # Profile-specific settings (e.g., day_split_time)
-    created_at = Column(DateTime(timezone=True), default=utc_now)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True)
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    date_of_birth: Mapped[date | None] = mapped_column(Date)
+    height_cm: Mapped[int | None] = mapped_column(Integer)
+    settings: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Profile-specific settings
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
     # Relationships
     devices = relationship("Device", back_populates="profile")
@@ -59,7 +66,7 @@ class Profile(Base):
 
     __table_args__ = (CheckConstraint("length(username) > 0", name="chk_username"),)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Profile(id={self.id}, username={self.username})>"
 
 
@@ -68,27 +75,31 @@ class Device(Base):
 
     __tablename__ = "devices"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=True)
-    manufacturer = Column(String, nullable=False)
-    model = Column(String, nullable=False)
-    serial_number = Column(String, unique=True, nullable=False)
-    firmware_version = Column(String)
-    hardware_version = Column(String)
-    product_code = Column(String)
-    first_seen = Column(DateTime, default=utc_now)
-    last_import = Column(DateTime)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE")
+    )
+    manufacturer: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    serial_number: Mapped[str] = mapped_column(String, unique=True)
+    firmware_version: Mapped[str | None] = mapped_column(String)
+    hardware_version: Mapped[str | None] = mapped_column(String)
+    product_code: Mapped[str | None] = mapped_column(String)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    last_import: Mapped[datetime | None] = mapped_column(DateTime)
 
     # Relationships
     profile = relationship("Profile", back_populates="devices")
-    sessions = relationship("Session", back_populates="device", cascade="all, delete-orphan")
+    sessions = relationship(
+        "Session", back_populates="device", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("length(manufacturer) > 0", name="chk_manufacturer"),
         CheckConstraint("length(serial_number) > 0", name="chk_serial"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Device(id={self.id}, manufacturer={self.manufacturer}, model={self.model}, serial={self.serial_number})>"
 
 
@@ -97,49 +108,55 @@ class Day(Base):
 
     __tablename__ = "days"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
-    date = Column(Date, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE")
+    )
+    date: Mapped[date] = mapped_column(Date)
 
     # Pre-calculated statistics (cached for performance)
-    session_count = Column(Integer, default=0)
-    total_therapy_hours = Column(Float, default=0.0)
+    session_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_therapy_hours: Mapped[float] = mapped_column(Float, default=0.0)
 
     # Respiratory event counts
-    obstructive_apneas = Column(Integer, default=0)
-    central_apneas = Column(Integer, default=0)
-    hypopneas = Column(Integer, default=0)
-    reras = Column(Integer, default=0)
+    obstructive_apneas: Mapped[int] = mapped_column(Integer, default=0)
+    central_apneas: Mapped[int] = mapped_column(Integer, default=0)
+    hypopneas: Mapped[int] = mapped_column(Integer, default=0)
+    reras: Mapped[int] = mapped_column(Integer, default=0)
 
     # Respiratory indices
-    ahi = Column(Float)
-    oai = Column(Float)
-    cai = Column(Float)
-    hi = Column(Float)
+    ahi: Mapped[float | None] = mapped_column(Float)
+    oai: Mapped[float | None] = mapped_column(Float)
+    cai: Mapped[float | None] = mapped_column(Float)
+    hi: Mapped[float | None] = mapped_column(Float)
 
     # Pressure statistics
-    pressure_min = Column(Float)
-    pressure_max = Column(Float)
-    pressure_median = Column(Float)
-    pressure_mean = Column(Float)
-    pressure_95th = Column(Float)
+    pressure_min: Mapped[float | None] = mapped_column(Float)
+    pressure_max: Mapped[float | None] = mapped_column(Float)
+    pressure_median: Mapped[float | None] = mapped_column(Float)
+    pressure_mean: Mapped[float | None] = mapped_column(Float)
+    pressure_95th: Mapped[float | None] = mapped_column(Float)
 
     # Leak statistics
-    leak_min = Column(Float)
-    leak_max = Column(Float)
-    leak_median = Column(Float)
-    leak_mean = Column(Float)
-    leak_95th = Column(Float)
+    leak_min: Mapped[float | None] = mapped_column(Float)
+    leak_max: Mapped[float | None] = mapped_column(Float)
+    leak_median: Mapped[float | None] = mapped_column(Float)
+    leak_mean: Mapped[float | None] = mapped_column(Float)
+    leak_95th: Mapped[float | None] = mapped_column(Float)
 
     # Oximetry statistics
-    spo2_min = Column(Float)
-    spo2_max = Column(Float)
-    spo2_mean = Column(Float)
-    spo2_avg = Column(Float)  # Alias for compatibility
+    spo2_min: Mapped[float | None] = mapped_column(Float)
+    spo2_max: Mapped[float | None] = mapped_column(Float)
+    spo2_mean: Mapped[float | None] = mapped_column(Float)
+    spo2_avg: Mapped[float | None] = mapped_column(Float)  # Alias for compatibility
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=utc_now)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
     # Relationships
     profile = relationship("Profile", back_populates="days")
@@ -147,10 +164,8 @@ class Day(Base):
 
     __table_args__ = (UniqueConstraint("profile_id", "date", name="uq_profile_date"),)
 
-    def __repr__(self):
-        return (
-            f"<Day(id={self.id}, profile_id={self.profile_id}, date={self.date}, ahi={self.ahi})>"
-        )
+    def __repr__(self) -> str:
+        return f"<Day(id={self.id}, profile_id={self.profile_id}, date={self.date}, ahi={self.ahi})>"
 
 
 class Session(Base):
@@ -158,31 +173,44 @@ class Session(Base):
 
     __tablename__ = "sessions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
-    day_id = Column(Integer, ForeignKey("days.id", ondelete="CASCADE"), nullable=True)
-    device_session_id = Column(String, nullable=False)
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime, nullable=False)
-    duration_seconds = Column(Float)
-    therapy_mode = Column(String)
-    import_date = Column(DateTime, default=utc_now)
-    import_source = Column(String)
-    parser_version = Column(String)
-    data_quality_notes = Column(ValidatedJSONWithDefault)  # JSON array of quality issues
-    has_waveform_data = Column(Boolean, default=False)
-    has_event_data = Column(Boolean, default=False)
-    has_statistics = Column(Boolean, default=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    day_id: Mapped[int | None] = mapped_column(
+        ForeignKey("days.id", ondelete="CASCADE")
+    )
+    device_session_id: Mapped[str] = mapped_column(String)
+    start_time: Mapped[datetime] = mapped_column(DateTime)
+    end_time: Mapped[datetime] = mapped_column(DateTime)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    therapy_mode: Mapped[str | None] = mapped_column(String)
+    import_date: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    import_source: Mapped[str | None] = mapped_column(String)
+    parser_version: Mapped[str | None] = mapped_column(String)
+    data_quality_notes: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # JSON array
+    has_waveform_data: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_event_data: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_statistics: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     device = relationship("Device", back_populates="sessions")
     day = relationship("Day", back_populates="sessions")
-    waveforms = relationship("Waveform", back_populates="session", cascade="all, delete-orphan")
-    events = relationship("Event", back_populates="session", cascade="all, delete-orphan")
-    statistics = relationship(
-        "Statistics", back_populates="session", uselist=False, cascade="all, delete-orphan"
+    waveforms = relationship(
+        "Waveform", back_populates="session", cascade="all, delete-orphan"
     )
-    settings = relationship("Setting", back_populates="session", cascade="all, delete-orphan")
+    events = relationship(
+        "Event", back_populates="session", cascade="all, delete-orphan"
+    )
+    statistics = relationship(
+        "Statistics",
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    settings = relationship(
+        "Setting", back_populates="session", cascade="all, delete-orphan"
+    )
     analysis_results = relationship(
         "AnalysisResult", back_populates="session", cascade="all, delete-orphan"
     )
@@ -190,10 +218,12 @@ class Session(Base):
     __table_args__ = (
         UniqueConstraint("device_id", "device_session_id", name="uq_device_session"),
         CheckConstraint("end_time >= start_time", name="chk_time_range"),
-        CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"),
+        CheckConstraint(
+            "duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"
+        ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Session(id={self.id}, device_id={self.device_id}, start={self.start_time})>"
 
 
@@ -202,16 +232,18 @@ class Waveform(Base):
 
     __tablename__ = "waveforms"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    waveform_type = Column(String, nullable=False)
-    sample_rate = Column(Float, nullable=False)
-    unit = Column(String)
-    min_value = Column(Float)
-    max_value = Column(Float)
-    mean_value = Column(Float)
-    data_blob = Column(LargeBinary, nullable=False)
-    sample_count = Column(Integer)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    waveform_type: Mapped[str] = mapped_column(String)
+    sample_rate: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String)
+    min_value: Mapped[float | None] = mapped_column(Float)
+    max_value: Mapped[float | None] = mapped_column(Float)
+    mean_value: Mapped[float | None] = mapped_column(Float)
+    data_blob: Mapped[bytes] = mapped_column(LargeBinary)
+    sample_count: Mapped[int | None] = mapped_column(Integer)
 
     # Relationships
     session = relationship("Session", back_populates="waveforms")
@@ -221,7 +253,7 @@ class Waveform(Base):
         CheckConstraint("sample_rate > 0", name="chk_sample_rate"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Waveform(id={self.id}, session_id={self.session_id}, type={self.waveform_type})>"
 
 
@@ -230,22 +262,26 @@ class Event(Base):
 
     __tablename__ = "events"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    event_type = Column(String, nullable=False)
-    start_time = Column(DateTime, nullable=False)
-    duration_seconds = Column(Float)
-    spo2_drop = Column(Float)
-    peak_flow_limitation = Column(Float)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    event_type: Mapped[str] = mapped_column(String)
+    start_time: Mapped[datetime] = mapped_column(DateTime)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    spo2_drop: Mapped[float | None] = mapped_column(Float)
+    peak_flow_limitation: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     session = relationship("Session", back_populates="events")
 
     __table_args__ = (
-        CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"),
+        CheckConstraint(
+            "duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"
+        ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Event(id={self.id}, session_id={self.session_id}, type={self.event_type}, start={self.start_time})>"
 
 
@@ -254,69 +290,71 @@ class Statistics(Base):
 
     __tablename__ = "statistics"
 
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True
+    )
 
     # Respiratory event counts
-    obstructive_apneas = Column(Integer, default=0)
-    central_apneas = Column(Integer, default=0)
-    mixed_apneas = Column(Integer, default=0)
-    hypopneas = Column(Integer, default=0)
-    reras = Column(Integer, default=0)
-    flow_limitations = Column(Integer, default=0)
+    obstructive_apneas: Mapped[int] = mapped_column(Integer, default=0)
+    central_apneas: Mapped[int] = mapped_column(Integer, default=0)
+    mixed_apneas: Mapped[int] = mapped_column(Integer, default=0)
+    hypopneas: Mapped[int] = mapped_column(Integer, default=0)
+    reras: Mapped[int] = mapped_column(Integer, default=0)
+    flow_limitations: Mapped[int] = mapped_column(Integer, default=0)
 
     # Respiratory indices
-    ahi = Column(Float)
-    oai = Column(Float)
-    cai = Column(Float)
-    hi = Column(Float)
-    rei = Column(Float)
+    ahi: Mapped[float | None] = mapped_column(Float)
+    oai: Mapped[float | None] = mapped_column(Float)
+    cai: Mapped[float | None] = mapped_column(Float)
+    hi: Mapped[float | None] = mapped_column(Float)
+    rei: Mapped[float | None] = mapped_column(Float)
 
     # Pressure statistics
-    pressure_min = Column(Float)
-    pressure_max = Column(Float)
-    pressure_median = Column(Float)
-    pressure_mean = Column(Float)
-    pressure_95th = Column(Float)
+    pressure_min: Mapped[float | None] = mapped_column(Float)
+    pressure_max: Mapped[float | None] = mapped_column(Float)
+    pressure_median: Mapped[float | None] = mapped_column(Float)
+    pressure_mean: Mapped[float | None] = mapped_column(Float)
+    pressure_95th: Mapped[float | None] = mapped_column(Float)
 
     # Leak statistics
-    leak_min = Column(Float)
-    leak_max = Column(Float)
-    leak_median = Column(Float)
-    leak_mean = Column(Float)
-    leak_95th = Column(Float)
-    leak_percentile_70 = Column(Float)
+    leak_min: Mapped[float | None] = mapped_column(Float)
+    leak_max: Mapped[float | None] = mapped_column(Float)
+    leak_median: Mapped[float | None] = mapped_column(Float)
+    leak_mean: Mapped[float | None] = mapped_column(Float)
+    leak_95th: Mapped[float | None] = mapped_column(Float)
+    leak_percentile_70: Mapped[float | None] = mapped_column(Float)
 
     # Respiratory rate statistics
-    respiratory_rate_min = Column(Float)
-    respiratory_rate_max = Column(Float)
-    respiratory_rate_mean = Column(Float)
+    respiratory_rate_min: Mapped[float | None] = mapped_column(Float)
+    respiratory_rate_max: Mapped[float | None] = mapped_column(Float)
+    respiratory_rate_mean: Mapped[float | None] = mapped_column(Float)
 
     # Tidal volume statistics
-    tidal_volume_min = Column(Float)
-    tidal_volume_max = Column(Float)
-    tidal_volume_mean = Column(Float)
+    tidal_volume_min: Mapped[float | None] = mapped_column(Float)
+    tidal_volume_max: Mapped[float | None] = mapped_column(Float)
+    tidal_volume_mean: Mapped[float | None] = mapped_column(Float)
 
     # Minute ventilation statistics
-    minute_ventilation_min = Column(Float)
-    minute_ventilation_max = Column(Float)
-    minute_ventilation_mean = Column(Float)
+    minute_ventilation_min: Mapped[float | None] = mapped_column(Float)
+    minute_ventilation_max: Mapped[float | None] = mapped_column(Float)
+    minute_ventilation_mean: Mapped[float | None] = mapped_column(Float)
 
     # Oximetry statistics
-    spo2_min = Column(Float)
-    spo2_max = Column(Float)
-    spo2_mean = Column(Float)
-    spo2_time_below_90 = Column(Integer)
-    pulse_min = Column(Float)
-    pulse_max = Column(Float)
-    pulse_mean = Column(Float)
+    spo2_min: Mapped[float | None] = mapped_column(Float)
+    spo2_max: Mapped[float | None] = mapped_column(Float)
+    spo2_mean: Mapped[float | None] = mapped_column(Float)
+    spo2_time_below_90: Mapped[int | None] = mapped_column(Integer)
+    pulse_min: Mapped[float | None] = mapped_column(Float)
+    pulse_max: Mapped[float | None] = mapped_column(Float)
+    pulse_mean: Mapped[float | None] = mapped_column(Float)
 
     # Usage
-    usage_hours = Column(Float)
+    usage_hours: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     session = relationship("Session", back_populates="statistics")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Statistics(session_id={self.session_id}, ahi={self.ahi})>"
 
 
@@ -325,17 +363,19 @@ class Setting(Base):
 
     __tablename__ = "settings"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    key = Column(String, nullable=False)
-    value = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    key: Mapped[str] = mapped_column(String)
+    value: Mapped[str | None] = mapped_column(String)
 
     # Relationships
     session = relationship("Session", back_populates="settings")
 
     __table_args__ = (UniqueConstraint("session_id", "key", name="uq_session_key"),)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Setting(id={self.id}, session_id={self.session_id}, key={self.key})>"
 
 
@@ -352,17 +392,27 @@ class AnalysisResult(Base):
 
     __tablename__ = "analysis_results"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    timestamp_start = Column(DateTime, nullable=False)
-    timestamp_end = Column(DateTime, nullable=False)
-    programmatic_result_json = Column(ValidatedJSONWithDefault)  # Algorithmic analysis results
-    llm_result_json = Column(ValidatedJSONWithDefault)  # LLM analysis results
-    combined_result_json = Column(ValidatedJSONWithDefault)  # Combined/reconciled results
-    agreement_score = Column(Float)
-    processing_time_ms = Column(Integer)
-    engine_versions_json = Column(ValidatedJSONWithDefault)  # Version info for reproducibility
-    created_at = Column(DateTime, default=utc_now)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    timestamp_start: Mapped[datetime] = mapped_column(DateTime)
+    timestamp_end: Mapped[datetime] = mapped_column(DateTime)
+    programmatic_result_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Algorithmic analysis results
+    llm_result_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # LLM analysis
+    combined_result_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Combined/reconciled results
+    agreement_score: Mapped[float | None] = mapped_column(Float)
+    processing_time_ms: Mapped[int | None] = mapped_column(Integer)
+    engine_versions_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Version info for reproducibility
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     session = relationship("Session", back_populates="analysis_results")
@@ -373,7 +423,7 @@ class AnalysisResult(Base):
         "AnalysisFeedback", back_populates="analysis", cascade="all, delete-orphan"
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<AnalysisResult(id={self.id}, session_id={self.session_id}, agreement={self.agreement_score})>"
 
 
@@ -387,22 +437,26 @@ class DetectedPattern(Base):
 
     __tablename__ = "detected_patterns"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    analysis_result_id = Column(
-        Integer, ForeignKey("analysis_results.id", ondelete="CASCADE"), nullable=False
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    analysis_result_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_results.id", ondelete="CASCADE")
     )
-    pattern_id = Column(String(100), nullable=False)  # References patterns.py constants
-    start_time = Column(DateTime, nullable=False)
-    duration = Column(Float)  # seconds
-    confidence = Column(Float, nullable=False)
-    detected_by = Column(String(20), nullable=False)  # programmatic, llm, both
-    metrics_json = Column(ValidatedJSONWithDefault)  # Pattern-specific metrics
-    notes = Column(Text)
+    pattern_id: Mapped[str] = mapped_column(
+        String(100)
+    )  # References patterns.py constants
+    start_time: Mapped[datetime] = mapped_column(DateTime)
+    duration: Mapped[float | None] = mapped_column(Float)  # seconds
+    confidence: Mapped[float] = mapped_column(Float)
+    detected_by: Mapped[str] = mapped_column(String(20))  # programmatic, llm, both
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Pattern-specific
+    notes: Mapped[str | None] = mapped_column(Text)
 
     # Relationships
     analysis = relationship("AnalysisResult", back_populates="detected_patterns")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<DetectedPattern(id={self.id}, pattern={self.pattern_id}, confidence={self.confidence})>"
 
 
@@ -411,21 +465,21 @@ class AnalysisFeedback(Base):
 
     __tablename__ = "analysis_feedback"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    analysis_result_id = Column(
-        Integer, ForeignKey("analysis_results.id", ondelete="CASCADE"), nullable=False
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    analysis_result_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_results.id", ondelete="CASCADE")
     )
-    feedback_type = Column(String(50), nullable=False)
-    discrepancy_description = Column(Text)
-    suggested_improvement = Column(Text)
-    implemented = Column(Boolean, default=False)
-    reviewed_by = Column(String(100))
-    created_at = Column(DateTime, default=utc_now)
+    feedback_type: Mapped[str] = mapped_column(String(50))
+    discrepancy_description: Mapped[str | None] = mapped_column(Text)
+    suggested_improvement: Mapped[str | None] = mapped_column(Text)
+    implemented: Mapped[bool] = mapped_column(Boolean, default=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     analysis = relationship("AnalysisResult", back_populates="feedback")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<AnalysisFeedback(id={self.id}, type={self.feedback_type}, implemented={self.implemented})>"
 
 
@@ -434,17 +488,21 @@ class AlgorithmConfig(Base):
 
     __tablename__ = "algorithm_configs"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    algorithm_name = Column(String(100), unique=True, nullable=False)
-    version = Column(String(50), nullable=False)
-    parameters_json = Column(ValidatedJSON, nullable=False)  # Algorithm parameters
-    is_active = Column(Boolean, default=True)
-    performance_metrics_json = Column(ValidatedJSONWithDefault)  # Performance metrics
-    last_updated = Column(
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    algorithm_name: Mapped[str] = mapped_column(String(100), unique=True)
+    version: Mapped[str] = mapped_column(String(50))
+    parameters_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSON
+    )  # Algorithm parameters
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    performance_metrics_json: Mapped[dict[str, Any]] = mapped_column(
+        ValidatedJSONWithDefault, default=dict
+    )  # Perf
+    last_updated: Mapped[datetime] = mapped_column(
         DateTime,
         default=utc_now,
         onupdate=utc_now,
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<AlgorithmConfig(name={self.algorithm_name}, version={self.version}, active={self.is_active})>"

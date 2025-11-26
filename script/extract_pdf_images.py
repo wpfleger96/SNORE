@@ -12,7 +12,9 @@ Usage:
 
 import argparse
 import logging
+
 from pathlib import Path
+
 import fitz  # PyMuPDF
 
 # Configure logging
@@ -20,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def extract_images_from_pdf(pdf_path: Path, output_dir: Path):
+def extract_images_from_pdf(pdf_path: Path, output_dir: Path) -> None:
     """
     Extract all images from PDF.
 
@@ -63,7 +65,9 @@ def extract_images_from_pdf(pdf_path: Path, output_dir: Path):
 
                 # Save only if RGB or GRAY
                 if pix.n - pix.alpha <= 3:
-                    image_filename = f"page_{page_num + 1:02d}_img_{img_index + 1:02d}.png"
+                    image_filename = (
+                        f"page_{page_num + 1:02d}_img_{img_index + 1:02d}.png"
+                    )
                     image_path = output_dir / image_filename
 
                     pix.save(str(image_path))
@@ -115,7 +119,7 @@ def extract_images_from_pdf(pdf_path: Path, output_dir: Path):
     logger.info("=" * 70)
 
 
-def main():
+def main() -> int:
     """Main execution function."""
     parser = argparse.ArgumentParser(description="Extract images from OSCAR Guide PDF")
     parser.add_argument(

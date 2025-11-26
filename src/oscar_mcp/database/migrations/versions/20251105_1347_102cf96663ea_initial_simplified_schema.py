@@ -6,18 +6,19 @@ Create Date: 2025-11-05 13:47:46.379948
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
-import oscar_mcp.database.types
 
+import oscar_mcp.database.types
 
 # revision identifiers, used by Alembic.
 revision: str = "102cf96663ea"
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -28,7 +29,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("algorithm_name", sa.String(length=100), nullable=False),
         sa.Column("version", sa.String(length=50), nullable=False),
-        sa.Column("parameters_json", oscar_mcp.database.types.ValidatedJSON(), nullable=False),
+        sa.Column(
+            "parameters_json", oscar_mcp.database.types.ValidatedJSON(), nullable=False
+        ),
         sa.Column("is_active", sa.Boolean(), nullable=True),
         sa.Column(
             "performance_metrics_json",
@@ -47,7 +50,11 @@ def upgrade() -> None:
         sa.Column("last_name", sa.String(length=100), nullable=True),
         sa.Column("date_of_birth", sa.Date(), nullable=True),
         sa.Column("height_cm", sa.Integer(), nullable=True),
-        sa.Column("settings", oscar_mcp.database.types.ValidatedJSONWithDefault(), nullable=True),
+        sa.Column(
+            "settings",
+            oscar_mcp.database.types.ValidatedJSONWithDefault(),
+            nullable=True,
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("length(username) > 0", name="chk_username"),
@@ -121,7 +128,9 @@ def upgrade() -> None:
         sa.Column("import_source", sa.String(), nullable=True),
         sa.Column("parser_version", sa.String(), nullable=True),
         sa.Column(
-            "data_quality_notes", oscar_mcp.database.types.ValidatedJSONWithDefault(), nullable=True
+            "data_quality_notes",
+            oscar_mcp.database.types.ValidatedJSONWithDefault(),
+            nullable=True,
         ),
         sa.Column("has_waveform_data", sa.Boolean(), nullable=True),
         sa.Column("has_event_data", sa.Boolean(), nullable=True),
@@ -147,7 +156,9 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column(
-            "llm_result_json", oscar_mcp.database.types.ValidatedJSONWithDefault(), nullable=True
+            "llm_result_json",
+            oscar_mcp.database.types.ValidatedJSONWithDefault(),
+            nullable=True,
         ),
         sa.Column(
             "combined_result_json",
@@ -277,7 +288,9 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Float(), nullable=False),
         sa.Column("detected_by", sa.String(length=20), nullable=False),
         sa.Column(
-            "metrics_json", oscar_mcp.database.types.ValidatedJSONWithDefault(), nullable=True
+            "metrics_json",
+            oscar_mcp.database.types.ValidatedJSONWithDefault(),
+            nullable=True,
         ),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(

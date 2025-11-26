@@ -8,13 +8,15 @@ These tests verify:
 - Data integrity is maintained
 """
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
+
 from sqlalchemy import text
 
-from oscar_mcp.database.session import init_database, session_scope, cleanup_database
 from oscar_mcp.database import models
 from oscar_mcp.database.importers import SessionImporter
+from oscar_mcp.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture(autouse=True)
@@ -41,12 +43,17 @@ class TestForeignKeyConstraints:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -75,7 +82,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             events_before = session.execute(
-                text("SELECT COUNT(*) FROM events WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM events WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert events_before == 1
 
@@ -85,7 +93,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             events_after = session.execute(
-                text("SELECT COUNT(*) FROM events WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM events WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert events_after == 0, "Events should be deleted via CASCADE"
 
@@ -94,12 +103,17 @@ class TestForeignKeyConstraints:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -124,7 +138,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             stats_before = session.execute(
-                text("SELECT COUNT(*) FROM statistics WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM statistics WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert stats_before == 1
 
@@ -134,7 +149,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             stats_after = session.execute(
-                text("SELECT COUNT(*) FROM statistics WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM statistics WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert stats_after == 0, "Statistics should be deleted via CASCADE"
 
@@ -143,12 +159,17 @@ class TestForeignKeyConstraints:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -164,7 +185,9 @@ class TestForeignKeyConstraints:
             session.add(test_session)
             session.flush()
 
-            setting = models.Setting(session_id=test_session.id, key="mode", value="CPAP")
+            setting = models.Setting(
+                session_id=test_session.id, key="mode", value="CPAP"
+            )
             session.add(setting)
             session.commit()
 
@@ -172,7 +195,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             settings_before = session.execute(
-                text("SELECT COUNT(*) FROM settings WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM settings WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert settings_before == 1
 
@@ -182,7 +206,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             settings_after = session.execute(
-                text("SELECT COUNT(*) FROM settings WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM settings WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert settings_after == 0, "Settings should be deleted via CASCADE"
 
@@ -191,12 +216,17 @@ class TestForeignKeyConstraints:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -226,7 +256,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             waveforms_before = session.execute(
-                text("SELECT COUNT(*) FROM waveforms WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM waveforms WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert waveforms_before == 1
 
@@ -236,7 +267,8 @@ class TestForeignKeyConstraints:
 
         with session_scope() as session:
             waveforms_after = session.execute(
-                text("SELECT COUNT(*) FROM waveforms WHERE session_id = :sid"), {"sid": session_id}
+                text("SELECT COUNT(*) FROM waveforms WHERE session_id = :sid"),
+                {"sid": session_id},
             ).scalar()
             assert waveforms_after == 0, "Waveforms should be deleted via CASCADE"
 
@@ -281,7 +313,9 @@ class TestOrphanedRecordCleanup:
         with session_scope() as session:
             # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
-            session.execute(text("INSERT INTO statistics (session_id, ahi) VALUES (999, 5.2)"))
+            # Use ORM to create orphaned record (defaults applied automatically)
+            orphaned_stat = models.Statistics(session_id=999, ahi=5.2)
+            session.add(orphaned_stat)
             session.commit()
             # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
@@ -308,7 +342,9 @@ class TestOrphanedRecordCleanup:
             # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
             session.execute(
-                text("INSERT INTO settings (session_id, key, value) VALUES (999, 'mode', 'CPAP')")
+                text(
+                    "INSERT INTO settings (session_id, key, value) VALUES (999, 'mode', 'CPAP')"
+                )
             )
             session.commit()
             # Re-enable foreign keys
@@ -365,15 +401,18 @@ class TestOrphanedRecordCleanup:
         with session_scope() as session:
             # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
-            session.execute(
-                text(
-                    "INSERT INTO events (session_id, event_type, start_time, duration_seconds) VALUES (999, 'Apnea', '2025-10-01 22:00:00', 15.0)"
-                )
+            # Use ORM to create orphaned records (defaults applied automatically)
+            from datetime import datetime
+
+            orphaned_event = models.Event(
+                session_id=999,
+                event_type="Apnea",
+                start_time=datetime(2025, 10, 1, 22, 0, 0),
+                duration_seconds=15.0,
             )
-            session.execute(text("INSERT INTO statistics (session_id, ahi) VALUES (999, 5.2)"))
-            session.execute(
-                text("INSERT INTO settings (session_id, key, value) VALUES (999, 'mode', 'CPAP')")
-            )
+            orphaned_stat = models.Statistics(session_id=999, ahi=5.2)
+            orphaned_setting = models.Setting(session_id=999, key="mode", value="CPAP")
+            session.add_all([orphaned_event, orphaned_stat, orphaned_setting])
             session.commit()
             # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
@@ -411,12 +450,17 @@ class TestDataIntegrity:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -454,12 +498,17 @@ class TestDataIntegrity:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            profile = models.Profile(username="testuser", settings={"day_split_time": "12:00:00"})
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
             session.add(profile)
             session.flush()
 
             device = models.Device(
-                profile_id=profile.id, manufacturer="Test", model="Test", serial_number="TEST123"
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST123",
             )
             session.add(device)
             session.flush()
@@ -475,13 +524,17 @@ class TestDataIntegrity:
             session.add(test_session)
             session.flush()
 
-            setting1 = models.Setting(session_id=test_session.id, key="mode", value="CPAP")
+            setting1 = models.Setting(
+                session_id=test_session.id, key="mode", value="CPAP"
+            )
             session.add(setting1)
             session.commit()
 
         with session_scope() as session:
             test_session = session.query(models.Session).first()
-            setting2 = models.Setting(session_id=test_session.id, key="mode", value="APAP")
+            setting2 = models.Setting(
+                session_id=test_session.id, key="mode", value="APAP"
+            )
             session.add(setting2)
 
             with pytest.raises(Exception) as exc_info:

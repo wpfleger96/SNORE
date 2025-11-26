@@ -1,7 +1,6 @@
 """Event data structures for analysis pipeline."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -18,7 +17,7 @@ class AnalysisEvent:
     start_time: float  # Unix timestamp for fast numeric operations
     duration: float
     source: str  # 'machine' or 'programmatic'
-    confidence: Optional[float] = None
-    flow_reduction: Optional[float] = None
-    has_desaturation: Optional[bool] = None
-    baseline_flow: Optional[float] = None
+    confidence: float | None = None
+    flow_reduction: float | None = None
+    has_desaturation: bool | None = None
+    baseline_flow: float | None = None

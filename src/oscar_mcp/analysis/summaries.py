@@ -1,22 +1,21 @@
 """Text summary generation for OSCAR therapy data."""
 
 from datetime import date
-from typing import List
 
-from oscar_mcp.database import models
 from oscar_mcp.analysis.calculations import (
-    calculate_compliance_rate,
-    calculate_average_ahi,
-    calculate_total_hours,
-    calculate_average_hours_per_day,
     assess_therapy_effectiveness,
+    calculate_average_ahi,
+    calculate_average_hours_per_day,
+    calculate_compliance_rate,
+    calculate_total_hours,
     is_compliant,
 )
+from oscar_mcp.database import models
 from oscar_mcp.utils.formatting import (
-    format_duration,
-    format_pressure,
-    format_leak,
     format_date_range,
+    format_duration,
+    format_leak,
+    format_pressure,
     get_ahi_severity,
 )
 
@@ -37,7 +36,9 @@ def generate_day_summary(day: models.Day) -> str:
     # Usage
     if day.total_therapy_hours:
         compliant = is_compliant(day.total_therapy_hours)
-        compliance_text = "with good compliance" if compliant else "(below 4-hour minimum)"
+        compliance_text = (
+            "with good compliance" if compliant else "(below 4-hour minimum)"
+        )
         summary_parts.append(
             f", therapy was used for {format_duration(day.total_therapy_hours)} {compliance_text}."
         )
@@ -55,7 +56,9 @@ def generate_day_summary(day: models.Day) -> str:
             "severe": "severe sleep apnea range",
         }.get(severity, "unknown range")
 
-        summary_parts.append(f" The AHI was {day.ahi:.1f} events per hour ({ahi_desc}).")
+        summary_parts.append(
+            f" The AHI was {day.ahi:.1f} events per hour ({ahi_desc})."
+        )
 
         # Event details
         events = []
@@ -64,7 +67,9 @@ def generate_day_summary(day: models.Day) -> str:
                 f"{day.obstructive_apneas} obstructive apnea{'s' if day.obstructive_apneas != 1 else ''}"
             )
         if day.hypopneas > 0:
-            events.append(f"{day.hypopneas} hypopnea{'s' if day.hypopneas != 1 else ''}")
+            events.append(
+                f"{day.hypopneas} hypopnea{'s' if day.hypopneas != 1 else ''}"
+            )
         if day.central_apneas > 0:
             events.append(
                 f"{day.central_apneas} central apnea{'s' if day.central_apneas != 1 else ''}"
@@ -76,7 +81,9 @@ def generate_day_summary(day: models.Day) -> str:
 
     # Pressure
     if day.pressure_median is not None:
-        summary_parts.append(f" Median pressure was {format_pressure(day.pressure_median)}")
+        summary_parts.append(
+            f" Median pressure was {format_pressure(day.pressure_median)}"
+        )
         if day.pressure_95th is not None:
             summary_parts.append(
                 f" with a 95th percentile of {format_pressure(day.pressure_95th)}."
@@ -94,7 +101,9 @@ def generate_day_summary(day: models.Day) -> str:
     # SpO2
     if day.spo2_avg is not None:
         spo2_assessment = "healthy" if day.spo2_avg >= 95 else "concerning"
-        summary_parts.append(f" Average SpO₂ was {day.spo2_avg:.1f}% ({spo2_assessment})")
+        summary_parts.append(
+            f" Average SpO₂ was {day.spo2_avg:.1f}% ({spo2_assessment})"
+        )
         if day.spo2_min is not None:
             summary_parts.append(f" with a minimum of {day.spo2_min:.0f}%.")
         else:
@@ -103,9 +112,13 @@ def generate_day_summary(day: models.Day) -> str:
     # Overall assessment
     if day.ahi is not None:
         if day.ahi < 5 and is_compliant(day.total_therapy_hours):
-            summary_parts.append(" Overall, this represents effective therapy with good adherence.")
+            summary_parts.append(
+                " Overall, this represents effective therapy with good adherence."
+            )
         elif day.ahi < 5:
-            summary_parts.append(" Therapy was effective but usage was below recommendations.")
+            summary_parts.append(
+                " Therapy was effective but usage was below recommendations."
+            )
         elif day.ahi < 15:
             summary_parts.append(
                 " Therapy shows room for improvement; consider consulting with your sleep specialist."
@@ -119,7 +132,7 @@ def generate_day_summary(day: models.Day) -> str:
 
 
 def generate_period_summary(
-    profile_name: str, days: List[models.Day], period_start: date, period_end: date
+    profile_name: str, days: list[models.Day], period_start: date, period_end: date
 ) -> str:
     """
     Generate human-readable summary for a time period.
@@ -186,7 +199,9 @@ def generate_period_summary(
         )
 
     # Pressure statistics (if available)
-    pressure_values = [day.pressure_median for day in days if day.pressure_median is not None]
+    pressure_values = [
+        day.pressure_median for day in days if day.pressure_median is not None
+    ]
     if pressure_values:
         avg_pressure = sum(pressure_values) / len(pressure_values)
         summary_parts.append(f" Pressure averaged {format_pressure(avg_pressure)}")
@@ -195,8 +210,12 @@ def generate_period_summary(
         leak_values = [day.leak_median for day in days if day.leak_median is not None]
         if leak_values:
             avg_leak = sum(leak_values) / len(leak_values)
-            leak_assessment = "good mask seal" if avg_leak < 24 else "elevated leak rates"
-            summary_parts.append(f" with {leak_assessment} (average leak {avg_leak:.1f} L/min).")
+            leak_assessment = (
+                "good mask seal" if avg_leak < 24 else "elevated leak rates"
+            )
+            summary_parts.append(
+                f" with {leak_assessment} (average leak {avg_leak:.1f} L/min)."
+            )
         else:
             summary_parts.append(".")
 
@@ -208,7 +227,11 @@ def generate_period_summary(
         min_spo2 = min(spo2_mins) if spo2_mins else None
 
         spo2_assessment = (
-            "healthy" if avg_spo2 >= 95 else "borderline" if avg_spo2 >= 92 else "concerning"
+            "healthy"
+            if avg_spo2 >= 95
+            else "borderline"
+            if avg_spo2 >= 92
+            else "concerning"
         )
         summary_parts.append(
             f" SpO₂ levels were {spo2_assessment} with an average of {avg_spo2:.1f}%"
@@ -222,7 +245,9 @@ def generate_period_summary(
     # Overall assessment
     if avg_ahi is not None and compliance_pct >= 70:
         if avg_ahi < 5:
-            summary_parts.append(" This represents highly effective therapy with strong adherence.")
+            summary_parts.append(
+                " This represents highly effective therapy with strong adherence."
+            )
         elif avg_ahi < 10:
             summary_parts.append(
                 " This represents effective therapy with good adherence. "

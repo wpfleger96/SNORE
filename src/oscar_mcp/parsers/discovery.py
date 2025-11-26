@@ -1,8 +1,9 @@
 """Data root discovery for CPAP parsers."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Literal
 
 
 @dataclass
@@ -11,8 +12,8 @@ class DataRoot:
 
     path: Path
     structure_type: Literal["raw_sd", "oscar_profile"]
-    profile_name: Optional[str]
-    device_serial: Optional[str]
+    profile_name: str | None
+    device_serial: str | None
     confidence: float
 
 
@@ -22,11 +23,11 @@ class DataRootFinder:
     def find_data_roots(
         self,
         path: Path,
-        validator_func,
-        metadata_extractor_func,
+        validator_func: Callable[[Path], bool],
+        metadata_extractor_func: Callable[[Path], DataRoot | None],
         max_levels_up: int = 5,
         max_levels_down: int = 3,
-    ) -> List[DataRoot]:
+    ) -> list[DataRoot]:
         """
         Find all valid data roots from any starting path.
 
@@ -51,7 +52,8 @@ class DataRootFinder:
 
             if validator_func(check_path):
                 root = metadata_extractor_func(check_path)
-                roots.append(root)
+                if root is not None:
+                    roots.append(root)
 
         add_root_if_valid(path)
 

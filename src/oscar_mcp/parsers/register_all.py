@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def register_all_parsers():
+def register_all_parsers() -> None:
     """
     Register all available device parsers with the global registry.
 

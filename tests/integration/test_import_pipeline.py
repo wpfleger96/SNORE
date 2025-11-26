@@ -5,11 +5,12 @@ Tests the full flow from parsing → database storage → retrieval.
 """
 
 import pytest
+
 from sqlalchemy import text
 
-from oscar_mcp.database.session import init_database, session_scope, cleanup_database
-from oscar_mcp.database.importers import SessionImporter
 from oscar_mcp.database import models
+from oscar_mcp.database.importers import SessionImporter
+from oscar_mcp.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +33,9 @@ class TestImportPipeline:
         assert temp_db.exists()
 
         with session_scope() as session:
-            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            result = session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
             tables = {row[0] for row in result.fetchall()}
 
         required_tables = {
@@ -66,7 +69,9 @@ class TestImportPipeline:
             assert db_session is not None
             assert db_session.device_session_id == session_data.device_session_id
 
-    def test_duplicate_import_prevention(self, temp_db, resmed_parser, resmed_fixture_path):
+    def test_duplicate_import_prevention(
+        self, temp_db, resmed_parser, resmed_fixture_path
+    ):
         """Test that duplicate sessions are not re-imported."""
         init_database(str(temp_db))
 
@@ -190,7 +195,9 @@ class TestImportPipeline:
 
         with session_scope() as session:
             result = session.execute(
-                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'")
+                text(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'"
+                )
             )
             schema = result.fetchone()[0]
             assert "UNIQUE" in schema

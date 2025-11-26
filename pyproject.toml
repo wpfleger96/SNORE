@@ -57,40 +57,27 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=oscar_mcp --cov-report=term-missing"
 
-[tool.black]
-line-length = 100
-target-version = ["py313"]
+[tool.ruff.lint]
+select = ["I", "F", "UP", "B"]  # isort, pyflakes, pyupgrade, bugbear
 
-[tool.ruff]
-line-length = 100
-target-version = "py313"
+[tool.ruff.lint.isort]
+lines-between-types = 1
 
 [tool.mypy]
 python_version = "3.13"
 mypy_path = "src"
 namespace_packages = true
 explicit_package_bases = true
-no_implicit_optional = true
-ignore_missing_imports = true
+strict = true
 
 [[tool.mypy.overrides]]
-module = "oscar_mcp.analysis.algorithms.*"
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-warn_return_any = true
-warn_unreachable = true
-
-[[tool.mypy.overrides]]
-module = "oscar_mcp.analysis.engines.*"
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-warn_return_any = true
-warn_unreachable = true
+module = ["numpy.*", "scipy.*", "mne.*", "pyedflib.*", "mcp.*", "fitz.*"]
+ignore_missing_imports = true  # Only for external libs without stubs
 
 [[tool.mypy.overrides]]
 module = "tests.*"
-warn_return_any = false
 disallow_untyped_defs = false
+disable_error_code = ["var-annotated", "type-arg", "union-attr", "assignment", "operator", "index", "attr-defined", "arg-type", "no-any-return"]
 
 [dependency-groups]
 dev = [
@@ -98,3 +85,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "scipy-stubs>=1.16.3.0",
 ]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"

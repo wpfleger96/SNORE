@@ -5,9 +5,11 @@ Handles day splitting logic and aggregation of session statistics into daily rec
 """
 
 from datetime import date, datetime, time, timedelta
+
 from sqlalchemy.orm import Session
 
-from oscar_mcp.database.models import Day, Session as SessionModel, Profile
+from oscar_mcp.database.models import Day, Profile
+from oscar_mcp.database.models import Session as SessionModel
 
 
 class DayManager:
@@ -67,7 +69,11 @@ class DayManager:
             Updated Day object
         """
         # Get or create day record
-        day = db_session.query(Day).filter_by(profile_id=profile_id, date=day_date).first()
+        day = (
+            db_session.query(Day)
+            .filter_by(profile_id=profile_id, date=day_date)
+            .first()
+        )
 
         if not day:
             day = Day(profile_id=profile_id, date=day_date)
@@ -134,7 +140,9 @@ class DayManager:
             day.obstructive_apneas = sum(
                 s.obstructive_apneas for s in stats_records if s.obstructive_apneas
             )
-            day.central_apneas = sum(s.central_apneas for s in stats_records if s.central_apneas)
+            day.central_apneas = sum(
+                s.central_apneas for s in stats_records if s.central_apneas
+            )
             day.hypopneas = sum(s.hypopneas for s in stats_records if s.hypopneas)
             day.reras = sum(s.reras for s in stats_records if s.reras)
 
@@ -144,7 +152,7 @@ class DayManager:
                 # Weight each session's indices by its duration
                 ahi_values = [
                     (s.ahi, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.ahi is not None and sess.duration_seconds
                 ]
                 if ahi_values:
@@ -154,7 +162,7 @@ class DayManager:
 
                 oai_values = [
                     (s.oai, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.oai is not None and sess.duration_seconds
                 ]
                 if oai_values:
@@ -164,7 +172,7 @@ class DayManager:
 
                 cai_values = [
                     (s.cai, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.cai is not None and sess.duration_seconds
                 ]
                 if cai_values:
@@ -174,7 +182,7 @@ class DayManager:
 
                 hi_values = [
                     (s.hi, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.hi is not None and sess.duration_seconds
                 ]
                 if hi_values:
@@ -192,33 +200,33 @@ class DayManager:
             if total_hours > 0:
                 median_values = [
                     (s.pressure_median, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.pressure_median is not None and sess.duration_seconds
                 ]
                 if median_values:
-                    day.pressure_median = sum(med * weight for med, weight in median_values) / sum(
-                        weight for _, weight in median_values
-                    )
+                    day.pressure_median = sum(
+                        med * weight for med, weight in median_values
+                    ) / sum(weight for _, weight in median_values)
 
                 mean_values = [
                     (s.pressure_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.pressure_mean is not None and sess.duration_seconds
                 ]
                 if mean_values:
-                    day.pressure_mean = sum(mean * weight for mean, weight in mean_values) / sum(
-                        weight for _, weight in mean_values
-                    )
+                    day.pressure_mean = sum(
+                        mean * weight for mean, weight in mean_values
+                    ) / sum(weight for _, weight in mean_values)
 
                 p95_values = [
                     (s.pressure_95th, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.pressure_95th is not None and sess.duration_seconds
                 ]
                 if p95_values:
-                    day.pressure_95th = sum(p95 * weight for p95, weight in p95_values) / sum(
-                        weight for _, weight in p95_values
-                    )
+                    day.pressure_95th = sum(
+                        p95 * weight for p95, weight in p95_values
+                    ) / sum(weight for _, weight in p95_values)
 
             # Leak statistics
             leak_mins = [s.leak_min for s in stats_records if s.leak_min]
@@ -229,7 +237,7 @@ class DayManager:
             if total_hours > 0:
                 leak_median_values = [
                     (s.leak_median, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.leak_median is not None and sess.duration_seconds
                 ]
                 if leak_median_values:
@@ -239,23 +247,23 @@ class DayManager:
 
                 leak_mean_values = [
                     (s.leak_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.leak_mean is not None and sess.duration_seconds
                 ]
                 if leak_mean_values:
-                    day.leak_mean = sum(leak * weight for leak, weight in leak_mean_values) / sum(
-                        weight for _, weight in leak_mean_values
-                    )
+                    day.leak_mean = sum(
+                        leak * weight for leak, weight in leak_mean_values
+                    ) / sum(weight for _, weight in leak_mean_values)
 
                 leak_95_values = [
                     (s.leak_95th, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.leak_95th is not None and sess.duration_seconds
                 ]
                 if leak_95_values:
-                    day.leak_95th = sum(leak * weight for leak, weight in leak_95_values) / sum(
-                        weight for _, weight in leak_95_values
-                    )
+                    day.leak_95th = sum(
+                        leak * weight for leak, weight in leak_95_values
+                    ) / sum(weight for _, weight in leak_95_values)
 
             # SpO2 statistics
             spo2_mins = [s.spo2_min for s in stats_records if s.spo2_min]
@@ -266,13 +274,13 @@ class DayManager:
             if total_hours > 0:
                 spo2_mean_values = [
                     (s.spo2_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions)
+                    for s, sess in zip(stats_records, sessions, strict=False)
                     if s.spo2_mean is not None and sess.duration_seconds
                 ]
                 if spo2_mean_values:
-                    day.spo2_mean = sum(spo2 * weight for spo2, weight in spo2_mean_values) / sum(
-                        weight for _, weight in spo2_mean_values
-                    )
+                    day.spo2_mean = sum(
+                        spo2 * weight for spo2, weight in spo2_mean_values
+                    ) / sum(weight for _, weight in spo2_mean_values)
                     day.spo2_avg = day.spo2_mean  # Alias for compatibility
 
     @classmethod
@@ -310,7 +318,9 @@ class DayManager:
         return day
 
     @classmethod
-    def recalculate_all_days_for_profile(cls, profile_id: int, db_session: Session) -> int:
+    def recalculate_all_days_for_profile(
+        cls, profile_id: int, db_session: Session
+    ) -> int:
         """
         Recalculate all day records for a profile.
 

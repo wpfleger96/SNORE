@@ -11,12 +11,12 @@ Key Features:
 - Confidence-based selection when multiple parsers match
 """
 
-from pathlib import Path
-from typing import List, Optional, Dict, Tuple
 import logging
 
-from oscar_mcp.parsers.base import DeviceParser, ParserDetectionResult
+from pathlib import Path
+from typing import Any
 
+from oscar_mcp.parsers.base import DeviceParser, ParserDetectionResult
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,9 @@ class ParserRegistry:
 
     def __init__(self) -> None:
         """Initialize empty registry."""
-        self._parsers: List[DeviceParser] = []
-        self._parsers_by_id: Dict[str, DeviceParser] = {}
-        self._parsers_by_manufacturer: Dict[str, List[DeviceParser]] = {}
+        self._parsers: list[DeviceParser] = []
+        self._parsers_by_id: dict[str, DeviceParser] = {}
+        self._parsers_by_manufacturer: dict[str, list[DeviceParser]] = {}
         logger.info("Parser registry initialized")
 
     def register(self, parser: DeviceParser) -> None:
@@ -113,8 +113,8 @@ class ParserRegistry:
         return True
 
     def detect_parser(
-        self, path: Path, manufacturer_hint: Optional[str] = None
-    ) -> Optional[DeviceParser]:
+        self, path: Path, manufacturer_hint: str | None = None
+    ) -> DeviceParser | None:
         """
         Auto-detect which parser can handle the data at the given path.
 
@@ -156,7 +156,7 @@ class ParserRegistry:
                 parsers_to_try.append(parser)
 
         # Try each parser and track results
-        best_match: Optional[Tuple[DeviceParser, ParserDetectionResult]] = None
+        best_match: tuple[DeviceParser, ParserDetectionResult] | None = None
 
         for parser in parsers_to_try:
             try:
@@ -168,7 +168,10 @@ class ParserRegistry:
                     )
 
                     # Track best match
-                    if best_match is None or result.confidence > best_match[1].confidence:
+                    if (
+                        best_match is None
+                        or result.confidence > best_match[1].confidence
+                    ):
                         best_match = (parser, result)
 
                     # If perfect confidence, stop searching
@@ -181,15 +184,17 @@ class ParserRegistry:
 
         if best_match:
             parser, result = best_match
-            logger.info(f"Selected parser: {parser.parser_id} (confidence: {result.confidence})")
+            logger.info(
+                f"Selected parser: {parser.parser_id} (confidence: {result.confidence})"
+            )
             return parser
 
         logger.warning(f"No parser detected for path: {path}")
         return None
 
     def detect_all_parsers(
-        self, path: Path, manufacturer_hint: Optional[str] = None
-    ) -> List[Tuple[DeviceParser, ParserDetectionResult]]:
+        self, path: Path, manufacturer_hint: str | None = None
+    ) -> list[tuple[DeviceParser, ParserDetectionResult]]:
         """
         Detect all parsers that can handle the data at the given path.
 
@@ -254,7 +259,7 @@ class ParserRegistry:
 
         return matches
 
-    def get_parser(self, parser_id: str) -> Optional[DeviceParser]:
+    def get_parser(self, parser_id: str) -> DeviceParser | None:
         """
         Get a specific parser by ID.
 
@@ -269,7 +274,7 @@ class ParserRegistry:
         """
         return self._parsers_by_id.get(parser_id)
 
-    def get_parsers_by_manufacturer(self, manufacturer: str) -> List[DeviceParser]:
+    def get_parsers_by_manufacturer(self, manufacturer: str) -> list[DeviceParser]:
         """
         Get all parsers for a specific manufacturer.
 
@@ -286,7 +291,7 @@ class ParserRegistry:
         manufacturer_lower = manufacturer.lower()
         return self._parsers_by_manufacturer.get(manufacturer_lower, [])
 
-    def list_parsers(self) -> List[DeviceParser]:
+    def list_parsers(self) -> list[DeviceParser]:
         """
         Get list of all registered parsers.
 
@@ -299,7 +304,7 @@ class ParserRegistry:
         """
         return self._parsers.copy()
 
-    def list_manufacturers(self) -> List[str]:
+    def list_manufacturers(self) -> list[str]:
         """
         Get list of all supported manufacturers.
 
@@ -312,7 +317,7 @@ class ParserRegistry:
         """
         return list(set(p.manufacturer for p in self._parsers))
 
-    def get_parser_info(self) -> Dict[str, Dict]:
+    def get_parser_info(self) -> dict[str, dict[str, Any]]:
         """
         Get detailed information about all registered parsers.
 

@@ -12,14 +12,15 @@ EDF+ adds support for:
 This module provides a high-level, easy-to-use interface over pyedflib.
 """
 
+import logging
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict, Tuple
-import logging
+from typing import Any, Self
 
-import pyedflib
 import numpy as np
+import pyedflib
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class EDFSignalInfo:
     gain: float = 0.0
     offset: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Calculate gain and offset for digital->physical conversion."""
         digital_range = self.digital_max - self.digital_min
         physical_range = self.physical_max - self.physical_min
@@ -79,8 +80,8 @@ class EDFAnnotation:
     """An EDF+ annotation (event marker with optional duration)."""
 
     onset_time: float  # Seconds from recording start
-    duration: Optional[float]  # Duration in seconds (if specified)
-    annotations: List[str]  # List of annotation strings
+    duration: float | None  # Duration in seconds (if specified)
+    annotations: list[str]  # List of annotation strings
 
     def to_datetime(self, recording_start: datetime) -> datetime:
         """Convert onset time to absolute datetime."""
@@ -111,21 +112,21 @@ class EDFReader:
             file_path: Path to EDF or EDF+ file
         """
         self.file_path = Path(file_path)
-        self._edf_file: Optional[pyedflib.EdfReader] = None
-        self._header: Optional[EDFHeader] = None
-        self._signals: Optional[Dict[str, EDFSignalInfo]] = None
-        self._annotations: Optional[List[EDFAnnotation]] = None
+        self._edf_file: pyedflib.EdfReader | None = None
+        self._header: EDFHeader | None = None
+        self._signals: dict[str, EDFSignalInfo] | None = None
+        self._annotations: list[EDFAnnotation] | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.open()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit."""
         self.close()
 
-    def open(self):
+    def open(self) -> None:
         """Open the EDF file."""
         if self._edf_file is not None:
             return  # Already open
@@ -165,7 +166,7 @@ class EDFReader:
 
             raise ValueError(f"Failed to open EDF file: {e}") from e
 
-    def close(self):
+    def close(self) -> None:
         """Close the EDF file."""
         if self._edf_file is not None:
             self._edf_file.close()
@@ -184,28 +185,29 @@ class EDFReader:
 
         if self._edf_file is None:
             self.open()
+        assert self._edf_file is not None
 
         # Read header fields
-        start_datetime = self._edf_file.getStartdatetime()  # type: ignore[union-attr]
+        start_datetime = self._edf_file.getStartdatetime()
 
         # Get version from header, default to "0" if not present
-        header_dict = self._edf_file.getHeader()  # type: ignore[union-attr]
-        version = header_dict.get("version", "0")
+        header_dict = self._edf_file.getHeader()
+        version = str(header_dict.get("version", "0"))
 
         self._header = EDFHeader(
             version=version,
-            patient_info=self._edf_file.getPatientName(),  # type: ignore[union-attr]
-            recording_info=self._edf_file.getRecordingAdditional(),  # type: ignore[union-attr]
+            patient_info=self._edf_file.getPatientName(),
+            recording_info=self._edf_file.getRecordingAdditional(),
             start_datetime=start_datetime,
-            num_data_records=self._edf_file.datarecords_in_file,  # type: ignore[union-attr]
-            record_duration=self._edf_file.datarecord_duration,  # type: ignore[union-attr]
-            num_signals=self._edf_file.signals_in_file,  # type: ignore[union-attr]
-            is_edf_plus=self._edf_file.filetype == 1,  # type: ignore[union-attr]
+            num_data_records=self._edf_file.datarecords_in_file,
+            record_duration=self._edf_file.datarecord_duration,
+            num_signals=self._edf_file.signals_in_file,
+            is_edf_plus=self._edf_file.filetype == 1,
         )
 
         return self._header
 
-    def get_signal_info(self) -> Dict[str, EDFSignalInfo]:
+    def get_signal_info(self) -> dict[str, EDFSignalInfo]:
         """
         Get information about all signals in the file.
 
@@ -217,11 +219,12 @@ class EDFReader:
 
         if self._edf_file is None:
             self.open()
+        assert self._edf_file is not None
 
         self._signals = {}
 
-        for i in range(self._edf_file.signals_in_file):  # type: ignore[union-attr]
-            label = self._edf_file.getLabel(i).strip()  # type: ignore[union-attr]
+        for i in range(self._edf_file.signals_in_file):
+            label = self._edf_file.getLabel(i).strip()
 
             # Skip annotation channels (EDF+ specific)
             if label.startswith("EDF Annotations"):
@@ -229,14 +232,14 @@ class EDFReader:
 
             signal_info = EDFSignalInfo(
                 label=label,
-                transducer=self._edf_file.getTransducer(i).strip(),  # type: ignore[union-attr]
-                physical_dimension=self._edf_file.getPhysicalDimension(i).strip(),  # type: ignore[union-attr]
-                physical_min=self._edf_file.getPhysicalMinimum(i),  # type: ignore[union-attr]
-                physical_max=self._edf_file.getPhysicalMaximum(i),  # type: ignore[union-attr]
-                digital_min=self._edf_file.getDigitalMinimum(i),  # type: ignore[union-attr]
-                digital_max=self._edf_file.getDigitalMaximum(i),  # type: ignore[union-attr]
-                prefiltering=self._edf_file.getPrefilter(i).strip(),  # type: ignore[union-attr]
-                samples_per_record=self._edf_file.samples_in_datarecord(i),  # type: ignore[union-attr]
+                transducer=self._edf_file.getTransducer(i).strip(),
+                physical_dimension=self._edf_file.getPhysicalDimension(i).strip(),
+                physical_min=float(self._edf_file.getPhysicalMinimum(i)),
+                physical_max=float(self._edf_file.getPhysicalMaximum(i)),
+                digital_min=int(self._edf_file.getDigitalMinimum(i)),
+                digital_max=int(self._edf_file.getDigitalMaximum(i)),
+                prefiltering=self._edf_file.getPrefilter(i).strip(),
+                samples_per_record=self._edf_file.samples_in_datarecord(i),
                 signal_index=i,
             )
 
@@ -245,7 +248,7 @@ class EDFReader:
         logger.info(f"Found {len(self._signals)} signals in {self.file_path.name}")
         return self._signals
 
-    def list_signal_labels(self) -> List[str]:
+    def list_signal_labels(self) -> list[str]:
         """
         Get list of all signal labels.
 
@@ -271,10 +274,10 @@ class EDFReader:
     def read_signal(
         self,
         label: str,
-        start_sample: Optional[int] = None,
-        num_samples: Optional[int] = None,
+        start_sample: int | None = None,
+        num_samples: int | None = None,
         physical_units: bool = True,
-    ) -> Tuple[np.ndarray, EDFSignalInfo]:
+    ) -> tuple[np.ndarray, EDFSignalInfo]:
         """
         Read data for a specific signal.
 
@@ -299,16 +302,19 @@ class EDFReader:
         """
         if self._edf_file is None:
             self.open()
+        assert self._edf_file is not None
 
         signals = self.get_signal_info()
         if label not in signals:
-            raise KeyError(f"Signal '{label}' not found. Available: {list(signals.keys())}")
+            raise KeyError(
+                f"Signal '{label}' not found. Available: {list(signals.keys())}"
+            )
 
         signal_info = signals[label]
         signal_index = signal_info.signal_index
 
         # Read entire signal at once (pyedflib's readSignal returns all samples by default)
-        data = self._edf_file.readSignal(signal_index, digital=not physical_units)  # type: ignore[union-attr]
+        data = self._edf_file.readSignal(signal_index, digital=not physical_units)
 
         # Apply slicing if start_sample or num_samples specified
         if start_sample is not None or num_samples is not None:
@@ -321,7 +327,7 @@ class EDFReader:
 
     def read_all_signals(
         self, physical_units: bool = True
-    ) -> Dict[str, Tuple[np.ndarray, EDFSignalInfo]]:
+    ) -> dict[str, tuple[np.ndarray, EDFSignalInfo]]:
         """
         Read data for all signals.
 
@@ -340,7 +346,7 @@ class EDFReader:
 
         return result
 
-    def read_annotations(self) -> List[EDFAnnotation]:
+    def read_annotations(self) -> list[EDFAnnotation]:
         """
         Read EDF+ annotations (if present).
 
@@ -352,6 +358,7 @@ class EDFReader:
 
         if self._edf_file is None:
             self.open()
+        assert self._edf_file is not None
 
         self._annotations = []
 
@@ -364,14 +371,16 @@ class EDFReader:
         try:
             # Read annotations using pyedflib
             # Returns tuple of (onset_times, durations, texts) where each is an array
-            annotations_tuple = self._edf_file.readAnnotations()  # type: ignore[union-attr]
+            annotations_tuple = self._edf_file.readAnnotations()
 
             # pyedflib returns (onsets_array, durations_array, texts_array)
             if len(annotations_tuple) == 3:
                 onsets, durations, texts = annotations_tuple
 
                 # Zip them together and convert to our format
-                for onset, duration, text in zip(onsets, durations, texts):
+                for onset, duration, text in zip(
+                    onsets, durations, texts, strict=False
+                ):
                     # text is a single string per annotation
                     annotation = EDFAnnotation(
                         onset_time=float(onset),
@@ -380,7 +389,9 @@ class EDFReader:
                     )
                     self._annotations.append(annotation)
 
-                logger.info(f"Read {len(self._annotations)} annotations from {self.file_path.name}")
+                logger.info(
+                    f"Read {len(self._annotations)} annotations from {self.file_path.name}"
+                )
             else:
                 logger.warning(
                     f"Unexpected annotation format from pyedflib: {type(annotations_tuple)}"
@@ -574,7 +585,7 @@ def get_edf_record_count(file_path: Path) -> int:
         return -1
 
 
-def parse_edf_annotations_raw(file_path: Path) -> List[EDFAnnotation]:
+def parse_edf_annotations_raw(file_path: Path) -> list[EDFAnnotation]:
     """
     Parse EDF+ annotations directly from raw bytes (OSCAR-style implementation).
 
@@ -598,7 +609,7 @@ def parse_edf_annotations_raw(file_path: Path) -> List[EDFAnnotation]:
         Example: +120.5\x1512.5\x14Obstructive apnea\x14\x00
     """
 
-    annotations: List[EDFAnnotation] = []
+    annotations: list[EDFAnnotation] = []
 
     try:
         with open(file_path, "rb") as f:
@@ -608,22 +619,28 @@ def parse_edf_annotations_raw(file_path: Path) -> List[EDFAnnotation]:
                 raise ValueError("File too small to be valid EDF")
 
             # Parse header fields
-            num_data_records = int(header_bytes[236:244].decode("ascii", errors="ignore").strip())
-            num_signals = int(header_bytes[252:256].decode("ascii", errors="ignore").strip())
+            num_data_records = int(
+                header_bytes[236:244].decode("ascii", errors="ignore").strip()
+            )
+            num_signals = int(
+                header_bytes[252:256].decode("ascii", errors="ignore").strip()
+            )
 
             # Read signal headers (256 bytes per signal)
             signal_labels = []
             samples_per_record = []
 
-            for i in range(num_signals):
+            for _i in range(num_signals):
                 label_bytes = f.read(16)
-                signal_labels.append(label_bytes.decode("ascii", errors="ignore").strip())
+                signal_labels.append(
+                    label_bytes.decode("ascii", errors="ignore").strip()
+                )
 
             # Skip transducer, dimension, min/max fields (304 bytes per signal)
             f.seek(256 + num_signals * (16 + 80 + 8 + 8 + 8 + 8 + 8 + 80), 0)
 
             # Read samples per record for each signal
-            for i in range(num_signals):
+            for _i in range(num_signals):
                 samples_bytes = f.read(8)
                 samples_per_record.append(
                     int(samples_bytes.decode("ascii", errors="ignore").strip())
@@ -674,7 +691,7 @@ def parse_edf_annotations_raw(file_path: Path) -> List[EDFAnnotation]:
         return []
 
 
-def _parse_annotation_bytes(data: bytes) -> List[EDFAnnotation]:
+def _parse_annotation_bytes(data: bytes) -> list[EDFAnnotation]:
     """
     Parse annotation bytes using EDF+ delimiter format.
 
@@ -767,7 +784,7 @@ def _parse_annotation_bytes(data: bytes) -> List[EDFAnnotation]:
     return annotations
 
 
-def read_annotations_from_discontinuous(file_path: Path) -> List[EDFAnnotation]:
+def read_annotations_from_discontinuous(file_path: Path) -> list[EDFAnnotation]:
     """
     Read annotations from a discontinuous EDF+ file using MNE.
 
@@ -785,8 +802,9 @@ def read_annotations_from_discontinuous(file_path: Path) -> List[EDFAnnotation]:
         It handles discontinuous recordings by tracking actual timestamps.
     """
     try:
-        import mne
         import warnings
+
+        import mne
 
         # Suppress MNE's verbose output
         with warnings.catch_warnings():
@@ -817,7 +835,9 @@ def read_annotations_from_discontinuous(file_path: Path) -> List[EDFAnnotation]:
                 )
                 annotations.append(annotation)
 
-            logger.info(f"Read {len(annotations)} annotations from discontinuous file using MNE")
+            logger.info(
+                f"Read {len(annotations)} annotations from discontinuous file using MNE"
+            )
             return annotations
 
     except ImportError:
@@ -825,7 +845,7 @@ def read_annotations_from_discontinuous(file_path: Path) -> List[EDFAnnotation]:
         raise ValueError(
             "MNE library is required to read discontinuous EDF+ files. "
             "Install with: pip install mne"
-        )
+        ) from None
     except Exception as e:
         logger.error(f"Failed to read discontinuous file with MNE: {e}")
         raise ValueError(f"Failed to read discontinuous EDF+ file: {e}") from e
@@ -843,20 +863,20 @@ class EDFDiscontinuousReader:
     def __init__(self, file_path: Path):
         """Initialize the discontinuous reader."""
         self.file_path = file_path
-        self._annotations = None
-        self._header = None
-        self._mne_raw = None  # Cache MNE raw object for signal reading
+        self._annotations: list[EDFAnnotation] | None = None
+        self._header: EDFHeader | None = None
+        self._mne_raw: Any = None  # Cache MNE raw object for signal reading
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.open()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit."""
         self.close()
 
-    def open(self):
+    def open(self) -> None:
         """Open the discontinuous EDF+ file using direct parsing."""
         if self._annotations is not None:
             return  # Already open
@@ -868,7 +888,7 @@ class EDFDiscontinuousReader:
         except Exception as e:
             raise ValueError(f"Failed to open discontinuous EDF+ file: {e}") from e
 
-    def close(self):
+    def close(self) -> None:
         """Close the file."""
         self._annotations = None
         self._header = None
@@ -876,7 +896,7 @@ class EDFDiscontinuousReader:
             self._mne_raw.close()
             self._mne_raw = None
 
-    def read_annotations(self) -> List[EDFAnnotation]:
+    def read_annotations(self) -> list[EDFAnnotation]:
         """
         Read all annotations from the discontinuous file.
 
@@ -884,7 +904,9 @@ class EDFDiscontinuousReader:
             List of EDFAnnotation objects
         """
         if self._annotations is None:
-            raise ValueError("File not opened. Use 'with' statement or call open() first.")
+            raise ValueError(
+                "File not opened. Use 'with' statement or call open() first."
+            )
 
         return self._annotations
 
@@ -909,8 +931,12 @@ class EDFDiscontinuousReader:
                     header_bytes = f.read(256)
 
                     # Parse start date/time (bytes 168-183)
-                    date_str = header_bytes[168:176].decode("ascii", errors="ignore").strip()
-                    time_str = header_bytes[176:184].decode("ascii", errors="ignore").strip()
+                    date_str = (
+                        header_bytes[168:176].decode("ascii", errors="ignore").strip()
+                    )
+                    time_str = (
+                        header_bytes[176:184].decode("ascii", errors="ignore").strip()
+                    )
 
                     # Parse date: dd.mm.yy format
                     day = int(date_str[0:2])
@@ -950,7 +976,9 @@ class EDFDiscontinuousReader:
                         is_edf_plus=True,
                     )
             except Exception as e:
-                logger.warning(f"Could not parse header from {self.file_path.name}: {e}")
+                logger.warning(
+                    f"Could not parse header from {self.file_path.name}: {e}"
+                )
                 # Return minimal header
                 self._header = EDFHeader(
                     version="0",
@@ -965,12 +993,13 @@ class EDFDiscontinuousReader:
 
         return self._header
 
-    def _ensure_mne_raw(self):
+    def _ensure_mne_raw(self) -> None:
         """Lazy-load MNE raw object for signal reading."""
         if self._mne_raw is None:
             # Import MNE locally to avoid module-level interference with pyedflib
-            import mne
             import os
+
+            import mne
 
             try:
                 # Suppress both stdout and stderr at C-level to silence libsndfile warnings
@@ -999,9 +1028,11 @@ class EDFDiscontinuousReader:
                 logger.error(
                     f"Failed to read discontinuous file {self.file_path.name} with MNE: {e}"
                 )
-                raise ValueError(f"Failed to read discontinuous file with MNE: {e}") from e
+                raise ValueError(
+                    f"Failed to read discontinuous file with MNE: {e}"
+                ) from e
 
-    def list_signal_labels(self) -> List[str]:
+    def list_signal_labels(self) -> list[str]:
         """
         Get list of signal labels in the file.
 
@@ -1012,9 +1043,10 @@ class EDFDiscontinuousReader:
             raise ValueError("File not opened")
 
         self._ensure_mne_raw()
-        return self._mne_raw.ch_names
+        names: list[str] = self._mne_raw.ch_names
+        return names
 
-    def read_signal(self, signal_label: str) -> Tuple[np.ndarray, EDFSignalInfo]:
+    def read_signal(self, signal_label: str) -> tuple[np.ndarray, EDFSignalInfo]:
         """
         Read signal data from the discontinuous file.
 
@@ -1033,7 +1065,7 @@ class EDFDiscontinuousReader:
         try:
             ch_idx = self._mne_raw.ch_names.index(signal_label)
         except ValueError:
-            raise KeyError(f"Signal '{signal_label}' not found in file")
+            raise KeyError(f"Signal '{signal_label}' not found in file") from None
 
         # Get the data for this channel
         data = self._mne_raw.get_data(picks=[ch_idx])[0]  # Shape: (n_samples,)

@@ -6,13 +6,14 @@ Format version 18 (current OSCAR version).
 """
 
 import struct
+
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
-from dataclasses import dataclass, field
+from typing import Any
 
-from oscar_mcp.parsers.qdatastream import QDataStreamReader
 from oscar_mcp.constants import OSCAR_MAGIC_NUMBER
+from oscar_mcp.parsers.qdatastream import QDataStreamReader
 
 
 class OscarSummaryParseError(Exception):
@@ -39,29 +40,29 @@ class SessionSummary:
     last_timestamp: int  # milliseconds since epoch
 
     # Session data
-    settings: Dict[int, Any] = field(default_factory=dict)
-    counts: Dict[int, float] = field(default_factory=dict)
-    sums: Dict[int, float] = field(default_factory=dict)
-    averages: Dict[int, float] = field(default_factory=dict)
-    weighted_averages: Dict[int, float] = field(default_factory=dict)
-    minimums: Dict[int, float] = field(default_factory=dict)
-    maximums: Dict[int, float] = field(default_factory=dict)
-    physical_minimums: Dict[int, float] = field(default_factory=dict)
-    physical_maximums: Dict[int, float] = field(default_factory=dict)
-    counts_per_hour: Dict[int, float] = field(default_factory=dict)
-    sums_per_hour: Dict[int, float] = field(default_factory=dict)
-    first_channel_time: Dict[int, int] = field(default_factory=dict)
-    last_channel_time: Dict[int, int] = field(default_factory=dict)
-    value_summaries: Dict[int, Dict[int, int]] = field(default_factory=dict)
-    time_summaries: Dict[int, Dict[int, int]] = field(default_factory=dict)
-    gains: Dict[int, float] = field(default_factory=dict)
-    available_channels: list = field(default_factory=list)
+    settings: dict[int, Any] = field(default_factory=dict)
+    counts: dict[int, float] = field(default_factory=dict)
+    sums: dict[int, float] = field(default_factory=dict)
+    averages: dict[int, float] = field(default_factory=dict)
+    weighted_averages: dict[int, float] = field(default_factory=dict)
+    minimums: dict[int, float] = field(default_factory=dict)
+    maximums: dict[int, float] = field(default_factory=dict)
+    physical_minimums: dict[int, float] = field(default_factory=dict)
+    physical_maximums: dict[int, float] = field(default_factory=dict)
+    counts_per_hour: dict[int, float] = field(default_factory=dict)
+    sums_per_hour: dict[int, float] = field(default_factory=dict)
+    first_channel_time: dict[int, int] = field(default_factory=dict)
+    last_channel_time: dict[int, int] = field(default_factory=dict)
+    value_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
+    time_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
+    gains: dict[int, float] = field(default_factory=dict)
+    available_channels: list[int] = field(default_factory=list)
 
     # Additional fields
-    time_above_threshold: Dict[int, int] = field(default_factory=dict)
-    upper_threshold: Dict[int, float] = field(default_factory=dict)
-    time_below_threshold: Dict[int, int] = field(default_factory=dict)
-    lower_threshold: Dict[int, float] = field(default_factory=dict)
+    time_above_threshold: dict[int, int] = field(default_factory=dict)
+    upper_threshold: dict[int, float] = field(default_factory=dict)
+    time_below_threshold: dict[int, int] = field(default_factory=dict)
+    lower_threshold: dict[int, float] = field(default_factory=dict)
 
     summary_only: bool = False
     no_settings: bool = False
@@ -86,7 +87,7 @@ class SessionSummary:
         """Get session duration in hours."""
         return self.duration_seconds / 3600.0
 
-    def get_channel_value(self, channel_id: int, stat_type: str) -> Optional[float]:
+    def get_channel_value(self, channel_id: int, stat_type: str) -> float | None:
         """
         Get a specific statistic for a channel.
 
@@ -150,9 +151,11 @@ class OscarSummaryParser:
             with open(self.file_path, "rb") as f:
                 return self._parse_stream(f)
         except Exception as e:
-            raise OscarSummaryParseError(f"Failed to parse {self.file_path}: {e}") from e
+            raise OscarSummaryParseError(
+                f"Failed to parse {self.file_path}: {e}"
+            ) from e
 
-    def _parse_stream(self, stream) -> SessionSummary:
+    def _parse_stream(self, stream: Any) -> SessionSummary:
         """Parse summary file from binary stream."""
         # Read and validate header
         header = self._parse_header(stream)
@@ -210,7 +213,9 @@ class OscarSummaryParser:
                 # TODO: Parse session slices if needed
 
             else:
-                raise OscarSummaryParseError(f"Unsupported summary version: {summary.version}")
+                raise OscarSummaryParseError(
+                    f"Unsupported summary version: {summary.version}"
+                )
 
         except EOFError as e:
             raise OscarSummaryParseError(f"Unexpected end of file: {e}") from e
@@ -219,7 +224,7 @@ class OscarSummaryParser:
 
         return summary
 
-    def _skip_to_statistics(self, stream):
+    def _skip_to_statistics(self, stream: Any) -> None:
         """
         Skip past settings section to find where statistics begin.
 
@@ -268,7 +273,9 @@ class OscarSummaryParser:
 
                 # Validate channel ID range and value reasonableness
                 # Channel IDs should be in typical OSCAR ranges
-                if not ((0x0001 <= channel_id <= 0x0100) or (0x1000 <= channel_id <= 0x3000)):
+                if not (
+                    (0x0001 <= channel_id <= 0x0100) or (0x1000 <= channel_id <= 0x3000)
+                ):
                     valid = False
                     break
                 # Values should be non-negative and not NaN/Inf
@@ -288,7 +295,7 @@ class OscarSummaryParser:
         # If we couldn't find it, raise an error
         raise OscarSummaryParseError("Could not locate statistics section in file")
 
-    def _parse_header(self, stream) -> Dict[str, Any]:
+    def _parse_header(self, stream: Any) -> dict[str, Any]:
         """
         Parse 32-byte header from summary file.
 
@@ -312,9 +319,15 @@ class OscarSummaryParser:
             raise OscarSummaryParseError("File too short to contain header")
 
         # Unpack header (little-endian)
-        (magic, version, file_type, machine_id, session_id, first_timestamp, last_timestamp) = (
-            struct.unpack("<IHH II qq", header_data)
-        )
+        (
+            magic,
+            version,
+            file_type,
+            machine_id,
+            session_id,
+            first_timestamp,
+            last_timestamp,
+        ) = struct.unpack("<IHH II qq", header_data)
 
         # Validate magic number
         if magic != OSCAR_MAGIC_NUMBER:
@@ -324,7 +337,9 @@ class OscarSummaryParser:
 
         # Validate file type
         if file_type != 0:
-            raise OscarSummaryParseError(f"Invalid file type: {file_type} (expected 0 for summary)")
+            raise OscarSummaryParseError(
+                f"Invalid file type: {file_type} (expected 0 for summary)"
+            )
 
         return {
             "magic": magic,

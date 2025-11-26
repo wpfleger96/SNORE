@@ -6,16 +6,16 @@ detection algorithms for CPAP data analysis.
 """
 
 from oscar_mcp.analysis.algorithms.breath_segmenter import (
-    BreathSegmenter,
-    BreathPhases,
     BreathMetrics,
+    BreathPhases,
+    BreathSegmenter,
 )
 from oscar_mcp.analysis.algorithms.feature_extractors import (
-    WaveformFeatureExtractor,
-    ShapeFeatures,
     PeakFeatures,
-    StatisticalFeatures,
+    ShapeFeatures,
     SpectralFeatures,
+    StatisticalFeatures,
+    WaveformFeatureExtractor,
 )
 
 __all__ = [

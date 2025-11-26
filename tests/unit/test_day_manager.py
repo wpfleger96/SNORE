@@ -6,8 +6,10 @@ that determines which calendar day sessions belong to and how statistics
 are aggregated across multiple sessions.
 """
 
+from datetime import date, datetime
+
 import pytest
-from datetime import datetime, date
+
 from oscar_mcp.database.day_manager import DayManager
 
 
@@ -56,7 +58,9 @@ class TestDaySplitLogic:
 
         # Session at 5:59 AM on Nov 5
         session_before = datetime(2024, 11, 5, 5, 59, 0)
-        assert DayManager.get_day_for_session(session_before, profile) == date(2024, 11, 4)
+        assert DayManager.get_day_for_session(session_before, profile) == date(
+            2024, 11, 4
+        )
 
         # Session at 6:00 AM on Nov 5
         session_at = datetime(2024, 11, 5, 6, 0, 0)
@@ -68,7 +72,9 @@ class TestDaySplitLogic:
 
         # Session at 1:59 PM on Nov 5
         session_before = datetime(2024, 11, 5, 13, 59, 0)
-        assert DayManager.get_day_for_session(session_before, profile) == date(2024, 11, 4)
+        assert DayManager.get_day_for_session(session_before, profile) == date(
+            2024, 11, 4
+        )
 
         # Session at 2:00 PM on Nov 5
         session_at = datetime(2024, 11, 5, 14, 0, 0)
@@ -105,7 +111,9 @@ class TestDaySplitLogic:
 
         # Session at 11:59 AM
         session_before = datetime(2024, 11, 5, 11, 59, 0)
-        assert DayManager.get_day_for_session(session_before, profile) == date(2024, 11, 4)
+        assert DayManager.get_day_for_session(session_before, profile) == date(
+            2024, 11, 4
+        )
 
         # Session at 12:00 PM
         session_at = datetime(2024, 11, 5, 12, 0, 0)
@@ -115,7 +123,9 @@ class TestDaySplitLogic:
 class TestStatisticalAggregation:
     """Test statistical aggregation across multiple sessions."""
 
-    def test_single_session_aggregation(self, db_session, test_device, test_session_factory):
+    def test_single_session_aggregation(
+        self, db_session, test_device, test_session_factory
+    ):
         """Single session aggregation should copy statistics directly."""
         device, profile = test_device
 
@@ -156,7 +166,9 @@ class TestStatisticalAggregation:
         assert day.pressure_min == pytest.approx(8.0, abs=0.01)
         assert day.pressure_max == pytest.approx(15.0, abs=0.01)
 
-    def test_multi_session_event_counts_sum(self, db_session, test_device, test_session_factory):
+    def test_multi_session_event_counts_sum(
+        self, db_session, test_device, test_session_factory
+    ):
         """Event counts should sum across sessions."""
         device, profile = test_device
 
@@ -219,7 +231,9 @@ class TestStatisticalAggregation:
         # Expected: (10*4 + 4*2) / 6 = 48/6 = 8.0
         assert day.ahi == pytest.approx(8.0, abs=0.01)
 
-    def test_pressure_min_max_across_sessions(self, db_session, test_device, test_session_factory):
+    def test_pressure_min_max_across_sessions(
+        self, db_session, test_device, test_session_factory
+    ):
         """Pressure min/max should be extremes across all sessions."""
         device, profile = test_device
 
@@ -251,7 +265,9 @@ class TestStatisticalAggregation:
         assert day.pressure_min == pytest.approx(6.0, abs=0.01)
         assert day.pressure_max == pytest.approx(15.0, abs=0.01)
 
-    def test_empty_day_resets_statistics(self, db_session, test_device, test_session_factory):
+    def test_empty_day_resets_statistics(
+        self, db_session, test_device, test_session_factory
+    ):
         """Day with no sessions should have reset statistics."""
         device, profile = test_device
 
@@ -279,7 +295,9 @@ class TestStatisticalAggregation:
         assert day.obstructive_apneas == 0
         assert day.ahi is None
 
-    def test_partial_data_null_values(self, db_session, test_device, test_session_factory):
+    def test_partial_data_null_values(
+        self, db_session, test_device, test_session_factory
+    ):
         """Sessions with missing statistics should be handled gracefully."""
         device, profile = test_device
 
@@ -293,7 +311,9 @@ class TestStatisticalAggregation:
 
         # Session 2: no AHI (None)
         session2 = test_session_factory(
-            device_id=device.id, start_time=datetime(2024, 11, 5, 22, 0, 0), duration_hours=4.0
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=4.0,
         )
 
         # Link both to day
@@ -303,7 +323,9 @@ class TestStatisticalAggregation:
         # AHI should only consider session1 (not null)
         assert day.ahi == pytest.approx(8.0, abs=0.01)
 
-    def test_zero_duration_session_handling(self, db_session, test_device, test_session_factory):
+    def test_zero_duration_session_handling(
+        self, db_session, test_device, test_session_factory
+    ):
         """Sessions with zero duration should not cause division by zero."""
         device, profile = test_device
 
@@ -330,15 +352,21 @@ class TestStatisticalAggregation:
 
         # Create three sessions with different durations
         session1 = test_session_factory(
-            device_id=device.id, start_time=datetime(2024, 11, 5, 12, 0, 0), duration_hours=4.0
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 12, 0, 0),
+            duration_hours=4.0,
         )
 
         session2 = test_session_factory(
-            device_id=device.id, start_time=datetime(2024, 11, 5, 18, 0, 0), duration_hours=2.5
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 18, 0, 0),
+            duration_hours=2.5,
         )
 
         session3 = test_session_factory(
-            device_id=device.id, start_time=datetime(2024, 11, 5, 22, 0, 0), duration_hours=1.5
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=1.5,
         )
 
         # Link all to day

@@ -7,19 +7,19 @@ confidence scoring, and session-level flow limitation index calculation.
 
 import pytest
 
+from oscar_mcp.analysis.algorithms.feature_extractors import (
+    PeakFeatures,
+    ShapeFeatures,
+    WaveformFeatureExtractor,
+)
 from oscar_mcp.analysis.algorithms.flow_limitation import (
     FlowLimitationClassifier,
     FlowPattern,
 )
-from oscar_mcp.analysis.algorithms.feature_extractors import (
-    WaveformFeatureExtractor,
-    ShapeFeatures,
-    PeakFeatures,
-)
 from tests.helpers.synthetic_data import (
-    generate_sinusoidal_breath,
     generate_flattened_breath,
     generate_multi_peak_breath,
+    generate_sinusoidal_breath,
 )
 
 
