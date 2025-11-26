@@ -62,7 +62,6 @@ class TestRecordedSessionProcessing:
 
         assert len(breaths) > 0, "No breaths detected"
 
-    @pytest.mark.slow
     def test_multi_segment_fixture_processes(self, recorded_session):
         """Multi-segment fixture should process despite discontinuities."""
         db = recorded_session("20250910")
