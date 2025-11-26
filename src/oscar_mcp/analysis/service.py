@@ -17,7 +17,7 @@ from oscar_mcp.analysis.engines.programmatic_engine import (
     ProgrammaticAnalysisEngine,
     ProgrammaticAnalysisResult,
 )
-from oscar_mcp.analysis.reconciliation import RespiratoryEvent
+from oscar_mcp.analysis.events import AnalysisEvent
 from oscar_mcp.database import models
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class AnalysisService:
         self.waveform_loader = WaveformLoader(db_session)
         self.engine = ProgrammaticAnalysisEngine()
 
-    def _load_machine_events(self, session_id: int) -> List[RespiratoryEvent]:
+    def _load_machine_events(self, session_id: int) -> List[AnalysisEvent]:
         """
         Load machine-flagged events from database.
 
@@ -72,7 +72,7 @@ class AnalysisService:
             start_timestamp = event.start_time.timestamp()
 
             respiratory_events.append(
-                RespiratoryEvent(
+                AnalysisEvent(
                     event_type=event.event_type,
                     start_time=start_timestamp,
                     duration=event.duration_seconds or 10.0,
@@ -223,7 +223,7 @@ class AnalysisService:
         session_id: int,
         result: ProgrammaticAnalysisResult,
         processing_time_ms: int,
-        machine_events: List[RespiratoryEvent],
+        machine_events: List[AnalysisEvent],
     ) -> None:
         """
         Store analysis result in database.

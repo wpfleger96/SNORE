@@ -264,21 +264,3 @@ class ParserError(Exception):
     def __init__(self, message: str, parser: Optional[DeviceParser] = None):
         super().__init__(message)
         self.parser = parser
-
-
-class ParserDetectionError(ParserError):
-    """Raised when parser detection fails."""
-
-    pass
-
-
-class ParserValidationError(ParserError):
-    """Raised when data validation fails."""
-
-    pass
-
-
-class ParserFormatError(ParserError):
-    """Raised when file format is invalid or corrupted."""
-
-    pass

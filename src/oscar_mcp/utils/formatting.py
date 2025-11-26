@@ -97,39 +97,6 @@ def format_leak(leak: Optional[float]) -> str:
     return f"{leak:.1f} L/min ({assessment})"
 
 
-def format_spo2(spo2: Optional[float]) -> str:
-    """
-    Format SpO₂ value with assessment.
-
-    Args:
-        spo2: SpO₂ percentage
-
-    Returns:
-        Formatted string with assessment
-    """
-    if spo2 is None:
-        return "N/A"
-
-    assessment = "normal" if spo2 >= 95 else "low"
-    return f"{spo2:.1f}% ({assessment})"
-
-
-def format_compliance(hours: float) -> str:
-    """
-    Format compliance status.
-
-    Args:
-        hours: Hours of usage
-
-    Returns:
-        Compliance status string
-    """
-    if hours >= 4:
-        return f"{hours:.1f} hours (compliant)"
-    else:
-        return f"{hours:.1f} hours (non-compliant, <4 hours)"
-
-
 def format_date_range(start: date, end: date) -> str:
     """
     Format date range.
