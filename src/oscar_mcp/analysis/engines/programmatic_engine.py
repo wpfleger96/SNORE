@@ -363,9 +363,10 @@ class ProgrammaticAnalysisEngine:
                 {
                     "start_time": a.start_time,
                     "duration": a.duration,
-                    "type": a.event_type,
+                    "event_type": a.event_type,
                     "flow_reduction": a.flow_reduction,
                     "confidence": a.confidence,
+                    "baseline_flow": a.baseline_flow,
                 }
                 for a in timeline.apneas
             ],
@@ -375,6 +376,9 @@ class ProgrammaticAnalysisEngine:
                     "duration": h.duration,
                     "flow_reduction": h.flow_reduction,
                     "confidence": h.confidence,
+                    "baseline_flow": h.baseline_flow,
+                    "has_arousal": h.has_arousal,
+                    "has_desaturation": h.has_desaturation,
                 }
                 for h in timeline.hypopneas
             ],
@@ -382,8 +386,9 @@ class ProgrammaticAnalysisEngine:
                 {
                     "start_time": r.start_time,
                     "duration": r.duration,
-                    "flatness": r.flatness_index,
+                    "flatness_index": r.flatness_index,
                     "confidence": r.confidence,
+                    "terminated_by_arousal": r.terminated_by_arousal,
                 }
                 for r in timeline.reras
             ],

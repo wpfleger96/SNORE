@@ -245,12 +245,12 @@ class RespiratoryEventDetector:
 
             hypopneas.append(
                 HypopneaEvent(
-                    start_time=start_time,
-                    end_time=end_time,
-                    duration=duration,
-                    flow_reduction=avg_reduction,
-                    confidence=confidence,
-                    baseline_flow=avg_baseline,
+                    start_time=float(start_time),
+                    end_time=float(end_time),
+                    duration=float(duration),
+                    flow_reduction=float(avg_reduction),
+                    confidence=float(confidence),
+                    baseline_flow=float(avg_baseline),
                     has_desaturation=has_desaturation,
                 )
             )
@@ -355,11 +355,11 @@ class RespiratoryEventDetector:
 
             reras.append(
                 RERAEvent(
-                    start_time=start_time,
-                    end_time=end_time,
-                    duration=duration,
-                    flatness_index=avg_flatness,
-                    confidence=confidence,
+                    start_time=float(start_time),
+                    end_time=float(end_time),
+                    duration=float(duration),
+                    flatness_index=float(avg_flatness),
+                    confidence=float(confidence),
                     terminated_by_arousal=False,
                 )
             )
@@ -502,13 +502,13 @@ class RespiratoryEventDetector:
 
             apneas.append(
                 ApneaEvent(
-                    start_time=start_time,
-                    end_time=end_time,
-                    duration=duration,
+                    start_time=float(start_time),
+                    end_time=float(end_time),
+                    duration=float(duration),
                     event_type=event_type,
-                    flow_reduction=avg_reduction,
-                    confidence=confidence,
-                    baseline_flow=avg_baseline,
+                    flow_reduction=float(avg_reduction),
+                    confidence=float(confidence),
+                    baseline_flow=float(avg_baseline),
                 )
             )
 

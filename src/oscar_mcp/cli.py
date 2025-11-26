@@ -1255,7 +1255,7 @@ def _analyze_single_session(
         if result.positional_analysis:
             positional = result.positional_analysis
             click.echo("\nPOSITIONAL ANALYSIS")
-            click.echo(f"  Event Clustering: {positional['cluster_count']} clusters")
+            click.echo(f"  Event Clustering: {positional['total_clusters']} clusters")
             click.echo(f"  Positional Likelihood: {positional['positional_likelihood']:.2f}")
 
         if not no_store:
