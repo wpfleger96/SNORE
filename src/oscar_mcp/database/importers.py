@@ -193,35 +193,40 @@ class SessionImporter:
 
     def _import_waveforms(self, db, session_id: int, session_data: UnifiedSession):
         """Import all waveforms for session."""
+        if not session_data.waveforms:
+            return
+
+        waveform_records = []
         for waveform_type, waveform in session_data.waveforms.items():
             data_blob = serialize_waveform(waveform)
             sample_count = (
                 len(waveform.values) if isinstance(waveform.values, list) else len(waveform.values)
             )
 
-            waveform_record = models.Waveform(
-                session_id=session_id,
-                waveform_type=waveform_type.value,
-                sample_rate=waveform.sample_rate,
-                unit=waveform.unit,
-                min_value=waveform.min_value,
-                max_value=waveform.max_value,
-                mean_value=waveform.mean_value,
-                data_blob=data_blob,
-                sample_count=sample_count,
+            waveform_records.append(
+                models.Waveform(
+                    session_id=session_id,
+                    waveform_type=waveform_type.value,
+                    sample_rate=waveform.sample_rate,
+                    unit=waveform.unit,
+                    min_value=waveform.min_value,
+                    max_value=waveform.max_value,
+                    mean_value=waveform.mean_value,
+                    data_blob=data_blob,
+                    sample_count=sample_count,
+                )
             )
-            db.add(waveform_record)
 
-            logger.debug(
-                f"Imported waveform {waveform_type.value}: "
-                f"{sample_count} samples, "
-                f"{len(data_blob) / 1024:.1f} KB"
-            )
+        db.bulk_save_objects(waveform_records)
+        logger.debug(f"Bulk imported {len(waveform_records)} waveforms")
 
     def _import_events(self, db, session_id: int, session_data: UnifiedSession):
         """Import all respiratory events for session."""
-        for event in session_data.events:
-            event_record = models.Event(
+        if not session_data.events:
+            return
+
+        event_records = [
+            models.Event(
                 session_id=session_id,
                 event_type=event.event_type.value,
                 start_time=event.start_time,
@@ -229,9 +234,11 @@ class SessionImporter:
                 spo2_drop=event.spo2_drop,
                 peak_flow_limitation=event.peak_flow_limitation,
             )
-            db.add(event_record)
+            for event in session_data.events
+        ]
+        db.bulk_save_objects(event_records)
 
-        logger.debug(f"Imported {len(session_data.events)} events")
+        logger.debug(f"Bulk imported {len(event_records)} events")
 
     def _import_statistics(self, db, session_id: int, session_data: UnifiedSession):
         """Import session statistics."""

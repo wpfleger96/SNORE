@@ -306,43 +306,15 @@ class EDFReader:
 
         signal_info = signals[label]
         signal_index = signal_info.signal_index
-        header = self.get_header()
 
-        # pyedflib's readSignal() without parameters only reads the first data record.
-        # Work around this by reading each record individually with explicit parameters.
+        # Read entire signal at once (pyedflib's readSignal returns all samples by default)
+        data = self._edf_file.readSignal(signal_index, digital=not physical_units)  # type: ignore[union-attr]
 
-        all_data = []
-        for record_idx in range(header.num_data_records):
-            # Calculate starting sample for this record
-            record_start = record_idx * signal_info.samples_per_record
-
-            # Read this record's data
-            if physical_units:
-                record_data = self._edf_file.readSignal(  # type: ignore[union-attr]
-                    signal_index,
-                    start=record_start,
-                    n=signal_info.samples_per_record,
-                    digital=False,
-                )
-            else:
-                record_data = self._edf_file.readSignal(  # type: ignore[union-attr]
-                    signal_index, start=record_start, n=signal_info.samples_per_record, digital=True
-                )
-
-            all_data.append(record_data)
-
-        # Concatenate all records
-        data = np.concatenate(all_data) if all_data else np.array([])
-
-        # Apply slicing for start_sample and num_samples
-        if start_sample is None:
-            start_sample = 0
-
-        if num_samples is not None:
-            end_sample = start_sample + num_samples
-            data = data[start_sample:end_sample]
-        elif start_sample > 0:
-            data = data[start_sample:]
+        # Apply slicing if start_sample or num_samples specified
+        if start_sample is not None or num_samples is not None:
+            start = start_sample if start_sample is not None else 0
+            end = (start + num_samples) if num_samples is not None else None
+            data = data[start:end]
 
         logger.debug(f"Read {len(data)} samples from signal '{label}'")
         return data, signal_info
