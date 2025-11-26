@@ -350,6 +350,11 @@ def db_with_analysis(temp_db):
             session.add(sess)
             session.flush()
 
+            # Link session to day
+            day_date = DayManager.get_day_for_session(start_time, profile)
+            day = DayManager.create_or_update_day(profile.id, day_date, session)
+            sess.day_id = day.id
+
             # Add multiple analysis results for first two sessions (to test --all-versions)
             num_analyses = 3 if i < 2 else 1
             for j in range(num_analyses):
@@ -620,3 +625,123 @@ class TestDeleteAnalysisCommand:
             total_analysis = session.query(models.AnalysisResult).count()
             # Started with 9 (3+3+1+1+1), deleted 5 latest
             assert total_analysis == 4  # 2 remaining from session 1, 2 from session 2
+
+
+class TestAnalyzeCommand:
+    """Test consolidated analyze command."""
+
+    def test_analyze_missing_selection_flag(self, cli_runner, temp_db):
+        """Test that analyze requires at least one selection flag."""
+        init_database(str(temp_db))
+
+        result = cli_runner.invoke(
+            cli,
+            ["analyze", "--db", str(temp_db), "--profile", "testuser"],
+        )
+
+        assert result.exit_code == 1
+        assert "Must provide at least one selection flag" in result.output
+
+    def test_analyze_mutually_exclusive_single_flags(self, cli_runner, temp_db):
+        """Test that --session-id and --date are mutually exclusive."""
+        init_database(str(temp_db))
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "--db",
+                str(temp_db),
+                "--profile",
+                "testuser",
+                "--session-id",
+                "1",
+                "--date",
+                "2025-01-01",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output
+
+    def test_analyze_mutually_exclusive_single_and_batch(self, cli_runner, temp_db):
+        """Test that single session flags cannot be used with batch flags."""
+        init_database(str(temp_db))
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "--db",
+                str(temp_db),
+                "--profile",
+                "testuser",
+                "--session-id",
+                "1",
+                "--start",
+                "2025-01-01",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "cannot be used with batch flags" in result.output
+
+    def test_analyze_profile_not_found(self, cli_runner, temp_db):
+        """Test error when profile doesn't exist."""
+        init_database(str(temp_db))
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "--db",
+                str(temp_db),
+                "--profile",
+                "nonexistent",
+                "--all",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Profile 'nonexistent' not found" in result.output
+
+    def test_analyze_list_mode(self, cli_runner, db_with_analysis):
+        """Test --list mode shows analysis status."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "--db",
+                str(db_with_analysis),
+                "--profile",
+                "testuser",
+                "--list",
+                "--all",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Session Analysis Status" in result.output
+        assert "Date" in result.output
+        assert "Analyzed" in result.output
+
+    def test_analyze_list_with_date_range(self, cli_runner, db_with_analysis):
+        """Test --list mode with date range filtering."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "--db",
+                str(db_with_analysis),
+                "--profile",
+                "testuser",
+                "--list",
+                "--start",
+                "2025-10-01",
+                "--end",
+                "2025-10-03",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Session Analysis Status" in result.output

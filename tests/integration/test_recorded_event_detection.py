@@ -18,8 +18,8 @@ from oscar_mcp.database.models import Session
 class TestEventDetectionOnRecordedSessions:
     """Validate event detection on recorded PAP session data."""
 
-    def test_20251025_detects_events(self, recorded_session):
-        """Session 20251025 should detect respiratory events."""
+    def test_session_269_detects_events(self, recorded_session):
+        """Session 269 should detect respiratory events."""
         db = recorded_session("20251025")
         session = db.query(Session).first()
         loader = WaveformLoader(db)
