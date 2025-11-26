@@ -67,7 +67,7 @@ THE most important reference image showing all 7 flow limitation classes:
 - Class 6: Late peak
 - Class 7: Plateau throughout
 
-All 7 classes in `src/oscar_mcp/knowledge/patterns.py` reference this single diagram with different `reference_section` values.
+All 7 classes in `src/oscar_mcp/constants.py` (`FLOW_LIMITATION_CLASSES`) reference this single diagram with different `reference_section` values.
 
 ### Complex Pattern Examples
 **Directory:** `patterns/`
@@ -91,51 +91,34 @@ Standard OSCAR visualizations for each data channel:
 
 ## Usage in Code
 
-### Access via patterns.py
+### Access flow limitation class images
 ```python
-from oscar_mcp.knowledge.patterns import FLOW_LIMITATION_CLASSES
+from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
 
 # Get image for Class 1
 class_1 = FLOW_LIMITATION_CLASSES[1]
 image_path = class_1["reference_image"]
 section = class_1["reference_section"]
 # → "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png", "Class 1"
-
-# Get images for periodic breathing
-from oscar_mcp.knowledge.patterns import COMPLEX_PATTERNS
-periodic = COMPLEX_PATTERNS["periodic_breathing"]
-images = periodic["reference_images"]
-# → ["data/.../OSCAR_periodic_breathing_chart_example.png", ...]
 ```
 
-### Access via chart_examples.py
-```python
-from oscar_mcp.knowledge.chart_examples import get_chart_image, WAVEFORM_CHARTS
-
-# Get flow rate chart image
-flow_chart_path = get_chart_image("waveforms", "flow_rate")
-# → "data/guidelines/images/charts/OSCAR_flow_rate_graph_example.png"
-
-# Get all leak rate examples (multiple manufacturers)
-leak_chart = WAVEFORM_CHARTS["leak_rate"]
-leak_images = leak_chart["reference_images"]
-# → ["...resmed.png", "...phillips.png"]
-```
-
-### Access via constants.py
+### Access image directories
 ```python
 from oscar_mcp.constants import IMAGE_DIRS
 
 # Get directory paths
 flow_limitation_dir = IMAGE_DIRS["flow_limitation"]
 # → PosixPath("data/guidelines/images/flow_limitation")
+
+patterns_dir = IMAGE_DIRS["patterns"]
+# → PosixPath("data/guidelines/images/patterns")
 ```
 
-### Load Images for Multimodal LLM
+### Load images for multimodal LLM
 ```python
 from pathlib import Path
 from PIL import Image
-from oscar_mcp.knowledge.patterns import FLOW_LIMITATION_CLASSES
+from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
 
 # Load flow limitation reference diagram
 image_path = Path(FLOW_LIMITATION_CLASSES[1]["reference_image"])
@@ -266,17 +249,23 @@ prompt = f"Compare this waveform to the reference Class {class_num} pattern"
 ### 3. Documentation Generation
 Include images in analysis reports:
 ```python
+from pathlib import Path
+
 # Generate report with embedded images
-report.add_image(COMPLEX_PATTERNS["positional_apnea"]["reference_images"][0])
+image_path = Path("data/guidelines/images/patterns/OSCAR_positional_apnea_chart_example.png")
+report.add_image(image_path)
 report.add_caption("Example of positional apnea clustering")
 ```
 
 ### 4. UI Development
 Show reference images in user interface:
 ```python
+from pathlib import Path
+
 # Display appropriate reference when user's data shows pattern
 if detected_pattern == "periodic_breathing":
-    show_reference_image(COMPLEX_PATTERNS["periodic_breathing"]["reference_images"][0])
+    image_path = Path("data/guidelines/images/patterns/OSCAR_periodic_breathing_chart_example.png")
+    show_reference_image(image_path)
 ```
 
 ## Maintenance
@@ -290,18 +279,23 @@ if detected_pattern == "periodic_breathing":
 When adding images from new sources:
 1. Follow naming convention with source prefix
 2. Add to appropriate category directory
-3. Update relevant constants (patterns.py or chart_examples.py)
+3. Update `FLOW_LIMITATION_CLASSES` in constants.py if relevant
 4. Document in this IMAGES.md file
 
 ### Image Validation
 ```python
 # Verify all referenced images exist
 from pathlib import Path
-from oscar_mcp.knowledge import patterns, chart_examples
+from oscar_mcp.constants import FLOW_LIMITATION_CLASSES, IMAGE_DIRS
 
-for class_data in patterns.FLOW_LIMITATION_CLASSES.values():
+# Validate flow limitation class images
+for class_data in FLOW_LIMITATION_CLASSES.values():
     image_path = Path(class_data["reference_image"])
     assert image_path.exists(), f"Missing: {image_path}"
+
+# Validate image directories exist
+for category, dir_path in IMAGE_DIRS.items():
+    assert dir_path.exists(), f"Missing directory: {category} at {dir_path}"
 
 print("✓ All image references valid")
 ```

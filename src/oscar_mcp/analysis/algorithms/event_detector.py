@@ -13,7 +13,6 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 
 from oscar_mcp.constants import EventDetectionConstants as EDC
-from oscar_mcp.knowledge.patterns import RESPIRATORY_EVENTS
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +143,6 @@ class RespiratoryEventDetector:
         self.min_event_duration = min_event_duration
         self.baseline_window = baseline_window
         self.merge_gap = merge_gap
-        self.event_criteria = RESPIRATORY_EVENTS
         logger.info(f"RespiratoryEventDetector initialized (min_duration={min_event_duration}s)")
 
     def detect_hypopneas(

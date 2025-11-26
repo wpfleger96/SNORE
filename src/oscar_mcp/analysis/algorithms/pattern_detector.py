@@ -14,7 +14,6 @@ import numpy as np
 from scipy import signal, stats
 
 from oscar_mcp.constants import PatternDetectionConstants as PDC
-from oscar_mcp.knowledge.patterns import COMPLEX_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +114,6 @@ class ComplexPatternDetector:
         """
         self.min_cycle_count = min_cycle_count
         self.autocorr_threshold = autocorr_threshold
-        self.patterns = COMPLEX_PATTERNS
         logger.info("ComplexPatternDetector initialized")
 
     def detect_csr(

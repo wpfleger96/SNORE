@@ -18,7 +18,7 @@ from oscar_mcp.analysis.algorithms.feature_extractors import (
     StatisticalFeatures,
 )
 from oscar_mcp.constants import FlowLimitationConstants as FLC
-from oscar_mcp.knowledge.patterns import FLOW_LIMITATION_CLASSES
+from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
 
 logger = logging.getLogger(__name__)
 

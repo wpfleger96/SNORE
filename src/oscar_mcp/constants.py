@@ -6,7 +6,7 @@ Based on OSCAR's schema.h and machine_common.h definitions.
 
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, TypedDict
 
 # ============================================================================
 # Machine Types
@@ -547,6 +547,98 @@ class AnalysisEngineConstants:
     CSR_MIN_CONFIDENCE = 0.6
     PERIODIC_MIN_CONFIDENCE = 0.6
     POSITIONAL_MIN_CONFIDENCE = 0.6
+
+
+# ============================================================================
+# Flow Limitation Classes
+# ============================================================================
+
+
+class FlowLimitationClassInfo(TypedDict):
+    """Type definition for flow limitation class information."""
+
+    name: str
+    description: str
+    visual_characteristics: str
+    clinical_significance: str
+    severity: str
+    weight: float
+    reference_image: str
+    reference_section: str
+
+
+FLOW_LIMITATION_CLASSES: Dict[int, FlowLimitationClassInfo] = {
+    1: {
+        "name": "Sinusoidal",
+        "description": "Normal, rounded inspiration with smooth sinusoidal curve",
+        "visual_characteristics": "Smooth rounded peak, symmetric rise and fall",
+        "clinical_significance": "Healthy unobstructed breathing pattern",
+        "severity": "normal",
+        "weight": 0.0,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 1",
+    },
+    2: {
+        "name": "Double Peak",
+        "description": "Two distinct peaks during inspiration phase",
+        "visual_characteristics": "Two separate peaks with valley between, soft tissue vibration",
+        "clinical_significance": "Mild flow limitation - upper airway reopening after initial collapse",
+        "severity": "mild",
+        "weight": 0.3,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 2",
+    },
+    3: {
+        "name": "Flattened with Multiple Peaks",
+        "description": "Multiple tiny peaks across flattened inspiratory curve",
+        "visual_characteristics": "Many small peaks/oscillations, irregular amplitude",
+        "clinical_significance": "Mild-moderate flow limitation - soft tissue vibration during inspiration",
+        "severity": "mild-moderate",
+        "weight": 0.4,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 3",
+    },
+    4: {
+        "name": "Peak During Initial Phase",
+        "description": "Early sharp peak followed by sustained plateau",
+        "visual_characteristics": "Peak in first 30% of inspiration, then flat plateau",
+        "clinical_significance": "Moderate flow limitation - initial opening followed by restricted flow",
+        "severity": "moderate",
+        "weight": 0.6,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 4",
+    },
+    5: {
+        "name": "Peak at Midpoint",
+        "description": "Single peak at midpoint with plateaus on both sides",
+        "visual_characteristics": "Central peak (40-60% position), flat on both sides",
+        "clinical_significance": "Moderate-severe flow limitation - intensive phasic muscle activity",
+        "severity": "moderate-severe",
+        "weight": 0.7,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 5",
+    },
+    6: {
+        "name": "Peak During Late Phase",
+        "description": "Initial plateau with late-phase peak",
+        "visual_characteristics": "Flat early phase, peak in final 30% of inspiration",
+        "clinical_significance": "Severe flow limitation - marked tracheal support during lung inflation",
+        "severity": "severe",
+        "weight": 0.9,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 6",
+    },
+    7: {
+        "name": "Plateau Throughout",
+        "description": "Nearly flat plateau throughout entire inspiration",
+        "visual_characteristics": "Minimal amplitude variation, flat-top waveform throughout",
+        "clinical_significance": "Severe flow limitation - collapsed noncompliant upper airway",
+        "severity": "severe",
+        "weight": 1.0,
+        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
+        "reference_section": "Class 7",
+    },
+}
 
 
 # ============================================================================
