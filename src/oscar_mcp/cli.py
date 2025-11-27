@@ -1369,7 +1369,11 @@ def _analyze_single_session(
         if not db_session:
             click.echo(f"Error: Session {session_id} not found", err=True)
             sys.exit(1)
-        session_date_str = db_session.start_time.date().isoformat()
+        # Use Day.date for consistency
+        day_date = (
+            db_session.day.date if db_session.day else db_session.start_time.date()
+        )
+        session_date_str = day_date.isoformat()
 
     click.echo(f"\nAnalyzing session {session_date_str} (ID: {session_id})...")
 
@@ -1603,8 +1607,13 @@ def _list_sessions(
         analyzed_str = "✓" if has_analysis else "✗"
         analysis_id_str = str(analysis.id) if analysis else "-"
 
+        # Use Day.date for consistency with --date queries
+        # Fallback to start_time.date() if session somehow lacks day assignment
+        day_date = (
+            db_session.day.date if db_session.day else db_session.start_time.date()
+        )
         click.echo(
-            f"{db_session.start_time.date()!s:<12} {db_session.id:<6} {duration:<10} "
+            f"{day_date!s:<12} {db_session.id:<6} {duration:<10} "
             f"{analyzed_str:<10} {analysis_id_str:<12}"
         )
 
