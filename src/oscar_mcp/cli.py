@@ -553,9 +553,9 @@ def list_sessions(
 
         # Display sessions
         click.echo(
-            f"\n{'Date':<12} {'Time':<8} {'Duration':<10} {'Profile':<15} {'Device':<20} {'AHI':<6}"
+            f"\n{'Date':<12} {'ID':<6} {'Time':<8} {'Duration':<10} {'Profile':<15} {'Device':<20} {'AHI':<6}"
         )
-        click.echo("=" * 85)
+        click.echo("=" * 91)
 
         for sess in sessions:
             start = (
@@ -578,7 +578,7 @@ def list_sessions(
             ahi = f"{stats.ahi:.1f}" if stats and stats.ahi is not None else "N/A"
 
             click.echo(
-                f"{start:%Y-%m-%d}   {start:%H:%M:%S}  "
+                f"{start:%Y-%m-%d}   {sess.session_id:<6} {start:%H:%M:%S}  "
                 f"{duration_hours:>6.1f}h    "
                 f"{profile_name:<15} "
                 f"{device_name:<20} "
