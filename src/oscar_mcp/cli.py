@@ -1263,7 +1263,10 @@ def show_config_cmd() -> None:
     help="End date for batch analysis (YYYY-MM-DD)",
 )
 @click.option(
-    "--all", "analyze_all", is_flag=True, help="Analyze all sessions for profile"
+    "--limit",
+    type=int,
+    default=DEFAULT_LIST_SESSIONS_LIMIT,
+    help="Max sessions to show in list mode (use 0 for all)",
 )
 @click.option(
     "--list",
@@ -1282,7 +1285,7 @@ def analyze(
     date: datetime | None,
     start: datetime | None,
     end: datetime | None,
-    analyze_all: bool,
+    limit: int,
     list_mode: bool,
     db: str | None,
     no_store: bool,
@@ -1301,7 +1304,7 @@ def analyze(
 
     # Validate mutually exclusive options
     single_session_flags = [session_id is not None, date is not None]
-    batch_flags = [start is not None, end is not None, analyze_all]
+    batch_flags = [start is not None, end is not None]
 
     single_count = sum(single_session_flags)
     batch_count = sum(batch_flags)
@@ -1312,17 +1315,20 @@ def analyze(
 
     if single_count > 0 and batch_count > 0:
         click.echo(
-            "Error: Single session flags (--session-id, --date) cannot be used with batch flags (--start, --end, --all)",
+            "Error: Single session flags (--session-id, --date) cannot be used with batch flags (--start, --end)",
             err=True,
         )
         sys.exit(1)
 
     if single_count == 0 and batch_count == 0:
-        click.echo(
-            "Error: Must provide at least one selection flag (--session-id, --date, --start, --end, or --all)",
-            err=True,
-        )
-        sys.exit(1)
+        # In list mode, no flags means "show recent sessions (limited by --limit)"
+        # In analyze mode, require selection flags for safety
+        if not list_mode:
+            click.echo(
+                "Error: Must provide at least one selection flag (--session-id, --date, --start, or --end)",
+                err=True,
+            )
+            sys.exit(1)
 
     with session_scope() as session:
         # Lookup profile (use resolved_profile)
@@ -1335,11 +1341,13 @@ def analyze(
 
         # Route to appropriate mode
         if list_mode:
-            _list_sessions(session, prof, start, end, analyze_all, analyzed_only)
+            _list_sessions(session, prof, start, end, limit, analyzed_only)
         elif single_count > 0:
             _analyze_single_session(session, prof, session_id, date, no_store)
         else:
-            _analyze_batch(session, prof, start, end, analyze_all, no_store)
+            _analyze_batch(
+                session, prof, start, end, start is None and end is None, no_store
+            )
 
     return None
 
@@ -1558,33 +1566,50 @@ def _list_sessions(
     prof: Any,
     start: datetime | None,
     end: datetime | None,
-    list_all: bool,
+    limit: int,
     analyzed_only: bool,
 ) -> None:
-    """List sessions and their analysis status."""
+    """List sessions and their analysis status.
+
+    Args:
+        limit: Maximum sessions to show (0 for unlimited)
+    """
+    # Build query
     query = (
         session.query(models.Session)
         .join(models.Day)
         .filter(models.Day.profile_id == prof.id)
     )
 
-    if not list_all:
-        if start:
-            query = query.filter(models.Day.date >= start.date())
-        if end:
-            query = query.filter(models.Day.date <= end.date())
+    # Apply date filters if specified
+    if start:
+        query = query.filter(models.Day.date >= start.date())
+    if end:
+        query = query.filter(models.Day.date <= end.date())
 
-    sessions = query.order_by(models.Day.date.desc()).all()
+    # Order by most recent first
+    query = query.order_by(models.Day.date.desc())
+
+    # Count total before limiting
+    total_sessions = query.count()
+
+    # Apply limit if specified (0 means no limit)
+    if limit > 0:
+        query = query.limit(limit)
+
+    sessions = query.all()
 
     if not sessions:
         click.echo("No sessions found")
         return
 
-    click.echo(f"\nSession Analysis Status ({len(sessions)} sessions)\n")
     click.echo(
         f"{'Date':<12} {'ID':<6} {'Duration':<10} {'Analyzed':<10} {'Analysis ID':<12}"
     )
     click.echo("-" * 60)
+
+    # Track displayed count (may be less than len(sessions) with analyzed_only)
+    displayed_count = 0
 
     for db_session in sessions:
         analysis = (
@@ -1598,6 +1623,8 @@ def _list_sessions(
 
         if analyzed_only and not has_analysis:
             continue
+
+        displayed_count += 1
 
         duration = (
             f"{db_session.duration_seconds / 3600:.1f}h"
@@ -1616,6 +1643,19 @@ def _list_sessions(
             f"{day_date!s:<12} {db_session.id:<6} {duration:<10} "
             f"{analyzed_str:<10} {analysis_id_str:<12}"
         )
+
+    # Show helpful messages
+    if analyzed_only and displayed_count > 0:
+        click.echo(f"\nShowing {displayed_count} analyzed session(s)")
+    elif limit > 0 and total_sessions > limit:
+        click.echo(
+            f"\nShowing {limit} of {total_sessions} sessions (most recent first)"
+        )
+        click.echo(
+            "Tip: Use --limit <number> to see more sessions, or --limit 0 to see all"
+        )
+    elif limit == 0 and total_sessions > DEFAULT_LIST_SESSIONS_LIMIT:
+        click.echo(f"\nShowing all {total_sessions} sessions")
 
 
 def main() -> None:
