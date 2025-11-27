@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality-checks:
+    name: Code Quality & Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Run type checks
+        run: uv run mypy .
+
+      - name: Run linter
+        run: uvx ruff check .
+
+      - name: Run formatter
+        run: uvx ruff format . --check
+
+      - name: Run unit tests
+        run: uv run pytest -m unit -n auto
+
+      - name: Run integration tests
+        run: uv run pytest -m integration

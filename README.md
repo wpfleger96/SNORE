@@ -1,5 +1,7 @@
 # OSCAR-MCP
 
+![CI Status](https://github.com/wpfleger96/OSCAR-MCP/actions/workflows/ci.yml/badge.svg)
+
 MCP (Model Context Protocol) server for analyzing and inspecting CPAP/APAP therapy data.
 
 ## Overview

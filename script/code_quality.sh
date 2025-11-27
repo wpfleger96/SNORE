@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
-
 echo "Syncing dependencies"
 uv sync
 
@@ -15,20 +13,3 @@ uvx ruff check . --fix
 
 echo "Running formatting"
 uvx ruff format .
-
-if [ -n "$STAGED_FILES" ]; then
-    echo "$STAGED_FILES" | while IFS= read -r file; do
-        if [ -n "$file" ] && [ -f "$file" ] && ! git diff --quiet -- "$file" 2>/dev/null; then
-            echo "Re-staging formatted/linted file: $file"
-            git add "$file"
-        fi
-    done
-fi
-
-if [ -n "${RUN_TESTS:-}" ]; then
-    echo "Running unit tests"
-    uv run pytest -m unit -n auto
-
-    echo "Running integration tests"
-    uv run pytest -m integration
-fi
