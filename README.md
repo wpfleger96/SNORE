@@ -13,6 +13,7 @@ OSCAR-MCP provides an MCP interface for CPAP therapy data analysis, enabling LLM
 - **Auto-Detection**: Automatically detects ResMed device type
 - **CLI Tool**: Import, query, delete, and manage CPAP data from command line
 - **Comprehensive Parsing**: Waveforms, events, statistics, and device metadata
+- **Default Profile Configuration**: Save default profile to avoid repeated `--profile` flags
 
 **Supported Devices:** ResMed AirSense 10/11, AirCurve 10/11, S9 series
 
@@ -87,7 +88,41 @@ uv run oscar-mcp list-sessions --from-date 2024-01-01 --to-date 2024-12-31
 uv run oscar-mcp db stats
 ```
 
-### 3. Manage Sessions
+### 3. Configure Default Profile (Optional)
+
+To avoid passing `--profile` every time, set a default profile:
+
+```bash
+# Set default profile
+uv run oscar-mcp config set-default-profile <username>
+
+# View current default
+uv run oscar-mcp config get-default-profile
+
+# Remove default
+uv run oscar-mcp config unset-default-profile
+
+# Show all configuration
+uv run oscar-mcp config show
+```
+
+The default profile is stored in `~/.oscar-mcp/config.toml`. Once set, the `analyze` command will use it automatically:
+
+```bash
+# Before: required --profile flag
+uv run oscar-mcp analyze --profile john_doe --all
+
+# After: profile auto-detected
+uv run oscar-mcp analyze --all
+```
+
+**Profile Resolution:**
+1. Explicit `--profile` flag takes precedence
+2. Falls back to configured default
+3. Auto-detects if only one profile exists in database
+4. Shows helpful error if multiple profiles and no default set
+
+### 4. Manage Sessions
 
 ```bash
 # Delete sessions by date range (with preview)
@@ -106,7 +141,7 @@ uv run oscar-mcp delete-sessions --session-id "5" --force
 uv run oscar-mcp db vacuum
 ```
 
-### 4. Direct Database Access
+### 5. Direct Database Access
 
 Query the SQLite database directly:
 

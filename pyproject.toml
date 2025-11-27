@@ -28,6 +28,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "scipy>=1.16.3",
     "datetime>=5.5",
+    "tomli-w>=1.0.0",
 ]
 
 [project.optional-dependencies]

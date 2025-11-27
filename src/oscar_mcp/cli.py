@@ -14,8 +14,15 @@ from typing import Any
 import click
 
 from sqlalchemy import bindparam, text
+from sqlalchemy.orm import Session
 
 from oscar_mcp.analysis.service import AnalysisService
+from oscar_mcp.config import (
+    get_config_path,
+    get_default_profile,
+    set_default_profile,
+    unset_default_profile,
+)
 from oscar_mcp.constants import (
     DEFAULT_LIST_SESSIONS_LIMIT,
     EVENT_TYPE_CENTRAL_APNEA,
@@ -47,6 +54,58 @@ def ensure_profile(username: str) -> int:
             session.add(profile)
             session.flush()
         return profile.id
+
+
+def resolve_profile(explicit_profile: str | None, db_session: Session) -> str:
+    """
+    Resolve profile using precedence: CLI > config > auto-detect.
+
+    Args:
+        explicit_profile: Value from --profile flag (None if not provided)
+        db_session: Active database session
+
+    Returns:
+        Username to use
+
+    Raises:
+        click.ClickException: If profile cannot be resolved
+    """
+    if explicit_profile:
+        return explicit_profile
+
+    config_profile = get_default_profile()
+    if config_profile:
+        prof = (
+            db_session.query(models.Profile).filter_by(username=config_profile).first()
+        )
+        if prof:
+            return config_profile
+        else:
+            click.echo(
+                f"Warning: Default profile '{config_profile}' not found in database.",
+                err=True,
+            )
+            click.echo(
+                "Update with: oscar-mcp config set-default-profile <name>",
+                err=True,
+            )
+
+    profiles = db_session.query(models.Profile).all()
+    if len(profiles) == 1:
+        username: str = profiles[0].username
+        return username
+
+    if len(profiles) == 0:
+        raise click.ClickException(
+            "No profiles found. Import data first: oscar-mcp import-data <path>"
+        )
+    else:
+        profile_list = ", ".join([p.username for p in profiles])
+        raise click.ClickException(
+            f"Multiple profiles found ({profile_list}). "
+            "Specify --profile <name> or set default: "
+            "oscar-mcp config set-default-profile <name>"
+        )
 
 
 @click.group()
@@ -1102,8 +1161,91 @@ def vacuum(db: str | None) -> None:
     click.echo("✓ Database vacuumed successfully")
 
 
+@cli.group()
+def config() -> None:
+    """Configuration management commands."""
+    pass
+
+
+@config.command("set-default-profile")
+@click.argument("username")
+@click.option("--db", type=click.Path(), help="Database path")
+def set_default_profile_cmd(username: str, db: str | None) -> None:
+    """Set default profile for CLI commands (must exist in database)."""
+
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    with session_scope() as session:
+        profile = session.query(models.Profile).filter_by(username=username).first()
+        if not profile:
+            all_profiles = session.query(models.Profile).all()
+            if all_profiles:
+                available = ", ".join([p.username for p in all_profiles])
+                click.echo(f"Error: Profile '{username}' not found.", err=True)
+                click.echo(f"Available profiles: {available}", err=True)
+            else:
+                click.echo("Error: No profiles in database.", err=True)
+                click.echo("Import data first: oscar-mcp import-data <path>", err=True)
+            sys.exit(1)
+
+    set_default_profile(username)
+    click.echo(f"✓ Default profile: {username}")
+    click.echo(f"  Config: {get_config_path()}")
+
+
+@config.command("get-default-profile")
+def get_default_profile_cmd() -> None:
+    """Show current default profile."""
+    default = get_default_profile()
+    if default:
+        click.echo(f"Default profile: {default}")
+        click.echo(f"  (from {get_config_path()})")
+    else:
+        click.echo("No default profile configured.")
+        click.echo("Set with: oscar-mcp config set-default-profile <name>")
+
+
+@config.command("unset-default-profile")
+def unset_default_profile_cmd() -> None:
+    """Remove default profile setting."""
+    default = get_default_profile()
+    if default:
+        unset_default_profile()
+        click.echo(f"✓ Removed default profile: {default}")
+    else:
+        click.echo("No default profile was configured.")
+
+
+@config.command("show")
+def show_config_cmd() -> None:
+    """Show all configuration settings."""
+    from oscar_mcp.config import load_config
+
+    config_path = get_config_path()
+    if not config_path.exists():
+        click.echo(f"No config file: {config_path}")
+        return
+
+    click.echo(f"Config file: {config_path}\n")
+    config_data = load_config()
+    if not config_data:
+        click.echo("Configuration is empty.")
+        return
+
+    click.echo("Settings:")
+    if "profile" in config_data:
+        click.echo("  [profile]")
+        for key, value in config_data["profile"].items():
+            click.echo(f'    {key} = "{value}"')
+
+
 @cli.command()
-@click.option("--profile", required=True, help="Profile username")
+@click.option(
+    "--profile", required=False, help="Profile username (optional if default set)"
+)
 @click.option("--session-id", type=int, help="Analyze single session by ID")
 @click.option(
     "--date",
@@ -1135,7 +1277,7 @@ def vacuum(db: str | None) -> None:
     "--analyzed-only", is_flag=True, help="Show only analyzed sessions (with --list)"
 )
 def analyze(
-    profile: str,
+    profile: str | None,
     session_id: int | None,
     date: datetime | None,
     start: datetime | None,
@@ -1152,6 +1294,10 @@ def analyze(
         init_database(str(Path(db)))
     else:
         init_database()
+
+    # Resolve profile using precedence: CLI > config > auto-detect
+    with session_scope() as temp_session:
+        resolved_profile = resolve_profile(profile, temp_session)
 
     # Validate mutually exclusive options
     single_session_flags = [session_id is not None, date is not None]
@@ -1179,10 +1325,12 @@ def analyze(
         sys.exit(1)
 
     with session_scope() as session:
-        # Lookup profile
-        prof = session.query(models.Profile).filter_by(username=profile).first()
+        # Lookup profile (use resolved_profile)
+        prof = (
+            session.query(models.Profile).filter_by(username=resolved_profile).first()
+        )
         if not prof:
-            click.echo(f"Error: Profile '{profile}' not found", err=True)
+            click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
             sys.exit(1)
 
         # Route to appropriate mode
