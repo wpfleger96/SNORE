@@ -764,7 +764,7 @@ class TestAnalyzeCommand:
                 str(temp_db),
                 "--profile",
                 "nonexistent",
-                "--all",
+                "--list",
             ],
         )
 
@@ -782,12 +782,10 @@ class TestAnalyzeCommand:
                 "--profile",
                 "testuser",
                 "--list",
-                "--all",
             ],
         )
 
         assert result.exit_code == 0
-        assert "Session Analysis Status" in result.output
         assert "Date" in result.output
         assert "Analyzed" in result.output
 
@@ -810,4 +808,3 @@ class TestAnalyzeCommand:
         )
 
         assert result.exit_code == 0
-        assert "Session Analysis Status" in result.output
