@@ -2,23 +2,21 @@
 
 set -euo pipefail
 
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+UNSTAGED_BEFORE=$(git diff --name-only 2>/dev/null || true)
 
-./script/code_quality.sh
+just sync
+just type-check
+just lint
+just format
+just test
 
-if [ -n "$STAGED_FILES" ]; then
-    echo "$STAGED_FILES" | while IFS= read -r file; do
-        if [ -n "$file" ] && [ -f "$file" ] && ! git diff --quiet -- "$file" 2>/dev/null; then
+while IFS= read -r file; do
+    if [ -n "$file" ] && [ -f "$file" ]; then
+        if echo "$UNSTAGED_BEFORE" | grep -qxF "$file" 2>/dev/null; then
+            echo "Skipping re-stage (has prior unstaged changes): $file"
+        else
             echo "Re-staging formatted/linted file: $file"
             git add "$file"
         fi
-    done
-fi
-
-if [ -n "${RUN_TESTS:-}" ]; then
-    echo "Running unit tests"
-    uv run pytest -m unit -n auto
-
-    echo "Running integration tests"
-    uv run pytest -m integration
-fi
+    fi
+done < <(git diff --name-only 2>/dev/null)

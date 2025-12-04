@@ -29,20 +29,20 @@ jobs:
           cache-dependency-glob: "uv.lock"
           version: "latest"
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Sync dependencies
-        run: uv sync
+        run: just sync
 
-      - name: Run type checks
-        run: uv run mypy .
+      - name: Type check
+        run: just type-check
 
-      - name: Run linter
-        run: uvx ruff check .
+      - name: Lint
+        run: just lint-check
 
-      - name: Run formatter
-        run: uvx ruff format . --check
+      - name: Format check
+        run: just format-check
 
-      - name: Run unit tests
-        run: uv run pytest -m unit -n auto
-
-      - name: Run integration tests
-        run: uv run pytest -m integration
+      - name: Test
+        run: just test
