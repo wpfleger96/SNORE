@@ -8,8 +8,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from oscar_mcp.database.models import Session as CPAPSession
-from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
+from snore.database.models import Session as CPAPSession
+from snore.parsers.resmed_edf import ResmedEDFParser
 
 # Path to fixtures directory
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "recorded_sessions"
@@ -136,7 +136,7 @@ def import_to_test_db(
     session_id = "_".join(brp_filename.split("_")[:2])
 
     # Create device info (minimal for test fixtures)
-    from oscar_mcp.models.unified import DeviceInfo
+    from snore.models.unified import DeviceInfo
 
     device_info = DeviceInfo(
         manufacturer="ResMed",
@@ -157,8 +157,8 @@ def import_to_test_db(
     # which relies on the global session factory
     import json
 
-    from oscar_mcp.database import models
-    from oscar_mcp.database.importers import serialize_waveform
+    from snore.database import models
+    from snore.database.importers import serialize_waveform
 
     # Get or create device
     device = (

@@ -5,7 +5,7 @@ Integration tests for programmatic analysis engine.
 import numpy as np
 import pytest
 
-from oscar_mcp.analysis.engines.programmatic_engine import (
+from snore.analysis.engines.programmatic_engine import (
     ProgrammaticAnalysisEngine,
     ProgrammaticAnalysisResult,
 )

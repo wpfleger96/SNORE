@@ -18,10 +18,10 @@ Note on Expected Warnings:
 import numpy as np
 import pytest
 
-from oscar_mcp.analysis.algorithms.breath_segmenter import BreathSegmenter
-from oscar_mcp.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
-from oscar_mcp.analysis.data.waveform_loader import WaveformLoader
-from oscar_mcp.database.models import Session
+from snore.analysis.algorithms.breath_segmenter import BreathSegmenter
+from snore.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
+from snore.analysis.data.waveform_loader import WaveformLoader
+from snore.database.models import Session
 
 
 @pytest.mark.integration_pipeline

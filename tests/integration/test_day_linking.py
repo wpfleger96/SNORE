@@ -12,9 +12,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from oscar_mcp.database import models
-from oscar_mcp.database.day_manager import DayManager
-from oscar_mcp.database.session import cleanup_database, init_database, session_scope
+from snore.database import models
+from snore.database.day_manager import DayManager
+from snore.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture(autouse=True)

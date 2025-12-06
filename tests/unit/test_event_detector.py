@@ -5,8 +5,8 @@ Tests for respiratory event detection using breath-based API.
 import numpy as np
 import pytest
 
-from oscar_mcp.analysis.algorithms.breath_segmenter import BreathMetrics
-from oscar_mcp.analysis.algorithms.event_detector import (
+from snore.analysis.algorithms.breath_segmenter import BreathMetrics
+from snore.analysis.algorithms.event_detector import (
     ApneaEvent,
     HypopneaEvent,
     RERAEvent,

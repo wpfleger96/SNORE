@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for OSCAR-MCP tests."""
+"""Pytest configuration and fixtures for SNORE tests."""
 
 import sqlite3
 import tempfile
@@ -64,7 +64,7 @@ def resmed_fixture_path(fixtures_dir):
 @pytest.fixture
 def resmed_parser():
     """Return a ResMed EDF parser instance."""
-    from oscar_mcp.parsers.resmed_edf import ResmedEDFParser
+    from snore.parsers.resmed_edf import ResmedEDFParser
 
     return ResmedEDFParser()
 
@@ -72,8 +72,8 @@ def resmed_parser():
 @pytest.fixture
 def parser_registry():
     """Return the global parser registry with parsers registered."""
-    from oscar_mcp.parsers.register_all import register_all_parsers
-    from oscar_mcp.parsers.registry import parser_registry
+    from snore.parsers.register_all import register_all_parsers
+    from snore.parsers.registry import parser_registry
 
     # Explicitly register parsers for testing
     register_all_parsers()
@@ -110,7 +110,7 @@ def db_session(temp_db):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from oscar_mcp.database.models import Base
+    from snore.database.models import Base
 
     # Create engine with SQLite
     engine = create_engine(f"sqlite:///{temp_db}")
@@ -132,7 +132,7 @@ def db_session(temp_db):
 @pytest.fixture
 def initialized_db(temp_db):
     """Create database initialized with global session factory (for validation tests)."""
-    from oscar_mcp.database.session import (
+    from snore.database.session import (
         cleanup_database,
         init_database,
         session_scope,
@@ -154,7 +154,7 @@ def test_profile_factory(db_session):
     """Factory for creating test profiles with auto-generated unique usernames."""
     import uuid
 
-    from oscar_mcp.database.models import Profile
+    from snore.database.models import Profile
 
     def _create_profile(username=None, day_split_time="12:00:00", **kwargs):
         if username is None:
@@ -175,7 +175,7 @@ def test_device(db_session, test_profile_factory):
     """Create a test device linked to a test profile."""
     import uuid
 
-    from oscar_mcp.database.models import Device
+    from snore.database.models import Device
 
     profile = test_profile_factory()  # Will auto-generate unique username
     device = Device(
@@ -194,7 +194,7 @@ def test_session_factory(db_session):
     """Factory for creating test sessions with statistics."""
     import uuid
 
-    from oscar_mcp.database.models import Session, Statistics
+    from snore.database.models import Session, Statistics
 
     def _create_session(device_id, start_time, duration_hours=8.0, **stats_kwargs):
         session = Session(

@@ -1,12 +1,12 @@
 [project]
-name = "oscar-mcp"
+name = "snore"
 version = "0.1.0"
 description = "MCP server for analyzing and inspecting OSCAR CPAP/APAP therapy data"
 requires-python = ">=3.13"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "OSCAR-MCP Contributors" }
+    { name = "SNORE Contributors" }
 ]
 dependencies = [
     "mcp[cli]>=1.9.0",
@@ -40,23 +40,23 @@ dev = [
 ]
 
 [project.scripts]
-oscar-mcp-server = "oscar_mcp.__main__:main"
-oscar-mcp = "oscar_mcp.cli:main"
-oscar-import = "oscar_mcp.importers.oscar_import:main"
+snore-server = "snore.__main__:main"
+snore = "snore.cli:main"
+snore-import = "snore.importers.oscar_import:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/oscar_mcp"]
+packages = ["src/snore"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=oscar_mcp --cov-report=term-missing"
+addopts = "-v --cov=snore --cov-report=term-missing"
 markers = [
     "unit: marks tests as unit tests (run in parallel)",
     "integration: marks tests as integration tests (run sequentially)",

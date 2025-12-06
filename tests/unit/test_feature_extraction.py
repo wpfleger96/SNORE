@@ -7,7 +7,7 @@ and spectral analysis.
 
 import numpy as np
 
-from oscar_mcp.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
+from snore.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
 from tests.helpers.synthetic_data import (
     generate_flattened_breath,
     generate_multi_peak_breath,

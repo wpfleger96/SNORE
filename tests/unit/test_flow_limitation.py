@@ -5,12 +5,12 @@ Tests rule-based classification of breaths into 7 flow limitation classes,
 confidence scoring, and session-level flow limitation index calculation.
 """
 
-from oscar_mcp.analysis.algorithms.feature_extractors import (
+from snore.analysis.algorithms.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     WaveformFeatureExtractor,
 )
-from oscar_mcp.analysis.algorithms.flow_limitation import (
+from snore.analysis.algorithms.flow_limitation import (
     FlowLimitationClassifier,
     FlowPattern,
 )

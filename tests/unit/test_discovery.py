@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from oscar_mcp.parsers.discovery import DataRoot, DataRootFinder
+from snore.parsers.discovery import DataRoot, DataRootFinder
 
 
 class TestDataRootFinder:

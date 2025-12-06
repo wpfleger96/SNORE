@@ -7,9 +7,9 @@ physiologically reasonable results.
 
 import pytest
 
-from oscar_mcp.analysis.data.waveform_loader import WaveformLoader
-from oscar_mcp.analysis.engines.programmatic_engine import ProgrammaticAnalysisEngine
-from oscar_mcp.database.models import Session
+from snore.analysis.data.waveform_loader import WaveformLoader
+from snore.analysis.engines.programmatic_engine import ProgrammaticAnalysisEngine
+from snore.database.models import Session
 
 
 @pytest.mark.recorded

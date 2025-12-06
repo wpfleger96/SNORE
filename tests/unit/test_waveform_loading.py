@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from oscar_mcp.analysis.data.waveform_loader import (
+from snore.analysis.data.waveform_loader import (
     apply_noise_filter,
     deserialize_waveform_blob,
     detect_and_mark_artifacts,

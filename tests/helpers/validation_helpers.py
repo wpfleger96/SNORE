@@ -8,8 +8,8 @@ from typing import Any
 
 import numpy as np
 
-from oscar_mcp.analysis.algorithms.breath_segmenter import BreathMetrics
-from oscar_mcp.analysis.algorithms.feature_extractors import (
+from snore.analysis.algorithms.breath_segmenter import BreathMetrics
+from snore.analysis.algorithms.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     StatisticalFeatures,

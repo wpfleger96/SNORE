@@ -67,7 +67,7 @@ THE most important reference image showing all 7 flow limitation classes:
 - Class 6: Late peak
 - Class 7: Plateau throughout
 
-All 7 classes in `src/oscar_mcp/constants.py` (`FLOW_LIMITATION_CLASSES`) reference this single diagram with different `reference_section` values.
+All 7 classes in `src/snore/constants.py` (`FLOW_LIMITATION_CLASSES`) reference this single diagram with different `reference_section` values.
 
 ### Complex Pattern Examples
 **Directory:** `patterns/`
@@ -93,7 +93,7 @@ Standard OSCAR visualizations for each data channel:
 
 ### Access flow limitation class images
 ```python
-from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
+from snore.constants import FLOW_LIMITATION_CLASSES
 
 # Get image for Class 1
 class_1 = FLOW_LIMITATION_CLASSES[1]
@@ -104,7 +104,7 @@ section = class_1["reference_section"]
 
 ### Access image directories
 ```python
-from oscar_mcp.constants import IMAGE_DIRS
+from snore.constants import IMAGE_DIRS
 
 # Get directory paths
 flow_limitation_dir = IMAGE_DIRS["flow_limitation"]
@@ -118,7 +118,7 @@ patterns_dir = IMAGE_DIRS["patterns"]
 ```python
 from pathlib import Path
 from PIL import Image
-from oscar_mcp.constants import FLOW_LIMITATION_CLASSES
+from snore.constants import FLOW_LIMITATION_CLASSES
 
 # Load flow limitation reference diagram
 image_path = Path(FLOW_LIMITATION_CLASSES[1]["reference_image"])
@@ -286,7 +286,7 @@ When adding images from new sources:
 ```python
 # Verify all referenced images exist
 from pathlib import Path
-from oscar_mcp.constants import FLOW_LIMITATION_CLASSES, IMAGE_DIRS
+from snore.constants import FLOW_LIMITATION_CLASSES, IMAGE_DIRS
 
 # Validate flow limitation class images
 for class_data in FLOW_LIMITATION_CLASSES.values():
@@ -305,6 +305,6 @@ print("✓ All image references valid")
 Images extracted from "OSCAR - The Guide" (Apnea Board Wiki)
 - Source: https://www.apneaboard.com/wiki/index.php/OSCAR_The_Guide
 - License: Check Apnea Board Wiki license terms
-- Use: Educational and analysis purposes for OSCAR-MCP
+- Use: Educational and analysis purposes for SNORE
 
 Additional images added from other sources should include appropriate attribution.

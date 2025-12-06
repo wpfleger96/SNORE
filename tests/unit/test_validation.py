@@ -9,7 +9,7 @@ from datetime import date
 
 import pytest
 
-from oscar_mcp.utils.validation import (
+from snore.utils.validation import (
     validate_date_format,
     validate_date_range,
     validate_period_type,
@@ -22,7 +22,7 @@ class TestProfileValidation:
 
     def test_validate_existing_profile(self, initialized_db):
         """Valid profile should be returned."""
-        from oscar_mcp.database.models import Profile
+        from snore.database.models import Profile
 
         # Create a test profile
         profile = Profile(
@@ -52,7 +52,7 @@ class TestProfileValidation:
 
     def test_validate_profile_case_sensitive(self, initialized_db):
         """Profile validation should be case-sensitive."""
-        from oscar_mcp.database.models import Profile
+        from snore.database.models import Profile
 
         profile = Profile(username="TestUser")
         initialized_db.add(profile)

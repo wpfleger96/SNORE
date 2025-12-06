@@ -5,7 +5,7 @@ Tests for complex breathing pattern detection.
 import numpy as np
 import pytest
 
-from oscar_mcp.analysis.algorithms.pattern_detector import (
+from snore.analysis.algorithms.pattern_detector import (
     ComplexPatternDetector,
 )
 

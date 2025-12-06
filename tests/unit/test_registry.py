@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from oscar_mcp.parsers.base import ParserDetectionResult
-from oscar_mcp.parsers.registry import ParserRegistry
+from snore.parsers.base import ParserDetectionResult
+from snore.parsers.registry import ParserRegistry
 
 
 class TestMultiParserDetection:

@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 import pytest
 
-from oscar_mcp.database.day_manager import DayManager
+from snore.database.day_manager import DayManager
 
 
 class TestDaySplitLogic:

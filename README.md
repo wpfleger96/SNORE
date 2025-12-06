@@ -1,12 +1,13 @@
-# OSCAR-MCP
+# SNORE
+**S**leep e**N**vironment **O**bservation & **R**espiratory **E**valuation
 
-![CI Status](https://github.com/wpfleger96/OSCAR-MCP/actions/workflows/ci.yml/badge.svg)
+![CI Status](https://github.com/wpfleger96/SNORE/actions/workflows/ci.yml/badge.svg)
 
 MCP (Model Context Protocol) server for analyzing and inspecting CPAP/APAP therapy data.
 
 ## Overview
 
-OSCAR-MCP provides an MCP interface for CPAP therapy data analysis, enabling LLMs like Claude to analyze sleep therapy data, generate reports, and answer questions about treatment effectiveness.
+SNORE provides an MCP interface for CPAP therapy data analysis, enabling LLMs like Claude to analyze sleep therapy data, generate reports, and answer questions about treatment effectiveness.
 
 ### Features
 
@@ -40,7 +41,7 @@ OSCAR-MCP provides an MCP interface for CPAP therapy data analysis, enabling LLM
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd OSCAR-MCP
+cd SNORE
 
 # Install with UV
 uv pip install -e .
@@ -57,13 +58,13 @@ For **ResMed AirSense/AirCurve users**, import directly from your SD card:
 uv sync
 
 # Import ResMed data from SD card
-uv run oscar-mcp import-data /path/to/ResMed/Backup/
+uv run snore import-data /path/to/ResMed/Backup/
 
 # Or if you've already imported to OSCAR desktop app
-uv run oscar-mcp import-data ~/Downloads/OSCAR/Profiles/<Profile>/ResMed_*/Backup/
+uv run snore import-data ~/Downloads/OSCAR/Profiles/<Profile>/ResMed_*/Backup/
 
 # Advanced import options
-uv run oscar-mcp import-data /path/to/data/ \
+uv run snore import-data /path/to/data/ \
   --limit 10 \                    # Import only first 10 sessions
   --sort-by date-desc \           # Newest first
   --date-from 2024-01-01 \        # Filter by date range
@@ -81,13 +82,13 @@ The import will:
 
 ```bash
 # List all imported sessions
-uv run oscar-mcp list-sessions
+uv run snore list-sessions
 
 # List sessions in date range
-uv run oscar-mcp list-sessions --from-date 2024-01-01 --to-date 2024-12-31
+uv run snore list-sessions --from-date 2024-01-01 --to-date 2024-12-31
 
 # Show database statistics
-uv run oscar-mcp db stats
+uv run snore db stats
 ```
 
 ### 3. Configure Default Profile (Optional)
@@ -96,26 +97,26 @@ To avoid passing `--profile` every time, set a default profile:
 
 ```bash
 # Set default profile
-uv run oscar-mcp config set-default-profile <username>
+uv run snore config set-default-profile <username>
 
 # View current default
-uv run oscar-mcp config get-default-profile
+uv run snore config get-default-profile
 
 # Remove default
-uv run oscar-mcp config unset-default-profile
+uv run snore config unset-default-profile
 
 # Show all configuration
-uv run oscar-mcp config show
+uv run snore config show
 ```
 
-The default profile is stored in `~/.oscar-mcp/config.toml`. Once set, the `analyze` command will use it automatically:
+The default profile is stored in `~/.snore/config.toml`. Once set, the `analyze` command will use it automatically:
 
 ```bash
 # Before: required --profile flag
-uv run oscar-mcp analyze --profile john_doe --all
+uv run snore analyze --profile john_doe --all
 
 # After: profile auto-detected
-uv run oscar-mcp analyze --all
+uv run snore analyze --all
 ```
 
 **Profile Resolution:**
@@ -128,19 +129,19 @@ uv run oscar-mcp analyze --all
 
 ```bash
 # Delete sessions by date range (with preview)
-uv run oscar-mcp delete-sessions --from-date 2024-01-01 --to-date 2024-01-31 --dry-run
+uv run snore delete-sessions --from-date 2024-01-01 --to-date 2024-01-31 --dry-run
 
 # Delete specific sessions by ID
-uv run oscar-mcp delete-sessions --session-id "1,2,3"
+uv run snore delete-sessions --session-id "1,2,3"
 
 # Delete all sessions (with confirmation)
-uv run oscar-mcp delete-sessions --all
+uv run snore delete-sessions --all
 
 # Force delete without confirmation prompt
-uv run oscar-mcp delete-sessions --session-id "5" --force
+uv run snore delete-sessions --session-id "5" --force
 
 # Database maintenance after large deletions
-uv run oscar-mcp db vacuum
+uv run snore db vacuum
 ```
 
 ### 5. Direct Database Access
@@ -148,7 +149,7 @@ uv run oscar-mcp db vacuum
 Query the SQLite database directly:
 
 ```bash
-sqlite3 ~/.oscar-mcp/oscar_mcp.db
+sqlite3 ~/.snore/snore.db
 
 # Example queries
 SELECT COUNT(*) FROM sessions;
@@ -168,13 +169,13 @@ The SQLite database stores all parsed CPAP data:
 - `statistics` - Pre-calculated metrics (AHI, pressure stats, leak stats, SpO2)
 - `settings` - Therapy configuration (key-value pairs)
 
-Database location: `~/.oscar-mcp/oscar_mcp.db`
+Database location: `~/.snore/snore.db`
 
 ## Project Structure
 
 ```
-OSCAR-MCP/
-├── src/oscar_mcp/
+SNORE/
+├── src/snore/
 │   ├── cli.py                   # CLI commands (import, list, db)
 │   ├── constants.py             # Channel IDs and mappings
 │   ├── models/
@@ -203,7 +204,7 @@ OSCAR-MCP/
 uv run pytest tests/ -v
 
 # Run with coverage
-uv run pytest tests/ --cov=oscar_mcp
+uv run pytest tests/ --cov=snore
 
 # Check linting
 uv run ruff check .

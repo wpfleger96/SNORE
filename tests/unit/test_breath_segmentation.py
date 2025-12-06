@@ -7,7 +7,7 @@ and edge case handling.
 
 import numpy as np
 
-from oscar_mcp.analysis.algorithms.breath_segmenter import BreathSegmenter
+from snore.analysis.algorithms.breath_segmenter import BreathSegmenter
 from tests.helpers.synthetic_data import (
     generate_sinusoidal_breath,
 )

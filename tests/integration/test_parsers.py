@@ -1,5 +1,5 @@
 """
-Focused parser tests for OSCAR-MCP.
+Focused parser tests for SNORE.
 
 Tests verify the critical EDF parsing logic with real data:
 - Actual signal extraction from EDF files
@@ -14,8 +14,8 @@ from datetime import datetime
 import numpy as np
 import pytest
 
-from oscar_mcp.models.unified import RespiratoryEventType, UnifiedSession, WaveformType
-from oscar_mcp.parsers.formats.edf import EDFReader
+from snore.models.unified import RespiratoryEventType, UnifiedSession, WaveformType
+from snore.parsers.formats.edf import EDFReader
 
 
 class TestEDFSignalParsing:

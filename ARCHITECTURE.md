@@ -1,6 +1,6 @@
-# OSCAR-MCP Architecture
+# SNORE Architecture
 
-Technical documentation for the OSCAR-MCP system architecture, components, and design decisions.
+Technical documentation for the SNORE system architecture, components, and design decisions.
 
 ---
 
@@ -16,10 +16,10 @@ Technical documentation for the OSCAR-MCP system architecture, components, and d
 ├─────────────────────────────────────────────┤
 │         SQLite Database ✅                  │
 │  Universal schema, direct BLOB storage      │
-│  Auto-creates at ~/.oscar-mcp/oscar_mcp.db │
+│  Auto-creates at ~/.snore/snore.db │
 ├─────────────────────────────────────────────┤
 │         CLI Import Tool ✅                  │
-│  oscar-mcp import (auto-detection)          │
+│  snore import (auto-detection)          │
 │  Progress bars, duplicate prevention        │
 ├─────────────────────────────────────────────┤
 │         Unified Data Model                  │
@@ -53,7 +53,7 @@ Technical documentation for the OSCAR-MCP system architecture, components, and d
 
 ### Unified Data Model
 
-**File:** `src/oscar_mcp/models/unified.py`
+**File:** `src/snore/models/unified.py`
 
 All parsers convert to these universal structures:
 
@@ -92,7 +92,7 @@ All parsers convert to these universal structures:
 
 ### Parser Infrastructure
 
-**File:** `src/oscar_mcp/parsers/base.py`
+**File:** `src/snore/parsers/base.py`
 
 **DeviceParser (Abstract Base Class)**
 ```python
@@ -116,7 +116,7 @@ class DeviceParser(ABC):
 
 **Adding New Parser**:
 ```python
-# File: src/oscar_mcp/parsers/philips.py
+# File: src/snore/parsers/philips.py
 class PhilipsParser(DeviceParser):
     def detect(self, path):
         return (path / "PXXXXXX").exists()
@@ -137,7 +137,7 @@ parser_registry.register(PhilipsParser())
 
 ### Parser Registry
 
-**File:** `src/oscar_mcp/parsers/registry.py`
+**File:** `src/snore/parsers/registry.py`
 
 - Auto-detects device type from file structure
 - Confidence-based parser selection
@@ -154,7 +154,7 @@ for session in parser.parse_sessions(path):
 
 ### EDF+ Reader Library
 
-**File:** `src/oscar_mcp/parsers/formats/edf.py`
+**File:** `src/snore/parsers/formats/edf.py`
 
 Generic EDF/EDF+ file reader for medical devices:
 - Signal extraction with proper unit conversion
@@ -218,13 +218,13 @@ ResMed SD Card
     ↓
 DATALOG/YYYY/*.edf files
     ↓
-ResMed EDF+ Parser (src/oscar_mcp/parsers/resmed_edf.py)
+ResMed EDF+ Parser (src/snore/parsers/resmed_edf.py)
     ↓
 UnifiedSession objects
     ↓
-Session Importer (src/oscar_mcp/database/importers.py)
+Session Importer (src/snore/database/importers.py)
     ↓
-SQLite Database (~/.oscar-mcp/oscar_mcp.db)
+SQLite Database (~/.snore/snore.db)
     ↓
 MCP Server Tools (TODO)
     ↓
@@ -267,9 +267,9 @@ UnifiedSession objects
 
 ### Database Location
 ```
-~/.oscar-mcp/
-└── oscar_mcp.db            # SQLite database
-    └── oscar_mcp.db-wal    # Write-ahead log
+~/.snore/
+└── snore.db            # SQLite database
+    └── snore.db-wal    # Write-ahead log
 ```
 
 ---
@@ -298,13 +298,13 @@ UnifiedSession objects
 
 ```bash
 # Import ResMed data from SD card
-uv run oscar-mcp import-data ~/path/to/ResMed/Backup/
+uv run snore import-data ~/path/to/ResMed/Backup/
 
 # Import with verbose logging
-uv run oscar-mcp -v import-data ~/path/to/data/
+uv run snore -v import-data ~/path/to/data/
 
 # Import options (NEW)
-uv run oscar-mcp import-data ~/path/to/data/ \
+uv run snore import-data ~/path/to/data/ \
   --limit 10 \
   --sort-by date-desc \
   --date-from 2024-10-01 \
@@ -317,29 +317,29 @@ uv run oscar-mcp import-data ~/path/to/data/ \
 
 ```bash
 # List all imported sessions
-uv run oscar-mcp list-sessions
+uv run snore list-sessions
 
 # List sessions in date range
-uv run oscar-mcp list-sessions --from-date 2024-01-01 --to-date 2024-12-31
+uv run snore list-sessions --from-date 2024-01-01 --to-date 2024-12-31
 
 # Show more sessions
-uv run oscar-mcp list-sessions --limit 50
+uv run snore list-sessions --limit 50
 ```
 
 ### Database Management
 
 ```bash
 # Show database statistics
-uv run oscar-mcp db stats
+uv run snore db stats
 
 # Initialize database (rarely needed - auto-created)
-uv run oscar-mcp db init
+uv run snore db init
 
 # Optimize database (reclaim space)
-uv run oscar-mcp db vacuum
+uv run snore db vacuum
 
 # Direct SQL queries
-sqlite3 ~/.oscar-mcp/oscar_mcp.db
+sqlite3 ~/.snore/snore.db
 ```
 
 ### Run Tests
@@ -355,7 +355,7 @@ uv run pytest tests/test_parsers.py -v
 uv run pytest tests/test_import_pipeline.py -v
 
 # With coverage
-uv run pytest tests/ --cov=oscar_mcp
+uv run pytest tests/ --cov=snore
 
 # Check linter
 uv run ruff check .
@@ -397,21 +397,21 @@ OSCAR supports **18 different device manufacturers**, each with unique native fo
 
 **Option 1: Direct Import (ResMed)** ✅
 ```
-ResMed SD Card → OSCAR-MCP → SQLite Database
+ResMed SD Card → SNORE → SQLite Database
 ```
 - Currently working for ResMed devices
 - 40% market coverage
 
 **Option 2: OSCAR Desktop Export (All Others)** 🔧
 ```
-Device SD Card → OSCAR Desktop → .000/.001 Files → OSCAR-MCP → Database
+Device SD Card → OSCAR Desktop → .000/.001 Files → SNORE → Database
 ```
 - Requires completing OSCAR binary parser
 - 100% device coverage
 
 **Option 3: Additional Native Parsers** (Future)
 ```
-Philips SD Card → OSCAR-MCP → Database
+Philips SD Card → SNORE → Database
 ```
 - Add parsers for Philips, F&P, etc. as needed
 - Each parser ~200-300 lines

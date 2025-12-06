@@ -8,9 +8,9 @@ import pytest
 
 from sqlalchemy import text
 
-from oscar_mcp.database import models
-from oscar_mcp.database.importers import SessionImporter
-from oscar_mcp.database.session import cleanup_database, init_database, session_scope
+from snore.database import models
+from snore.database.importers import SessionImporter
+from snore.database.session import cleanup_database, init_database, session_scope
 
 
 @pytest.fixture(autouse=True)

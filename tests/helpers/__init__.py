@@ -1,5 +1,5 @@
 """
-Test helper utilities for OSCAR-MCP testing.
+Test helper utilities for SNORE testing.
 
 This module provides reusable utilities for:
 - Generating synthetic test data
