@@ -1658,6 +1658,111 @@ def _list_sessions(
         click.echo(f"\nShowing all {total_sessions} sessions")
 
 
+@cli.group()
+def completions() -> None:
+    """Manage shell tab completion."""
+    pass
+
+
+from snore.completions import get_supported_shells
+
+_SUPPORTED_SHELLS = list(get_supported_shells())
+
+
+@completions.command(name="bash")
+def completions_bash() -> None:
+    """Output bash completion script for manual installation."""
+    from snore.completions import generate_completion_script
+
+    try:
+        script = generate_completion_script("bash")
+        click.echo(script)
+        click.echo("\nTo install: Add the above to your ~/.bashrc or run:")
+        click.echo("  snore completions install")
+    except Exception as e:
+        click.echo(f"Error generating completion script: {e}", err=True)
+        sys.exit(1)
+
+
+@completions.command(name="zsh")
+def completions_zsh() -> None:
+    """Output zsh completion script for manual installation."""
+    from snore.completions import generate_completion_script
+
+    try:
+        script = generate_completion_script("zsh")
+        click.echo(script)
+        click.echo("\nTo install: Add the above to your ~/.zshrc or run:")
+        click.echo("  snore completions install")
+    except Exception as e:
+        click.echo(f"Error generating completion script: {e}", err=True)
+        sys.exit(1)
+
+
+@completions.command(name="install")
+@click.option(
+    "--shell",
+    type=click.Choice(_SUPPORTED_SHELLS, case_sensitive=False),
+    help="Shell type (auto-detected if not specified)",
+)
+def completions_install(shell: str | None) -> None:
+    """Install shell completion to config file."""
+    from snore.completions import detect_shell, install_completion
+
+    if shell is None:
+        shell = detect_shell()
+        if shell is None:
+            click.echo(
+                "Error: Could not detect shell. Please specify with --shell", err=True
+            )
+            sys.exit(1)
+        click.echo(f"Detected shell: {shell}")
+
+    success, message = install_completion(shell, dry_run=False)
+
+    if success:
+        click.echo(f"✓ {message}")
+    else:
+        click.echo(f"Error: {message}", err=True)
+        sys.exit(1)
+
+
+@completions.command(name="uninstall")
+@click.option(
+    "--shell",
+    type=click.Choice(_SUPPORTED_SHELLS, case_sensitive=False),
+    help="Shell type (auto-detected if not specified)",
+)
+def completions_uninstall(shell: str | None) -> None:
+    """Remove shell completion from config file."""
+    from snore.completions import (
+        detect_shell,
+        find_config_file,
+        uninstall_completion,
+    )
+
+    if shell is None:
+        shell = detect_shell()
+        if shell is None:
+            click.echo(
+                "Error: Could not detect shell. Please specify with --shell", err=True
+            )
+            sys.exit(1)
+
+    config_path = find_config_file(shell)
+    if config_path is None:
+        click.echo(f"Error: No {shell} config file found", err=True)
+        sys.exit(1)
+
+    success, message = uninstall_completion(config_path)
+
+    if success:
+        click.echo(f"✓ {message}")
+    else:
+        click.echo(f"Error: {message}", err=True)
+        sys.exit(1)
+
+
 def main() -> None:
     """Main CLI entry point."""
     cli()
