@@ -37,6 +37,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "black>=24.0.0",
     "ruff>=0.3.0",
+    "mypy>=1.18.2",
 ]
 
 [project.scripts]
