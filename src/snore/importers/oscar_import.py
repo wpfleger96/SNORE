@@ -16,11 +16,9 @@ import click
 from snore.constants import COMPLIANCE_MIN_HOURS, DEFAULT_DATABASE_PATH
 from snore.database import models
 from snore.database.session import init_database, session_scope
+from snore.logging_config import setup_logging
 from snore.parsers.oscar_format import ProfileScanner
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger("snore-import")
 
 
@@ -29,6 +27,8 @@ logger = logging.getLogger("snore-import")
 @click.pass_context
 def cli(ctx: Any, database: str | None) -> None:
     """OSCAR data import utility for SNORE."""
+    setup_logging()
+
     ctx.ensure_object(dict)
     ctx.obj["database"] = database
 

@@ -727,6 +727,12 @@ RDI_EVENT_TYPES = AHI_EVENT_TYPES | {EVENT_TYPE_RERA}
 DEFAULT_DATABASE_PATH = str(Path.home() / ".snore" / "snore.db")
 DEFAULT_PROFILE_NAME = "Default"
 
+# Logging configuration
+DEFAULT_LOG_DIR = Path.home() / ".snore" / "logs"
+DEFAULT_LOG_FILE = "snore.log"
+DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+DEFAULT_LOG_BACKUP_COUNT = 5
+
 # CLI display defaults
 DEFAULT_LIST_SESSIONS_LIMIT = 20
 

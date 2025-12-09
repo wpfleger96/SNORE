@@ -35,11 +35,10 @@ from snore.constants import (
 from snore.database import models
 from snore.database.importers import SessionImporter
 from snore.database.session import init_database, session_scope
+from snore.logging_config import setup_logging
 from snore.parsers.register_all import register_all_parsers
 from snore.parsers.registry import parser_registry
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -112,8 +111,7 @@ def resolve_profile(explicit_profile: str | None, db_session: Session) -> str:
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def cli(verbose: bool) -> None:
     """SNORE: CPAP Data Management Tool"""
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    setup_logging(verbose=verbose, console_format="%(levelname)s: %(message)s")
 
 
 @cli.command()
@@ -1782,6 +1780,103 @@ def completions_uninstall(shell: str | None) -> None:
     else:
         click.echo(f"Error: {message}", err=True)
         sys.exit(1)
+
+
+@cli.group()
+def logs() -> None:
+    """Log file management commands."""
+    pass
+
+
+@logs.command("path")
+def logs_path() -> None:
+    """Show log file location."""
+    from snore.logging_config import get_log_path
+
+    log_path = get_log_path()
+    click.echo(f"Log file: {log_path}")
+
+    if log_path.exists():
+        size_mb = log_path.stat().st_size / (1024 * 1024)
+        click.echo(f"Size: {size_mb:.2f} MB")
+
+        import glob
+
+        log_dir = log_path.parent
+        backup_files = sorted(glob.glob(str(log_dir / "snore.log.*")))
+        if backup_files:
+            click.echo(f"Backup files: {len(backup_files)}")
+    else:
+        click.echo("(File does not exist yet)")
+
+
+@logs.command("show")
+@click.option("--lines", "-n", type=int, default=50, help="Number of lines to show")
+@click.option("--follow", "-f", is_flag=True, help="Follow log output (like tail -f)")
+def logs_show(lines: int, follow: bool) -> None:
+    """Show recent log entries."""
+    from snore.logging_config import get_log_path
+
+    log_path = get_log_path()
+
+    if not log_path.exists():
+        click.echo("No log file found", err=True)
+        sys.exit(1)
+
+    if follow:
+        import subprocess
+
+        try:
+            subprocess.run(["tail", "-f", str(log_path)], check=True)
+        except KeyboardInterrupt:
+            pass
+        except FileNotFoundError:
+            click.echo("Error: 'tail' command not found", err=True)
+            sys.exit(1)
+    else:
+        try:
+            with open(log_path, encoding="utf-8") as f:
+                all_lines = f.readlines()
+                display_lines = (
+                    all_lines[-lines:] if len(all_lines) > lines else all_lines
+                )
+                for line in display_lines:
+                    click.echo(line.rstrip())
+        except Exception as e:
+            click.echo(f"Error reading log file: {e}", err=True)
+            sys.exit(1)
+
+
+@logs.command("clear")
+@click.confirmation_option(prompt="Are you sure you want to clear all log files?")
+def logs_clear() -> None:
+    """Clear all log files."""
+    import glob
+
+    from snore.logging_config import get_log_path
+
+    log_path = get_log_path()
+    log_dir = log_path.parent
+
+    if not log_dir.exists():
+        click.echo("No log directory found")
+        return
+
+    log_files = [log_path] + [Path(f) for f in glob.glob(str(log_dir / "snore.log.*"))]
+
+    removed_count = 0
+    for log_file in log_files:
+        if log_file.exists():
+            try:
+                log_file.unlink()
+                removed_count += 1
+            except Exception as e:
+                click.echo(f"Failed to remove {log_file}: {e}", err=True)
+
+    if removed_count > 0:
+        click.echo(f"Removed {removed_count} log file(s)")
+    else:
+        click.echo("No log files to remove")
 
 
 def main() -> None:

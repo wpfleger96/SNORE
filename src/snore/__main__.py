@@ -7,16 +7,16 @@ from importlib.metadata import version
 
 from snore.constants import DEFAULT_DATABASE_PATH
 from snore.database.session import init_database
+from snore.logging_config import setup_logging
 from snore.server import server
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger("snore")
 
 
 def main() -> int:
     """Main entry point for SNORE server."""
+    setup_logging()
+
     parser = argparse.ArgumentParser(
         description="SNORE: MCP server for OSCAR CPAP/APAP therapy data"
     )
