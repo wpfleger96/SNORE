@@ -13,7 +13,6 @@ COMPLETION_MARKER_END = "# End snore shell completion"
 class ShellConfig:
     """Configuration for a supported shell."""
 
-    name: str
     config_files: list[str]  # Relative to home, in priority order
 
     def get_config_candidates(self) -> list[Path]:
@@ -23,8 +22,8 @@ class ShellConfig:
 
 
 SHELL_REGISTRY: dict[str, ShellConfig] = {
-    "bash": ShellConfig("bash", [".bashrc", ".bash_profile", ".profile"]),
-    "zsh": ShellConfig("zsh", [".zshrc", ".zprofile"]),
+    "bash": ShellConfig([".bashrc", ".bash_profile", ".profile"]),
+    "zsh": ShellConfig([".zshrc", ".zprofile"]),
 }
 
 

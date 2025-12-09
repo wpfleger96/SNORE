@@ -382,14 +382,6 @@ UNITS = {
 # Clinical Thresholds
 # ============================================================================
 
-# AHI severity thresholds
-AHI_SEVERITY = {
-    "normal": (0, 5),
-    "mild": (5, 15),
-    "moderate": (15, 30),
-    "severe": (30, float("inf")),
-}
-
 # SpO2 thresholds
 SPO2_NORMAL_MIN = 95  # Below this is considered desaturation
 SPO2_CRITICAL_MIN = 88  # Critical desaturation threshold
@@ -551,10 +543,6 @@ class FlowLimitationConstants:
 
 class AnalysisEngineConstants:
     """Constants for analysis engine coordination (programmatic_engine.py)."""
-
-    MIN_BREATH_DURATION = 1.0
-    MIN_EVENT_DURATION = 10.0
-    CONFIDENCE_THRESHOLD = 0.6
 
     DEFAULT_SAMPLE_RATE = 25.0
 
@@ -738,10 +726,6 @@ IMAGE_DIRS = {
     "charts": KNOWLEDGE_IMAGE_BASE / "charts",
     "ui": KNOWLEDGE_IMAGE_BASE / "ui",
 }
-
-# Time calculations
-SECONDS_PER_HOUR = 3600
-MILLISECONDS_PER_SECOND = 1000
 
 # ============================================================================
 # Parser Configuration

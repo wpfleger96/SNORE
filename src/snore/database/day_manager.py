@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
-from snore.database.models import Day, Profile
+from snore.database.models import Day, Profile, Statistics
 from snore.database.models import Session as SessionModel
 
 
@@ -81,6 +81,22 @@ class DayManager:
         return day
 
     @classmethod
+    def _weighted_average(
+        cls, stats_records: list[Statistics], sessions: list[SessionModel], attr: str
+    ) -> float | None:
+        """Calculate time-weighted average for a statistic across sessions."""
+        values = [
+            (getattr(s, attr), sess.duration_seconds / 3600)
+            for s, sess in zip(stats_records, sessions, strict=False)
+            if getattr(s, attr) is not None and sess.duration_seconds
+        ]
+        if not values:
+            return None
+        total_weighted = sum(v * w for v, w in values)
+        total_weight = sum(w for _, w in values)
+        return float(total_weighted / total_weight)
+
+    @classmethod
     def _aggregate_day_statistics(cls, day: Day, db_session: Session) -> None:
         """
         Aggregate statistics from all sessions belonging to a day.
@@ -137,45 +153,10 @@ class DayManager:
 
             total_hours = day.total_therapy_hours
             if total_hours > 0:
-                ahi_values = [
-                    (s.ahi, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.ahi is not None and sess.duration_seconds
-                ]
-                if ahi_values:
-                    day.ahi = sum(ahi * weight for ahi, weight in ahi_values) / sum(
-                        weight for _, weight in ahi_values
-                    )
-
-                oai_values = [
-                    (s.oai, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.oai is not None and sess.duration_seconds
-                ]
-                if oai_values:
-                    day.oai = sum(oai * weight for oai, weight in oai_values) / sum(
-                        weight for _, weight in oai_values
-                    )
-
-                cai_values = [
-                    (s.cai, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.cai is not None and sess.duration_seconds
-                ]
-                if cai_values:
-                    day.cai = sum(cai * weight for cai, weight in cai_values) / sum(
-                        weight for _, weight in cai_values
-                    )
-
-                hi_values = [
-                    (s.hi, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.hi is not None and sess.duration_seconds
-                ]
-                if hi_values:
-                    day.hi = sum(hi * weight for hi, weight in hi_values) / sum(
-                        weight for _, weight in hi_values
-                    )
+                day.ahi = cls._weighted_average(stats_records, sessions, "ahi")
+                day.oai = cls._weighted_average(stats_records, sessions, "oai")
+                day.cai = cls._weighted_average(stats_records, sessions, "cai")
+                day.hi = cls._weighted_average(stats_records, sessions, "hi")
 
             pressure_mins = [s.pressure_min for s in stats_records if s.pressure_min]
             pressure_maxs = [s.pressure_max for s in stats_records if s.pressure_max]
@@ -183,35 +164,15 @@ class DayManager:
             day.pressure_max = max(pressure_maxs) if pressure_maxs else None
 
             if total_hours > 0:
-                median_values = [
-                    (s.pressure_median, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.pressure_median is not None and sess.duration_seconds
-                ]
-                if median_values:
-                    day.pressure_median = sum(
-                        med * weight for med, weight in median_values
-                    ) / sum(weight for _, weight in median_values)
-
-                mean_values = [
-                    (s.pressure_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.pressure_mean is not None and sess.duration_seconds
-                ]
-                if mean_values:
-                    day.pressure_mean = sum(
-                        mean * weight for mean, weight in mean_values
-                    ) / sum(weight for _, weight in mean_values)
-
-                p95_values = [
-                    (s.pressure_95th, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.pressure_95th is not None and sess.duration_seconds
-                ]
-                if p95_values:
-                    day.pressure_95th = sum(
-                        p95 * weight for p95, weight in p95_values
-                    ) / sum(weight for _, weight in p95_values)
+                day.pressure_median = cls._weighted_average(
+                    stats_records, sessions, "pressure_median"
+                )
+                day.pressure_mean = cls._weighted_average(
+                    stats_records, sessions, "pressure_mean"
+                )
+                day.pressure_95th = cls._weighted_average(
+                    stats_records, sessions, "pressure_95th"
+                )
 
             leak_mins = [s.leak_min for s in stats_records if s.leak_min]
             leak_maxs = [s.leak_max for s in stats_records if s.leak_max]
@@ -219,35 +180,15 @@ class DayManager:
             day.leak_max = max(leak_maxs) if leak_maxs else None
 
             if total_hours > 0:
-                leak_median_values = [
-                    (s.leak_median, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.leak_median is not None and sess.duration_seconds
-                ]
-                if leak_median_values:
-                    day.leak_median = sum(
-                        leak * weight for leak, weight in leak_median_values
-                    ) / sum(weight for _, weight in leak_median_values)
-
-                leak_mean_values = [
-                    (s.leak_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.leak_mean is not None and sess.duration_seconds
-                ]
-                if leak_mean_values:
-                    day.leak_mean = sum(
-                        leak * weight for leak, weight in leak_mean_values
-                    ) / sum(weight for _, weight in leak_mean_values)
-
-                leak_95_values = [
-                    (s.leak_95th, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.leak_95th is not None and sess.duration_seconds
-                ]
-                if leak_95_values:
-                    day.leak_95th = sum(
-                        leak * weight for leak, weight in leak_95_values
-                    ) / sum(weight for _, weight in leak_95_values)
+                day.leak_median = cls._weighted_average(
+                    stats_records, sessions, "leak_median"
+                )
+                day.leak_mean = cls._weighted_average(
+                    stats_records, sessions, "leak_mean"
+                )
+                day.leak_95th = cls._weighted_average(
+                    stats_records, sessions, "leak_95th"
+                )
 
             spo2_mins = [s.spo2_min for s in stats_records if s.spo2_min]
             spo2_maxs = [s.spo2_max for s in stats_records if s.spo2_max]
@@ -255,16 +196,10 @@ class DayManager:
             day.spo2_max = max(spo2_maxs) if spo2_maxs else None
 
             if total_hours > 0:
-                spo2_mean_values = [
-                    (s.spo2_mean, sess.duration_seconds / 3600)
-                    for s, sess in zip(stats_records, sessions, strict=False)
-                    if s.spo2_mean is not None and sess.duration_seconds
-                ]
-                if spo2_mean_values:
-                    day.spo2_mean = sum(
-                        spo2 * weight for spo2, weight in spo2_mean_values
-                    ) / sum(weight for _, weight in spo2_mean_values)
-                    day.spo2_avg = day.spo2_mean  # Alias for compatibility
+                day.spo2_mean = cls._weighted_average(
+                    stats_records, sessions, "spo2_mean"
+                )
+                day.spo2_avg = day.spo2_mean  # Alias for compatibility
 
     @classmethod
     def link_session_to_day(

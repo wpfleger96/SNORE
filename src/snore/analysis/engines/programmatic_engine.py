@@ -29,7 +29,19 @@ from snore.analysis.algorithms.pattern_detector import (
     PeriodicBreathingDetection,
     PositionalAnalysis,
 )
-from snore.constants import AnalysisEngineConstants as AEC
+from snore.constants import (
+    AnalysisEngineConstants as AEC,
+)
+from snore.constants import (
+    BreathSegmentationConstants as BSC,
+)
+from snore.constants import (
+    EventDetectionConstants as EDC,
+)
+from snore.constants import (
+    FlowLimitationConstants as FLC,
+)
+from snore.utils.formatting import get_ahi_severity
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +108,9 @@ class ProgrammaticAnalysisEngine:
 
     def __init__(
         self,
-        min_breath_duration: float = AEC.MIN_BREATH_DURATION,
-        min_event_duration: float = AEC.MIN_EVENT_DURATION,
-        confidence_threshold: float = AEC.CONFIDENCE_THRESHOLD,
+        min_breath_duration: float = BSC.MIN_BREATH_DURATION,
+        min_event_duration: float = EDC.MIN_EVENT_DURATION,
+        confidence_threshold: float = FLC.CONFIDENCE_THRESHOLD,
     ):
         """
         Initialize the programmatic analysis engine.
@@ -319,14 +331,9 @@ class ProgrammaticAnalysisEngine:
 
         if event_timeline:
             ahi = event_timeline.ahi
-            if ahi < 5:
-                severity = "NORMAL"
-            elif ahi < 15:
-                severity = "MILD OSA"
-            elif ahi < 30:
-                severity = "MODERATE OSA"
-            else:
-                severity = "SEVERE OSA"
+            severity = get_ahi_severity(ahi).upper()
+            if severity != "NORMAL":
+                severity = f"{severity} OSA"
 
             lines.append(f"\nRespiratory Events: {severity}")
             lines.append(f"  AHI: {ahi:.1f} events/hour")

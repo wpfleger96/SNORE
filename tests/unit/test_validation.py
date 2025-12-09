@@ -12,7 +12,6 @@ import pytest
 from snore.utils.validation import (
     validate_date_format,
     validate_date_range,
-    validate_period_type,
     validate_profile_exists,
 )
 
@@ -139,29 +138,3 @@ class TestDateValidation:
         assert "invalid date range" in error_msg.lower()
         assert str(start) in error_msg
         assert str(end) in error_msg
-
-
-class TestPeriodTypeValidation:
-    """Test period type validation."""
-
-    def test_all_valid_period_types(self):
-        """All valid period types should pass."""
-        valid_types = ["daily", "weekly", "monthly", "yearly"]
-
-        for period_type in valid_types:
-            result = validate_period_type(period_type)
-            assert result is True
-
-    def test_invalid_period_type_raises_error(self):
-        """Invalid period type should raise ValueError."""
-        invalid_types = ["hourly", "quarterly", "biweekly", "DAILY", ""]
-
-        for invalid_type in invalid_types:
-            with pytest.raises(ValueError) as exc_info:
-                validate_period_type(invalid_type)
-
-            error_msg = str(exc_info.value)
-            assert "invalid period type" in error_msg.lower()
-            # Should list valid types
-            assert "daily" in error_msg.lower()
-            assert "weekly" in error_msg.lower()

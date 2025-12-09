@@ -6,55 +6,6 @@ from snore.constants import COMPLIANCE_MIN_HOURS
 from snore.database import models
 
 
-def calculate_ahi(
-    obstructive: int, hypopnea: int, central: int, duration_hours: float
-) -> float:
-    """
-    Calculate Apnea-Hypopnea Index (AHI).
-
-    AHI = (Obstructive Apneas + Hypopneas + Central Apneas) / Hours
-
-    Args:
-        obstructive: Count of obstructive apneas
-        hypopnea: Count of hypopneas
-        central: Count of central/clear airway apneas
-        duration_hours: Session duration in hours
-
-    Returns:
-        AHI value (events per hour)
-    """
-    if duration_hours <= 0:
-        return 0.0
-
-    total_events = obstructive + hypopnea + central
-    return total_events / duration_hours
-
-
-def calculate_rdi(
-    obstructive: int, hypopnea: int, central: int, rera: int, duration_hours: float
-) -> float:
-    """
-    Calculate Respiratory Disturbance Index (RDI).
-
-    RDI = (Obstructive Apneas + Hypopneas + Central Apneas + RERA) / Hours
-
-    Args:
-        obstructive: Count of obstructive apneas
-        hypopnea: Count of hypopneas
-        central: Count of central/clear airway apneas
-        rera: Count of respiratory effort related arousals
-        duration_hours: Session duration in hours
-
-    Returns:
-        RDI value (events per hour)
-    """
-    if duration_hours <= 0:
-        return 0.0
-
-    total_events = obstructive + hypopnea + central + rera
-    return total_events / duration_hours
-
-
 def is_compliant(hours: float | None) -> bool:
     """
     Check if usage meets compliance requirements.

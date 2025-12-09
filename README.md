@@ -2,6 +2,9 @@
 **S**leep e**N**vironment **O**bservation & **R**espiratory **E**valuation
 
 ![CI Status](https://github.com/wpfleger96/SNORE/actions/workflows/ci.yml/badge.svg)
+[![GitHub Contributors](https://img.shields.io/github/contributors/wpfleger96/snore.svg)](https://github.com/wpfleger96/snore/graphs/contributors)
+[![Lines of Code](https://aschey.tech/tokei/github/wpfleger96/snore?category=code)](https://github.com/wpfleger96/snore)
+[![License](https://img.shields.io/github/license/wpfleger96/snore.svg)](https://github.com/wpfleger96/snore/blob/main/LICENSE)
 
 MCP (Model Context Protocol) server for analyzing and inspecting CPAP/APAP therapy data.
 

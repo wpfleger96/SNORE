@@ -72,24 +72,3 @@ def validate_date_range(start_date: date, end_date: date) -> bool:
             f"must be before or equal to end_date ({end_date})"
         )
     return True
-
-
-def validate_period_type(period_type: str) -> bool:
-    """
-    Validate period type.
-
-    Args:
-        period_type: Period type string
-
-    Returns:
-        True if valid
-
-    Raises:
-        ValueError: If period type is invalid
-    """
-    valid_types = ["daily", "weekly", "monthly", "yearly"]
-    if period_type not in valid_types:
-        raise ValueError(
-            f"Invalid period type: '{period_type}'. Valid types are: {', '.join(valid_types)}"
-        )
-    return True
