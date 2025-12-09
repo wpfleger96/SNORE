@@ -32,13 +32,12 @@ check: sync type-check lint-check format-check
 check-all: check test
     @echo "All quality checks and tests passed"
 
-pre-commit: sync type-check lint format test
+pre-commit: sync type-check lint format
     @echo "Pre-commit checks passed"
+
+ci: sync type-check lint-check format-check test
+    @echo "CI checks passed"
 
 # Testing
 test:
     uv run pytest
-
-# CI workflow (matches CI steps)
-ci: sync type-check lint-check format-check test
-    @echo "CI checks passed"

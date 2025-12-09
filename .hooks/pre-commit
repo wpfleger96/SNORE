@@ -4,11 +4,7 @@ set -euo pipefail
 
 UNSTAGED_BEFORE=$(git diff --name-only 2>/dev/null || true)
 
-just sync
-just type-check
-just lint
-just format
-just test
+just pre-commit
 
 while IFS= read -r file; do
     if [ -n "$file" ] && [ -f "$file" ]; then
