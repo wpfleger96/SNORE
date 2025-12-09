@@ -13,6 +13,7 @@ import numpy as np
 
 from sqlalchemy.orm import Session
 
+from snore.constants import DEFAULT_PROFILE_NAME
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import session_scope
@@ -61,6 +62,26 @@ class SessionImporter:
         self.profile_id = profile_id
 
     @staticmethod
+    def get_or_create_default_profile(db: Session) -> int:
+        """
+        Get or create the Default profile for SD card imports.
+
+        Returns:
+            Profile ID of the Default profile
+        """
+        profile = (
+            db.query(models.Profile).filter_by(username=DEFAULT_PROFILE_NAME).first()
+        )
+        if not profile:
+            profile = models.Profile(
+                username=DEFAULT_PROFILE_NAME, settings={"day_split_time": "12:00:00"}
+            )
+            db.add(profile)
+            db.flush()
+            logger.info(f"Created default profile '{DEFAULT_PROFILE_NAME}'")
+        return profile.id
+
+    @staticmethod
     def cleanup_orphaned_records(db: Session) -> int:
         """
         Remove orphaned records from child tables that reference non-existent sessions.
@@ -106,6 +127,10 @@ class SessionImporter:
             True if imported, False if skipped (already exists)
         """
         with session_scope() as db:
+            # Auto-assign Default profile for SD card imports without profile
+            if self.profile_id is None:
+                self.profile_id = self.get_or_create_default_profile(db)
+
             device = (
                 db.query(models.Device)
                 .filter_by(serial_number=session_data.device_info.serial_number)

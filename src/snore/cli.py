@@ -1299,8 +1299,12 @@ def analyze(
         init_database()
 
     # Resolve profile using precedence: CLI > config > auto-detect
-    with session_scope() as temp_session:
-        resolved_profile = resolve_profile(profile, temp_session)
+    # Skip profile resolution if using --session-id without explicit --profile
+    if session_id is not None and profile is None:
+        resolved_profile = None
+    else:
+        with session_scope() as temp_session:
+            resolved_profile = resolve_profile(profile, temp_session)
 
     # Validate mutually exclusive options
     single_session_flags = [session_id is not None, date is not None]
@@ -1332,19 +1336,36 @@ def analyze(
 
     with session_scope() as session:
         # Lookup profile (use resolved_profile)
-        prof = (
-            session.query(models.Profile).filter_by(username=resolved_profile).first()
-        )
-        if not prof:
-            click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
-            sys.exit(1)
+        prof = None
+        if resolved_profile is not None:
+            prof = (
+                session.query(models.Profile)
+                .filter_by(username=resolved_profile)
+                .first()
+            )
+            if not prof:
+                click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
+                sys.exit(1)
 
         # Route to appropriate mode
         if list_mode:
+            if prof is None:
+                click.echo("Error: --list mode requires a profile", err=True)
+                sys.exit(1)
             _list_sessions(session, prof, start, end, limit, analyzed_only)
         elif single_count > 0:
+            # For --date, profile is required. For --session-id, it's optional
+            if date is not None and prof is None:
+                click.echo(
+                    "Error: --date requires a profile. Use --session-id instead.",
+                    err=True,
+                )
+                sys.exit(1)
             _analyze_single_session(session, prof, session_id, date, no_store)
         else:
+            if prof is None:
+                click.echo("Error: Batch analysis requires a profile", err=True)
+                sys.exit(1)
             _analyze_batch(
                 session, prof, start, end, start is None and end is None, no_store
             )
