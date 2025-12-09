@@ -209,15 +209,18 @@ class WaveformData:
 
     def __post_init__(self) -> None:
         """Convert lists to numpy arrays for efficiency."""
-        # Convert to numpy arrays
+        # Convert to numpy arrays (skip if already correct dtype)
         if isinstance(self.timestamps, list):
             self.timestamps = np.array(self.timestamps, dtype=np.float32)
-        elif isinstance(self.timestamps, np.ndarray):
+        elif (
+            isinstance(self.timestamps, np.ndarray)
+            and self.timestamps.dtype != np.float32
+        ):
             self.timestamps = self.timestamps.astype(np.float32)
 
         if isinstance(self.values, list):
             self.values = np.array(self.values, dtype=np.float32)
-        elif isinstance(self.values, np.ndarray):
+        elif isinstance(self.values, np.ndarray) and self.values.dtype != np.float32:
             self.values = self.values.astype(np.float32)
 
     @property
