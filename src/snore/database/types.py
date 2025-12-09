@@ -46,7 +46,6 @@ class ValidatedJSON(TypeDecorator[dict[str, Any]]):
             return None
 
         try:
-            # Validate that value can be serialized to JSON
             return json.dumps(value, ensure_ascii=False)
         except (TypeError, ValueError) as e:
             raise ValueError(

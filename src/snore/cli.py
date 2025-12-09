@@ -153,10 +153,8 @@ def import_data(
     """Import CPAP data from device SD card or directory."""
     data_path = Path(path)
 
-    # Register parsers
     register_all_parsers()
 
-    # Auto-detect all available parsers and data roots
     click.echo(f"📂 Scanning {data_path}...")
     results = parser_registry.detect_all_parsers(data_path)
 
@@ -167,7 +165,6 @@ def import_data(
             click.echo(f"  - {p.manufacturer}: {p.parser_id}")
         return 1
 
-    # Handle multiple data roots (e.g., multiple OSCAR profiles)
     selected_results = []
     if len(results) > 1:
         click.echo(f"\nFound {len(results)} data sources:\n")
@@ -198,15 +195,13 @@ def import_data(
     else:
         selected_results = results
 
-    # Initialize database once before processing any data sources
     init_database(str(Path(db)) if db else None)
 
-    # Clean up any orphaned records from previous incomplete operations
     with session_scope() as session:
         orphaned_count = SessionImporter.cleanup_orphaned_records(session)
         if orphaned_count > 0:
             click.echo(f"⚠️  Cleaned up {orphaned_count} orphaned records from database")
-    # Process each selected data source
+
     total_imported = 0
     total_skipped = 0
     total_failed = 0
@@ -229,17 +224,14 @@ def import_data(
         if meta.get("data_root"):
             click.echo(f"  Data root: {meta['data_root']}")
 
-        # Handle profile if present
         profile_id = None
         if meta.get("profile_name"):
             profile_id = ensure_profile(meta["profile_name"])
             click.echo(f"  Profile: {meta['profile_name']}")
 
-        # Format date parameters for parser
         date_from_str = date_from.strftime("%Y-%m-%d") if date_from else None
         date_to_str = date_to.strftime("%Y-%m-%d") if date_to else None
 
-        # Show filter summary if any filters are active
         if limit or date_from or date_to or sort_by != "filesystem":
             click.echo("\n📋 Import filters:")
             if limit:
@@ -252,7 +244,6 @@ def import_data(
             if date_to:
                 click.echo(f"  • To: {date_to:%Y-%m-%d}")
 
-        # Parse sessions
         click.echo("\n📋 Parsing sessions...")
         try:
             sessions = list(
@@ -280,7 +271,6 @@ def import_data(
 
         click.echo(f"✓ Found {len(sessions)} sessions")
 
-        # Dry-run mode: show what would be imported
         if dry_run:
             click.echo("\n🔍 DRY RUN MODE - No data will be imported\n")
             click.echo(
@@ -291,7 +281,6 @@ def import_data(
             total_duration = 0.0
             total_events = 0
 
-            # Sort sessions by date descending for display
             sorted_sessions = sorted(sessions, key=lambda s: s.start_time, reverse=True)
 
             for unified_session in sorted_sessions:
@@ -302,13 +291,11 @@ def import_data(
                 )
                 total_duration += duration_hours
 
-                # Count events
                 num_events = (
                     len(unified_session.events) if unified_session.events else 0
                 )
                 total_events += num_events
 
-                # Get AHI from statistics if available
                 ahi_str = "N/A"
                 if (
                     hasattr(unified_session, "statistics")
@@ -330,7 +317,6 @@ def import_data(
             click.echo(f"  • Total duration: {total_duration:.1f} hours")
             click.echo(f"  • Total events: {total_events}")
             if sessions:
-                # Calculate actual date range using min/max
                 first_date = min(s.start_time for s in sessions)
                 last_date = max(s.start_time for s in sessions)
                 click.echo(
@@ -340,10 +326,8 @@ def import_data(
                 click.echo("\n✓ Dry run complete. Use without --dry-run to import.")
             continue
 
-        # Create importer with profile_id
         importer = SessionImporter(profile_id=profile_id)
 
-        # Import sessions
         imported = 0
         skipped = 0
         failed = 0
@@ -366,12 +350,10 @@ def import_data(
                         f"Failed to import session {unified_session.device_session_id}: {e}"
                     )
 
-        # Update totals
         total_imported += imported
         total_skipped += skipped
         total_failed += failed
 
-        # Show per-source summary if processing multiple sources
         if len(selected_results) > 1:
             click.echo(f"\n{'=' * 50}")
             click.echo(f"📊 Summary for {source_desc}")
@@ -382,7 +364,6 @@ def import_data(
             if failed > 0:
                 click.echo(f"❌ Failed:   {failed} sessions")
 
-    # Final summary for dry-run mode
     if dry_run and len(selected_results) > 1:
         click.echo(f"\n{'=' * 50}")
         click.echo("📊 Overall Dry Run Summary")
@@ -393,7 +374,6 @@ def import_data(
     elif dry_run:
         return 0
 
-    # Final summary for actual imports
     click.echo(f"\n{'=' * 50}")
     click.echo("📊 Overall Import Summary")
     click.echo(f"{'=' * 50}")
@@ -510,7 +490,6 @@ def list_sessions(
             where_clause += " AND sessions.start_time <= :to_date"
             params["to_date"] = to_date
 
-        # Count total matching sessions
         count_query = f"""
             SELECT COUNT(*) as total
             FROM sessions
@@ -520,7 +499,6 @@ def list_sessions(
         """
         total_sessions = session.execute(text(count_query), params).scalar() or 0
 
-        # Build main query with profile information
         query = f"""
             SELECT
                 sessions.id as session_id,
@@ -536,12 +514,10 @@ def list_sessions(
             ORDER BY sessions.start_time DESC
         """
 
-        # Add limit if specified (0 means no limit)
         if limit > 0:
             query += " LIMIT :limit"
             params["limit"] = limit
 
-        # Execute query
         result = session.execute(text(query), params)
         sessions = result.fetchall()
 
@@ -549,7 +525,6 @@ def list_sessions(
             click.echo("No sessions found")
             return
 
-        # Display sessions
         click.echo(
             f"\n{'Date':<12} {'ID':<6} {'Time':<8} {'Duration':<10} {'Profile':<15} {'Device':<20} {'AHI':<6}"
         )
@@ -567,7 +542,6 @@ def list_sessions(
             device_name = f"{sess.manufacturer} {sess.model}"
             profile_name = sess.profile_name or "N/A"
 
-            # Get AHI from statistics if available
             stats_result = session.execute(
                 text("SELECT ahi FROM statistics WHERE session_id = :session_id"),
                 {"session_id": sess.session_id},
@@ -583,7 +557,6 @@ def list_sessions(
                 f"{ahi:>5}"
             )
 
-        # Show truncation info if results were limited
         displayed_count = len(sessions)
         if limit > 0 and displayed_count < total_sessions:
             click.echo(
@@ -646,7 +619,6 @@ def delete_sessions(
         return 1
 
     with session_scope() as session:
-        # Build query to select sessions
         query = """
             SELECT
                 sessions.id,
@@ -662,9 +634,7 @@ def delete_sessions(
         """
         params: dict[str, Any] = {}
 
-        # Apply filters
         if session_ids:
-            # Parse comma-separated IDs
             try:
                 id_list = [int(sid.strip()) for sid in session_ids.split(",")]
                 query += " AND sessions.id IN :session_ids"
@@ -686,7 +656,6 @@ def delete_sessions(
 
         query += " ORDER BY sessions.start_time DESC"
 
-        # Execute query to get sessions
         if "session_ids" in params:
             result = session.execute(
                 text(query).bindparams(bindparam("session_ids", expanding=True)), params
@@ -699,7 +668,6 @@ def delete_sessions(
             click.echo("⚠️  No sessions found matching the specified criteria")
             return 0
 
-        # Count related data
         session_ids_to_delete = [s.id for s in sessions]
 
         event_count = session.execute(
@@ -723,7 +691,6 @@ def delete_sessions(
             {"session_ids": session_ids_to_delete},
         ).scalar()
 
-        # Display sessions to be deleted
         click.echo(f"\n{'=' * 70}")
         if dry_run:
             click.echo("🔍 DRY RUN MODE - No data will be deleted")
@@ -754,7 +721,6 @@ def delete_sessions(
                 f"{device_name:<25}"
             )
 
-        # Display summary
         click.echo("\n" + "=" * 70)
         click.echo("📊 Deletion Summary")
         click.echo("=" * 70)
@@ -764,19 +730,16 @@ def delete_sessions(
         click.echo(f"Statistics:  {stats_count}")
         click.echo("=" * 70 + "\n")
 
-        # Dry-run mode: exit without deleting
         if dry_run:
             click.echo("✓ Dry run complete. Use without --dry-run to delete.")
             return 0
 
-        # Confirmation prompt (unless --force)
         if not force:
             click.echo("⚠️  WARNING: This action cannot be undone!")
             if not click.confirm("Are you sure you want to delete these sessions?"):
                 click.echo("Deletion cancelled")
                 return 0
 
-        # Perform deletion (CASCADE should handle related data)
         session.execute(
             text("DELETE FROM sessions WHERE id IN :session_ids").bindparams(
                 bindparam("session_ids", expanding=True)
@@ -789,7 +752,6 @@ def delete_sessions(
             f"\n✓ Successfully deleted {len(sessions)} session(s) and related data"
         )
 
-        # Suggest vacuum for large deletions
         if len(sessions) > 10:
             click.echo("\n💡 Tip: Run 'snore db vacuum' to reclaim disk space")
 
@@ -868,9 +830,7 @@ def delete_analysis(
         """
         params: dict[str, Any] = {}
 
-        # Apply filters
         if session_ids:
-            # Parse comma-separated IDs
             try:
                 id_list = [int(sid.strip()) for sid in session_ids.split(",")]
                 query += " AND sessions.id IN :session_ids"
@@ -892,7 +852,6 @@ def delete_analysis(
 
         query += " ORDER BY sessions.start_time DESC"
 
-        # Execute query to get sessions with analysis
         if "session_ids" in params:
             result = session.execute(
                 text(query).bindparams(bindparam("session_ids", expanding=True)), params
@@ -1005,7 +964,6 @@ def delete_analysis(
             click.echo("✓ Dry run complete. Use without --dry-run to delete.")
             return 0
 
-        # Confirmation prompt (unless --force)
         if not force:
             click.echo(
                 "⚠️  WARNING: This will delete analysis results but keep the sessions!"

@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from snore.constants import DEFAULT_DATABASE_PATH
 from snore.database.models import Base
 
-# Global engine and session factory
 _engine = None
 _SessionFactory = None
 _init_lock = threading.Lock()
@@ -99,7 +98,6 @@ def session_scope() -> Generator[Session]:
     Usage:
         with session_scope() as session:
             session.add(obj)
-            # Automatically commits on success, rolls back on error
 
     Yields:
         A database session.

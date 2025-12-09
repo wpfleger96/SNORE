@@ -31,11 +31,9 @@ def main() -> int:
     logger.info(f"Using database: {args.database}")
 
     try:
-        # Initialize database
         init_database(args.database)
         logger.info("Database initialized successfully")
 
-        # Run server
         logger.info("Starting MCP server...")
         server.run()
         return 0

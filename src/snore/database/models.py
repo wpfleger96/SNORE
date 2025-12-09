@@ -33,7 +33,6 @@ class Base(DeclarativeBase):
     pass
 
 
-# Standardized datetime helpers
 def utc_now() -> datetime:
     """Return current UTC timestamp for database defaults."""
     return datetime.now(UTC)
@@ -60,7 +59,6 @@ class Profile(Base):
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
-    # Relationships
     devices = relationship("Device", back_populates="profile")
     days = relationship("Day", back_populates="profile", cascade="all, delete-orphan")
 
@@ -88,7 +86,6 @@ class Device(Base):
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_import: Mapped[datetime | None] = mapped_column(DateTime)
 
-    # Relationships
     profile = relationship("Profile", back_populates="devices")
     sessions = relationship(
         "Session", back_populates="device", cascade="all, delete-orphan"
@@ -118,39 +115,33 @@ class Day(Base):
     session_count: Mapped[int] = mapped_column(Integer, default=0)
     total_therapy_hours: Mapped[float] = mapped_column(Float, default=0.0)
 
-    # Respiratory event counts
     obstructive_apneas: Mapped[int] = mapped_column(Integer, default=0)
     central_apneas: Mapped[int] = mapped_column(Integer, default=0)
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Respiratory indices
     ahi: Mapped[float | None] = mapped_column(Float)
     oai: Mapped[float | None] = mapped_column(Float)
     cai: Mapped[float | None] = mapped_column(Float)
     hi: Mapped[float | None] = mapped_column(Float)
 
-    # Pressure statistics
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)
     pressure_median: Mapped[float | None] = mapped_column(Float)
     pressure_mean: Mapped[float | None] = mapped_column(Float)
     pressure_95th: Mapped[float | None] = mapped_column(Float)
 
-    # Leak statistics
     leak_min: Mapped[float | None] = mapped_column(Float)
     leak_max: Mapped[float | None] = mapped_column(Float)
     leak_median: Mapped[float | None] = mapped_column(Float)
     leak_mean: Mapped[float | None] = mapped_column(Float)
     leak_95th: Mapped[float | None] = mapped_column(Float)
 
-    # Oximetry statistics
     spo2_min: Mapped[float | None] = mapped_column(Float)
     spo2_max: Mapped[float | None] = mapped_column(Float)
     spo2_mean: Mapped[float | None] = mapped_column(Float)
     spo2_avg: Mapped[float | None] = mapped_column(Float)  # Alias for compatibility
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -158,7 +149,6 @@ class Day(Base):
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
-    # Relationships
     profile = relationship("Profile", back_populates="days")
     sessions = relationship("Session", back_populates="day")
 
@@ -193,7 +183,6 @@ class Session(Base):
     has_event_data: Mapped[bool] = mapped_column(Boolean, default=False)
     has_statistics: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Relationships
     device = relationship("Device", back_populates="sessions")
     day = relationship("Day", back_populates="sessions")
     waveforms = relationship(
@@ -245,7 +234,6 @@ class Waveform(Base):
     data_blob: Mapped[bytes] = mapped_column(LargeBinary)
     sample_count: Mapped[int | None] = mapped_column(Integer)
 
-    # Relationships
     session = relationship("Session", back_populates="waveforms")
 
     __table_args__ = (
@@ -272,7 +260,6 @@ class Event(Base):
     spo2_drop: Mapped[float | None] = mapped_column(Float)
     peak_flow_limitation: Mapped[float | None] = mapped_column(Float)
 
-    # Relationships
     session = relationship("Session", back_populates="events")
 
     __table_args__ = (
@@ -294,7 +281,6 @@ class Statistics(Base):
         ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True
     )
 
-    # Respiratory event counts
     obstructive_apneas: Mapped[int] = mapped_column(Integer, default=0)
     central_apneas: Mapped[int] = mapped_column(Integer, default=0)
     mixed_apneas: Mapped[int] = mapped_column(Integer, default=0)
@@ -302,21 +288,18 @@ class Statistics(Base):
     reras: Mapped[int] = mapped_column(Integer, default=0)
     flow_limitations: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Respiratory indices
     ahi: Mapped[float | None] = mapped_column(Float)
     oai: Mapped[float | None] = mapped_column(Float)
     cai: Mapped[float | None] = mapped_column(Float)
     hi: Mapped[float | None] = mapped_column(Float)
     rei: Mapped[float | None] = mapped_column(Float)
 
-    # Pressure statistics
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)
     pressure_median: Mapped[float | None] = mapped_column(Float)
     pressure_mean: Mapped[float | None] = mapped_column(Float)
     pressure_95th: Mapped[float | None] = mapped_column(Float)
 
-    # Leak statistics
     leak_min: Mapped[float | None] = mapped_column(Float)
     leak_max: Mapped[float | None] = mapped_column(Float)
     leak_median: Mapped[float | None] = mapped_column(Float)
@@ -324,22 +307,18 @@ class Statistics(Base):
     leak_95th: Mapped[float | None] = mapped_column(Float)
     leak_percentile_70: Mapped[float | None] = mapped_column(Float)
 
-    # Respiratory rate statistics
     respiratory_rate_min: Mapped[float | None] = mapped_column(Float)
     respiratory_rate_max: Mapped[float | None] = mapped_column(Float)
     respiratory_rate_mean: Mapped[float | None] = mapped_column(Float)
 
-    # Tidal volume statistics
     tidal_volume_min: Mapped[float | None] = mapped_column(Float)
     tidal_volume_max: Mapped[float | None] = mapped_column(Float)
     tidal_volume_mean: Mapped[float | None] = mapped_column(Float)
 
-    # Minute ventilation statistics
     minute_ventilation_min: Mapped[float | None] = mapped_column(Float)
     minute_ventilation_max: Mapped[float | None] = mapped_column(Float)
     minute_ventilation_mean: Mapped[float | None] = mapped_column(Float)
 
-    # Oximetry statistics
     spo2_min: Mapped[float | None] = mapped_column(Float)
     spo2_max: Mapped[float | None] = mapped_column(Float)
     spo2_mean: Mapped[float | None] = mapped_column(Float)
@@ -348,10 +327,8 @@ class Statistics(Base):
     pulse_max: Mapped[float | None] = mapped_column(Float)
     pulse_mean: Mapped[float | None] = mapped_column(Float)
 
-    # Usage
     usage_hours: Mapped[float | None] = mapped_column(Float)
 
-    # Relationships
     session = relationship("Session", back_populates="statistics")
 
     def __repr__(self) -> str:
@@ -370,7 +347,6 @@ class Setting(Base):
     key: Mapped[str] = mapped_column(String)
     value: Mapped[str | None] = mapped_column(String)
 
-    # Relationships
     session = relationship("Session", back_populates="settings")
 
     __table_args__ = (UniqueConstraint("session_id", "key", name="uq_session_key"),)
@@ -414,7 +390,6 @@ class AnalysisResult(Base):
     )  # Version info for reproducibility
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
-    # Relationships
     session = relationship("Session", back_populates="analysis_results")
     detected_patterns = relationship(
         "DetectedPattern", back_populates="analysis", cascade="all, delete-orphan"
@@ -453,7 +428,6 @@ class DetectedPattern(Base):
     )  # Pattern-specific
     notes: Mapped[str | None] = mapped_column(Text)
 
-    # Relationships
     analysis = relationship("AnalysisResult", back_populates="detected_patterns")
 
     def __repr__(self) -> str:
@@ -476,7 +450,6 @@ class AnalysisFeedback(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
-    # Relationships
     analysis = relationship("AnalysisResult", back_populates="feedback")
 
     def __repr__(self) -> str:
