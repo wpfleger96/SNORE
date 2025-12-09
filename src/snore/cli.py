@@ -30,7 +30,6 @@ from snore.constants import (
     EVENT_TYPE_HYPOPNEA,
     EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
-    EVENT_TYPE_RERA,
 )
 from snore.database import models
 from snore.database.importers import SessionImporter
@@ -1398,10 +1397,9 @@ def _analyze_single_session(
             caa_count = machine_event_counts.get(EVENT_TYPE_CLEAR_AIRWAY, 0)
             ma_count = machine_event_counts.get(EVENT_TYPE_MIXED_APNEA, 0)
             h_count = machine_event_counts.get(EVENT_TYPE_HYPOPNEA, 0)
-            re_count = machine_event_counts.get(EVENT_TYPE_RERA, 0)
 
             machine_ahi_count = oa_count + ca_count + caa_count + ma_count + h_count
-            machine_rdi_count = machine_ahi_count + re_count
+            machine_rdi_count = machine_ahi_count
             machine_ahi = machine_ahi_count / result.duration_hours
             machine_rdi = machine_rdi_count / result.duration_hours
 
@@ -1420,8 +1418,6 @@ def _analyze_single_session(
                 click.echo(f"    - Mixed Apneas (MA): {ma_count}")
             if h_count > 0:
                 click.echo(f"    - Hypopneas (H): {h_count}")
-            if re_count > 0:
-                click.echo(f"    - RERAs (RE): {re_count}")
 
         click.echo("\nPROGRAMMATIC ANALYSIS (from flow waveform)")
         click.echo(f"  AHI: {event_timeline['ahi']:.1f} events/hour")
@@ -1436,7 +1432,6 @@ def _analyze_single_session(
             if count > 0:
                 click.echo(f"      • {apnea_type}: {count}")
         click.echo(f"    - Hypopneas: {len(event_timeline['hypopneas'])}")
-        click.echo(f"    - RERAs: {len(event_timeline['reras'])}")
 
         if machine_events and event_timeline["total_events"] != total_machine:
             discrepancy = abs(total_machine - event_timeline["total_events"])

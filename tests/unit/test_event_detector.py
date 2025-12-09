@@ -9,7 +9,6 @@ from snore.analysis.algorithms.breath_segmenter import BreathMetrics
 from snore.analysis.algorithms.event_detector import (
     ApneaEvent,
     HypopneaEvent,
-    RERAEvent,
     RespiratoryEventDetector,
 )
 
@@ -169,33 +168,6 @@ class TestHypopneaDetection:
         assert len(hypopneas) == 0
 
 
-class TestRERADetection:
-    """Test RERA detection functionality."""
-
-    @pytest.fixture
-    def detector(self):
-        return RespiratoryEventDetector(min_event_duration=10.0)
-
-    def test_detect_rera_basic(self, detector):
-        # Create flow with flatness pattern
-        timestamps = np.arange(0, 30, 0.1)
-        # Create flattened flow pattern for middle section
-        flow_values = np.ones(len(timestamps)) * 28.0
-
-        # Make middle section flat (constant high flow = high flatness)
-        mid_start = len(flow_values) // 3
-        mid_end = 2 * len(flow_values) // 3
-        flow_values[mid_start:mid_end] = 27.0  # Very flat
-
-        breaths = create_synthetic_breaths(timestamps, flow_values)
-
-        reras = detector.detect_reras(breaths, flow_data=(timestamps, flow_values))
-
-        # May or may not detect depending on exact flatness calculation
-        # Main goal is to ensure it doesn't crash
-        assert isinstance(reras, list)
-
-
 class TestEventMerging:
     """Test event merging functionality."""
 
@@ -264,28 +236,17 @@ class TestEventTimeline:
             )
         ]
 
-        reras = [
-            RERAEvent(
-                start_time=200.0,
-                end_time=215.0,
-                duration=15.0,
-                flatness_index=0.82,
-                confidence=0.70,
-            )
-        ]
-
         session_duration_hours = 8.0
 
         timeline = detector.create_event_timeline(
-            apneas, hypopneas, reras, session_duration_hours
+            apneas, hypopneas, session_duration_hours
         )
 
-        assert timeline.total_events == 4
+        assert timeline.total_events == 3
         assert len(timeline.apneas) == 2
         assert len(timeline.hypopneas) == 1
-        assert len(timeline.reras) == 1
         assert timeline.ahi == 3.0 / 8.0
-        assert timeline.rdi == 4.0 / 8.0
+        assert timeline.rdi == 3.0 / 8.0  # RDI equals AHI without RERA detection
 
     def test_calculate_ahi_correct(self, detector):
         apneas = [

@@ -576,7 +576,6 @@ def analyze_session(
                 total_events=event_timeline["total_events"],
                 apnea_count=len(event_timeline["apneas"]),
                 hypopnea_count=len(event_timeline["hypopneas"]),
-                rera_count=len(event_timeline["reras"]),
                 csr_detected=result.csr_detection is not None,
                 periodic_breathing_detected=result.periodic_breathing is not None,
                 positional_events_detected=result.positional_analysis is not None,
@@ -637,7 +636,6 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
                     total_events=prog_result["event_timeline"]["total_events"],
                     apnea_count=len(prog_result["event_timeline"]["apneas"]),
                     hypopnea_count=len(prog_result["event_timeline"]["hypopneas"]),
-                    rera_count=len(prog_result["event_timeline"]["reras"]),
                     csr_detected=prog_result["csr_detection"] is not None,
                     periodic_breathing_detected=prog_result["periodic_breathing"]
                     is not None,

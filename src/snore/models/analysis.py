@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 class EventSummary(BaseModel):
     """Summary of a single respiratory event."""
 
-    event_type: str = Field(description="Event type (apnea, hypopnea, rera)")
+    event_type: str = Field(description="Event type (apnea, hypopnea)")
     start_time: float = Field(description="Event start timestamp (seconds)")
     duration: float = Field(description="Event duration (seconds)")
     confidence: float = Field(description="Detection confidence (0-1)")
@@ -37,13 +37,6 @@ class HypopneaSummary(EventSummary):
     has_desaturation: bool = Field(description="Whether event had ≥3% SpO2 drop")
 
 
-class RERASummary(EventSummary):
-    """Detailed RERA (Respiratory Effort Related Arousal) information."""
-
-    flatness_index: float = Field(description="Flow limitation flatness index (0-1)")
-    terminated_by_arousal: bool = Field(description="Whether terminated by arousal")
-
-
 class EventTimeline(BaseModel):
     """Complete respiratory event timeline for a session."""
 
@@ -52,7 +45,6 @@ class EventTimeline(BaseModel):
     total_events: int = Field(description="Total number of respiratory events")
     apneas: list[ApneaSummary] = Field(default_factory=list)
     hypopneas: list[HypopneaSummary] = Field(default_factory=list)
-    reras: list[RERASummary] = Field(default_factory=list)
 
 
 class FlowLimitationSummary(BaseModel):
@@ -122,7 +114,6 @@ class AnalysisSummary(BaseModel):
     total_events: int = Field(description="Total respiratory events")
     apnea_count: int = Field(description="Number of apneas")
     hypopnea_count: int = Field(description="Number of hypopneas")
-    rera_count: int = Field(description="Number of RERAs")
 
     csr_detected: bool = Field(description="Cheyne-Stokes Respiration detected")
     periodic_breathing_detected: bool = Field(description="Periodic breathing detected")

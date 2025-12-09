@@ -332,22 +332,6 @@ class AnalysisService:
                     )
                 )
 
-            for rera in timeline.get("reras", []):
-                patterns.append(
-                    models.DetectedPattern(
-                        analysis_result_id=analysis_id,
-                        pattern_id="RERA",
-                        start_time=datetime.fromtimestamp(rera["start_time"]),
-                        duration=rera["duration"],
-                        confidence=rera["confidence"],
-                        detected_by="programmatic",
-                        metrics_json={
-                            "flatness_index": rera["flatness_index"],
-                            "terminated_by_arousal": rera["terminated_by_arousal"],
-                        },
-                    )
-                )
-
         if result.csr_detection:
             csr = result.csr_detection
             patterns.append(

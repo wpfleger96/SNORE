@@ -324,7 +324,7 @@ CHANNEL_DEFINITIONS: dict[int, ChannelDefinition] = {
         CPAP_RDI,
         "CPAP_RDI",
         "RDI",
-        "Respiratory Disturbance Index (includes RERA)",
+        "Respiratory Disturbance Index",
         ChannelType.DATA,
         "events/hr",
         "#ff8000",
@@ -441,9 +441,6 @@ class EventDetectionConstants:
     HYPOPNEA_MIN_REDUCTION = 0.3
     HYPOPNEA_MAX_REDUCTION = 0.89
 
-    RERA_FLATNESS_THRESHOLD = 0.7
-    RERA_MAX_FLOW_REDUCTION = 0.3
-
     APNEA_EFFORT_HIGH_THRESHOLD = 0.5
     APNEA_EFFORT_LOW_THRESHOLD = 0.1
 
@@ -462,10 +459,6 @@ class EventDetectionConstants:
     HYPOPNEA_IDEAL_MAX_REDUCTION = 0.7
     HYPOPNEA_LONG_DURATION_THRESHOLD = 15.0
     HYPOPNEA_DESATURATION_BONUS = 0.2
-
-    RERA_BASE_CONFIDENCE = 0.5
-    RERA_HIGH_FLATNESS_THRESHOLD = 0.8
-    RERA_HIGH_FLATNESS_BONUS = 0.2
 
     SPECTRAL_MIN_SAMPLES = 50
     BREATHING_FREQ_MIN = 0.1
@@ -716,8 +709,8 @@ AHI_EVENT_TYPES = {
     EVENT_TYPE_UNCLASSIFIED_APNEA,
 }
 
-# Event types that count toward RDI (AHI + RERA)
-RDI_EVENT_TYPES = AHI_EVENT_TYPES | {EVENT_TYPE_RERA}
+# Event types that count toward RDI (same as AHI without RERA detection)
+RDI_EVENT_TYPES = AHI_EVENT_TYPES
 
 # ============================================================================
 # Default Settings

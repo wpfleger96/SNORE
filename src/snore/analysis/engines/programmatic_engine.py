@@ -190,17 +190,11 @@ class ProgrammaticAnalysisEngine:
             breaths, flow_data=(timestamps, flow_values), spo2_signal=spo2_values
         )
 
-        reras = self.event_detector.detect_reras(
-            breaths, flow_data=(timestamps, flow_values)
-        )
-
         event_timeline = self.event_detector.create_event_timeline(
-            apneas, hypopneas, reras, duration_hours
+            apneas, hypopneas, duration_hours
         )
 
-        logger.info(
-            f"Detected {len(apneas)} apneas, {len(hypopneas)} hypopneas, {len(reras)} RERAs"
-        )
+        logger.info(f"Detected {len(apneas)} apneas, {len(hypopneas)} hypopneas")
         logger.info(f"AHI: {event_timeline.ahi:.1f}, RDI: {event_timeline.rdi:.1f}")
 
         breath_timestamps = np.array([b.start_time for b in breaths])
@@ -339,7 +333,6 @@ class ProgrammaticAnalysisEngine:
             lines.append(f"  RDI: {event_timeline.rdi:.1f} events/hour")
             lines.append(f"  Apneas: {len(event_timeline.apneas)}")
             lines.append(f"  Hypopneas: {len(event_timeline.hypopneas)}")
-            lines.append(f"  RERAs: {len(event_timeline.reras)}")
 
         if csr and csr.confidence > AEC.CSR_MIN_CONFIDENCE:
             lines.append("\nCheyne-Stokes Respiration DETECTED")
@@ -406,16 +399,6 @@ class ProgrammaticAnalysisEngine:
                     "has_desaturation": h.has_desaturation,
                 }
                 for h in timeline.hypopneas
-            ],
-            "reras": [
-                {
-                    "start_time": r.start_time,
-                    "duration": r.duration,
-                    "flatness_index": r.flatness_index,
-                    "confidence": r.confidence,
-                    "terminated_by_arousal": r.terminated_by_arousal,
-                }
-                for r in timeline.reras
             ],
         }
 
