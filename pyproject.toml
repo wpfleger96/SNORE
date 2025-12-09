@@ -61,6 +61,7 @@ addopts = "-v --cov=snore --cov-report=term-missing"
 markers = [
     "unit: marks tests as unit tests (run in parallel)",
     "integration: marks tests as integration tests (run sequentially)",
+    "completions: marks tests for shell completion functionality",
 ]
 
 [tool.ruff.lint]

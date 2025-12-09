@@ -65,6 +65,9 @@ def init_database(database_path: str | None = None) -> None:
         def set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
+            cursor.execute("PRAGMA temp_store=MEMORY")
             cursor.close()
 
         _SessionFactory = sessionmaker(bind=_engine)

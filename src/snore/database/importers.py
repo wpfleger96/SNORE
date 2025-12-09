@@ -207,7 +207,7 @@ class SessionImporter:
             db.flush()
 
             if device.profile_id:
-                profile = db.query(models.Profile).get(device.profile_id)
+                profile = db.get(models.Profile, device.profile_id)
                 if profile:
                     day_date = DayManager.get_day_for_session(
                         session_data.start_time, profile
