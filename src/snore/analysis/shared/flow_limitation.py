@@ -8,6 +8,8 @@ normal (Class 1) to severe flow limitation (Class 7).
 
 import logging
 
+from typing import Any
+
 import numpy as np
 
 from snore.analysis.shared.feature_extractors import (
@@ -20,6 +22,8 @@ from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.constants import FlowLimitationConstants as FLC
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["FlowLimitationClassifier", "SessionFlowAnalysis"]
 
 
 class FlowLimitationClassifier:

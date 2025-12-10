@@ -5,6 +5,8 @@ from pathlib import Path
 
 from snore.parsers.types import DataRoot
 
+__all__ = ["DataRootFinder", "DataRoot"]
+
 
 class DataRootFinder:
     """Generic data root discovery for CPAP parsers."""

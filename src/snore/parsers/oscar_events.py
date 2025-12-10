@@ -8,7 +8,6 @@ Format version 10 (current OSCAR version).
 import io
 import struct
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -22,55 +21,6 @@ class OscarEventsParseError(Exception):
     """Exception raised when parsing OSCAR events file fails."""
 
     pass
-    file_type: int
-    machine_id: int
-    session_id: int
-    first_timestamp: int
-    last_timestamp: int
-    compression: int  # 0=none, 1=qCompress
-    machine_type: int
-    data_size: int
-    crc16: int
-
-    # Channel data
-    event_lists: dict[int, list[EventList]] = field(default_factory=dict)
-
-    @property
-    def start_time(self) -> datetime:
-        """Get session start time as datetime."""
-        return datetime.fromtimestamp(self.first_timestamp / 1000.0)
-
-    @property
-    def end_time(self) -> datetime:
-        """Get session end time as datetime."""
-        return datetime.fromtimestamp(self.last_timestamp / 1000.0)
-
-    @property
-    def duration_seconds(self) -> float:
-        """Get session duration in seconds."""
-        return (self.last_timestamp - self.first_timestamp) / 1000.0
-
-    @property
-    def duration_hours(self) -> float:
-        """Get session duration in hours."""
-        return self.duration_seconds / 3600.0
-
-    def get_channel_event_lists(self, channel_id: int) -> list[EventList]:
-        """
-        Get all EventLists for a specific channel.
-
-        Args:
-            channel_id: Channel identifier
-
-        Returns:
-            List of EventLists for the channel
-        """
-        return self.event_lists.get(channel_id, [])
-
-    @property
-    def available_channels(self) -> list[int]:
-        """Get list of channel IDs that have data."""
-        return list(self.event_lists.keys())
 
 
 class OscarEventsParser:
@@ -123,14 +73,13 @@ class OscarEventsParser:
             session_id=header["session_id"],
             first_timestamp=header["first_timestamp"],
             last_timestamp=header["last_timestamp"],
-            compression=header["compression"],
-            machine_type=header["machine_type"],
-            data_size=header["data_size"],
-            crc16=header["crc16"],
         )
 
+        # Store compression info for decompression logic
+        compression = header["compression"]
+
         # Handle compression if present
-        if events.compression == 1:
+        if compression == 1:
             # Read compressed data
             compressed_data = stream.read()
 

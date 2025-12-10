@@ -575,8 +575,9 @@ def analyze_session(
             else:
                 overall_severity = "severe"
 
-            stored_result = analysis_service.get_analysis_result(session_id)
-            analysis_id = stored_result["analysis_id"] if stored_result else None
+            # Note: get_analysis_result now returns AnalysisResult | None (not dict)
+            # For now, we'll just note that analysis_id isn't available from live results
+            analysis_id = None
 
             summary = AnalysisSummary(
                 session_id=result.session_id,
@@ -584,6 +585,7 @@ def analyze_session(
                 timestamp_start=datetime.fromtimestamp(result.timestamp_start),
                 timestamp_end=datetime.fromtimestamp(result.timestamp_end),
                 duration_hours=result.session_duration_hours,
+                mode_name=default_mode,
                 ahi=ahi,
                 rdi=rdi,
                 flow_limitation_index=fli,
@@ -591,9 +593,9 @@ def analyze_session(
                 total_events=total_events,
                 apnea_count=apnea_count,
                 hypopnea_count=hypopnea_count,
-                csr_detected=False,  # Not available in mode-based results
-                periodic_breathing_detected=False,  # Not available in mode-based results
-                positional_events_detected=result.positional_analysis is not None,
+                csr_detected=result.csr_detection is not None,
+                periodic_breathing_detected=result.periodic_breathing is not None,
+                positional_events_detected=False,
                 severity_assessment=overall_severity,
                 processing_time_ms=0,  # Not tracked in mode-based results
             )
@@ -624,58 +626,80 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
     try:
         with session_scope() as session:
             analysis_service = AnalysisService(session)
-            stored = analysis_service.get_analysis_result(session_id)
+            result = analysis_service.get_analysis_result(session_id)
 
-            if not stored:
+            if not result:
                 raise ValueError(
                     f"No analysis found for session {session_id}. Run analyze_session first."
                 )
 
-            prog_result = stored["programmatic_result"]
+            # Get primary mode (prefer "aasm", fallback to first available)
+            primary_mode_name = (
+                "aasm"
+                if "aasm" in result.mode_results
+                else next(iter(result.mode_results))
+            )
+            primary_mode = result.mode_results[primary_mode_name]
+
+            # Convert mode_results dict[str, ModeResult] to dict[str, EventTimeline]
+            # ModeResult and EventTimeline are both Pydantic models with same structure
+            from snore.analysis.shared.types import EventTimeline as SharedEventTimeline
+
+            mode_timelines = {}
+            for mode_name, mode_result in result.mode_results.items():
+                mode_timelines[mode_name] = SharedEventTimeline(
+                    ahi=mode_result.ahi,
+                    rdi=mode_result.rdi,
+                    total_events=len(mode_result.apneas) + len(mode_result.hypopneas),
+                    apneas=mode_result.apneas,
+                    hypopneas=mode_result.hypopneas,
+                )
+
+            fli = result.flow_analysis["fl_index"] if result.flow_analysis else 0.0
 
             return DetailedAnalysisResult(
                 summary=AnalysisSummary(
-                    session_id=session_id,
-                    analysis_id=stored["analysis_id"],
-                    timestamp_start=datetime.fromisoformat(stored["timestamp_start"]),
-                    timestamp_end=datetime.fromisoformat(stored["timestamp_end"]),
-                    duration_hours=(
-                        datetime.fromisoformat(stored["timestamp_end"])
-                        - datetime.fromisoformat(stored["timestamp_start"])
-                    ).total_seconds()
-                    / 3600,
-                    ahi=prog_result["event_timeline"]["ahi"],
-                    rdi=prog_result["event_timeline"]["rdi"],
-                    flow_limitation_index=prog_result["flow_analysis"]["fl_index"],
-                    total_breaths=prog_result["total_breaths"],
-                    total_events=prog_result["event_timeline"]["total_events"],
-                    apnea_count=len(prog_result["event_timeline"]["apneas"]),
-                    hypopnea_count=len(prog_result["event_timeline"]["hypopneas"]),
-                    csr_detected=prog_result["csr_detection"] is not None,
-                    periodic_breathing_detected=prog_result["periodic_breathing"]
-                    is not None,
-                    positional_events_detected=prog_result["positional_analysis"]
-                    is not None,
+                    session_id=result.session_id,
+                    analysis_id=None,
+                    timestamp_start=datetime.fromtimestamp(result.timestamp_start),
+                    timestamp_end=datetime.fromtimestamp(result.timestamp_end),
+                    duration_hours=result.session_duration_hours,
+                    mode_name=primary_mode_name,
+                    ahi=primary_mode.ahi,
+                    rdi=primary_mode.rdi,
+                    flow_limitation_index=fli,
+                    total_breaths=result.total_breaths,
+                    total_events=len(primary_mode.apneas) + len(primary_mode.hypopneas),
+                    apnea_count=len(primary_mode.apneas),
+                    hypopnea_count=len(primary_mode.hypopneas),
+                    csr_detected=result.csr_detection is not None,
+                    periodic_breathing_detected=result.periodic_breathing is not None,
+                    positional_events_detected=False,
                     severity_assessment="",
-                    processing_time_ms=stored["processing_time_ms"],
+                    processing_time_ms=0,
                 ),
-                event_timeline=prog_result["event_timeline"],
+                mode_results=mode_timelines,
                 flow_limitation=FlowLimitationSummary(
-                    flow_limitation_index=prog_result["flow_analysis"]["fl_index"],
-                    total_breaths=prog_result["flow_analysis"]["total_breaths"],
-                    class_distribution=prog_result["flow_analysis"][
-                        "class_distribution"
-                    ],
-                    average_confidence=prog_result["flow_analysis"][
-                        "average_confidence"
-                    ],
+                    flow_limitation_index=fli,
+                    total_breaths=result.flow_analysis["total_breaths"]
+                    if result.flow_analysis
+                    else 0,
+                    class_distribution=result.flow_analysis.get(
+                        "class_distribution", {}
+                    )
+                    if result.flow_analysis
+                    else {},
+                    average_confidence=result.flow_analysis.get(
+                        "average_confidence", 0.0
+                    )
+                    if result.flow_analysis
+                    else 0.0,
                     severity="",
                 ),
-                csr_detection=prog_result["csr_detection"],
-                periodic_breathing=prog_result["periodic_breathing"],
-                positional_analysis=prog_result["positional_analysis"],
-                confidence_scores=prog_result["confidence_summary"],
-                clinical_summary=prog_result["clinical_summary"],
+                csr_detection=None,
+                periodic_breathing=None,
+                confidence_scores={},
+                clinical_summary="",
             )
 
     except ValueError as e:

@@ -416,11 +416,10 @@ class BreathSegmentationConstants:
 
 class EventDetectionConstants:
     """
-    Constants for respiratory event detection (event_detector.py).
+    Constants for respiratory event detection (analysis/modes/detector.py).
 
     ⚠️ IMPORTANT: This is the SINGLE SOURCE OF TRUTH for event detection thresholds.
-    The patterns.py file references these values for consistency.
-    When modifying detection behavior, change values HERE, not in patterns.py.
+    When modifying detection behavior, change values HERE, not in implementation files.
 
     All threshold values are in decimal format (0.7 = 70%, 0.3 = 30%, etc.)
     """
@@ -542,7 +541,7 @@ class FlowLimitationConstants:
 
 
 class AnalysisEngineConstants:
-    """Constants for analysis engine coordination (programmatic_engine.py)."""
+    """Constants for analysis coordination (analysis/service.py)."""
 
     DEFAULT_SAMPLE_RATE = 25.0
 

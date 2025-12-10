@@ -9,24 +9,26 @@ import logging
 import time
 
 from datetime import datetime
-from typing import Any
 
 import numpy as np
 
 from sqlalchemy.orm import Session
 
 from snore.analysis.data.waveform_loader import WaveformLoader
-from snore.analysis.engines.programmatic_engine import (
-    ProgrammaticAnalysisEngine,
-    ProgrammaticAnalysisResult,
-)
 from snore.analysis.events import AnalysisEvent
 from snore.analysis.modes import DEFAULT_MODE, get_mode
-from snore.analysis.modes.types import ModeResult
+from snore.analysis.shared.breath_segmenter import BreathSegmenter
+from snore.analysis.shared.feature_extractors import WaveformFeatureExtractor
+from snore.analysis.shared.flow_limitation import FlowLimitationClassifier
+from snore.analysis.shared.pattern_detector import ComplexPatternDetector
 from snore.analysis.types import AnalysisResult
+from snore.constants import BreathSegmentationConstants as BSC
+from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["AnalysisService", "AnalysisResult"]
 
 
 class AnalysisService:
@@ -45,16 +47,28 @@ class AnalysisService:
         >>> print(f"AHI: {result['event_timeline']['ahi']}")
     """
 
-    def __init__(self, db_session: Session):
+    def __init__(
+        self,
+        db_session: Session,
+        min_breath_duration: float = BSC.MIN_BREATH_DURATION,
+        confidence_threshold: float = FLC.CONFIDENCE_THRESHOLD,
+    ):
         """
         Initialize analysis service.
 
         Args:
             db_session: SQLAlchemy database session
+            min_breath_duration: Minimum breath duration for segmentation (seconds)
+            confidence_threshold: Minimum confidence for reliable findings
         """
         self.db_session = db_session
         self.waveform_loader = WaveformLoader(db_session)
-        self.engine = ProgrammaticAnalysisEngine()
+        self.breath_segmenter = BreathSegmenter(min_breath_duration=min_breath_duration)
+        self.feature_extractor = WaveformFeatureExtractor()
+        self.flow_classifier = FlowLimitationClassifier(
+            confidence_threshold=confidence_threshold
+        )
+        self.pattern_detector = ComplexPatternDetector()
 
     def _load_machine_events(self, session_id: int) -> list[AnalysisEvent]:
         """
@@ -88,89 +102,6 @@ class AnalysisService:
             )
 
         return respiratory_events
-
-    def _debug_compare_events(
-        self,
-        machine_events: list[AnalysisEvent],
-        breaths: list[Any],
-        reductions: np.ndarray,
-        baselines: np.ndarray,
-        session_start_timestamp: float,
-    ) -> None:
-        """
-        Compare machine events against our breath analysis for debugging.
-
-        Args:
-            machine_events: Machine-detected events
-            breaths: List of BreathMetrics objects
-            reductions: Flow reduction array (per breath)
-            baselines: Baseline array (per breath)
-            session_start_timestamp: Unix timestamp of session start (for converting machine event times)
-        """
-        print(f"\n{'=' * 70}")
-        print(
-            f"DEBUG: Comparing {len(machine_events)} machine events against breath analysis"
-        )
-        print(f"{'=' * 70}")
-
-        if breaths:
-            print(
-                f"Breath timestamp range: {breaths[0].start_time:.1f}s - {breaths[-1].end_time:.1f}s"
-            )
-            print(f"Session start timestamp: {session_start_timestamp:.1f}")
-
-        for event in machine_events:
-            event_start_relative = event.start_time - session_start_timestamp
-            event_end_relative = event_start_relative + event.duration
-
-            overlapping = [
-                (i, b)
-                for i, b in enumerate(breaths)
-                if b.end_time >= event_start_relative
-                and b.start_time <= event_end_relative
-            ]
-
-            print(f"\n{'-' * 70}")
-            print(f"Machine Event: {event.event_type}")
-            print(
-                f"  Relative time: {event_start_relative:.1f}s | Duration: {event.duration:.1f}s"
-            )
-            print(f"  Overlapping breaths: {len(overlapping)}")
-
-            if len(overlapping) == 0:
-                print("  WARNING: No breaths found during this event!")
-                continue
-
-            for idx, breath in overlapping:
-                if idx < len(reductions) and idx < len(baselines):
-                    print(
-                        f"    Breath {idx:4d}: "
-                        f"TV={breath.tidal_volume:6.1f}mL | "
-                        f"Amp={breath.amplitude:6.1f} | "
-                        f"Baseline={baselines[idx]:6.1f}mL | "
-                        f"Reduction={reductions[idx] * 100:5.1f}%"
-                    )
-
-            event_reductions = [
-                reductions[idx] for idx, _ in overlapping if idx < len(reductions)
-            ]
-            if event_reductions:
-                avg_reduction = np.mean(event_reductions) * 100
-                print(f"  Average reduction: {avg_reduction:.1f}%")
-                if event.event_type in [
-                    "Central Apnea",
-                    "Obstructive Apnea",
-                    "Clear Airway",
-                ]:
-                    if avg_reduction >= 90:
-                        print("  ✓ Meets apnea threshold (≥90%)")
-                    else:
-                        print(f"  ✗ Below apnea threshold ({avg_reduction:.1f}% < 90%)")
-                elif event.event_type == "Hypopnea":
-                    if 30 <= avg_reduction < 90:
-                        print("  ✓ In hypopnea range (30-89%)")
-                    else:
-                        print(f"  ✗ Outside hypopnea range ({avg_reduction:.1f}%)")
 
     def analyze_session(
         self,
@@ -242,30 +173,64 @@ class AnalysisService:
         except Exception as e:
             logger.info(f"No SpO2 data available: {e}")
 
-        engine_result = self.engine.analyze_session(
-            session_id=session_id,
-            timestamps=timestamps,
-            flow_values=flow_values,
-            sample_rate=sample_rate,
-            spo2_values=spo2_values,
+        # Breath segmentation
+        breaths = self.breath_segmenter.segment_breaths(
+            timestamps, flow_values, sample_rate
         )
-        breaths = engine_result.breaths
-        if breaths is None:
+        logger.info(f"Segmented {len(breaths)} breaths")
+
+        if not breaths:
             raise ValueError(f"No breaths segmented for session {session_id}")
 
+        # Feature extraction for flow limitation analysis
+        breath_features = []
+        for breath in breaths:
+            breath_start_idx = np.searchsorted(timestamps, breath.start_time)
+            breath_end_idx = np.searchsorted(timestamps, breath.end_time)
+
+            breath_flow = flow_values[breath_start_idx:breath_end_idx]
+            insp_flow = breath_flow[breath_flow > 0]
+
+            if len(insp_flow) > 10:
+                shape = self.feature_extractor.extract_shape_features(
+                    insp_flow, sample_rate
+                )
+                peaks = self.feature_extractor.extract_peak_features(
+                    insp_flow, sample_rate
+                )
+                breath_features.append((breath.breath_number, shape, peaks))
+
+        # Flow limitation analysis
+        flow_analysis = self.flow_classifier.analyze_session(breath_features)
+        logger.info(f"Flow limitation index: {flow_analysis.flow_limitation_index:.3f}")
+
+        # Pattern detection
+        tidal_volumes = np.array([b.tidal_volume for b in breaths])
+        breath_timestamps = np.array([b.start_time for b in breaths])
+        respiratory_rates = np.array([b.respiratory_rate_rolling for b in breaths])
+
+        csr_detection = self.pattern_detector.detect_csr(
+            breath_timestamps, tidal_volumes, window_minutes=10.0
+        )
+
+        periodic_breathing = self.pattern_detector.detect_periodic_breathing(
+            breath_timestamps, tidal_volumes, respiratory_rates
+        )
+
+        # Event detection via modes
         mode_results = {}
         for mode_name in modes:
             try:
                 mode = get_mode(mode_name)
-                result = mode.detect_events(
+                mode_result = mode.detect_events(
                     breaths=breaths,
                     flow_data=(timestamps, flow_values),
                     session_duration_hours=session_duration_hours,
                 )
-                mode_results[mode_name] = result
+                mode_results[mode_name] = mode_result
                 logger.info(
-                    f"Mode '{mode_name}': Detected {len(result.apneas)} apneas, "
-                    f"{len(result.hypopneas)} hypopneas, AHI={result.ahi:.1f}"
+                    f"Mode '{mode_name}': Detected {len(mode_result.apneas)} apneas, "
+                    f"{len(mode_result.hypopneas)} hypopneas, AHI={mode_result.ahi:.1f}"
                 )
             except Exception as e:
                 logger.error(f"Failed to run mode '{mode_name}': {e}")
@@ -274,20 +239,25 @@ class AnalysisService:
         processing_time_ms = int((time.time() - start_time) * 1000)
         logger.info(f"Analysis complete in {processing_time_ms}ms")
 
-        # TODO: Implement debug comparison for mode-based events
-        # TODO: Implement storage for mode-based results
-
-        return AnalysisResult(
+        result = AnalysisResult(
             session_id=session_id,
             session_duration_hours=session_duration_hours,
             total_breaths=len(breaths),
             machine_events=machine_events,
             mode_results=mode_results,
-            flow_analysis=engine_result.flow_analysis,
-            positional_analysis=engine_result.positional_analysis,
-            timestamp_start=timestamps[0] if len(timestamps) > 0 else 0.0,
-            timestamp_end=timestamps[-1] if len(timestamps) > 0 else 0.0,
+            flow_analysis=flow_analysis.model_dump(),
+            csr_detection=csr_detection.model_dump() if csr_detection else None,
+            periodic_breathing=periodic_breathing.model_dump()
+            if periodic_breathing
+            else None,
+            timestamp_start=float(timestamps[0]) if len(timestamps) > 0 else 0.0,
+            timestamp_end=float(timestamps[-1]) if len(timestamps) > 0 else 0.0,
         )
+
+        if store_results:
+            self._store_result(result, processing_time_ms)
+
+        return result
 
     def analyze_sessions(
         self,
@@ -321,7 +291,7 @@ class AnalysisService:
 
         return results
 
-    def get_analysis_result(self, session_id: int) -> dict[str, Any] | None:
+    def get_analysis_result(self, session_id: int) -> AnalysisResult | None:
         """
         Retrieve stored analysis result for a session.
 
@@ -329,7 +299,7 @@ class AnalysisService:
             session_id: Database session ID
 
         Returns:
-            Analysis result dictionary or None if not found
+            AnalysisResult dataclass or None if not found
         """
         analysis = (
             self.db_session.query(models.AnalysisResult)
@@ -341,163 +311,33 @@ class AnalysisService:
         if not analysis:
             return None
 
-        return {
-            "analysis_id": analysis.id,
-            "session_id": analysis.session_id,
-            "timestamp_start": analysis.timestamp_start.isoformat(),
-            "timestamp_end": analysis.timestamp_end.isoformat(),
-            "programmatic_result": analysis.programmatic_result_json,
-            "processing_time_ms": analysis.processing_time_ms,
-            "created_at": analysis.created_at.isoformat(),
-        }
+        return AnalysisResult.model_validate(analysis.programmatic_result_json)
 
-    def _store_analysis_result(
-        self,
-        session_id: int,
-        result: ProgrammaticAnalysisResult,
-        processing_time_ms: int,
-        machine_events: list[AnalysisEvent],
-    ) -> None:
+    def _store_result(self, result: AnalysisResult, processing_time_ms: int) -> int:
         """
-        Store analysis result in database.
+        Store analysis result to database.
 
         Args:
-            session_id: Database session ID
-            result: Analysis result from engine
+            result: Analysis result to store
             processing_time_ms: Processing time in milliseconds
-            machine_events: Machine-flagged events from device
+
+        Returns:
+            Database analysis result ID
         """
-        timestamp_start = datetime.fromtimestamp(result.timestamp_start)
-        timestamp_end = datetime.fromtimestamp(result.timestamp_end)
-
-        machine_events_json = [
-            {
-                "event_type": event.event_type,
-                "start_time": event.start_time,
-                "duration": event.duration,
-                "source": event.source,
-            }
-            for event in machine_events
-        ]
-
-        programmatic_json = {
-            "flow_analysis": result.flow_analysis,
-            "event_timeline": result.event_timeline,
-            "csr_detection": result.csr_detection,
-            "periodic_breathing": result.periodic_breathing,
-            "positional_analysis": result.positional_analysis,
-            "total_breaths": result.total_breaths,
-            "confidence_summary": result.confidence_summary,
-            "clinical_summary": result.clinical_summary,
-            "machine_events": machine_events_json,
-        }
-
         analysis = models.AnalysisResult(
-            session_id=session_id,
-            timestamp_start=timestamp_start,
-            timestamp_end=timestamp_end,
-            programmatic_result_json=programmatic_json,
+            session_id=result.session_id,
+            timestamp_start=datetime.fromtimestamp(result.timestamp_start),
+            timestamp_end=datetime.fromtimestamp(result.timestamp_end),
+            programmatic_result_json=result.model_dump(),
             processing_time_ms=processing_time_ms,
             engine_versions_json={
-                "programmatic_engine": "1.0.0",
-                "phase": "4",
+                "format_version": 2,
+                "modes": list(result.mode_results.keys()),
             },
         )
 
         self.db_session.add(analysis)
         self.db_session.commit()
 
-        self._store_detected_patterns(analysis.id, result)
-
         logger.info(f"Stored analysis result with ID {analysis.id}")
-
-    def _store_detected_patterns(
-        self, analysis_id: int, result: ProgrammaticAnalysisResult
-    ) -> None:
-        """
-        Store individual detected patterns/events.
-
-        Args:
-            analysis_id: Database analysis result ID
-            result: Analysis result containing patterns
-        """
-        patterns = []
-
-        if result.event_timeline:
-            timeline = result.event_timeline
-
-            for apnea in timeline.get("apneas", []):
-                patterns.append(
-                    models.DetectedPattern(
-                        analysis_result_id=analysis_id,
-                        pattern_id=f"APNEA_{apnea['event_type']}",
-                        start_time=datetime.fromtimestamp(apnea["start_time"]),
-                        duration=apnea["duration"],
-                        confidence=apnea["confidence"],
-                        detected_by="programmatic",
-                        metrics_json={
-                            "event_type": apnea["event_type"],
-                            "flow_reduction": apnea["flow_reduction"],
-                            "baseline_flow": apnea["baseline_flow"],
-                        },
-                    )
-                )
-
-            for hypopnea in timeline.get("hypopneas", []):
-                patterns.append(
-                    models.DetectedPattern(
-                        analysis_result_id=analysis_id,
-                        pattern_id="HYPOPNEA",
-                        start_time=datetime.fromtimestamp(hypopnea["start_time"]),
-                        duration=hypopnea["duration"],
-                        confidence=hypopnea["confidence"],
-                        detected_by="programmatic",
-                        metrics_json={
-                            "flow_reduction": hypopnea["flow_reduction"],
-                            "has_arousal": hypopnea["has_arousal"],
-                            "has_desaturation": hypopnea["has_desaturation"],
-                        },
-                    )
-                )
-
-        if result.csr_detection:
-            csr = result.csr_detection
-            patterns.append(
-                models.DetectedPattern(
-                    analysis_result_id=analysis_id,
-                    pattern_id="CSR",
-                    start_time=datetime.fromtimestamp(csr["start_time"]),
-                    duration=csr["end_time"] - csr["start_time"],
-                    confidence=csr["confidence"],
-                    detected_by="programmatic",
-                    metrics_json={
-                        "cycle_length": csr["cycle_length"],
-                        "amplitude_variation": csr["amplitude_variation"],
-                        "csr_index": csr["csr_index"],
-                        "cycle_count": csr["cycle_count"],
-                    },
-                )
-            )
-
-        if result.periodic_breathing:
-            periodic = result.periodic_breathing
-            patterns.append(
-                models.DetectedPattern(
-                    analysis_result_id=analysis_id,
-                    pattern_id="PERIODIC_BREATHING",
-                    start_time=datetime.fromtimestamp(periodic["start_time"]),
-                    duration=periodic["end_time"] - periodic["start_time"],
-                    confidence=periodic["confidence"],
-                    detected_by="programmatic",
-                    metrics_json={
-                        "cycle_length": periodic["cycle_length"],
-                        "regularity_score": periodic["regularity_score"],
-                        "has_apneas": periodic["has_apneas"],
-                    },
-                )
-            )
-
-        if patterns:
-            self.db_session.bulk_save_objects(patterns)
-            self.db_session.commit()
-            logger.info(f"Stored {len(patterns)} detected patterns")
+        return analysis.id

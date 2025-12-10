@@ -1,27 +1,28 @@
 """Parser type definitions."""
 
-from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # Parser Metadata Types
 # ============================================================================
 
 
-@dataclass
-class ParserMetadata:
+class ParserMetadata(BaseModel):
     """Metadata about a parser implementation."""
 
-    parser_id: str  # Unique identifier (e.g., "resmed_edf")
-    parser_version: str  # Version of this parser implementation
-    manufacturer: str  # Device manufacturer name
-    supported_formats: list[str]  # File formats this parser handles
-    supported_models: list[str]  # Device models supported
-    description: str  # Human-readable description
-    requires_libraries: list[str] | None = None  # External dependencies
+    parser_id: str = Field(description="Unique parser identifier")
+    parser_version: str = Field(description="Parser version")
+    manufacturer: str = Field(description="Device manufacturer")
+    supported_formats: list[str] = Field(description="Supported file formats")
+    supported_models: list[str] = Field(description="Supported device models")
+    description: str = Field(description="Parser description")
+    requires_libraries: list[str] | None = Field(
+        None, description="External library dependencies"
+    )
 
 
 # ============================================================================
@@ -29,15 +30,18 @@ class ParserMetadata:
 # ============================================================================
 
 
-@dataclass
-class DataRoot:
+class DataRoot(BaseModel):
     """Information about a discovered CPAP data root."""
 
-    path: Path
-    structure_type: Literal["raw_sd", "oscar_profile"]
-    profile_name: str | None
-    device_serial: str | None
-    confidence: float
+    path: Path = Field(description="Root directory path")
+    structure_type: Literal["raw_sd", "oscar_profile"] = Field(
+        description="Data structure type"
+    )
+    profile_name: str | None = Field(
+        default=None, description="Profile name if applicable"
+    )
+    device_serial: str | None = Field(default=None, description="Device serial number")
+    confidence: float = Field(ge=0, le=1, description="Discovery confidence")
 
 
 # ============================================================================
@@ -52,8 +56,7 @@ class EventListType(IntEnum):
     EVENT = 1  # Discrete events
 
 
-@dataclass
-class EventList:
+class EventList(BaseModel):
     """
     A single EventList containing waveform or event data.
 
@@ -61,31 +64,29 @@ class EventList:
     or discrete event data (apneas, etc.) for a single channel.
     """
 
-    channel_id: int
-    first_timestamp: int  # milliseconds since epoch
-    last_timestamp: int
-    count: int
-    event_type: EventListType
-    sample_rate: float  # Events per second for waveforms
-    gain: float  # Multiplier to convert stored -> actual values
-    offset: float
-    min_value: float
-    max_value: float
-    dimension: str  # Units (e.g., "cmH2O", "L/min")
-    has_second_field: bool = False
-    min_value2: float = 0.0
-    max_value2: float = 0.0
+    channel_id: int = Field(description="Channel ID")
+    first_timestamp: int = Field(description="First timestamp (ms since epoch)")
+    last_timestamp: int = Field(description="Last timestamp (ms since epoch)")
+    count: int = Field(ge=0, description="Data point count")
+    event_type: EventListType = Field(description="Waveform or event data")
+    sample_rate: float = Field(ge=0, description="Sample rate (Hz)")
+    gain: float = Field(description="Value conversion multiplier")
+    offset: float = Field(description="Value conversion offset")
+    min_value: float = Field(description="Minimum value")
+    max_value: float = Field(description="Maximum value")
+    dimension: str = Field(description="Units (e.g., 'cmH2O', 'L/min')")
+    has_second_field: bool = Field(
+        default=False, description="Has secondary data field"
+    )
+    min_value2: float = Field(default=0.0, description="Min value for field 2")
+    max_value2: float = Field(default=0.0, description="Max value for field 2")
 
     # Data arrays
-    data: list[int] = field(
-        default_factory=list
-    )  # Primary data (EventStoreType = int16)
-    data2: list[int] = field(
-        default_factory=list
-    )  # Secondary data (if has_second_field)
-    time_deltas: list[int] = field(
-        default_factory=list
-    )  # Time offsets in ms (for events)
+    data: list[int] = Field(default_factory=list, description="Primary data (int16)")
+    data2: list[int] = Field(default_factory=list, description="Secondary data")
+    time_deltas: list[int] = Field(
+        default_factory=list, description="Time offsets (ms)"
+    )
 
     def get_actual_values(self) -> list[float]:
         """
@@ -136,8 +137,7 @@ class EventList:
         return (self.last_timestamp - self.first_timestamp) / 1000.0
 
 
-@dataclass
-class SessionEvents:
+class SessionEvents(BaseModel):
     """
     Complete event/waveform data for a session from .001 file.
 
@@ -145,16 +145,18 @@ class SessionEvents:
     """
 
     # Header fields
-    magic: int
-    version: int
-    file_type: int
-    machine_id: int
-    session_id: int
-    first_timestamp: int
-    last_timestamp: int
+    magic: int = Field(description="File magic number")
+    version: int = Field(description="File format version")
+    file_type: int = Field(description="File type identifier")
+    machine_id: int = Field(description="Machine ID")
+    session_id: int = Field(description="Session ID")
+    first_timestamp: int = Field(description="First timestamp (ms)")
+    last_timestamp: int = Field(description="Last timestamp (ms)")
 
-    # EventLists keyed by channel ID
-    event_lists: dict[int, EventList] = field(default_factory=dict)
+    # EventLists keyed by channel ID (each channel can have multiple EventLists)
+    event_lists: dict[int, list[EventList]] = Field(
+        default_factory=dict, description="EventLists by channel ID"
+    )
 
 
 # ============================================================================
@@ -162,8 +164,7 @@ class SessionEvents:
 # ============================================================================
 
 
-@dataclass
-class SessionSummary:
+class SessionSummary(BaseModel):
     """
     Session summary data from .000 file.
 
@@ -171,38 +172,74 @@ class SessionSummary:
     """
 
     # Header fields
-    magic: int
-    version: int
-    file_type: int
-    machine_id: int
-    session_id: int
-    first_timestamp: int  # milliseconds since epoch
-    last_timestamp: int  # milliseconds since epoch
+    magic: int = Field(description="File magic number")
+    version: int = Field(description="File format version")
+    file_type: int = Field(description="File type identifier")
+    machine_id: int = Field(description="Machine ID")
+    session_id: int = Field(description="Session ID")
+    first_timestamp: int = Field(description="First timestamp (ms since epoch)")
+    last_timestamp: int = Field(description="Last timestamp (ms since epoch)")
 
     # Session data
-    settings: dict[int, Any] = field(default_factory=dict)
-    counts: dict[int, float] = field(default_factory=dict)
-    sums: dict[int, float] = field(default_factory=dict)
-    averages: dict[int, float] = field(default_factory=dict)
-    weighted_averages: dict[int, float] = field(default_factory=dict)
-    minimums: dict[int, float] = field(default_factory=dict)
-    maximums: dict[int, float] = field(default_factory=dict)
-    physical_minimums: dict[int, float] = field(default_factory=dict)
-    physical_maximums: dict[int, float] = field(default_factory=dict)
-    counts_per_hour: dict[int, float] = field(default_factory=dict)
-    sums_per_hour: dict[int, float] = field(default_factory=dict)
-    first_channel_time: dict[int, int] = field(default_factory=dict)
-    last_channel_time: dict[int, int] = field(default_factory=dict)
-    value_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
-    time_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
-    gains: dict[int, float] = field(default_factory=dict)
-    available_channels: list[int] = field(default_factory=list)
+    settings: dict[int, Any] = Field(
+        default_factory=dict, description="Device settings"
+    )
+    counts: dict[int, float] = Field(default_factory=dict, description="Event counts")
+    sums: dict[int, float] = Field(default_factory=dict, description="Summed values")
+    averages: dict[int, float] = Field(
+        default_factory=dict, description="Average values"
+    )
+    weighted_averages: dict[int, float] = Field(
+        default_factory=dict, description="Weighted averages"
+    )
+    minimums: dict[int, float] = Field(
+        default_factory=dict, description="Minimum values"
+    )
+    maximums: dict[int, float] = Field(
+        default_factory=dict, description="Maximum values"
+    )
+    physical_minimums: dict[int, float] = Field(
+        default_factory=dict, description="Physical minimums"
+    )
+    physical_maximums: dict[int, float] = Field(
+        default_factory=dict, description="Physical maximums"
+    )
+    counts_per_hour: dict[int, float] = Field(
+        default_factory=dict, description="Event counts per hour"
+    )
+    sums_per_hour: dict[int, float] = Field(
+        default_factory=dict, description="Summed values per hour"
+    )
+    first_channel_time: dict[int, int] = Field(
+        default_factory=dict, description="First timestamp by channel"
+    )
+    last_channel_time: dict[int, int] = Field(
+        default_factory=dict, description="Last timestamp by channel"
+    )
+    value_summaries: dict[int, dict[int, int]] = Field(
+        default_factory=dict, description="Value distribution summaries"
+    )
+    time_summaries: dict[int, dict[int, int]] = Field(
+        default_factory=dict, description="Time distribution summaries"
+    )
+    gains: dict[int, float] = Field(default_factory=dict, description="Channel gains")
+    available_channels: list[int] = Field(
+        default_factory=list, description="Available channel IDs"
+    )
 
     # Additional fields
-    time_above_threshold: dict[int, int] = field(default_factory=dict)
-    upper_threshold: dict[int, float] = field(default_factory=dict)
-    time_below_threshold: dict[int, int] = field(default_factory=dict)
-    lower_threshold: dict[int, float] = field(default_factory=dict)
+    time_above_threshold: dict[int, int] = Field(
+        default_factory=dict, description="Time above threshold"
+    )
+    upper_threshold: dict[int, float] = Field(
+        default_factory=dict, description="Upper threshold values"
+    )
+    time_below_threshold: dict[int, int] = Field(
+        default_factory=dict, description="Time below threshold"
+    )
+    lower_threshold: dict[int, float] = Field(
+        default_factory=dict, description="Lower threshold values"
+    )
 
-    summary_only: bool = False
-    no_settings: bool = False
+    summary_only: bool = Field(default=False, description="Summary-only flag")
+    no_settings: bool = Field(default=False, description="No settings flag")

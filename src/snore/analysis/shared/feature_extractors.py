@@ -22,6 +22,14 @@ from snore.analysis.shared.types import (
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "WaveformFeatureExtractor",
+    "ShapeFeatures",
+    "PeakFeatures",
+    "StatisticalFeatures",
+    "SpectralFeatures",
+]
+
 
 class WaveformFeatureExtractor:
     """
@@ -109,11 +117,25 @@ class WaveformFeatureExtractor:
             ...     print("Flattened waveform detected")
         """
         if len(waveform) == 0:
-            return ShapeFeatures(0, 0, 0, 0, 0, 0)
+            return ShapeFeatures(
+                flatness_index=0,
+                plateau_duration=0,
+                symmetry_score=0,
+                kurtosis=0,
+                rise_time=0,
+                fall_time=0,
+            )
 
         peak_flow = np.max(waveform)
         if peak_flow <= 0:
-            return ShapeFeatures(0, 0, 0, 0, 0, 0)
+            return ShapeFeatures(
+                flatness_index=0,
+                plateau_duration=0,
+                symmetry_score=0,
+                kurtosis=0,
+                rise_time=0,
+                fall_time=0,
+            )
 
         # Flatness index: ratio of time spent >80% of peak
         flatness_threshold_value = self.flatness_threshold * peak_flow
@@ -268,11 +290,21 @@ class WaveformFeatureExtractor:
             ...     print("Double peak pattern detected (Class 2)")
         """
         if len(waveform) == 0:
-            return PeakFeatures(0, [], [], [])
+            return PeakFeatures(
+                peak_count=0,
+                peak_positions=[],
+                peak_prominences=[],
+                inter_peak_intervals=[],
+            )
 
         peak_flow = np.max(waveform)
         if peak_flow <= 0:
-            return PeakFeatures(0, [], [], [])
+            return PeakFeatures(
+                peak_count=0,
+                peak_positions=[],
+                peak_prominences=[],
+                inter_peak_intervals=[],
+            )
 
         # Find peaks with prominence threshold
         min_prominence = self.peak_prominence_threshold * peak_flow
@@ -319,7 +351,17 @@ class WaveformFeatureExtractor:
             >>> print(f"Mean: {stats.mean:.2f}, StdDev: {stats.std_dev:.2f}")
         """
         if len(waveform) == 0:
-            return StatisticalFeatures(0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return StatisticalFeatures(
+                mean=0,
+                median=0,
+                std_dev=0,
+                percentile_25=0,
+                percentile_50=0,
+                percentile_75=0,
+                percentile_95=0,
+                coefficient_of_variation=0,
+                zero_crossing_rate=0,
+            )
 
         mean_val = np.mean(waveform)
         median_val = np.median(waveform)
@@ -374,7 +416,11 @@ class WaveformFeatureExtractor:
             >>> print(f"Dominant frequency: {spectral.dominant_frequency:.3f} Hz")
         """
         if len(waveform) < 4:
-            return SpectralFeatures(0.0, 0.0, np.array([]))
+            return SpectralFeatures(
+                dominant_frequency=0.0,
+                spectral_entropy=0.0,
+                power_spectral_density=np.array([]),
+            )
 
         # Compute power spectral density using Welch's method
         frequencies, psd = signal.welch(

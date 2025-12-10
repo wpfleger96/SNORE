@@ -5,12 +5,12 @@ Tests rule-based classification of breaths into 7 flow limitation classes,
 confidence scoring, and session-level flow limitation index calculation.
 """
 
-from snore.analysis.algorithms.feature_extractors import (
+from snore.analysis.shared.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     WaveformFeatureExtractor,
 )
-from snore.analysis.algorithms.flow_limitation import (
+from snore.analysis.shared.flow_limitation import (
     FlowLimitationClassifier,
     FlowPattern,
 )
@@ -476,13 +476,37 @@ class TestSessionAnalysis:
         breath_features = []
 
         for i in range(3):
-            shape = ShapeFeatures(0.2, 0.1, 0.0, 3.0, 0.3, 0.3)
-            peaks = PeakFeatures(1, [0.5], [0.9], [])
+            shape = ShapeFeatures(
+                flatness_index=0.2,
+                plateau_duration=0.1,
+                symmetry_score=0.0,
+                kurtosis=3.0,
+                rise_time=0.3,
+                fall_time=0.3,
+            )
+            peaks = PeakFeatures(
+                peak_count=1,
+                peak_positions=[0.5],
+                peak_prominences=[0.9],
+                inter_peak_intervals=[],
+            )
             breath_features.append((i, shape, peaks))
 
         for i in range(3, 6):
-            shape = ShapeFeatures(0.95, 0.9, 0.0, 0.5, 0.1, 0.1)
-            peaks = PeakFeatures(0, [], [], [])
+            shape = ShapeFeatures(
+                flatness_index=0.95,
+                plateau_duration=0.9,
+                symmetry_score=0.0,
+                kurtosis=0.5,
+                rise_time=0.1,
+                fall_time=0.1,
+            )
+            peaks = PeakFeatures(
+                peak_count=0,
+                peak_positions=[],
+                peak_prominences=[],
+                inter_peak_intervals=[],
+            )
             breath_features.append((i, shape, peaks))
 
         analysis = classifier.analyze_session(breath_features)

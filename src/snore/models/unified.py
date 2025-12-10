@@ -9,12 +9,13 @@ Key Principle: The MCP server, database layer, and analysis tools only work with
 these unified structures - they never see parser-specific formats.
 """
 
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from uuid import UUID, uuid4
 
 import numpy as np
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RespiratoryEventType(Enum):
@@ -60,130 +61,151 @@ class TherapyMode(Enum):
     ASV = "ASV"  # Adaptive servo-ventilation
 
 
-@dataclass
-class DeviceInfo:
+class DeviceInfo(BaseModel):
     """Universal device information - same structure for all manufacturers."""
 
-    manufacturer: str  # "ResMed", "Philips", etc.
-    model: str  # "AirSense 11 AutoSet"
-    serial_number: str  # Device serial number
+    manufacturer: str = Field(description="Manufacturer (e.g., 'ResMed', 'Philips')")
+    model: str = Field(description="Device model")
+    serial_number: str = Field(description="Device serial number")
 
     # Optional fields
-    firmware_version: str | None = None
-    hardware_version: str | None = None
-    product_code: str | None = None
-    manufacturing_date: datetime | None = None
+    firmware_version: str | None = Field(default=None, description="Firmware version")
+    hardware_version: str | None = Field(default=None, description="Hardware version")
+    product_code: str | None = Field(default=None, description="Product code")
+    manufacturing_date: datetime | None = Field(
+        default=None, description="Manufacturing date"
+    )
 
 
-@dataclass
-class TherapySettings:
+class TherapySettings(BaseModel):
     """Universal therapy settings across all devices."""
 
-    mode: TherapyMode
+    mode: TherapyMode = Field(description="Therapy mode")
 
     # Pressure settings (in cmH2O)
-    pressure_min: float | None = None
-    pressure_max: float | None = None
-    pressure_fixed: float | None = None  # For CPAP mode
+    pressure_min: float | None = Field(default=None, description="Minimum pressure")
+    pressure_max: float | None = Field(default=None, description="Maximum pressure")
+    pressure_fixed: float | None = Field(
+        default=None, description="Fixed pressure (CPAP mode)"
+    )
 
     # BiPAP settings
-    ipap: float | None = None  # Inspiratory pressure
-    epap: float | None = None  # Expiratory pressure
-    ps: float | None = None  # Pressure support (IPAP - EPAP)
+    ipap: float | None = Field(default=None, description="Inspiratory pressure")
+    epap: float | None = Field(default=None, description="Expiratory pressure")
+    ps: float | None = Field(default=None, description="Pressure support (IPAP - EPAP)")
 
     # Comfort settings
-    epr_level: int | None = None  # Expiratory pressure relief (0-3)
-    ramp_time: int | None = None  # Minutes
-    ramp_start_pressure: float | None = None
+    epr_level: int | None = Field(
+        default=None, ge=0, le=3, description="EPR level (0-3)"
+    )
+    ramp_time: int | None = Field(default=None, ge=0, description="Ramp time (minutes)")
+    ramp_start_pressure: float | None = Field(
+        default=None, description="Ramp start pressure"
+    )
 
     # Humidifier
-    humidity_level: int | None = None  # 0-8 or device-specific scale
-    tube_temp: float | None = None  # Celsius
+    humidity_level: int | None = Field(default=None, description="Humidity level")
+    tube_temp: float | None = Field(default=None, description="Tube temperature (°C)")
 
     # Mask settings
-    mask_type: str | None = None  # "Full Face", "Nasal", etc.
+    mask_type: str | None = Field(default=None, description="Mask type")
 
     # Other settings stored as key-value pairs
-    other_settings: dict[str, str] = field(default_factory=dict)
+    other_settings: dict[str, str] = Field(
+        default_factory=dict, description="Other settings"
+    )
 
 
-@dataclass
-class SessionStatistics:
+class SessionStatistics(BaseModel):
     """Universal session statistics."""
 
     # Event counts
-    obstructive_apneas: int = 0
-    central_apneas: int = 0
-    mixed_apneas: int = 0
-    hypopneas: int = 0
-    reras: int = 0
-    flow_limitations: int = 0
+    obstructive_apneas: int = Field(default=0, ge=0, description="OA count")
+    central_apneas: int = Field(default=0, ge=0, description="CA count")
+    mixed_apneas: int = Field(default=0, ge=0, description="MA count")
+    hypopneas: int = Field(default=0, ge=0, description="Hypopnea count")
+    reras: int = Field(default=0, ge=0, description="RERA count")
+    flow_limitations: int = Field(default=0, ge=0, description="FL count")
 
     # Indices (events per hour)
-    ahi: float | None = None  # Apnea-Hypopnea Index
-    oai: float | None = None  # Obstructive Apnea Index
-    cai: float | None = None  # Central Apnea Index
-    hi: float | None = None  # Hypopnea Index
-    rei: float | None = None  # Respiratory Event Index
+    ahi: float | None = Field(default=None, ge=0, description="Apnea-Hypopnea Index")
+    oai: float | None = Field(default=None, ge=0, description="Obstructive Apnea Index")
+    cai: float | None = Field(default=None, ge=0, description="Central Apnea Index")
+    hi: float | None = Field(default=None, ge=0, description="Hypopnea Index")
+    rei: float | None = Field(default=None, ge=0, description="Respiratory Event Index")
 
     # Pressure statistics (cmH2O)
-    pressure_min: float | None = None
-    pressure_max: float | None = None
-    pressure_median: float | None = None
-    pressure_mean: float | None = None
-    pressure_95th: float | None = None
+    pressure_min: float | None = Field(default=None, description="Minimum pressure")
+    pressure_max: float | None = Field(default=None, description="Maximum pressure")
+    pressure_median: float | None = Field(default=None, description="Median pressure")
+    pressure_mean: float | None = Field(default=None, description="Mean pressure")
+    pressure_95th: float | None = Field(
+        default=None, description="95th percentile pressure"
+    )
 
     # Leak statistics (L/min)
-    leak_min: float | None = None
-    leak_max: float | None = None
-    leak_median: float | None = None
-    leak_mean: float | None = None
-    leak_95th: float | None = None
-    leak_percentile_70: float | None = None  # Some devices use 70th percentile
+    leak_min: float | None = Field(default=None, description="Minimum leak")
+    leak_max: float | None = Field(default=None, description="Maximum leak")
+    leak_median: float | None = Field(default=None, description="Median leak")
+    leak_mean: float | None = Field(default=None, description="Mean leak")
+    leak_95th: float | None = Field(default=None, description="95th percentile leak")
+    leak_percentile_70: float | None = Field(
+        default=None, description="70th percentile leak"
+    )
 
     # Respiratory statistics
-    respiratory_rate_min: float | None = None
-    respiratory_rate_max: float | None = None
-    respiratory_rate_mean: float | None = None
+    respiratory_rate_min: float | None = Field(default=None, description="Min RR")
+    respiratory_rate_max: float | None = Field(default=None, description="Max RR")
+    respiratory_rate_mean: float | None = Field(default=None, description="Mean RR")
 
-    tidal_volume_min: float | None = None  # mL
-    tidal_volume_max: float | None = None
-    tidal_volume_mean: float | None = None
+    tidal_volume_min: float | None = Field(
+        default=None, description="Min tidal volume (mL)"
+    )
+    tidal_volume_max: float | None = Field(default=None, description="Max tidal volume")
+    tidal_volume_mean: float | None = Field(
+        default=None, description="Mean tidal volume"
+    )
 
-    minute_ventilation_min: float | None = None  # L/min
-    minute_ventilation_max: float | None = None
-    minute_ventilation_mean: float | None = None
+    minute_ventilation_min: float | None = Field(
+        default=None, description="Min MV (L/min)"
+    )
+    minute_ventilation_max: float | None = Field(default=None, description="Max MV")
+    minute_ventilation_mean: float | None = Field(default=None, description="Mean MV")
 
     # SpO2 statistics (if oximetry available)
-    spo2_min: float | None = None
-    spo2_max: float | None = None
-    spo2_mean: float | None = None
-    spo2_time_below_90: int | None = None  # Seconds
+    spo2_min: float | None = Field(default=None, description="Min SpO2 (%)")
+    spo2_max: float | None = Field(default=None, description="Max SpO2")
+    spo2_mean: float | None = Field(default=None, description="Mean SpO2")
+    spo2_time_below_90: int | None = Field(
+        default=None, description="Time below 90% (seconds)"
+    )
 
-    pulse_min: float | None = None  # BPM
-    pulse_max: float | None = None
-    pulse_mean: float | None = None
+    pulse_min: float | None = Field(default=None, description="Min pulse (BPM)")
+    pulse_max: float | None = Field(default=None, description="Max pulse")
+    pulse_mean: float | None = Field(default=None, description="Mean pulse")
 
     # Usage
-    usage_hours: float | None = None
+    usage_hours: float | None = Field(
+        default=None, ge=0, description="Usage time (hours)"
+    )
 
 
-@dataclass
-class RespiratoryEvent:
+class RespiratoryEvent(BaseModel):
     """A single respiratory event (apnea, hypopnea, etc.)."""
 
-    event_type: RespiratoryEventType
-    start_time: datetime
-    duration_seconds: float
+    event_type: RespiratoryEventType = Field(description="Event type")
+    start_time: datetime = Field(description="Event start time")
+    duration_seconds: float = Field(ge=0, description="Event duration (seconds)")
 
     # Optional additional data
-    peak_flow_limitation: float | None = None
-    spo2_drop: float | None = None
-    end_time: datetime | None = None
+    peak_flow_limitation: float | None = Field(
+        default=None, description="Peak FL value"
+    )
+    spo2_drop: float | None = Field(default=None, description="SpO2 drop (%)")
+    end_time: datetime | None = Field(default=None, description="Event end time")
 
 
-@dataclass
-class WaveformData:
+class WaveformData(BaseModel):
     """
     Time-series waveform data for a single channel.
 
@@ -194,22 +216,26 @@ class WaveformData:
     - Numpy float32 arrays: 2.7 MB per waveform
     """
 
-    waveform_type: WaveformType
-    sample_rate: float  # Samples per second (Hz)
-    unit: str  # "L/min", "cmH2O", "%", etc.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    waveform_type: WaveformType = Field(description="Waveform type")
+    sample_rate: float = Field(ge=0, description="Sample rate (Hz)")
+    unit: str = Field(description="Units (e.g., 'L/min', 'cmH2O')")
 
     # Time-series data - MUST be seconds offset from session start (not datetime!)
-    timestamps: list[float] | np.ndarray  # Seconds from session start
-    values: list[float] | np.ndarray
+    timestamps: list[float] | np.ndarray = Field(
+        description="Seconds from session start"
+    )
+    values: list[float] | np.ndarray = Field(description="Waveform values")
 
     # Statistics for this waveform
-    min_value: float | None = None
-    max_value: float | None = None
-    mean_value: float | None = None
+    min_value: float | None = Field(default=None, description="Minimum value")
+    max_value: float | None = Field(default=None, description="Maximum value")
+    mean_value: float | None = Field(default=None, description="Mean value")
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def convert_to_numpy(self) -> "WaveformData":
         """Convert lists to numpy arrays for efficiency."""
-        # Convert to numpy arrays (skip if already correct dtype)
         if isinstance(self.timestamps, list):
             self.timestamps = np.array(self.timestamps, dtype=np.float32)
         elif (
@@ -222,6 +248,8 @@ class WaveformData:
             self.values = np.array(self.values, dtype=np.float32)
         elif isinstance(self.values, np.ndarray) and self.values.dtype != np.float32:
             self.values = self.values.astype(np.float32)
+
+        return self
 
     @property
     def duration_seconds(self) -> float:
@@ -236,8 +264,7 @@ class WaveformData:
         return len(self.values)
 
 
-@dataclass
-class UnifiedSession:
+class UnifiedSession(BaseModel):
     """
     Universal session format that ALL parsers must produce.
 
@@ -247,44 +274,53 @@ class UnifiedSession:
     """
 
     # Unique identifiers
-    session_id: UUID = field(default_factory=uuid4)  # Our internal ID
-    device_session_id: str = ""  # Device's own session ID
+    session_id: UUID = Field(default_factory=uuid4, description="Internal session ID")
+    device_session_id: str = Field(default="", description="Device session ID")
 
     # Device information
-    device_info: DeviceInfo = field(default_factory=lambda: DeviceInfo("", "", ""))
+    device_info: DeviceInfo = Field(description="Device information")
 
     # Timing
-    start_time: datetime = field(default_factory=datetime.now)
-    end_time: datetime = field(default_factory=datetime.now)
+    start_time: datetime = Field(description="Session start time")
+    end_time: datetime = Field(description="Session end time")
 
     # Therapy data
-    settings: TherapySettings = field(
-        default_factory=lambda: TherapySettings(TherapyMode.CPAP)
+    settings: TherapySettings | None = Field(
+        default=None, description="Therapy settings"
     )
-    statistics: SessionStatistics = field(default_factory=SessionStatistics)
+    statistics: SessionStatistics = Field(
+        default_factory=SessionStatistics, description="Session statistics"
+    )
 
     # Time-series data
-    waveforms: dict[WaveformType, WaveformData] = field(default_factory=dict)
-    events: list[RespiratoryEvent] = field(default_factory=list)
+    waveforms: dict[WaveformType, WaveformData] = Field(
+        default_factory=dict, description="Waveform data by type"
+    )
+    events: list[RespiratoryEvent] = Field(
+        default_factory=list, description="Respiratory events"
+    )
 
     # Import metadata
-    import_source: str = ""  # "resmed_edf", "oscar_binary", "philips_binary"
-    import_date: datetime = field(default_factory=datetime.now)
-    raw_data_path: str | None = None  # Path to original files
-    parser_version: str = ""  # Version of parser that created this
+    import_source: str = Field(default="", description="Parser ID")
+    import_date: datetime = Field(
+        default_factory=datetime.now, description="Import timestamp"
+    )
+    raw_data_path: str | None = Field(
+        default=None, description="Path to original files"
+    )
+    parser_version: str = Field(default="", description="Parser version")
 
     # Data quality flags
-    has_waveform_data: bool = False
-    has_event_data: bool = False
-    has_statistics: bool = False
-    data_quality_notes: list[str] = field(default_factory=list)
+    has_waveform_data: bool = Field(default=False, description="Has waveform data")
+    has_event_data: bool = Field(default=False, description="Has event data")
+    has_statistics: bool = Field(default=False, description="Has statistics")
+    data_quality_notes: list[str] = Field(
+        default_factory=list, description="Data quality warnings"
+    )
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def validate_session(self) -> "UnifiedSession":
         """Validate session data after initialization."""
-        self._validate()
-
-    def _validate(self) -> None:
-        """Validate session data consistency."""
         errors = []
 
         # Check time ordering
@@ -303,7 +339,6 @@ class UnifiedSession:
             errors.append(f"Negative session duration: {duration_hours:.1f} hours")
 
         # Validate waveform timestamps are within session bounds (allow 1 second tolerance)
-        # Note: After WaveformData.__post_init__, timestamps are numpy arrays of seconds offset
         for waveform_type, waveform in self.waveforms.items():
             if waveform.timestamps is not None and len(waveform.timestamps) > 0:
                 # Check if timestamps are datetime objects or numeric offsets
@@ -346,6 +381,8 @@ class UnifiedSession:
                 "Session validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             )
 
+        return self
+
     @property
     def duration_hours(self) -> float:
         """Calculate session duration in hours."""
@@ -375,9 +412,3 @@ class UnifiedSession:
     def has_waveform(self, waveform_type: WaveformType) -> bool:
         """Check if session has data for a specific waveform type."""
         return waveform_type in self.waveforms
-
-
-# Type aliases for convenience
-SessionList = list[UnifiedSession]
-WaveformDict = dict[WaveformType, WaveformData]
-EventList = list[RespiratoryEvent]

@@ -14,6 +14,7 @@ This module provides a high-level, easy-to-use interface over pyedflib.
 
 import logging
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
 

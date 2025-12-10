@@ -2,8 +2,8 @@
 Complex breathing pattern detection algorithm.
 
 This module implements detection of complex breathing patterns including
-Cheyne-Stokes Respiration (CSR), periodic breathing, and positional events
-using time-series analysis and clustering techniques.
+Cheyne-Stokes Respiration (CSR) and periodic breathing using time-series
+analysis and clustering techniques.
 """
 
 import logging
@@ -15,11 +15,16 @@ from scipy import signal, stats
 from snore.analysis.shared.types import (
     CSRDetection,
     PeriodicBreathingDetection,
-    PositionalAnalysis,
 )
 from snore.constants import PatternDetectionConstants as PDC
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ComplexPatternDetector",
+    "CSRDetection",
+    "PeriodicBreathingDetection",
+]
 
 
 class ComplexPatternDetector:
@@ -174,60 +179,6 @@ class ComplexPatternDetector:
             has_apneas=has_apneas,
         )
 
-    def detect_positional_events(
-        self,
-        event_timestamps: list[float],
-        session_duration: float,
-        cluster_threshold: float = PDC.CLUSTER_THRESHOLD_SECONDS,
-    ) -> PositionalAnalysis | None:
-        """
-        Detect temporal clustering of events suggesting positional apnea.
-
-        Args:
-            event_timestamps: List of event start times (seconds)
-            session_duration: Total session duration (seconds)
-            cluster_threshold: Maximum gap between events in a cluster (seconds)
-
-        Returns:
-            PositionalAnalysis if clustering detected, None otherwise
-        """
-        if len(event_timestamps) < PDC.MIN_EVENTS_FOR_POSITIONAL:
-            return None
-
-        event_times = np.array(sorted(event_timestamps))
-
-        clusters = self._identify_clusters(event_times, cluster_threshold)
-
-        if len(clusters) < 2:
-            return None
-
-        cluster_times = []
-        cluster_counts = []
-
-        for cluster in clusters:
-            if len(cluster) >= PDC.MIN_CLUSTER_SIZE:
-                cluster_times.append((float(cluster[0]), float(cluster[-1])))
-                cluster_counts.append(len(cluster))
-
-        if len(cluster_times) < 2:
-            return None
-
-        positional_likelihood = self._calculate_positional_likelihood(
-            clusters, session_duration, event_times
-        )
-
-        confidence = self._calculate_positional_confidence(
-            len(clusters), cluster_counts, positional_likelihood
-        )
-
-        return PositionalAnalysis(
-            cluster_times=cluster_times,
-            cluster_event_counts=cluster_counts,
-            positional_likelihood=positional_likelihood,
-            confidence=confidence,
-            total_clusters=len(clusters),
-        )
-
     def _smooth_signal(
         self, signal_data: np.ndarray, window_size: int = 5
     ) -> np.ndarray:
@@ -367,52 +318,6 @@ class ComplexPatternDetector:
 
         return bool(has_apneas)
 
-    def _identify_clusters(
-        self, event_times: np.ndarray, max_gap: float
-    ) -> list[np.ndarray]:
-        """Identify temporal clusters of events."""
-        if len(event_times) == 0:
-            return []
-
-        gaps = np.diff(event_times)
-
-        cluster_breaks = np.where(gaps > max_gap)[0] + 1
-
-        clusters = np.split(event_times, cluster_breaks)
-
-        return [cluster for cluster in clusters if len(cluster) >= 2]
-
-    def _calculate_positional_likelihood(
-        self,
-        clusters: list[np.ndarray],
-        session_duration: float,
-        all_events: np.ndarray,
-    ) -> float:
-        """Calculate likelihood that clustering is position-related."""
-        if len(clusters) < 2:
-            return 0.0
-
-        total_clustered = sum(len(c) for c in clusters)
-        clustering_ratio = total_clustered / len(all_events)
-
-        cluster_durations = [c[-1] - c[0] for c in clusters]
-        avg_cluster_duration = np.mean(cluster_durations)
-
-        non_cluster_durations = []
-        for i in range(len(clusters) - 1):
-            gap = clusters[i + 1][0] - clusters[i][-1]
-            non_cluster_durations.append(gap)
-
-        if len(non_cluster_durations) > 0:
-            avg_non_cluster_duration = np.mean(non_cluster_durations)
-            duration_contrast = avg_non_cluster_duration / (avg_cluster_duration + 1)
-        else:
-            duration_contrast = 1.0
-
-        likelihood = clustering_ratio * 0.5 + min(1.0, duration_contrast / 5) * 0.5
-
-        return float(min(1.0, likelihood))
-
     def _calculate_csr_confidence(
         self,
         cycle_length: float,
@@ -454,25 +359,5 @@ class ComplexPatternDetector:
 
         if has_apneas:
             confidence += 0.2
-
-        return min(1.0, confidence)
-
-    def _calculate_positional_confidence(
-        self,
-        cluster_count: int,
-        cluster_sizes: list[int],
-        likelihood: float,
-    ) -> float:
-        """Calculate confidence score for positional event detection."""
-        confidence = 0.4
-
-        if cluster_count >= 3:
-            confidence += 0.2
-
-        avg_cluster_size = np.mean(cluster_sizes)
-        if avg_cluster_size >= 5:
-            confidence += 0.2
-
-        confidence += likelihood * 0.2
 
         return min(1.0, confidence)

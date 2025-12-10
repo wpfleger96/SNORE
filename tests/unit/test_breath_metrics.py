@@ -7,7 +7,7 @@ Tests tidal volume, respiratory rate, I:E ratio, and other breath-level metrics.
 import numpy as np
 import pytest
 
-from snore.analysis.algorithms.breath_segmenter import BreathSegmenter
+from snore.analysis.shared.breath_segmenter import BreathSegmenter
 from tests.helpers.synthetic_data import create_session, generate_sinusoidal_breath
 from tests.helpers.validation_helpers import assert_breath_valid
 
@@ -230,10 +230,10 @@ class TestBreathValidationHelpers:
 
     def test_assert_breath_valid_catches_invalid(self):
         """Invalid breath should fail validation."""
-        from snore.analysis.algorithms.breath_segmenter import BreathMetrics
+        from snore.analysis.shared.breath_segmenter import BreathMetrics
 
-        # Create invalid breath (negative duration)
-        bad_breath = BreathMetrics(
+        # Create invalid breath (negative duration) using model_construct to bypass Pydantic validation
+        bad_breath = BreathMetrics.model_construct(
             breath_number=1,
             start_time=10.0,
             middle_time=5.0,  # Before start!

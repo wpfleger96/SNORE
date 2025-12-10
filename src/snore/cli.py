@@ -16,7 +16,7 @@ import click
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
-from snore.analysis.modes import AVAILABLE_MODES
+from snore.analysis.modes import AVAILABLE_CONFIGS
 from snore.analysis.service import AnalysisResult, AnalysisService
 from snore.config import (
     get_config_path,
@@ -1446,17 +1446,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
         click.echo("FLOW LIMITATION ANALYSIS")
         click.echo(f"  Flow Limitation Index: {result.flow_analysis['fl_index']:.2f}")
 
-    # Display positional analysis if available
-    if result.positional_analysis:
-        click.echo("\n" + "─" * 60)
-        click.echo("POSITIONAL ANALYSIS")
-        click.echo(
-            f"  Event Clustering: {result.positional_analysis.get('cluster_count', 'N/A')} clusters"
-        )
-        positional_likelihood = result.positional_analysis.get("positional_likelihood")
-        if positional_likelihood is not None:
-            click.echo(f"  Positional Likelihood: {positional_likelihood:.2f}")
-
     click.echo("\n" + "=" * 60)
 
 
@@ -1503,7 +1492,7 @@ def _analyze_single_session(
     # Build modes list (None = use default)
     modes = None
     if all_modes:
-        modes = list(AVAILABLE_MODES.keys())
+        modes = list(AVAILABLE_CONFIGS.keys())
     elif mode:
         modes = list(mode)
 
@@ -1555,7 +1544,7 @@ def _analyze_batch(
     # Build modes list (None = use default)
     modes = None
     if all_modes:
-        modes = list(AVAILABLE_MODES.keys())
+        modes = list(AVAILABLE_CONFIGS.keys())
     elif mode:
         modes = list(mode)
 

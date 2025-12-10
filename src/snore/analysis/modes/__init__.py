@@ -10,16 +10,12 @@ from snore.analysis.modes.types import (
     ModeResult,
 )
 
-# Backward compatibility alias
-AVAILABLE_MODES = AVAILABLE_CONFIGS
-
 __all__ = [
     "EventDetector",
     "ModeResult",
     "DetectionModeConfig",
     "BaselineMethod",
     "AVAILABLE_CONFIGS",
-    "AVAILABLE_MODES",  # Backward compatibility
     "DEFAULT_MODE",
     "get_mode",
     "get_all_modes",

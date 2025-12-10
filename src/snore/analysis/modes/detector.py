@@ -1,14 +1,17 @@
 """Unified respiratory event detector using configuration."""
 
 import logging
-from typing import Any
+
+from collections.abc import Sequence
+from typing import Any, Literal, cast
 
 import numpy as np
+
 from scipy import signal
 
 from snore.analysis.modes.config import DetectionModeConfig
 from snore.analysis.modes.types import BaselineMethod, ModeResult
-from snore.analysis.shared.event_detector import ApneaEvent, HypopneaEvent
+from snore.analysis.shared.types import ApneaEvent, BreathMetrics, HypopneaEvent
 from snore.constants import EventDetectionConstants as EDC
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ class EventDetector:
 
     def detect_events(
         self,
-        breaths: list[Any],
+        breaths: list[BreathMetrics],
         flow_data: tuple[np.ndarray, np.ndarray] | None,
         session_duration_hours: float,
     ) -> ModeResult:
@@ -91,7 +94,7 @@ class EventDetector:
 
     def _detect_apneas(
         self,
-        breaths: list[Any],
+        breaths: list[BreathMetrics],
         flow_data: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> list[ApneaEvent]:
         """
@@ -204,7 +207,9 @@ class EventDetector:
             )
 
         # Merge adjacent apneas
-        apneas = self._merge_adjacent_events(apneas, self.config.merge_gap)
+        apneas = cast(
+            list[ApneaEvent], self._merge_adjacent_events(apneas, self.config.merge_gap)
+        )
 
         # Count by type
         oa = sum(1 for a in apneas if a.event_type == "OA")
@@ -229,7 +234,7 @@ class EventDetector:
 
     def _detect_hypopneas(
         self,
-        breaths: list[Any],
+        breaths: list[BreathMetrics],
         flow_data: tuple[np.ndarray, np.ndarray] | None = None,
         spo2_signal: np.ndarray | None = None,
     ) -> list[HypopneaEvent]:
@@ -305,7 +310,10 @@ class EventDetector:
 
             # Validate event
             if not self._validate_event(
-                reductions, start_idx, end_idx, threshold=self.config.hypopnea_min_threshold
+                reductions,
+                start_idx,
+                end_idx,
+                threshold=self.config.hypopnea_min_threshold,
             ):
                 logger.debug(
                     f"  Rejecting hypopnea {start_idx}-{end_idx}: fails validation"
@@ -349,7 +357,10 @@ class EventDetector:
                 )
             )
 
-        hypopneas = self._merge_adjacent_events(hypopneas, self.config.merge_gap)
+        hypopneas = cast(
+            list[HypopneaEvent],
+            self._merge_adjacent_events(hypopneas, self.config.merge_gap),
+        )
 
         logger.info(f"{self.config.name}: Detected {len(hypopneas)} hypopneas")
 
@@ -383,7 +394,11 @@ class EventDetector:
         max_reduction = float(np.max(event_reductions))
 
         # Use provided threshold or fall back to config
-        validation_threshold = threshold if threshold is not None else self.config.apnea_validation_threshold
+        validation_threshold = (
+            threshold
+            if threshold is not None
+            else self.config.apnea_validation_threshold
+        )
         return max_reduction >= validation_threshold
 
     # ========================================================================
@@ -417,10 +432,6 @@ class EventDetector:
             return 30.0 if self.config.metric == "amplitude" else 300.0
 
         current_breath = breaths[current_idx]
-        if not hasattr(current_breath, "start_time"):
-            # Fallback to breath-based if no timestamps
-            return self._calculate_breath_based_baseline(breaths, current_idx)
-
         current_time = current_breath.start_time
         window_start = current_time - self.config.baseline_window
 
@@ -428,18 +439,16 @@ class EventDetector:
         values = []
         for i in range(current_idx - 1, -1, -1):
             breath = breaths[i]
-            if not hasattr(breath, "start_time"):
-                break
             if breath.start_time < window_start:
                 break
 
             # Extract metric value, excluding event breaths
-            if not getattr(breath, "in_event", False):
+            if not breath.in_event:
                 if self.config.metric == "amplitude":
-                    if hasattr(breath, "amplitude") and breath.amplitude > 0:
+                    if breath.amplitude > 0:
                         values.append(breath.amplitude)
                 elif self.config.metric == "tidal_volume":
-                    if hasattr(breath, "tidal_volume") and breath.tidal_volume > 0:
+                    if breath.tidal_volume > 0:
                         values.append(breath.tidal_volume)
 
         if len(values) < 5:
@@ -468,7 +477,9 @@ class EventDetector:
         if current_idx == 0:
             return 30.0 if self.config.metric == "amplitude" else 300.0
 
-        window_breaths = int(self.config.baseline_window)  # baseline_window is breath count
+        window_breaths = int(
+            self.config.baseline_window
+        )  # baseline_window is breath count
         start_idx = max(0, current_idx - window_breaths)
         window = breaths[start_idx:current_idx]
 
@@ -479,13 +490,11 @@ class EventDetector:
         values = []
         for b in window:
             if self.config.metric == "amplitude":
-                if hasattr(b, "amplitude") and b.amplitude > 0:
-                    if not getattr(b, "in_event", False):
-                        values.append(b.amplitude)
+                if b.amplitude > 0 and not b.in_event:
+                    values.append(b.amplitude)
             elif self.config.metric == "tidal_volume":
-                if hasattr(b, "tidal_volume") and b.tidal_volume > 0:
-                    if not getattr(b, "in_event", False):
-                        values.append(b.tidal_volume)
+                if b.tidal_volume > 0 and not b.in_event:
+                    values.append(b.tidal_volume)
 
         if not values:
             return 30.0 if self.config.metric == "amplitude" else 300.0
@@ -500,7 +509,7 @@ class EventDetector:
 
     def _find_consecutive_reduced_breaths(
         self,
-        breaths: list[Any],
+        breaths: list[BreathMetrics],
         reductions: np.ndarray,
         threshold: float,
         min_duration: float,
@@ -563,9 +572,9 @@ class EventDetector:
 
     def _merge_adjacent_events(
         self,
-        events: list[Any],
+        events: Sequence[ApneaEvent | HypopneaEvent],
         max_gap: float,
-    ) -> list[Any]:
+    ) -> list[ApneaEvent | HypopneaEvent]:
         """
         Merge events that are close together in time AND of the same type.
 
@@ -579,16 +588,14 @@ class EventDetector:
             List of merged events
         """
         if len(events) <= 1:
-            return events
+            return list(events)
 
         merged = []
         current = events[0]
 
         for next_event in events[1:]:
             gap = next_event.start_time - current.end_time
-            same_type = getattr(next_event, "event_type", None) == getattr(
-                current, "event_type", None
-            )
+            same_type = type(next_event) == type(current)
 
             if gap <= max_gap and same_type:
                 current = self._merge_two_events(current, next_event)
@@ -601,8 +608,8 @@ class EventDetector:
 
     def _merge_two_events(
         self,
-        event1: Any,
-        event2: Any,
+        event1: ApneaEvent | HypopneaEvent,
+        event2: ApneaEvent | HypopneaEvent,
     ) -> ApneaEvent | HypopneaEvent:
         """
         Merge two adjacent events of the same type.
@@ -645,7 +652,7 @@ class EventDetector:
     def _classify_apnea_type(
         self,
         flow_signal: np.ndarray | None = None,
-    ) -> str:
+    ) -> Literal["OA", "CA", "MA", "UA"]:
         """
         Classify apnea as obstructive, central, or unclassified.
 

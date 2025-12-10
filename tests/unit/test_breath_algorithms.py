@@ -11,7 +11,7 @@ This module tests core breath processing algorithms including:
 
 import numpy as np
 
-from snore.analysis.algorithms.breath_segmenter import (
+from snore.analysis.shared.breath_segmenter import (
     BreathMetrics,
     BreathSegmenter,
 )

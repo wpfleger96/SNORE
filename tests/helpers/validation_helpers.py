@@ -8,8 +8,8 @@ from typing import Any
 
 import numpy as np
 
-from snore.analysis.algorithms.breath_segmenter import BreathMetrics
-from snore.analysis.algorithms.feature_extractors import (
+from snore.analysis.shared.breath_segmenter import BreathMetrics
+from snore.analysis.shared.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     StatisticalFeatures,

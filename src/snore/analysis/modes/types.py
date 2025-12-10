@@ -1,9 +1,11 @@
 """Detection mode type definitions."""
 
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
 from snore.constants import EventDetectionConstants as EDC
 
 
@@ -14,8 +16,7 @@ class BaselineMethod(str, Enum):
     BREATH = "breath"  # Breath-count window
 
 
-@dataclass(frozen=True)
-class DetectionModeConfig:
+class DetectionModeConfig(BaseModel):
     """
     Configuration for a detection mode.
 
@@ -23,36 +24,71 @@ class DetectionModeConfig:
     Uses constants from EventDetectionConstants as defaults.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     # Identity
-    name: str
-    description: str
+    name: str = Field(description="Mode name (e.g., 'aasm')")
+    description: str = Field(description="Mode description")
 
     # Baseline calculation
-    baseline_method: BaselineMethod
-    baseline_window: float  # seconds for TIME, count for BREATH
-    baseline_percentile: int = 90
+    baseline_method: BaselineMethod = Field(description="Baseline calculation method")
+    baseline_window: float = Field(
+        description="Window size (seconds for TIME, count for BREATH)"
+    )
+    baseline_percentile: int = Field(
+        default=90, ge=0, le=100, description="Baseline percentile"
+    )
 
     # Apnea detection
-    apnea_threshold: float = EDC.APNEA_FLOW_REDUCTION_THRESHOLD  # 0.90
-    apnea_validation_threshold: float = EDC.APNEA_FLOW_REDUCTION_THRESHOLD  # 0.90
+    apnea_threshold: float = Field(
+        default=EDC.APNEA_FLOW_REDUCTION_THRESHOLD,
+        ge=0,
+        le=1,
+        description="Apnea flow reduction threshold",
+    )
+    apnea_validation_threshold: float = Field(
+        default=EDC.APNEA_FLOW_REDUCTION_THRESHOLD,
+        ge=0,
+        le=1,
+        description="Apnea validation threshold",
+    )
 
     # Hypopnea detection
-    hypopnea_min_threshold: float = EDC.HYPOPNEA_MIN_REDUCTION  # 0.30
-    hypopnea_max_threshold: float = EDC.HYPOPNEA_MAX_REDUCTION  # 0.89
+    hypopnea_min_threshold: float = Field(
+        default=EDC.HYPOPNEA_MIN_REDUCTION,
+        ge=0,
+        le=1,
+        description="Hypopnea minimum threshold",
+    )
+    hypopnea_max_threshold: float = Field(
+        default=EDC.HYPOPNEA_MAX_REDUCTION,
+        ge=0,
+        le=1,
+        description="Hypopnea maximum threshold",
+    )
 
     # Shared parameters
-    min_event_duration: float = EDC.MIN_EVENT_DURATION  # 10.0
-    merge_gap: float = EDC.MERGE_GAP_SECONDS  # 3.0
-    metric: Literal["amplitude", "tidal_volume"] = "amplitude"
+    min_event_duration: float = Field(
+        default=EDC.MIN_EVENT_DURATION,
+        ge=0,
+        description="Minimum event duration (seconds)",
+    )
+    merge_gap: float = Field(
+        default=EDC.MERGE_GAP_SECONDS, ge=0, description="Event merge gap (seconds)"
+    )
+    metric: Literal["amplitude", "tidal_volume"] = Field(
+        default="amplitude", description="Metric for baseline calculation"
+    )
 
 
-@dataclass
-class ModeResult:
+class ModeResult(BaseModel):
     """Result from a single detection mode."""
 
-    mode_name: str
-    apneas: list[Any]  # list[ApneaEvent] - from shared/types
-    hypopneas: list[Any]  # list[HypopneaEvent] - from shared/types
-    ahi: float
-    rdi: float
-    metadata: dict[str, Any]  # Mode-specific debug info
+    mode_name: str = Field(description="Mode name")
+    apneas: list[ApneaEvent] = Field(description="Detected apnea events")
+    hypopneas: list[HypopneaEvent] = Field(description="Detected hypopnea events")
+    ahi: float = Field(ge=0, description="Apnea-Hypopnea Index")
+    rdi: float = Field(ge=0, description="Respiratory Disturbance Index")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Mode-specific debug info"
+    )

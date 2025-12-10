@@ -1,14 +1,16 @@
 """Core SNORE type definitions."""
 
-from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class ShellConfig:
+
+class ShellConfig(BaseModel):
     """Configuration for a supported shell."""
 
-    config_files: list[str]  # Relative to home, in priority order
+    config_files: list[str] = Field(
+        description="Config files relative to home, in priority order"
+    )
 
     def get_config_candidates(self) -> list[Path]:
         """Get existing config file paths for this shell."""

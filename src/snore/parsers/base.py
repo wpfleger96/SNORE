@@ -16,6 +16,8 @@ from typing import Any
 from snore.models.unified import DeviceInfo, UnifiedSession
 from snore.parsers.types import ParserMetadata
 
+__all__ = ["DeviceParser", "ParserDetectionResult", "ParserMetadata"]
+
 
 class ParserDetectionResult:
     """Result of parser detection scan."""

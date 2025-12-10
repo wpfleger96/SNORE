@@ -1,18 +1,17 @@
 """Shared analysis algorithm type definitions."""
 
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # Breath Segmentation Types
 # ============================================================================
 
 
-@dataclass
-class BreathPhases:
+class BreathPhases(BaseModel):
     """
     Inspiration and expiration phases of a single breath.
 
@@ -23,14 +22,15 @@ class BreathPhases:
         expiration_values: Flow values during expiration
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     inspiration_indices: np.ndarray
     expiration_indices: np.ndarray
     inspiration_values: np.ndarray
     expiration_values: np.ndarray
 
 
-@dataclass
-class BreathMetrics:
+class BreathMetrics(BaseModel):
     """
     Comprehensive metrics for a single breath.
 
@@ -54,23 +54,30 @@ class BreathMetrics:
         is_complete: Whether breath has both inspiration and expiration
     """
 
-    breath_number: int
-    start_time: float
-    middle_time: float
-    end_time: float
-    duration: float
-    tidal_volume: float
-    tidal_volume_smoothed: float
-    peak_inspiratory_flow: float
-    peak_expiratory_flow: float
-    inspiration_time: float
-    expiration_time: float
-    i_e_ratio: float
-    respiratory_rate: float
-    respiratory_rate_rolling: float
-    minute_ventilation: float
-    amplitude: float
-    is_complete: bool
+    breath_number: int = Field(description="Sequential breath number in session")
+    start_time: float = Field(description="Breath start timestamp (seconds)")
+    middle_time: float = Field(
+        description="Inspiration→expiration transition (seconds)"
+    )
+    end_time: float = Field(description="Breath end timestamp (seconds)")
+    duration: float = Field(ge=0, description="Total breath duration (seconds)")
+    tidal_volume: float = Field(description="Volume of air breathed in (mL)")
+    tidal_volume_smoothed: float = Field(description="Smoothed tidal volume (mL)")
+    peak_inspiratory_flow: float = Field(description="Max inspiratory flow (L/min)")
+    peak_expiratory_flow: float = Field(description="Max expiratory flow (L/min)")
+    inspiration_time: float = Field(ge=0, description="Inspiration duration (seconds)")
+    expiration_time: float = Field(ge=0, description="Expiration duration (seconds)")
+    i_e_ratio: float = Field(ge=0, description="Inspiration/expiration time ratio")
+    respiratory_rate: float = Field(ge=0, description="Instantaneous RR (breaths/min)")
+    respiratory_rate_rolling: float = Field(
+        ge=0, description="Rolling 60s RR (breaths/min)"
+    )
+    minute_ventilation: float = Field(ge=0, description="Estimated ventilation (L/min)")
+    amplitude: float = Field(description="Peak-to-peak amplitude (L/min)")
+    is_complete: bool = Field(description="Has both inspiration and expiration")
+    in_event: bool = Field(
+        default=False, description="Whether breath is part of a detected event"
+    )
 
 
 # ============================================================================
@@ -78,8 +85,7 @@ class BreathMetrics:
 # ============================================================================
 
 
-@dataclass
-class ApneaEvent:
+class ApneaEvent(BaseModel):
     """
     Detected apnea event.
 
@@ -93,17 +99,16 @@ class ApneaEvent:
         baseline_flow: Baseline flow before event (L/min)
     """
 
-    start_time: float
-    end_time: float
-    duration: float
-    event_type: str
-    flow_reduction: float
-    confidence: float
-    baseline_flow: float
+    start_time: float = Field(description="Event start timestamp (seconds)")
+    end_time: float = Field(description="Event end timestamp (seconds)")
+    duration: float = Field(ge=0, description="Event duration (seconds)")
+    event_type: Literal["OA", "CA", "MA", "UA"] = Field(description="Apnea type")
+    flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
+    confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
+    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
 
 
-@dataclass
-class HypopneaEvent:
+class HypopneaEvent(BaseModel):
     """
     Detected hypopnea event.
 
@@ -118,18 +123,19 @@ class HypopneaEvent:
         has_desaturation: Whether SpO2 desaturation occurred (if available)
     """
 
-    start_time: float
-    end_time: float
-    duration: float
-    flow_reduction: float
-    confidence: float
-    baseline_flow: float
-    has_arousal: bool | None = None
-    has_desaturation: bool | None = None
+    start_time: float = Field(description="Event start timestamp (seconds)")
+    end_time: float = Field(description="Event end timestamp (seconds)")
+    duration: float = Field(ge=0, description="Event duration (seconds)")
+    flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
+    confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
+    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
+    has_arousal: bool | None = Field(default=None, description="Arousal detected")
+    has_desaturation: bool | None = Field(
+        default=None, description="SpO2 desaturation ≥3%"
+    )
 
 
-@dataclass
-class EventTimeline:
+class EventTimeline(BaseModel):
     """
     Complete timeline of detected respiratory events.
 
@@ -141,11 +147,11 @@ class EventTimeline:
         rdi: Respiratory Disturbance Index
     """
 
-    apneas: list[ApneaEvent]
-    hypopneas: list[HypopneaEvent]
-    total_events: int
-    ahi: float
-    rdi: float
+    apneas: list[ApneaEvent] = Field(description="Detected apnea events")
+    hypopneas: list[HypopneaEvent] = Field(description="Detected hypopnea events")
+    total_events: int = Field(ge=0, description="Total event count")
+    ahi: float = Field(ge=0, description="Apnea-Hypopnea Index (events/hour)")
+    rdi: float = Field(ge=0, description="Respiratory Disturbance Index")
 
 
 # ============================================================================
@@ -153,8 +159,7 @@ class EventTimeline:
 # ============================================================================
 
 
-@dataclass
-class ShapeFeatures:
+class ShapeFeatures(BaseModel):
     """
     Shape characteristics of a breath waveform.
 
@@ -173,16 +178,15 @@ class ShapeFeatures:
         fall_time: Time from 90% to 10% of peak flow (seconds)
     """
 
-    flatness_index: float
-    plateau_duration: float
-    symmetry_score: float
-    kurtosis: float
-    rise_time: float
-    fall_time: float
+    flatness_index: float = Field(ge=0, le=1, description="Plateau time ratio")
+    plateau_duration: float = Field(ge=0, description="Plateau duration (seconds)")
+    symmetry_score: float = Field(description="Statistical skewness")
+    kurtosis: float = Field(description="Peakedness measure")
+    rise_time: float = Field(ge=0, description="10-90% rise time (seconds)")
+    fall_time: float = Field(ge=0, description="90-10% fall time (seconds)")
 
 
-@dataclass
-class PeakFeatures:
+class PeakFeatures(BaseModel):
     """
     Peak analysis features for breath waveform.
 
@@ -197,14 +201,13 @@ class PeakFeatures:
         inter_peak_intervals: Time spacing between consecutive peaks (seconds)
     """
 
-    peak_count: int
-    peak_positions: list[float]
-    peak_prominences: list[float]
-    inter_peak_intervals: list[float]
+    peak_count: int = Field(ge=0, description="Number of peaks detected")
+    peak_positions: list[float] = Field(description="Peak positions (0-1 scale)")
+    peak_prominences: list[float] = Field(description="Peak heights")
+    inter_peak_intervals: list[float] = Field(description="Peak spacing (seconds)")
 
 
-@dataclass
-class StatisticalFeatures:
+class StatisticalFeatures(BaseModel):
     """
     Statistical features of breath waveform.
 
@@ -223,19 +226,18 @@ class StatisticalFeatures:
         zero_crossing_rate: Frequency of sign changes
     """
 
-    mean: float
-    median: float
-    std_dev: float
-    percentile_25: float
-    percentile_50: float
-    percentile_75: float
-    percentile_95: float
-    coefficient_of_variation: float
-    zero_crossing_rate: float
+    mean: float = Field(description="Mean flow value")
+    median: float = Field(description="Median flow value")
+    std_dev: float = Field(ge=0, description="Standard deviation")
+    percentile_25: float = Field(description="25th percentile")
+    percentile_50: float = Field(description="50th percentile (median)")
+    percentile_75: float = Field(description="75th percentile")
+    percentile_95: float = Field(description="95th percentile")
+    coefficient_of_variation: float = Field(ge=0, description="CV (std/mean)")
+    zero_crossing_rate: float = Field(ge=0, description="Sign change frequency")
 
 
-@dataclass
-class SpectralFeatures:
+class SpectralFeatures(BaseModel):
     """
     Spectral (frequency domain) features of breath waveform.
 
@@ -248,9 +250,11 @@ class SpectralFeatures:
         power_spectral_density: Power distribution across frequencies
     """
 
-    dominant_frequency: float
-    spectral_entropy: float
-    power_spectral_density: np.ndarray
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dominant_frequency: float = Field(ge=0, description="Dominant frequency (Hz)")
+    spectral_entropy: float = Field(ge=0, description="Spectral regularity measure")
+    power_spectral_density: np.ndarray = Field(description="Power distribution")
 
 
 # ============================================================================
@@ -258,8 +262,7 @@ class SpectralFeatures:
 # ============================================================================
 
 
-@dataclass
-class FlowPattern:
+class FlowPattern(BaseModel):
     """
     Classification result for a single breath.
 
@@ -272,16 +275,15 @@ class FlowPattern:
         severity: Clinical severity level
     """
 
-    breath_number: int
-    flow_class: int
-    class_name: str
-    confidence: float
-    matched_features: dict[str, Any]
-    severity: str
+    breath_number: int = Field(description="Sequential breath number")
+    flow_class: int = Field(ge=1, le=7, description="Flow limitation class (1-7)")
+    class_name: str = Field(description="Human-readable class name")
+    confidence: float = Field(ge=0, le=1, description="Classification confidence")
+    matched_features: dict[str, Any] = Field(description="Supporting features")
+    severity: str = Field(description="Clinical severity level")
 
 
-@dataclass
-class SessionFlowAnalysis:
+class SessionFlowAnalysis(BaseModel):
     """
     Flow limitation analysis for an entire session.
 
@@ -293,11 +295,11 @@ class SessionFlowAnalysis:
         patterns: Individual breath classifications
     """
 
-    total_breaths: int
-    class_distribution: dict[int, int]
-    flow_limitation_index: float
-    average_confidence: float
-    patterns: list[FlowPattern]
+    total_breaths: int = Field(ge=0, description="Total breaths analyzed")
+    class_distribution: dict[int, int] = Field(description="Breaths per class")
+    flow_limitation_index: float = Field(ge=0, le=1, description="Overall FL index")
+    average_confidence: float = Field(ge=0, le=1, description="Mean confidence")
+    patterns: list[FlowPattern] = Field(description="Individual breath classifications")
 
 
 # ============================================================================
@@ -305,8 +307,7 @@ class SessionFlowAnalysis:
 # ============================================================================
 
 
-@dataclass
-class CSRDetection:
+class CSRDetection(BaseModel):
     """
     Detected Cheyne-Stokes Respiration pattern.
 
@@ -320,17 +321,16 @@ class CSRDetection:
         cycle_count: Number of complete cycles detected
     """
 
-    start_time: float
-    end_time: float
-    cycle_length: float
-    amplitude_variation: float
-    csr_index: float
-    confidence: float
-    cycle_count: int
+    start_time: float = Field(description="Pattern start timestamp (seconds)")
+    end_time: float = Field(description="Pattern end timestamp (seconds)")
+    cycle_length: float = Field(ge=0, description="Average cycle length (seconds)")
+    amplitude_variation: float = Field(ge=0, description="Tidal volume variation")
+    csr_index: float = Field(ge=0, le=1, description="% time in CSR (0-1)")
+    confidence: float = Field(ge=0, le=1, description="Detection confidence")
+    cycle_count: int = Field(ge=0, description="Complete cycles detected")
 
 
-@dataclass
-class PeriodicBreathingDetection:
+class PeriodicBreathingDetection(BaseModel):
     """
     Detected periodic breathing pattern.
 
@@ -343,29 +343,9 @@ class PeriodicBreathingDetection:
         has_apneas: Whether pattern includes apneas
     """
 
-    start_time: float
-    end_time: float
-    cycle_length: float
-    regularity_score: float
-    confidence: float
-    has_apneas: bool
-
-
-@dataclass
-class PositionalAnalysis:
-    """
-    Positional event clustering analysis.
-
-    Attributes:
-        cluster_times: List of (start, end) tuples for event clusters
-        cluster_event_counts: Number of events in each cluster
-        positional_likelihood: Likelihood that clustering is position-related (0-1)
-        confidence: Detection confidence (0-1)
-        total_clusters: Number of clusters identified
-    """
-
-    cluster_times: list[tuple[float, float]]
-    cluster_event_counts: list[int]
-    positional_likelihood: float
-    confidence: float
-    total_clusters: int
+    start_time: float = Field(description="Pattern start timestamp (seconds)")
+    end_time: float = Field(description="Pattern end timestamp (seconds)")
+    cycle_length: float = Field(ge=0, description="Average cycle length (seconds)")
+    regularity_score: float = Field(ge=0, le=1, description="Pattern regularity")
+    confidence: float = Field(ge=0, le=1, description="Detection confidence")
+    has_apneas: bool = Field(description="Pattern includes apneas")

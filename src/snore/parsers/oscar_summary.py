@@ -7,8 +7,8 @@ Format version 18 (current OSCAR version).
 
 import struct
 
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from snore.constants import OSCAR_MAGIC_NUMBER
 from snore.parsers.qdatastream import QDataStreamReader
@@ -19,53 +19,6 @@ class OscarSummaryParseError(Exception):
     """Exception raised when parsing OSCAR summary file fails."""
 
     pass
-    def start_time(self) -> datetime:
-        """Get session start time as datetime."""
-        return datetime.fromtimestamp(self.first_timestamp / 1000.0)
-
-    @property
-    def end_time(self) -> datetime:
-        """Get session end time as datetime."""
-        return datetime.fromtimestamp(self.last_timestamp / 1000.0)
-
-    @property
-    def duration_seconds(self) -> float:
-        """Get session duration in seconds."""
-        return (self.last_timestamp - self.first_timestamp) / 1000.0
-
-    @property
-    def duration_hours(self) -> float:
-        """Get session duration in hours."""
-        return self.duration_seconds / 3600.0
-
-    def get_channel_value(self, channel_id: int, stat_type: str) -> float | None:
-        """
-        Get a specific statistic for a channel.
-
-        Args:
-            channel_id: Channel identifier
-            stat_type: Type of statistic (avg, min, max, count, etc.)
-
-        Returns:
-            Statistic value or None if not available
-        """
-        stat_maps = {
-            "count": self.counts,
-            "sum": self.sums,
-            "avg": self.averages,
-            "wavg": self.weighted_averages,
-            "min": self.minimums,
-            "max": self.maximums,
-            "cph": self.counts_per_hour,
-            "sph": self.sums_per_hour,
-            "gain": self.gains,
-        }
-
-        stat_map = stat_maps.get(stat_type)
-        if stat_map is None:
-            raise ValueError(f"Unknown stat type: {stat_type}")
-
-        return stat_map.get(channel_id)
 
 
 class OscarSummaryParser:

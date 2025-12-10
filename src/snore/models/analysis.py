@@ -1,96 +1,17 @@
 """
-Pydantic models for analysis results.
+Pydantic models for analysis results (MCP server responses).
 
-These models provide structured representations of analysis results for
-API responses, CLI output, and report generation.
+These models are specifically for MCP server responses and may include
+aggregated/transformed data beyond what's in the core analysis types.
 """
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-class EventSummary(BaseModel):
-    """Summary of a single respiratory event."""
-
-    event_type: str = Field(description="Event type (apnea, hypopnea)")
-    start_time: float = Field(description="Event start timestamp (seconds)")
-    duration: float = Field(description="Event duration (seconds)")
-    confidence: float = Field(description="Detection confidence (0-1)")
-
-
-class ApneaSummary(EventSummary):
-    """Detailed apnea event information."""
-
-    apnea_type: str = Field(
-        description="OA (obstructive), CA (central), MA (mixed), UA (unclassified)"
-    )
-    flow_reduction: float = Field(description="Flow reduction percentage (0-1)")
-    baseline_flow: float = Field(description="Baseline flow rate (L/min)")
-
-
-class HypopneaSummary(EventSummary):
-    """Detailed hypopnea event information."""
-
-    flow_reduction: float = Field(description="Flow reduction percentage (0-1)")
-    has_arousal: bool = Field(description="Whether event terminated with arousal")
-    has_desaturation: bool = Field(description="Whether event had ≥3% SpO2 drop")
-
-
-class EventTimeline(BaseModel):
-    """Complete respiratory event timeline for a session."""
-
-    ahi: float = Field(description="Apnea-Hypopnea Index (events per hour)")
-    rdi: float = Field(description="Respiratory Disturbance Index (events per hour)")
-    total_events: int = Field(description="Total number of respiratory events")
-    apneas: list[ApneaSummary] = Field(default_factory=list)
-    hypopneas: list[HypopneaSummary] = Field(default_factory=list)
-
-
-class FlowLimitationSummary(BaseModel):
-    """Flow limitation classification summary."""
-
-    flow_limitation_index: float = Field(description="Flow Limitation Index (0-1)")
-    total_breaths: int = Field(description="Total breaths analyzed")
-    class_distribution: dict[int, int] = Field(
-        description="Breath count by flow class (1-7)"
-    )
-    average_confidence: float = Field(description="Average classification confidence")
-    severity: str = Field(description="Overall severity (minimal/mild/moderate/severe)")
-
-
-class CSRDetection(BaseModel):
-    """Cheyne-Stokes Respiration pattern detection."""
-
-    detected: bool = Field(description="Whether CSR was detected")
-    cycle_length: float | None = Field(None, description="CSR cycle length (seconds)")
-    amplitude_variation: float | None = Field(
-        None, description="Amplitude variation (0-1)"
-    )
-    csr_index: float | None = Field(None, description="Percentage of time in CSR (0-1)")
-    confidence: float | None = Field(None, description="Detection confidence (0-1)")
-    cycle_count: int | None = Field(None, description="Number of CSR cycles detected")
-
-
-class PeriodicBreathingDetection(BaseModel):
-    """Periodic breathing pattern detection."""
-
-    detected: bool = Field(description="Whether periodic breathing was detected")
-    cycle_length: float | None = Field(None, description="Cycle length (seconds)")
-    regularity_score: float | None = Field(None, description="Regularity score (0-1)")
-    confidence: float | None = Field(None, description="Detection confidence (0-1)")
-    has_apneas: bool | None = Field(None, description="Whether pattern includes apneas")
-
-
-class PositionalAnalysis(BaseModel):
-    """Positional apnea clustering analysis."""
-
-    detected: bool = Field(description="Whether positional clustering was detected")
-    cluster_count: int | None = Field(None, description="Number of event clusters")
-    positional_likelihood: float | None = Field(
-        None, description="Likelihood of positional OSA (0-1)"
-    )
-    confidence: float | None = Field(None, description="Detection confidence (0-1)")
+# Import shared types from analysis module
+from snore.analysis.shared.types import EventTimeline
 
 
 class AnalysisSummary(BaseModel):
@@ -101,11 +22,14 @@ class AnalysisSummary(BaseModel):
     """
 
     session_id: int = Field(description="Database session ID")
-    analysis_id: int | None = Field(None, description="Database analysis result ID")
+    analysis_id: int | None = Field(
+        default=None, description="Database analysis result ID"
+    )
     timestamp_start: datetime = Field(description="Analysis start time")
     timestamp_end: datetime = Field(description="Analysis end time")
     duration_hours: float = Field(description="Session duration (hours)")
 
+    mode_name: str = Field(description="Detection mode used (e.g., 'aasm')")
     ahi: float = Field(description="Apnea-Hypopnea Index")
     rdi: float = Field(description="Respiratory Disturbance Index")
     flow_limitation_index: float = Field(description="Flow Limitation Index")
@@ -129,6 +53,18 @@ class AnalysisSummary(BaseModel):
     )
 
 
+class FlowLimitationSummary(BaseModel):
+    """Flow limitation classification summary."""
+
+    flow_limitation_index: float = Field(description="Flow Limitation Index (0-1)")
+    total_breaths: int = Field(description="Total breaths analyzed")
+    class_distribution: dict[int, int] = Field(
+        description="Breath count by flow class (1-7)"
+    )
+    average_confidence: float = Field(description="Average classification confidence")
+    severity: str = Field(description="Overall severity (minimal/mild/moderate/severe)")
+
+
 class DetailedAnalysisResult(BaseModel):
     """
     Complete detailed analysis result.
@@ -138,18 +74,15 @@ class DetailedAnalysisResult(BaseModel):
     """
 
     summary: AnalysisSummary = Field(description="High-level summary")
-    event_timeline: EventTimeline = Field(description="All respiratory events")
+    mode_results: dict[str, EventTimeline] = Field(
+        description="Event timelines by mode (e.g., {'aasm': ...})"
+    )
     flow_limitation: FlowLimitationSummary = Field(
         description="Flow limitation analysis"
     )
-    csr_detection: CSRDetection | None = Field(
-        None, description="CSR pattern detection"
-    )
-    periodic_breathing: PeriodicBreathingDetection | None = Field(
+    csr_detection: Any | None = Field(None, description="CSR pattern detection")
+    periodic_breathing: Any | None = Field(
         None, description="Periodic breathing detection"
-    )
-    positional_analysis: PositionalAnalysis | None = Field(
-        None, description="Positional event analysis"
     )
     confidence_scores: dict[str, float] = Field(
         description="Confidence scores by analysis type"
@@ -164,7 +97,9 @@ class SessionAnalysisStatus(BaseModel):
     session_date: datetime = Field(description="Session date")
     duration_hours: float = Field(description="Session duration (hours)")
     has_analysis: bool = Field(description="Whether analysis has been run")
-    analysis_id: int | None = Field(None, description="Analysis result ID if available")
+    analysis_id: int | None = Field(
+        default=None, description="Analysis result ID if available"
+    )
     analyzed_at: datetime | None = Field(
         None, description="When analysis was performed"
     )

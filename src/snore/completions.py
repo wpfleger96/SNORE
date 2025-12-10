@@ -11,8 +11,8 @@ COMPLETION_MARKER_END = "# End snore shell completion"
 
 
 SHELL_REGISTRY: dict[str, ShellConfig] = {
-    "bash": ShellConfig([".bashrc", ".bash_profile", ".profile"]),
-    "zsh": ShellConfig([".zshrc", ".zprofile"]),
+    "bash": ShellConfig(config_files=[".bashrc", ".bash_profile", ".profile"]),
+    "zsh": ShellConfig(config_files=[".zshrc", ".zprofile"]),
 }
 
 

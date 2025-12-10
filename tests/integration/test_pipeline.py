@@ -18,9 +18,9 @@ Note on Expected Warnings:
 import numpy as np
 import pytest
 
-from snore.analysis.algorithms.breath_segmenter import BreathSegmenter
-from snore.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
 from snore.analysis.data.waveform_loader import WaveformLoader
+from snore.analysis.shared.breath_segmenter import BreathSegmenter
+from snore.analysis.shared.feature_extractors import WaveformFeatureExtractor
 from snore.database.models import Session
 
 

@@ -5,7 +5,7 @@ Tests for complex breathing pattern detection.
 import numpy as np
 import pytest
 
-from snore.analysis.algorithms.pattern_detector import (
+from snore.analysis.shared.pattern_detector import (
     ComplexPatternDetector,
 )
 
@@ -176,91 +176,6 @@ class TestPeriodicBreathingDetection:
         return tidal_volumes + noise
 
 
-class TestPositionalAnalysis:
-    """Test positional event clustering detection."""
-
-    @pytest.fixture
-    def detector(self):
-        return ComplexPatternDetector(min_cycle_count=3, autocorr_threshold=0.6)
-
-    def test_detect_positional_events_with_clusters(self, detector):
-        event_timestamps = []
-        event_timestamps.extend(np.arange(100, 300, 10).tolist())
-        event_timestamps.extend(np.arange(1000, 1200, 10).tolist())
-        event_timestamps.extend(np.arange(2000, 2200, 10).tolist())
-
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is not None
-        assert positional.total_clusters >= 2
-        assert len(positional.cluster_times) >= 2
-        assert len(positional.cluster_event_counts) >= 2
-
-    def test_detect_positional_events_too_few_events(self, detector):
-        event_timestamps = [10.0, 20.0, 30.0]
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is None
-
-    def test_detect_positional_events_no_clustering(self, detector):
-        event_timestamps = np.arange(100, 3000, 600).tolist()
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is None
-
-    def test_detect_positional_events_single_cluster(self, detector):
-        event_timestamps = np.arange(100, 500, 10).tolist()
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is None
-
-    def test_positional_likelihood_calculation(self, detector):
-        event_timestamps = []
-        event_timestamps.extend(np.arange(100, 300, 10).tolist())
-        event_timestamps.extend(np.arange(1000, 1200, 10).tolist())
-        event_timestamps.extend(np.arange(2000, 2200, 10).tolist())
-
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is not None
-        assert 0.0 <= positional.positional_likelihood <= 1.0
-
-    def test_positional_confidence_score(self, detector):
-        event_timestamps = []
-        event_timestamps.extend(np.arange(100, 300, 10).tolist())
-        event_timestamps.extend(np.arange(1000, 1200, 10).tolist())
-        event_timestamps.extend(np.arange(2000, 2200, 10).tolist())
-
-        session_duration = 3600.0
-
-        positional = detector.detect_positional_events(
-            event_timestamps, session_duration, cluster_threshold=300.0
-        )
-
-        assert positional is not None
-        assert 0.0 < positional.confidence <= 1.0
-
-
 class TestSignalProcessing:
     """Test signal processing helper methods."""
 
@@ -427,62 +342,6 @@ class TestHelperMethods:
 
         assert not has_apneas
 
-    def test_identify_clusters_multiple(self, detector):
-        event_times = np.array([10, 20, 30, 100, 110, 120, 200, 210, 220])
-
-        clusters = detector._identify_clusters(event_times, max_gap=50.0)
-
-        assert len(clusters) == 3
-        assert all(len(cluster) >= 2 for cluster in clusters)
-
-    def test_identify_clusters_no_gaps(self, detector):
-        event_times = np.arange(10, 100, 10)
-
-        clusters = detector._identify_clusters(event_times, max_gap=50.0)
-
-        assert len(clusters) == 1
-
-    def test_identify_clusters_all_isolated(self, detector):
-        event_times = np.arange(10, 1000, 200)
-
-        clusters = detector._identify_clusters(event_times, max_gap=50.0)
-
-        assert len(clusters) == 0
-
-    def test_identify_clusters_empty_input(self, detector):
-        event_times = np.array([])
-
-        clusters = detector._identify_clusters(event_times, max_gap=50.0)
-
-        assert len(clusters) == 0
-
-    def test_calculate_positional_likelihood_high(self, detector):
-        clusters = [
-            np.array([10, 20, 30, 40, 50]),
-            np.array([200, 210, 220, 230, 240]),
-            np.array([400, 410, 420, 430, 440]),
-        ]
-        all_events = np.concatenate(clusters)
-        session_duration = 1000.0
-
-        likelihood = detector._calculate_positional_likelihood(
-            clusters, session_duration, all_events
-        )
-
-        assert 0.0 <= likelihood <= 1.0
-        assert likelihood > 0.5
-
-    def test_calculate_positional_likelihood_low(self, detector):
-        clusters = [np.array([10, 20]), np.array([200, 210])]
-        all_events = np.concatenate(clusters)
-        session_duration = 1000.0
-
-        likelihood = detector._calculate_positional_likelihood(
-            clusters, session_duration, all_events
-        )
-
-        assert 0.0 <= likelihood <= 1.0
-
     def test_calculate_csr_confidence_high(self, detector):
         confidence = detector._calculate_csr_confidence(
             cycle_length=60.0, amplitude_var=0.5, waxing_waning=0.8, cycle_count=6
@@ -510,20 +369,6 @@ class TestHelperMethods:
         )
 
         assert 0.4 <= confidence <= 0.6
-
-    def test_calculate_positional_confidence_high(self, detector):
-        confidence = detector._calculate_positional_confidence(
-            cluster_count=5, cluster_sizes=[10, 12, 8, 15, 9], likelihood=0.85
-        )
-
-        assert 0.7 <= confidence <= 1.0
-
-    def test_calculate_positional_confidence_low(self, detector):
-        confidence = detector._calculate_positional_confidence(
-            cluster_count=2, cluster_sizes=[3, 4], likelihood=0.3
-        )
-
-        assert 0.4 <= confidence <= 0.7
 
     def test_calculate_csr_time_percentage(self, detector):
         signal_data = np.concatenate([np.ones(50) * 500, np.ones(50) * 100])
