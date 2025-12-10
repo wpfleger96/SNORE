@@ -128,7 +128,42 @@ uv run snore analyze --all
 3. Auto-detects if only one profile exists in database
 4. Shows helpful error if multiple profiles and no default set
 
-### 4. Manage Sessions
+### 4. Analyze CPAP Sessions
+
+Run programmatic respiratory event detection on imported sessions:
+
+```bash
+# Analyze specific date (uses default profile)
+uv run snore analyze --date 2024-12-05
+
+# Analyze specific session by ID
+uv run snore analyze --session-id 123
+
+# Analyze date range
+uv run snore analyze --start 2024-12-01 --end 2024-12-31
+
+# Run specific detection mode
+uv run snore analyze --date 2024-12-05 --mode aasm_relaxed
+
+# Run all available modes
+uv run snore analyze --date 2024-12-05 --all-modes
+
+# List analyzed sessions
+uv run snore analyze --list
+```
+
+**Available Detection Modes:**
+- `aasm` (default) - AASM Scoring Manual v2.6 compliant detection
+- `aasm_relaxed` - AASM-based with relaxed thresholds for machine matching
+
+**Analysis Output:**
+- Detected apneas (obstructive, central, mixed, unspecified)
+- Detected hypopneas
+- AHI (Apnea-Hypopnea Index) and RDI (Respiratory Disturbance Index)
+- Flow limitation analysis
+- Complex pattern detection (CSR, periodic breathing)
+
+### 5. Manage Sessions
 
 ```bash
 # Delete sessions by date range (with preview)
@@ -147,7 +182,7 @@ uv run snore delete-sessions --session-id "5" --force
 uv run snore db vacuum
 ```
 
-### 5. Direct Database Access
+### 6. Direct Database Access
 
 Query the SQLite database directly:
 
@@ -171,6 +206,7 @@ The SQLite database stores all parsed CPAP data:
 - `events` - Respiratory events (Apneas, Hypopneas, RERA, etc.)
 - `statistics` - Pre-calculated metrics (AHI, pressure stats, leak stats, SpO2)
 - `settings` - Therapy configuration (key-value pairs)
+- `analyses` - Programmatic analysis results (detection mode, events, metrics)
 
 Database location: `~/.snore/snore.db`
 
@@ -179,10 +215,10 @@ Database location: `~/.snore/snore.db`
 ```
 SNORE/
 ├── src/snore/
-│   ├── cli.py                   # CLI commands (import, list, db)
+│   ├── cli.py                   # CLI commands (import, analyze, list, db)
 │   ├── constants.py             # Channel IDs and mappings
 │   ├── models/
-│   │   └── unified.py           # Universal data model
+│   │   └── unified.py           # Universal data model (Pydantic)
 │   ├── database/
 │   │   ├── schema.sql           # SQLite schema
 │   │   ├── manager.py           # Database operations
@@ -193,10 +229,14 @@ SNORE/
 │   │   ├── resmed_edf.py        # ResMed EDF+ parser
 │   │   └── formats/
 │   │       └── edf.py           # Generic EDF reader
+│   ├── analysis/
+│   │   ├── service.py           # Analysis orchestration
+│   │   ├── shared/              # Core algorithms (breath segmentation, features)
+│   │   └── modes/               # Detection modes (AASM, AASM Relaxed)
 │   └── utils/
 ├── tests/
-│   ├── test_parsers.py          # Parser tests
-│   └── test_import_pipeline.py # Integration tests
+│   ├── unit/                    # Unit tests
+│   └── integration/             # Integration tests
 └── pyproject.toml
 ```
 

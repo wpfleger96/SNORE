@@ -55,7 +55,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 
 **File:** `src/snore/models/unified.py`
 
-All parsers convert to these universal structures:
+All parsers convert to these universal Pydantic structures:
 
 **UnifiedSession**
 - Device-agnostic session container
@@ -164,6 +164,112 @@ Generic EDF/EDF+ file reader for medical devices:
 
 ---
 
+## Analysis System
+
+### Overview
+
+The analysis system performs programmatic respiratory event detection on imported CPAP sessions using configurable detection modes.
+
+**Architecture:**
+```
+analysis/
+├── service.py          # Orchestration (BreathSegmenter → FeatureExtractor → Classifier → Detector)
+├── types.py            # AnalysisResult, AnalysisEvent (Pydantic models)
+├── shared/             # Core algorithms
+│   ├── breath_segmenter.py      # Breath segmentation from flow data
+│   ├── feature_extractors.py   # Waveform feature extraction
+│   ├── flow_limitation.py       # Flow limitation classification
+│   ├── pattern_detector.py     # Complex pattern detection (CSR, periodic breathing)
+│   └── types.py                 # BreathMetrics, ApneaEvent, HypopneaEvent (Pydantic)
+└── modes/              # Detection modes
+    ├── config.py       # AASM_CONFIG, AASM_RELAXED_CONFIG
+    ├── detector.py     # EventDetector (configurable)
+    └── types.py        # ModeResult, DetectionModeConfig (Pydantic)
+```
+
+### Detection Modes
+
+**Config-Based Strategy Pattern:**
+- Single `EventDetector` class configurable via `DetectionModeConfig`
+- No class hierarchy - behavior controlled by configuration
+- Easily extensible by adding new configs
+
+**Available Modes:**
+
+1. **AASM Mode** (default)
+   - AASM Scoring Manual v2.6 compliant
+   - Time-based baseline (120 seconds, 2 minutes)
+   - 90% validation threshold
+   - Strict apnea detection (≥90% flow reduction)
+   - Hypopnea detection (30-89% reduction)
+
+2. **AASM Relaxed Mode**
+   - AASM-based with relaxed thresholds
+   - Breath-based baseline (30 breaths)
+   - 85% validation threshold
+   - Better for matching machine-detected events
+
+**Configuration Parameters:**
+```python
+DetectionModeConfig(
+    name="mode_name",
+    baseline_method=BaselineMethod.TIME | BaselineMethod.BREATH,
+    baseline_window=120.0,  # seconds or breath count
+    apnea_threshold=0.90,   # 90% flow reduction
+    apnea_validation_threshold=0.90,
+    hypopnea_min_threshold=0.30,
+    hypopnea_max_threshold=0.89,
+    min_event_duration=10.0,
+    merge_gap=3.0,
+    metric="amplitude"
+)
+```
+
+### Analysis Pipeline
+
+```
+1. Load waveform data (timestamps, flow values)
+   ↓
+2. BreathSegmenter.segment_breaths()
+   → Identifies individual breaths from flow signal
+   ↓
+3. WaveformFeatureExtractor (per breath)
+   → Extracts shape features, spectral features, waveform features
+   ↓
+4. FlowLimitationClassifier.analyze_session()
+   → Classifies flow limitation severity
+   ↓
+5. ComplexPatternDetector
+   → Detects CSR (Cheyne-Stokes Respiration)
+   → Detects periodic breathing
+   ↓
+6. EventDetector.detect_events() (per mode)
+   → Detects apneas (obstructive, central, mixed, unspecified)
+   → Detects hypopneas
+   → Calculates AHI, RDI
+   ↓
+7. AnalysisResult (stored in database)
+   → mode_results: {mode_name: ModeResult}
+   → flow_analysis, csr_detection, periodic_breathing
+```
+
+### Type System
+
+**All analysis types use Pydantic models:**
+- Validation at construction time
+- Automatic JSON serialization via `model_dump()`
+- JSON schema generation (required for MCP tools)
+- No manual `to_dict()`/`from_dict()` methods needed
+
+**Key Types:**
+- `BreathMetrics` - Individual breath measurements (Pydantic)
+- `ApneaEvent`, `HypopneaEvent` - Detected events (Pydantic)
+- `ModeResult` - Per-mode detection results (Pydantic)
+- `AnalysisResult` - Complete analysis output (Pydantic)
+- `DetectionModeConfig` - Mode configuration (frozen Pydantic)
+
+---
+
 ## Database Schema
 
 ### Tables
@@ -207,6 +313,12 @@ AHI, OAI, CAI, HI, REI, pressure stats, leak stats, SpO2 stats, etc.
 id, session_id, setting_key, setting_value
 ```
 Key-value pairs for extensibility across device types
+
+**analyses**
+```sql
+id, session_id, mode_name, analysis_timestamp, result_json
+```
+Stores programmatic analysis results (detection mode, events, AHI/RDI, metadata)
 
 ---
 
@@ -326,6 +438,22 @@ uv run snore list-sessions --from-date 2024-01-01 --to-date 2024-12-31
 uv run snore list-sessions --limit 50
 ```
 
+### Analyze Sessions
+
+```bash
+# Analyze specific date
+uv run snore analyze --date 2024-12-05
+
+# Analyze with specific mode
+uv run snore analyze --date 2024-12-05 --mode aasm_relaxed
+
+# Analyze with all modes
+uv run snore analyze --date 2024-12-05 --all-modes
+
+# List analyzed sessions
+uv run snore analyze --list
+```
+
 ### Database Management
 
 ```bash
@@ -424,12 +552,15 @@ Philips SD Card → SNORE → Database
    - New parsers require zero MCP server changes
    - Add device support by creating one file
    - Database schema supports all device types
+   - New analysis modes via simple config addition
 
 2. ✅ **Maintainability**
    - Each parser completely independent
    - Clear separation of concerns
    - Easy to debug and test in isolation
-   - Simplified codebase (479 lines removed)
+   - Simplified codebase (~2,400 lines removed in recent refactor)
+   - Single type system (Pydantic throughout)
+   - Config-based detection (no class hierarchy)
 
 3. ✅ **User Experience**
    - Auto-detection "just works"

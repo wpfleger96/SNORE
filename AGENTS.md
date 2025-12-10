@@ -25,9 +25,9 @@ src/snore/
 ├── config.py           # Configuration management
 ├── constants.py        # Channel IDs, mappings
 ├── analysis/           # Analysis algorithms
-│   ├── algorithms/     # Breath segmentation, event detection, flow limitation
-│   ├── engines/        # ProgrammaticAnalysisEngine
-│   └── service.py      # AnalysisService orchestrator
+│   ├── shared/         # Breath segmentation, feature extraction, flow limitation
+│   ├── modes/          # Event detection modes (AASM, AASM Relaxed)
+│   └── service.py      # AnalysisService orchestrator (direct component calls)
 ├── database/           # SQLAlchemy ORM layer
 │   ├── models.py       # DB models
 │   └── session.py      # session_scope() context manager
@@ -108,13 +108,19 @@ with session_scope() as session:
     # Auto-commit on success, rollback on exception
 ```
 
+**Analysis Architecture:** Direct orchestration in `service.py`:
+- BreathSegmenter → feature extraction → FlowLimitationClassifier → ComplexPatternDetector
+- Event detection via modes with `DetectionModeConfig` (AASM, AASM Relaxed)
+- All types use Pydantic models (validation, serialization)
+
 **Unified Data Model:** All device data converts to `UnifiedSession` → `WaveformData` → `RespiratoryEvent`
 
 ## Code Style
 
-- Type hints: `str | None` (not Optional), `list[str]` (not List)
+- Type hints: `str | None` (not Optional), `list[str]` (not List), avoid `Any` types
 - Imports: stdlib, third-party, then `snore.` absolute imports
 - Naming: snake_case functions, PascalCase classes, UPPER_SNAKE constants
+- All data types use Pydantic models (no dataclasses)
 
 ## Testing
 
@@ -137,6 +143,8 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 3. **WAL cleanup:** Temp databases need `-wal` and `-shm` file cleanup
 4. **Profile resolution:** CLI flag > config > auto-detect fallback chain
 5. **OSCAR import incomplete:** `src/snore/importers/oscar_import.py` has placeholder logic
+6. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
+7. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
 
 ## Key Files by Task
 
@@ -144,8 +152,9 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 |------|-------|
 | Add CLI command | `src/snore/cli.py` |
 | Add device parser | `src/snore/parsers/base.py`, `registry.py`, create new parser file |
-| Add analysis algorithm | `src/snore/analysis/algorithms/`, `engines/programmatic_engine.py` |
-| Modify data models | `src/snore/models/unified.py` (data), `database/models.py` (ORM) |
+| Add analysis algorithm | `src/snore/analysis/shared/` (breath/feature algorithms) or `modes/` (event detection) |
+| Add detection mode | `src/snore/analysis/modes/config.py` (add `DetectionModeConfig`), update `detector.py` |
+| Modify data models | `src/snore/models/unified.py` (data), `database/models.py` (ORM), use Pydantic |
 | Add MCP tool | `src/snore/server.py` |
 | Add test fixture | `tests/conftest.py`, `tests/helpers/` |
 | Work on OSCAR import | `src/snore/importers/oscar_import.py`, `parsers/oscar_*.py` |
