@@ -8,125 +8,20 @@ Format version 10 (current OSCAR version).
 import io
 import struct
 
-from dataclasses import dataclass, field
 from datetime import datetime
-from enum import IntEnum
 from pathlib import Path
 from typing import Any, BinaryIO
 
 from snore.constants import OSCAR_MAGIC_NUMBER
 from snore.parsers.compression import QtCompressionError, qUncompress
 from snore.parsers.qdatastream import QDataStreamReader
+from snore.parsers.types import EventList, EventListType, SessionEvents
 
 
 class OscarEventsParseError(Exception):
     """Exception raised when parsing OSCAR events file fails."""
 
     pass
-
-
-class EventListType(IntEnum):
-    """Type of EventList data."""
-
-    WAVEFORM = 0  # Continuous sampled data
-    EVENT = 1  # Discrete events
-
-
-@dataclass
-class EventList:
-    """
-    A single EventList containing waveform or event data.
-
-    EventLists store either continuous waveform data (pressure, flow, etc.)
-    or discrete event data (apneas, etc.) for a single channel.
-    """
-
-    channel_id: int
-    first_timestamp: int  # milliseconds since epoch
-    last_timestamp: int
-    count: int
-    event_type: EventListType
-    sample_rate: float  # Events per second for waveforms
-    gain: float  # Multiplier to convert stored -> actual values
-    offset: float
-    min_value: float
-    max_value: float
-    dimension: str  # Units (e.g., "cmH2O", "L/min")
-    has_second_field: bool = False
-    min_value2: float = 0.0
-    max_value2: float = 0.0
-
-    # Data arrays
-    data: list[int] = field(
-        default_factory=list
-    )  # Primary data (EventStoreType = int16)
-    data2: list[int] = field(
-        default_factory=list
-    )  # Secondary data (if has_second_field)
-    time_deltas: list[int] = field(
-        default_factory=list
-    )  # Time offsets in ms (for events)
-
-    def get_actual_values(self) -> list[float]:
-        """
-        Convert stored int16 values to actual float values using gain/offset.
-
-        Returns:
-            List of actual data values
-        """
-        return [v * self.gain + self.offset for v in self.data]
-
-    def get_actual_values2(self) -> list[float]:
-        """
-        Convert stored int16 values to actual float values for secondary field.
-
-        Returns:
-            List of actual data values for second field
-        """
-        if not self.has_second_field:
-            return []
-        return [v * self.gain + self.offset for v in self.data2]
-
-    def get_timestamps(self) -> list[int]:
-        """
-        Get actual timestamps for each data point.
-
-        For waveforms: Calculate from sample rate
-        For events: Use delta time array
-
-        Returns:
-            List of timestamps in milliseconds since epoch
-        """
-        if self.event_type == EventListType.WAVEFORM:
-            # Calculate timestamps from sample rate
-            if self.sample_rate <= 0:
-                return []
-
-            interval_ms = 1000.0 / self.sample_rate
-            return [
-                int(self.first_timestamp + i * interval_ms) for i in range(self.count)
-            ]
-        else:
-            # Use delta times
-            return [self.first_timestamp + delta for delta in self.time_deltas]
-
-    @property
-    def duration_seconds(self) -> float:
-        """Get duration of this EventList in seconds."""
-        return (self.last_timestamp - self.first_timestamp) / 1000.0
-
-
-@dataclass
-class SessionEvents:
-    """
-    Complete event/waveform data for a session from .001 file.
-
-    Contains all EventLists for all channels in the session.
-    """
-
-    # Header fields
-    magic: int
-    version: int
     file_type: int
     machine_id: int
     session_id: int

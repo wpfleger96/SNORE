@@ -8,81 +8,18 @@ using time-series analysis and clustering techniques.
 
 import logging
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from scipy import signal, stats
 
+from snore.analysis.shared.types import (
+    CSRDetection,
+    PeriodicBreathingDetection,
+    PositionalAnalysis,
+)
 from snore.constants import PatternDetectionConstants as PDC
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class CSRDetection:
-    """
-    Detected Cheyne-Stokes Respiration pattern.
-
-    Attributes:
-        start_time: Pattern start timestamp (seconds)
-        end_time: Pattern end timestamp (seconds)
-        cycle_length: Average cycle length (seconds)
-        amplitude_variation: Coefficient of variation in tidal volume
-        csr_index: Percentage of time in CSR pattern (0-1)
-        confidence: Detection confidence (0-1)
-        cycle_count: Number of complete cycles detected
-    """
-
-    start_time: float
-    end_time: float
-    cycle_length: float
-    amplitude_variation: float
-    csr_index: float
-    confidence: float
-    cycle_count: int
-
-
-@dataclass
-class PeriodicBreathingDetection:
-    """
-    Detected periodic breathing pattern.
-
-    Attributes:
-        start_time: Pattern start timestamp (seconds)
-        end_time: Pattern end timestamp (seconds)
-        cycle_length: Average cycle length (seconds)
-        regularity_score: Measure of pattern regularity (0-1)
-        confidence: Detection confidence (0-1)
-        has_apneas: Whether pattern includes apneas
-    """
-
-    start_time: float
-    end_time: float
-    cycle_length: float
-    regularity_score: float
-    confidence: float
-    has_apneas: bool
-
-
-@dataclass
-class PositionalAnalysis:
-    """
-    Positional event clustering analysis.
-
-    Attributes:
-        cluster_times: List of (start, end) tuples for event clusters
-        cluster_event_counts: Number of events in each cluster
-        positional_likelihood: Likelihood that clustering is position-related (0-1)
-        confidence: Detection confidence (0-1)
-        total_clusters: Number of clusters identified
-    """
-
-    cluster_times: list[tuple[float, float]]
-    cluster_event_counts: list[int]
-    positional_likelihood: float
-    confidence: float
-    total_clusters: int
 
 
 class ComplexPatternDetector:

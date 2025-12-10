@@ -10,24 +10,11 @@ and implement these methods - the rest of the system automatically works.
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from snore.models.unified import DeviceInfo, UnifiedSession
-
-
-@dataclass
-class ParserMetadata:
-    """Metadata about a parser implementation."""
-
-    parser_id: str  # Unique identifier (e.g., "resmed_edf")
-    parser_version: str  # Version of this parser implementation
-    manufacturer: str  # Device manufacturer name
-    supported_formats: list[str]  # File formats this parser handles
-    supported_models: list[str]  # Device models supported
-    description: str  # Human-readable description
-    requires_libraries: list[str] | None = None  # External dependencies
+from snore.parsers.types import ParserMetadata
 
 
 class ParserDetectionResult:

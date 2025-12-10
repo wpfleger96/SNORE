@@ -1,66 +1,62 @@
-"""
-Detection mode registry for respiratory event detection.
-
-Provides factory functions to instantiate and manage different detection modes.
-"""
+"""Detection mode registry."""
 
 from typing import Any
 
-from .aasm import AASMDetectionMode
-from .aasm_relaxed import AASMRelaxedDetectionMode
-from .base import DetectionMode, ModeResult
+from snore.analysis.modes.config import AVAILABLE_CONFIGS, DEFAULT_MODE
+from snore.analysis.modes.detector import EventDetector
+from snore.analysis.modes.types import (
+    BaselineMethod,
+    DetectionModeConfig,
+    ModeResult,
+)
 
-# Mode imports will be added as they're implemented
-# from .resmed import ResMedDetectionMode
+# Backward compatibility alias
+AVAILABLE_MODES = AVAILABLE_CONFIGS
 
 __all__ = [
-    "DetectionMode",
+    "EventDetector",
     "ModeResult",
-    "AASMDetectionMode",
-    "AASMRelaxedDetectionMode",
-    "AVAILABLE_MODES",
+    "DetectionModeConfig",
+    "BaselineMethod",
+    "AVAILABLE_CONFIGS",
+    "AVAILABLE_MODES",  # Backward compatibility
     "DEFAULT_MODE",
     "get_mode",
     "get_all_modes",
 ]
 
-AVAILABLE_MODES: dict[str, type[DetectionMode]] = {
-    "aasm": AASMDetectionMode,
-    "aasm_relaxed": AASMRelaxedDetectionMode,
-}
 
-DEFAULT_MODE = "aasm"
-
-
-def get_mode(name: str, **kwargs: Any) -> DetectionMode:
+def get_mode(name: str, **kwargs: Any) -> EventDetector:
     """
     Factory function to get a detection mode by name.
 
     Args:
-        name: Mode name (e.g., "aasm", "resmed")
-        **kwargs: Mode-specific initialization parameters
+        name: Mode name (e.g., "aasm", "aasm_relaxed")
+        **kwargs: Reserved for future config overrides
 
     Returns:
-        DetectionMode instance
+        EventDetector instance configured for the mode
 
     Raises:
         ValueError: If mode name is not recognized
     """
-    if name not in AVAILABLE_MODES:
+    if name not in AVAILABLE_CONFIGS:
         raise ValueError(
-            f"Unknown mode: {name}. Available: {list(AVAILABLE_MODES.keys())}"
+            f"Unknown mode: {name}. Available: {list(AVAILABLE_CONFIGS.keys())}"
         )
-    return AVAILABLE_MODES[name](**kwargs)
+
+    config = AVAILABLE_CONFIGS[name]
+    return EventDetector(config)
 
 
-def get_all_modes(**kwargs: Any) -> list[DetectionMode]:
+def get_all_modes(**kwargs: Any) -> list[EventDetector]:
     """
     Get instances of all available modes.
 
     Args:
-        **kwargs: Mode-specific initialization parameters
+        **kwargs: Reserved for future config overrides
 
     Returns:
-        List of all available DetectionMode instances
+        List of all available EventDetector instances
     """
-    return [mode_class(**kwargs) for mode_class in AVAILABLE_MODES.values()]
+    return [EventDetector(config) for config in AVAILABLE_CONFIGS.values()]

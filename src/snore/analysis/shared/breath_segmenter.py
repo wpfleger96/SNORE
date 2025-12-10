@@ -8,75 +8,12 @@ calculating breath-level metrics.
 
 import logging
 
-from dataclasses import dataclass
-
 import numpy as np
 
+from snore.analysis.shared.types import BreathMetrics, BreathPhases
 from snore.constants import BreathSegmentationConstants
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BreathPhases:
-    """
-    Inspiration and expiration phases of a single breath.
-
-    Attributes:
-        inspiration_indices: Indices where flow > 0 (breathing in)
-        expiration_indices: Indices where flow < 0 (breathing out)
-        inspiration_values: Flow values during inspiration
-        expiration_values: Flow values during expiration
-    """
-
-    inspiration_indices: np.ndarray
-    expiration_indices: np.ndarray
-    inspiration_values: np.ndarray
-    expiration_values: np.ndarray
-
-
-@dataclass
-class BreathMetrics:
-    """
-    Comprehensive metrics for a single breath.
-
-    Attributes:
-        breath_number: Sequential breath number in session
-        start_time: Timestamp of breath start (seconds)
-        middle_time: Timestamp of inspiration→expiration transition (seconds)
-        end_time: Timestamp of breath end (seconds)
-        duration: Total breath time (seconds)
-        tidal_volume: Volume of air breathed in (mL)
-        tidal_volume_smoothed: Smoothed TV using 5-point weighted average (mL)
-        peak_inspiratory_flow: Maximum flow during inspiration (L/min)
-        peak_expiratory_flow: Maximum absolute flow during expiration (L/min)
-        inspiration_time: Duration of inspiration phase (seconds)
-        expiration_time: Duration of expiration phase (seconds)
-        i_e_ratio: Inspiration to expiration time ratio
-        respiratory_rate: Instantaneous rate (60/duration) in breaths/min
-        respiratory_rate_rolling: Rolling 60s window rate (breaths/min)
-        minute_ventilation: Estimated ventilation using rolling RR (L/min)
-        amplitude: Peak-to-peak amplitude (peak_insp - |peak_exp|) in L/min
-        is_complete: Whether breath has both inspiration and expiration
-    """
-
-    breath_number: int
-    start_time: float
-    middle_time: float
-    end_time: float
-    duration: float
-    tidal_volume: float
-    tidal_volume_smoothed: float
-    peak_inspiratory_flow: float
-    peak_expiratory_flow: float
-    inspiration_time: float
-    expiration_time: float
-    i_e_ratio: float
-    respiratory_rate: float
-    respiratory_rate_rolling: float
-    minute_ventilation: float
-    amplitude: float
-    is_complete: bool
 
 
 class BreathSegmenter:

@@ -8,62 +8,18 @@ normal (Class 1) to severe flow limitation (Class 7).
 
 import logging
 
-from dataclasses import dataclass
-from typing import Any
-
 import numpy as np
 
-from snore.analysis.algorithms.feature_extractors import (
+from snore.analysis.shared.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     StatisticalFeatures,
 )
+from snore.analysis.shared.types import FlowPattern, SessionFlowAnalysis
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.constants import FlowLimitationConstants as FLC
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class FlowPattern:
-    """
-    Classification result for a single breath.
-
-    Attributes:
-        breath_number: Sequential breath number
-        flow_class: Class number (1-7)
-        class_name: Human-readable class name
-        confidence: Confidence score (0-1)
-        matched_features: Features that supported this classification
-        severity: Clinical severity level
-    """
-
-    breath_number: int
-    flow_class: int
-    class_name: str
-    confidence: float
-    matched_features: dict[str, Any]
-    severity: str
-
-
-@dataclass
-class SessionFlowAnalysis:
-    """
-    Flow limitation analysis for an entire session.
-
-    Attributes:
-        total_breaths: Total number of breaths analyzed
-        class_distribution: Count of breaths in each class
-        flow_limitation_index: Overall FL index (0-1)
-        average_confidence: Mean confidence across all classifications
-        patterns: Individual breath classifications
-    """
-
-    total_breaths: int
-    class_distribution: dict[int, int]
-    flow_limitation_index: float
-    average_confidence: float
-    patterns: list[FlowPattern]
 
 
 class FlowLimitationClassifier:

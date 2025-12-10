@@ -7,67 +7,18 @@ Format version 18 (current OSCAR version).
 
 import struct
 
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from snore.constants import OSCAR_MAGIC_NUMBER
 from snore.parsers.qdatastream import QDataStreamReader
+from snore.parsers.types import SessionSummary
 
 
 class OscarSummaryParseError(Exception):
     """Exception raised when parsing OSCAR summary file fails."""
 
     pass
-
-
-@dataclass
-class SessionSummary:
-    """
-    Session summary data from .000 file.
-
-    Contains all statistics and metadata for a single therapy session.
-    """
-
-    # Header fields
-    magic: int
-    version: int
-    file_type: int
-    machine_id: int
-    session_id: int
-    first_timestamp: int  # milliseconds since epoch
-    last_timestamp: int  # milliseconds since epoch
-
-    # Session data
-    settings: dict[int, Any] = field(default_factory=dict)
-    counts: dict[int, float] = field(default_factory=dict)
-    sums: dict[int, float] = field(default_factory=dict)
-    averages: dict[int, float] = field(default_factory=dict)
-    weighted_averages: dict[int, float] = field(default_factory=dict)
-    minimums: dict[int, float] = field(default_factory=dict)
-    maximums: dict[int, float] = field(default_factory=dict)
-    physical_minimums: dict[int, float] = field(default_factory=dict)
-    physical_maximums: dict[int, float] = field(default_factory=dict)
-    counts_per_hour: dict[int, float] = field(default_factory=dict)
-    sums_per_hour: dict[int, float] = field(default_factory=dict)
-    first_channel_time: dict[int, int] = field(default_factory=dict)
-    last_channel_time: dict[int, int] = field(default_factory=dict)
-    value_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
-    time_summaries: dict[int, dict[int, int]] = field(default_factory=dict)
-    gains: dict[int, float] = field(default_factory=dict)
-    available_channels: list[int] = field(default_factory=list)
-
-    # Additional fields
-    time_above_threshold: dict[int, int] = field(default_factory=dict)
-    upper_threshold: dict[int, float] = field(default_factory=dict)
-    time_below_threshold: dict[int, int] = field(default_factory=dict)
-    lower_threshold: dict[int, float] = field(default_factory=dict)
-
-    summary_only: bool = False
-    no_settings: bool = False
-
-    @property
     def start_time(self) -> datetime:
         """Get session start time as datetime."""
         return datetime.fromtimestamp(self.first_timestamp / 1000.0)

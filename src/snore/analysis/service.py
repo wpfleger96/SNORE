@@ -8,7 +8,6 @@ analysis, loading data from the database, and storing results.
 import logging
 import time
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -23,25 +22,11 @@ from snore.analysis.engines.programmatic_engine import (
 )
 from snore.analysis.events import AnalysisEvent
 from snore.analysis.modes import DEFAULT_MODE, get_mode
-from snore.analysis.modes.base import ModeResult
+from snore.analysis.modes.types import ModeResult
+from snore.analysis.types import AnalysisResult
 from snore.database import models
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AnalysisResult:
-    """Results from session analysis."""
-
-    session_id: int
-    session_duration_hours: float
-    total_breaths: int
-    machine_events: list[AnalysisEvent]
-    mode_results: dict[str, ModeResult]
-    flow_analysis: dict[str, Any] | None = None
-    positional_analysis: dict[str, Any] | None = None
-    timestamp_start: float = 0.0  # For storage compatibility
-    timestamp_end: float = 0.0
 
 
 class AnalysisService:

@@ -2,23 +2,12 @@
 
 import os
 
-from dataclasses import dataclass
 from pathlib import Path
+
+from snore.types import ShellConfig
 
 COMPLETION_MARKER_START = "# snore shell completion"
 COMPLETION_MARKER_END = "# End snore shell completion"
-
-
-@dataclass
-class ShellConfig:
-    """Configuration for a supported shell."""
-
-    config_files: list[str]  # Relative to home, in priority order
-
-    def get_config_candidates(self) -> list[Path]:
-        """Get existing config file paths for this shell."""
-        home = Path.home()
-        return [home / cf for cf in self.config_files if (home / cf).exists()]
 
 
 SHELL_REGISTRY: dict[str, ShellConfig] = {

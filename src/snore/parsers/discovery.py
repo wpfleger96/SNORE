@@ -1,20 +1,9 @@
 """Data root discovery for CPAP parsers."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
-
-@dataclass
-class DataRoot:
-    """Information about a discovered CPAP data root."""
-
-    path: Path
-    structure_type: Literal["raw_sd", "oscar_profile"]
-    profile_name: str | None
-    device_serial: str | None
-    confidence: float
+from snore.parsers.types import DataRoot
 
 
 class DataRootFinder:

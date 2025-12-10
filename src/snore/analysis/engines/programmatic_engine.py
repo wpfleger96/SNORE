@@ -8,27 +8,24 @@ analyze complete CPAP sessions.
 
 import logging
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from snore.analysis.algorithms.breath_segmenter import BreathSegmenter
-from snore.analysis.algorithms.event_detector import (
-    EventTimeline,
-    RespiratoryEventDetector,
-)
-from snore.analysis.algorithms.feature_extractors import WaveformFeatureExtractor
-from snore.analysis.algorithms.flow_limitation import (
+from snore.analysis.shared.breath_segmenter import BreathSegmenter
+from snore.analysis.shared.event_detector import EventTimeline
+from snore.analysis.shared.feature_extractors import WaveformFeatureExtractor
+from snore.analysis.shared.flow_limitation import (
     FlowLimitationClassifier,
     SessionFlowAnalysis,
 )
-from snore.analysis.algorithms.pattern_detector import (
+from snore.analysis.shared.pattern_detector import (
     ComplexPatternDetector,
     CSRDetection,
     PeriodicBreathingDetection,
     PositionalAnalysis,
 )
+from snore.analysis.engines.types import ProgrammaticAnalysisResult
 from snore.constants import (
     AnalysisEngineConstants as AEC,
 )
@@ -44,48 +41,6 @@ from snore.constants import (
 from snore.utils.formatting import get_ahi_severity
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ProgrammaticAnalysisResult:
-    """
-    Complete programmatic analysis result for a session.
-
-    Attributes:
-        session_id: Database session ID
-        timestamp_start: Analysis start time
-        timestamp_end: Analysis end time
-        duration_hours: Session duration in hours
-
-        flow_analysis: Flow limitation classification results
-        event_timeline: Respiratory event detection results
-        csr_detection: Cheyne-Stokes Respiration detection (if found)
-        periodic_breathing: Periodic breathing detection (if found)
-        positional_analysis: Positional event clustering (if found)
-
-        total_breaths: Total number of breaths analyzed
-        processing_time_ms: Analysis processing time in milliseconds
-        confidence_summary: Average confidence scores by analysis type
-        clinical_summary: Human-readable summary of findings
-    """
-
-    session_id: int
-    timestamp_start: float
-    timestamp_end: float
-    duration_hours: float
-
-    flow_analysis: dict[str, Any]
-    event_timeline: dict[str, Any]
-    csr_detection: dict[str, Any] | None
-    periodic_breathing: dict[str, Any] | None
-    positional_analysis: dict[str, Any] | None
-
-    total_breaths: int
-    processing_time_ms: float
-    confidence_summary: dict[str, float]
-    clinical_summary: str
-    machine_events: list[Any] | None = None
-    breaths: list[Any] | None = None
 
 
 class ProgrammaticAnalysisEngine:
@@ -126,12 +81,9 @@ class ProgrammaticAnalysisEngine:
         self.flow_classifier = FlowLimitationClassifier(
             confidence_threshold=confidence_threshold
         )
-        self.event_detector = RespiratoryEventDetector(
-            min_event_duration=min_event_duration
-        )
         self.pattern_detector = ComplexPatternDetector()
 
-        logger.info("ProgrammaticAnalysisEngine initialized")
+        logger.info("ProgrammaticAnalysisEngine initialized (event detection via modes)")
 
     def analyze_session(
         self,
@@ -194,22 +146,6 @@ class ProgrammaticAnalysisEngine:
         logger.info(f"Flow limitation index: {flow_analysis.flow_limitation_index:.3f}")
 
         tidal_volumes = np.array([b.tidal_volume for b in breaths])
-
-        apneas = self.event_detector.detect_apneas(
-            breaths, flow_data=(timestamps, flow_values)
-        )
-
-        hypopneas = self.event_detector.detect_hypopneas(
-            breaths, flow_data=(timestamps, flow_values), spo2_signal=spo2_values
-        )
-
-        event_timeline = self.event_detector.create_event_timeline(
-            apneas, hypopneas, duration_hours
-        )
-
-        logger.info(f"Detected {len(apneas)} apneas, {len(hypopneas)} hypopneas")
-        logger.info(f"AHI: {event_timeline.ahi:.1f}, RDI: {event_timeline.rdi:.1f}")
-
         breath_timestamps = np.array([b.start_time for b in breaths])
         respiratory_rates = np.array([b.respiratory_rate_rolling for b in breaths])
 
@@ -221,15 +157,14 @@ class ProgrammaticAnalysisEngine:
             breath_timestamps, tidal_volumes, respiratory_rates
         )
 
-        all_event_times = [a.start_time for a in apneas] + [
-            h.start_time for h in hypopneas
-        ]
-
+        # Note: Event detection is now handled by modes (see service.py)
+        # Positional analysis disabled since it requires event times
         positional_analysis = None
-        if len(all_event_times) >= 5:
-            positional_analysis = self.pattern_detector.detect_positional_events(
-                all_event_times, timestamp_end - timestamp_start
-            )
+
+        # Create empty event timeline for backward compatibility
+        event_timeline = EventTimeline(
+            apneas=[], hypopneas=[], total_events=0, ahi=0.0, rdi=0.0
+        )
 
         confidence_summary = self._calculate_confidence_summary(
             flow_analysis, event_timeline, csr_detection, periodic_breathing

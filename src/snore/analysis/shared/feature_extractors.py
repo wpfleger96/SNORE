@@ -9,113 +9,18 @@ classification and respiratory pattern analysis.
 
 import logging
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from scipy import signal, stats
 
+from snore.analysis.shared.types import (
+    PeakFeatures,
+    ShapeFeatures,
+    SpectralFeatures,
+    StatisticalFeatures,
+)
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ShapeFeatures:
-    """
-    Shape characteristics of a breath waveform.
-
-    These features describe the overall shape of the inspiratory flow curve
-    and are critical for flow limitation classification.
-
-    Attributes:
-        flatness_index: Ratio of time spent >80% of peak (0-1)
-            High values indicate plateau/flattened waveforms
-        plateau_duration: Duration of plateau phase in seconds
-        symmetry_score: Statistical skewness (-1 to 1)
-            0 = symmetric, + = right-skewed, - = left-skewed
-        kurtosis: Measure of peakedness vs flatness
-            High = sharp peak, Low = flat plateau
-        rise_time: Time from 10% to 90% of peak flow (seconds)
-        fall_time: Time from 90% to 10% of peak flow (seconds)
-    """
-
-    flatness_index: float
-    plateau_duration: float
-    symmetry_score: float
-    kurtosis: float
-    rise_time: float
-    fall_time: float
-
-
-@dataclass
-class PeakFeatures:
-    """
-    Peak analysis features for breath waveform.
-
-    Multiple peaks in the inspiratory flow curve indicate specific flow
-    limitation patterns (e.g., Class 2 double peak, Class 3 multiple peaks).
-
-    Attributes:
-        peak_count: Number of significant peaks detected
-        peak_positions: Relative positions of peaks (0-1 scale)
-            0 = start of inspiration, 1 = end
-        peak_prominences: Height of each peak above surroundings
-        inter_peak_intervals: Time spacing between consecutive peaks (seconds)
-    """
-
-    peak_count: int
-    peak_positions: list[float]
-    peak_prominences: list[float]
-    inter_peak_intervals: list[float]
-
-
-@dataclass
-class StatisticalFeatures:
-    """
-    Statistical features of breath waveform.
-
-    Basic statistical measures that help characterize the distribution
-    and variability of flow values.
-
-    Attributes:
-        mean: Mean flow value
-        median: Median flow value
-        std_dev: Standard deviation
-        percentile_25: 25th percentile
-        percentile_50: 50th percentile (median)
-        percentile_75: 75th percentile
-        percentile_95: 95th percentile
-        coefficient_of_variation: std_dev / mean
-        zero_crossing_rate: Frequency of sign changes
-    """
-
-    mean: float
-    median: float
-    std_dev: float
-    percentile_25: float
-    percentile_50: float
-    percentile_75: float
-    percentile_95: float
-    coefficient_of_variation: float
-    zero_crossing_rate: float
-
-
-@dataclass
-class SpectralFeatures:
-    """
-    Spectral (frequency domain) features of breath waveform.
-
-    Optional features that analyze frequency content using FFT.
-    Useful for detecting periodic patterns.
-
-    Attributes:
-        dominant_frequency: Primary frequency component (Hz)
-        spectral_entropy: Measure of spectral regularity
-        power_spectral_density: Power distribution across frequencies
-    """
-
-    dominant_frequency: float
-    spectral_entropy: float
-    power_spectral_density: np.ndarray
 
 
 class WaveformFeatureExtractor:

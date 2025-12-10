@@ -5,12 +5,12 @@ This module provides breath segmentation, feature extraction, and pattern
 detection algorithms for CPAP data analysis.
 """
 
-from snore.analysis.algorithms.breath_segmenter import (
+from snore.analysis.shared.breath_segmenter import (
     BreathMetrics,
     BreathPhases,
     BreathSegmenter,
 )
-from snore.analysis.algorithms.feature_extractors import (
+from snore.analysis.shared.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
     SpectralFeatures,
