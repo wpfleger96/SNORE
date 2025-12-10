@@ -8,8 +8,11 @@ analysis, loading data from the database, and storing results.
 import logging
 import time
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+import numpy as np
 
 from sqlalchemy.orm import Session
 
@@ -19,9 +22,26 @@ from snore.analysis.engines.programmatic_engine import (
     ProgrammaticAnalysisResult,
 )
 from snore.analysis.events import AnalysisEvent
+from snore.analysis.modes import DEFAULT_MODE, get_mode
+from snore.analysis.modes.base import ModeResult
 from snore.database import models
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AnalysisResult:
+    """Results from session analysis."""
+
+    session_id: int
+    session_duration_hours: float
+    total_breaths: int
+    machine_events: list[AnalysisEvent]
+    mode_results: dict[str, ModeResult]
+    flow_analysis: dict[str, Any] | None = None
+    positional_analysis: dict[str, Any] | None = None
+    timestamp_start: float = 0.0  # For storage compatibility
+    timestamp_end: float = 0.0
 
 
 class AnalysisService:
@@ -84,23 +104,115 @@ class AnalysisService:
 
         return respiratory_events
 
-    def analyze_session(
-        self, session_id: int, store_results: bool = True
-    ) -> ProgrammaticAnalysisResult:
+    def _debug_compare_events(
+        self,
+        machine_events: list[AnalysisEvent],
+        breaths: list[Any],
+        reductions: np.ndarray,
+        baselines: np.ndarray,
+        session_start_timestamp: float,
+    ) -> None:
         """
-        Run comprehensive analysis on a single session.
+        Compare machine events against our breath analysis for debugging.
+
+        Args:
+            machine_events: Machine-detected events
+            breaths: List of BreathMetrics objects
+            reductions: Flow reduction array (per breath)
+            baselines: Baseline array (per breath)
+            session_start_timestamp: Unix timestamp of session start (for converting machine event times)
+        """
+        print(f"\n{'=' * 70}")
+        print(
+            f"DEBUG: Comparing {len(machine_events)} machine events against breath analysis"
+        )
+        print(f"{'=' * 70}")
+
+        if breaths:
+            print(
+                f"Breath timestamp range: {breaths[0].start_time:.1f}s - {breaths[-1].end_time:.1f}s"
+            )
+            print(f"Session start timestamp: {session_start_timestamp:.1f}")
+
+        for event in machine_events:
+            event_start_relative = event.start_time - session_start_timestamp
+            event_end_relative = event_start_relative + event.duration
+
+            overlapping = [
+                (i, b)
+                for i, b in enumerate(breaths)
+                if b.end_time >= event_start_relative
+                and b.start_time <= event_end_relative
+            ]
+
+            print(f"\n{'-' * 70}")
+            print(f"Machine Event: {event.event_type}")
+            print(
+                f"  Relative time: {event_start_relative:.1f}s | Duration: {event.duration:.1f}s"
+            )
+            print(f"  Overlapping breaths: {len(overlapping)}")
+
+            if len(overlapping) == 0:
+                print("  WARNING: No breaths found during this event!")
+                continue
+
+            for idx, breath in overlapping:
+                if idx < len(reductions) and idx < len(baselines):
+                    print(
+                        f"    Breath {idx:4d}: "
+                        f"TV={breath.tidal_volume:6.1f}mL | "
+                        f"Amp={breath.amplitude:6.1f} | "
+                        f"Baseline={baselines[idx]:6.1f}mL | "
+                        f"Reduction={reductions[idx] * 100:5.1f}%"
+                    )
+
+            event_reductions = [
+                reductions[idx] for idx, _ in overlapping if idx < len(reductions)
+            ]
+            if event_reductions:
+                avg_reduction = np.mean(event_reductions) * 100
+                print(f"  Average reduction: {avg_reduction:.1f}%")
+                if event.event_type in [
+                    "Central Apnea",
+                    "Obstructive Apnea",
+                    "Clear Airway",
+                ]:
+                    if avg_reduction >= 90:
+                        print("  ✓ Meets apnea threshold (≥90%)")
+                    else:
+                        print(f"  ✗ Below apnea threshold ({avg_reduction:.1f}% < 90%)")
+                elif event.event_type == "Hypopnea":
+                    if 30 <= avg_reduction < 90:
+                        print("  ✓ In hypopnea range (30-89%)")
+                    else:
+                        print(f"  ✗ Outside hypopnea range ({avg_reduction:.1f}%)")
+
+    def analyze_session(
+        self,
+        session_id: int,
+        modes: list[str] | None = None,
+        store_results: bool = True,
+        debug: bool = False,
+    ) -> AnalysisResult:
+        """
+        Analyze session with specified detection mode(s).
 
         Args:
             session_id: Database session ID
-            store_results: Whether to store results in database
+            modes: Detection modes to run (None = default mode)
+            store_results: Whether to persist results
+            debug: Enable debug output
 
         Returns:
-            ProgrammaticAnalysisResult with complete analysis
+            AnalysisResult with results from all modes
 
         Raises:
             ValueError: If session not found or has no waveform data
         """
-        logger.info(f"Starting analysis for session {session_id}")
+        if modes is None:
+            modes = [DEFAULT_MODE]
+
+        logger.info(f"Starting analysis for session {session_id} with modes: {modes}")
         start_time = time.time()
 
         session = self.db_session.query(models.Session).filter_by(id=session_id).first()
@@ -121,9 +233,9 @@ class AnalysisService:
             raise ValueError(f"Empty flow waveform data for session {session_id}")
 
         sample_rate = metadata.get("sample_rate", 25.0)
+        session_duration_hours = len(timestamps) / sample_rate / 3600
         logger.info(
-            f"Loaded {len(timestamps)} flow samples at {sample_rate}Hz "
-            f"({len(timestamps) / sample_rate / 3600:.1f} hours)"
+            f"Loaded {len(timestamps)} flow samples at {sample_rate}Hz ({session_duration_hours:.1f} hours)"
         )
 
         machine_events = self._load_machine_events(session_id)
@@ -145,38 +257,65 @@ class AnalysisService:
         except Exception as e:
             logger.info(f"No SpO2 data available: {e}")
 
-        result = self.engine.analyze_session(
+        engine_result = self.engine.analyze_session(
             session_id=session_id,
             timestamps=timestamps,
             flow_values=flow_values,
             sample_rate=sample_rate,
             spo2_values=spo2_values,
         )
+        breaths = engine_result.breaths
+        if breaths is None:
+            raise ValueError(f"No breaths segmented for session {session_id}")
+
+        mode_results = {}
+        for mode_name in modes:
+            try:
+                mode = get_mode(mode_name)
+                result = mode.detect_events(
+                    breaths=breaths,
+                    flow_data=(timestamps, flow_values),
+                    session_duration_hours=session_duration_hours,
+                )
+                mode_results[mode_name] = result
+                logger.info(
+                    f"Mode '{mode_name}': Detected {len(result.apneas)} apneas, "
+                    f"{len(result.hypopneas)} hypopneas, AHI={result.ahi:.1f}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to run mode '{mode_name}': {e}")
+                continue
 
         processing_time_ms = int((time.time() - start_time) * 1000)
-        logger.info(
-            f"Analysis complete for session {session_id} in {processing_time_ms}ms. "
-            f"AHI={result.event_timeline['ahi']:.1f}, "
-            f"FLI={result.flow_analysis['fl_index']:.2f}"
+        logger.info(f"Analysis complete in {processing_time_ms}ms")
+
+        # TODO: Implement debug comparison for mode-based events
+        # TODO: Implement storage for mode-based results
+
+        return AnalysisResult(
+            session_id=session_id,
+            session_duration_hours=session_duration_hours,
+            total_breaths=len(breaths),
+            machine_events=machine_events,
+            mode_results=mode_results,
+            flow_analysis=engine_result.flow_analysis,
+            positional_analysis=engine_result.positional_analysis,
+            timestamp_start=timestamps[0] if len(timestamps) > 0 else 0.0,
+            timestamp_end=timestamps[-1] if len(timestamps) > 0 else 0.0,
         )
 
-        if store_results:
-            self._store_analysis_result(
-                session_id, result, processing_time_ms, machine_events
-            )
-
-        result.machine_events = machine_events
-
-        return result
-
     def analyze_sessions(
-        self, session_ids: list[int], store_results: bool = True
-    ) -> list[ProgrammaticAnalysisResult]:
+        self,
+        session_ids: list[int],
+        modes: list[str] | None = None,
+        store_results: bool = True,
+    ) -> list[AnalysisResult]:
         """
         Run analysis on multiple sessions.
 
         Args:
             session_ids: List of session IDs to analyze
+            modes: Detection modes to run (None = default mode)
             store_results: Whether to store results in database
 
         Returns:
@@ -185,7 +324,11 @@ class AnalysisService:
         results = []
         for session_id in session_ids:
             try:
-                result = self.analyze_session(session_id, store_results=store_results)
+                result = self.analyze_session(
+                    session_id,
+                    modes=modes,
+                    store_results=store_results,
+                )
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed to analyze session {session_id}: {e}")

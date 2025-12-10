@@ -85,6 +85,7 @@ class ProgrammaticAnalysisResult:
     confidence_summary: dict[str, float]
     clinical_summary: str
     machine_events: list[Any] | None = None
+    breaths: list[Any] | None = None
 
 
 class ProgrammaticAnalysisEngine:
@@ -262,6 +263,7 @@ class ProgrammaticAnalysisEngine:
             processing_time_ms=processing_time,
             confidence_summary=confidence_summary,
             clinical_summary=clinical_summary,
+            breaths=breaths,
         )
 
     def _calculate_confidence_summary(

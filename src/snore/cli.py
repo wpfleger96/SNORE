@@ -16,7 +16,8 @@ import click
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
-from snore.analysis.service import AnalysisService
+from snore.analysis.modes import AVAILABLE_MODES
+from snore.analysis.service import AnalysisResult, AnalysisService
 from snore.config import (
     get_config_path,
     get_default_profile,
@@ -1234,6 +1235,23 @@ def show_config_cmd() -> None:
 @click.option(
     "--analyzed-only", is_flag=True, help="Show only analyzed sessions (with --list)"
 )
+@click.option(
+    "--debug-events",
+    is_flag=True,
+    help="Print detailed comparison of machine vs programmatic event detection",
+)
+@click.option(
+    "--mode",
+    "-m",
+    multiple=True,
+    default=None,
+    help="Detection mode(s) to run. Default: aasm. Can specify multiple: -m aasm -m resmed",
+)
+@click.option(
+    "--all-modes",
+    is_flag=True,
+    help="Run all available detection modes",
+)
 def analyze(
     profile: str | None,
     session_id: int | None,
@@ -1245,6 +1263,9 @@ def analyze(
     db: str | None,
     no_store: bool,
     analyzed_only: bool,
+    debug_events: bool,
+    mode: tuple[str, ...],
+    all_modes: bool,
 ) -> int | None:
     """Run programmatic analysis on CPAP sessions."""
     # Initialize database
@@ -1316,16 +1337,127 @@ def analyze(
                     err=True,
                 )
                 sys.exit(1)
-            _analyze_single_session(session, prof, session_id, date, no_store)
+            _analyze_single_session(
+                session, prof, session_id, date, no_store, debug_events, mode, all_modes
+            )
         else:
             if prof is None:
                 click.echo("Error: Batch analysis requires a profile", err=True)
                 sys.exit(1)
             _analyze_batch(
-                session, prof, start, end, start is None and end is None, no_store
+                session,
+                prof,
+                start,
+                end,
+                start is None and end is None,
+                no_store,
+                debug_events,
+                mode,
+                all_modes,
             )
 
     return None
+
+
+def _display_analysis_result(result: AnalysisResult) -> None:
+    """Display analysis results with machine comparison."""
+    click.echo("✓ Analysis complete\n")
+
+    click.echo("=" * 60)
+    click.echo("ANALYSIS SUMMARY")
+    click.echo("=" * 60)
+
+    click.echo(f"\nSession Duration: {result.session_duration_hours:.1f} hours")
+
+    # Display machine events
+    machine_events = result.machine_events
+    if machine_events:
+        machine_event_counts: dict[str, int] = {}
+        for event in machine_events:
+            machine_event_counts[event.event_type] = (
+                machine_event_counts.get(event.event_type, 0) + 1
+            )
+
+        total_machine = len(machine_events)
+        oa_count = machine_event_counts.get(EVENT_TYPE_OBSTRUCTIVE_APNEA, 0)
+        ca_count = machine_event_counts.get(EVENT_TYPE_CENTRAL_APNEA, 0)
+        caa_count = machine_event_counts.get(EVENT_TYPE_CLEAR_AIRWAY, 0)
+        ma_count = machine_event_counts.get(EVENT_TYPE_MIXED_APNEA, 0)
+        h_count = machine_event_counts.get(EVENT_TYPE_HYPOPNEA, 0)
+
+        machine_ahi_count = oa_count + ca_count + caa_count + ma_count + h_count
+        machine_ahi = machine_ahi_count / result.session_duration_hours
+        machine_rdi = machine_ahi  # Same without RERA
+
+        click.echo("\nMACHINE-DETECTED EVENTS (from CPAP device)")
+        click.echo(f"  AHI: {machine_ahi:.1f} events/hour")
+        click.echo(f"  RDI: {machine_rdi:.1f} events/hour")
+        click.echo(f"  Total Events: {total_machine}")
+        if oa_count > 0:
+            click.echo(f"    - Obstructive Apneas (OA): {oa_count}")
+        if caa_count > 0 or ca_count > 0:
+            clear_airway_total = caa_count + ca_count
+            click.echo(f"    - Clear Airway / Central Apnea (CA): {clear_airway_total}")
+        if ma_count > 0:
+            click.echo(f"    - Mixed Apneas (MA): {ma_count}")
+        if h_count > 0:
+            click.echo(f"    - Hypopneas (H): {h_count}")
+
+    # Display results for each mode
+    for mode_name, mode_result in result.mode_results.items():
+        click.echo("\n" + "─" * 60)
+        click.echo(f"MODE: {mode_name}")
+        click.echo(f"  AHI: {mode_result.ahi:.1f} events/hour")
+        click.echo(f"  RDI: {mode_result.rdi:.1f} events/hour")
+
+        total_events = len(mode_result.apneas) + len(mode_result.hypopneas)
+        click.echo(f"  Total Events: {total_events}")
+
+        if mode_result.apneas:
+            click.echo(f"    - Apneas: {len(mode_result.apneas)}")
+            # Count by type
+            for apnea_type in ["OA", "CA", "MA", "UA"]:
+                count = sum(1 for a in mode_result.apneas if a.event_type == apnea_type)
+                if count > 0:
+                    click.echo(f"      • {apnea_type}: {count}")
+
+        if mode_result.hypopneas:
+            click.echo(f"    - Hypopneas: {len(mode_result.hypopneas)}")
+
+        # Calculate match rate if machine events available
+        if machine_events:
+            # Simple matching: count events within tolerance
+            matched = 0
+            for mode_apnea in mode_result.apneas:
+                for machine_event in machine_events:
+                    time_diff = abs(mode_apnea.start_time - machine_event.start_time)
+                    if time_diff <= 5.0:  # 5 second tolerance
+                        matched += 1
+                        break
+
+            match_rate = (matched / len(machine_events) * 100) if machine_events else 0
+            click.echo(
+                f"  Match Rate: {match_rate:.0f}% ({matched}/{len(machine_events)} machine events)"
+            )
+
+    # Display flow limitation if available
+    if result.flow_analysis:
+        click.echo("\n" + "─" * 60)
+        click.echo("FLOW LIMITATION ANALYSIS")
+        click.echo(f"  Flow Limitation Index: {result.flow_analysis['fl_index']:.2f}")
+
+    # Display positional analysis if available
+    if result.positional_analysis:
+        click.echo("\n" + "─" * 60)
+        click.echo("POSITIONAL ANALYSIS")
+        click.echo(
+            f"  Event Clustering: {result.positional_analysis.get('cluster_count', 'N/A')} clusters"
+        )
+        positional_likelihood = result.positional_analysis.get("positional_likelihood")
+        if positional_likelihood is not None:
+            click.echo(f"  Positional Likelihood: {positional_likelihood:.2f}")
+
+    click.echo("\n" + "=" * 60)
 
 
 def _analyze_single_session(
@@ -1334,6 +1466,9 @@ def _analyze_single_session(
     session_id: int | None,
     date: datetime | None,
     no_store: bool,
+    debug_events: bool,
+    mode: tuple[str, ...],
+    all_modes: bool,
 ) -> None:
     """Analyze a single session and display detailed report."""
     if date:
@@ -1365,118 +1500,21 @@ def _analyze_single_session(
 
     assert session_id is not None, "session_id should not be None"
 
+    # Build modes list (None = use default)
+    modes = None
+    if all_modes:
+        modes = list(AVAILABLE_MODES.keys())
+    elif mode:
+        modes = list(mode)
+
     try:
         result = analysis_service.analyze_session(
-            session_id=session_id, store_results=not no_store
+            session_id=session_id,
+            modes=modes,
+            store_results=not no_store,
+            debug=debug_events,
         )
-
-        click.echo(f"✓ Analysis complete in {result.processing_time_ms}ms\n")
-
-        click.echo("=" * 60)
-        click.echo("ANALYSIS SUMMARY")
-        click.echo("=" * 60)
-
-        flow_analysis = result.flow_analysis
-        event_timeline = result.event_timeline
-
-        click.echo(f"\nSession Duration: {result.duration_hours:.1f} hours")
-        click.echo(f"Total Breaths: {result.total_breaths:,}")
-
-        machine_events = getattr(result, "machine_events", [])
-
-        if machine_events:
-            machine_event_counts: dict[str, int] = {}
-            for event in machine_events:
-                machine_event_counts[event.event_type] = (
-                    machine_event_counts.get(event.event_type, 0) + 1
-                )
-
-            total_machine = len(machine_events)
-            oa_count = machine_event_counts.get(EVENT_TYPE_OBSTRUCTIVE_APNEA, 0)
-            ca_count = machine_event_counts.get(EVENT_TYPE_CENTRAL_APNEA, 0)
-            caa_count = machine_event_counts.get(EVENT_TYPE_CLEAR_AIRWAY, 0)
-            ma_count = machine_event_counts.get(EVENT_TYPE_MIXED_APNEA, 0)
-            h_count = machine_event_counts.get(EVENT_TYPE_HYPOPNEA, 0)
-
-            machine_ahi_count = oa_count + ca_count + caa_count + ma_count + h_count
-            machine_rdi_count = machine_ahi_count
-            machine_ahi = machine_ahi_count / result.duration_hours
-            machine_rdi = machine_rdi_count / result.duration_hours
-
-            click.echo("\nMACHINE-DETECTED EVENTS (from CPAP device)")
-            click.echo(f"  AHI: {machine_ahi:.1f} events/hour")
-            click.echo(f"  RDI: {machine_rdi:.1f} events/hour")
-            click.echo(f"  Total Events: {total_machine}")
-            if oa_count > 0:
-                click.echo(f"    - Obstructive Apneas (OA): {oa_count}")
-            if caa_count > 0 or ca_count > 0:
-                clear_airway_total = caa_count + ca_count
-                click.echo(
-                    f"    - Clear Airway / Central Apnea (CA): {clear_airway_total}"
-                )
-            if ma_count > 0:
-                click.echo(f"    - Mixed Apneas (MA): {ma_count}")
-            if h_count > 0:
-                click.echo(f"    - Hypopneas (H): {h_count}")
-
-        click.echo("\nPROGRAMMATIC ANALYSIS (from flow waveform)")
-        click.echo(f"  AHI: {event_timeline['ahi']:.1f} events/hour")
-        click.echo(f"  RDI: {event_timeline['rdi']:.1f} events/hour")
-        click.echo(f"  Flow Limitation Index: {flow_analysis['fl_index']:.2f}")
-        click.echo(f"  Total Events: {event_timeline['total_events']}")
-        click.echo(f"    - Apneas: {len(event_timeline['apneas'])}")
-        for apnea_type in ["OA", "CA", "MA", "UA"]:
-            count = sum(
-                1 for a in event_timeline["apneas"] if a["event_type"] == apnea_type
-            )
-            if count > 0:
-                click.echo(f"      • {apnea_type}: {count}")
-        click.echo(f"    - Hypopneas: {len(event_timeline['hypopneas'])}")
-
-        if machine_events and event_timeline["total_events"] != total_machine:
-            discrepancy = abs(total_machine - event_timeline["total_events"])
-            click.echo(
-                f"\n⚠️  Discrepancy: Machine detected {total_machine} events, "
-                f"programmatic found {event_timeline['total_events']} "
-                f"({discrepancy} difference)"
-            )
-
-        click.echo("\nFLOW LIMITATION CLASSES")
-        for fl_class, count in sorted(flow_analysis["class_distribution"].items()):
-            if count > 0:
-                pct = (count / result.total_breaths) * 100
-                click.echo(f"  Class {fl_class}: {count:,} breaths ({pct:.1f}%)")
-
-        if result.csr_detection:
-            csr = result.csr_detection
-            click.echo("\nCHEYNE-STOKES RESPIRATION")
-            click.echo(f"  Detected: Yes (confidence: {csr['confidence']:.2f})")
-            click.echo(f"  Cycle Length: {csr['cycle_length']:.0f}s")
-            click.echo(f"  CSR Index: {csr['csr_index']:.1%}")
-
-        if result.periodic_breathing:
-            periodic = result.periodic_breathing
-            click.echo("\nPERIODIC BREATHING")
-            click.echo(f"  Detected: Yes (confidence: {periodic['confidence']:.2f})")
-            click.echo(f"  Cycle Length: {periodic['cycle_length']:.0f}s")
-            click.echo(f"  Regularity: {periodic['regularity_score']:.2f}")
-
-        if result.positional_analysis:
-            positional = result.positional_analysis
-            click.echo("\nPOSITIONAL ANALYSIS")
-            click.echo(f"  Event Clustering: {positional['total_clusters']} clusters")
-            click.echo(
-                f"  Positional Likelihood: {positional['positional_likelihood']:.2f}"
-            )
-
-        if not no_store:
-            stored = analysis_service.get_analysis_result(session_id)
-            if stored:
-                click.echo(
-                    f"\nResults stored with analysis ID: {stored['analysis_id']}"
-                )
-
-        click.echo("\n" + "=" * 60)
+        _display_analysis_result(result)
 
     except Exception as e:
         click.echo(f"\nAnalysis failed: {e}", err=True)
@@ -1491,6 +1529,9 @@ def _analyze_batch(
     end: datetime | None,
     analyze_all: bool,
     no_store: bool,
+    debug_events: bool,
+    mode: tuple[str, ...],
+    all_modes: bool,
 ) -> None:
     """Analyze multiple sessions with progress bar."""
     query = (
@@ -1511,7 +1552,16 @@ def _analyze_batch(
         click.echo("No sessions found for the specified criteria")
         return
 
+    # Build modes list (None = use default)
+    modes = None
+    if all_modes:
+        modes = list(AVAILABLE_MODES.keys())
+    elif mode:
+        modes = list(mode)
+
     click.echo(f"\nAnalyzing {len(sessions)} sessions...")
+    modes_display = modes if modes else ["aasm"]
+    click.echo(f"  Modes: {', '.join(modes_display)}")
 
     analysis_service = AnalysisService(session)
     successful = 0
@@ -1521,7 +1571,10 @@ def _analyze_batch(
         for db_session in bar:
             try:
                 analysis_service.analyze_session(
-                    session_id=db_session.id, store_results=not no_store
+                    session_id=db_session.id,
+                    modes=modes,
+                    store_results=not no_store,
+                    debug=debug_events,
                 )
                 successful += 1
             except Exception as e:

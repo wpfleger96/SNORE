@@ -536,8 +536,23 @@ def analyze_session(
             )
 
             flow_analysis = result.flow_analysis
-            event_timeline = result.event_timeline
-            fli = flow_analysis["fl_index"]
+            fli = flow_analysis["fl_index"] if flow_analysis else 0.0
+
+            # Get default mode results (AASM)
+            default_mode = (
+                list(result.mode_results.keys())[0] if result.mode_results else "aasm"
+            )
+            mode_result = result.mode_results.get(default_mode)
+
+            if mode_result:
+                ahi = mode_result.ahi
+                rdi = mode_result.rdi
+                apnea_count = len(mode_result.apneas)
+                hypopnea_count = len(mode_result.hypopneas)
+                total_events = apnea_count + hypopnea_count
+            else:
+                ahi = rdi = 0.0
+                apnea_count = hypopnea_count = total_events = 0
 
             if fli < 0.2:
                 severity = "minimal"
@@ -548,14 +563,14 @@ def analyze_session(
             else:
                 severity = "severe"
 
-            if event_timeline["ahi"] < 5:
+            if ahi < 5:
                 if severity == "minimal":
                     overall_severity = "normal"
                 else:
                     overall_severity = severity
-            elif event_timeline["ahi"] < 15:
+            elif ahi < 15:
                 overall_severity = "mild"
-            elif event_timeline["ahi"] < 30:
+            elif ahi < 30:
                 overall_severity = "moderate"
             else:
                 overall_severity = "severe"
@@ -568,19 +583,19 @@ def analyze_session(
                 analysis_id=analysis_id,
                 timestamp_start=datetime.fromtimestamp(result.timestamp_start),
                 timestamp_end=datetime.fromtimestamp(result.timestamp_end),
-                duration_hours=result.duration_hours,
-                ahi=event_timeline["ahi"],
-                rdi=event_timeline["rdi"],
+                duration_hours=result.session_duration_hours,
+                ahi=ahi,
+                rdi=rdi,
                 flow_limitation_index=fli,
                 total_breaths=result.total_breaths,
-                total_events=event_timeline["total_events"],
-                apnea_count=len(event_timeline["apneas"]),
-                hypopnea_count=len(event_timeline["hypopneas"]),
-                csr_detected=result.csr_detection is not None,
-                periodic_breathing_detected=result.periodic_breathing is not None,
+                total_events=total_events,
+                apnea_count=apnea_count,
+                hypopnea_count=hypopnea_count,
+                csr_detected=False,  # Not available in mode-based results
+                periodic_breathing_detected=False,  # Not available in mode-based results
                 positional_events_detected=result.positional_analysis is not None,
                 severity_assessment=overall_severity,
-                processing_time_ms=int(result.processing_time_ms),
+                processing_time_ms=0,  # Not tracked in mode-based results
             )
 
             return summary
