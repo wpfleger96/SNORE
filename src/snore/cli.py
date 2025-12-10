@@ -115,6 +115,76 @@ def cli(verbose: bool) -> None:
 
 
 @cli.command()
+@click.option("--github", is_flag=True, help="Install from GitHub instead of PyPI")
+@click.option("--force", is_flag=True, help="Force reinstall")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+def setup(github: bool, force: bool, dry_run: bool) -> None:
+    """Install SNORE globally as a uv tool."""
+    from snore.bootstrap import install_tool
+
+    source_name = "GitHub" if github else "PyPI"
+    click.echo(f"Installing SNORE from {source_name}...")
+
+    success, message = install_tool(from_github=github, force=force, dry_run=dry_run)
+
+    if success:
+        click.echo(f"✓ {message}")
+        click.echo("\nYou can now run 'snore' from anywhere!")
+    else:
+        click.echo(f"✗ {message}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--check", is_flag=True, help="Check for updates without installing")
+@click.option("--force", is_flag=True, help="Force reinstall")
+def upgrade(check: bool, force: bool) -> None:
+    """Upgrade SNORE to the latest version."""
+    from snore.bootstrap import check_tool_updates, get_tool_source, perform_update
+
+    source = get_tool_source("snore")
+    source_name = {"github": "GitHub", "pypi": "PyPI", "local": "local"}.get(
+        source or "", "PyPI"
+    )
+
+    click.echo(f"Checking for updates from {source_name}...")
+
+    update_info = check_tool_updates()
+
+    if not update_info:
+        click.echo("✗ Could not check for updates", err=True)
+        sys.exit(1)
+
+    if update_info.has_update:
+        click.echo(
+            f"Update available: {update_info.current_version} → {update_info.latest_version}"
+        )
+
+        if check:
+            click.echo("\nRun 'snore upgrade' to install")
+            return
+
+        if not force:
+            if not click.confirm("Install update?", default=True):
+                click.echo("Cancelled")
+                return
+
+        click.echo("Upgrading...")
+        success, message, was_upgraded = perform_update(force=force)
+
+        if success:
+            if was_upgraded:
+                click.echo(f"✓ {message}")
+            else:
+                click.echo("✓ Already up to date")
+        else:
+            click.echo(f"✗ {message}", err=True)
+            sys.exit(1)
+    else:
+        click.echo("✓ Already up to date")
+
+
+@cli.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--force", is_flag=True, help="Re-import existing sessions")
 @click.option(

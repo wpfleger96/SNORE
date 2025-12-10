@@ -39,14 +39,29 @@ SNORE provides an MCP interface for CPAP therapy data analysis, enabling LLMs li
 - UV package manager
 - OSCAR desktop application with existing data
 
-### Install from source
+### Global Installation (Recommended)
+
+```bash
+# From PyPI (TODO)
+uv tool install snore
+
+# From GitHub (development)
+uv tool install git+ssh://git@github.com/wpfleger96/SNORE.git
+
+# Or from cloned repo
+cd SNORE
+uv run snore setup              # PyPI (TODO)
+uv run snore setup --github     # GitHub
+```
+
+### Development Installation
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:wpfleger96/SNORE.git
 cd SNORE
 
-# Install with UV
+# Install in editable mode
 uv pip install -e .
 ```
 
