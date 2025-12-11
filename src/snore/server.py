@@ -57,7 +57,7 @@ IMPORTANT NOTES:
 - Before querying data, use list_profiles to see available profiles
 - All dates should be in YYYY-MM-DD format
 - The server provides human-readable text summaries optimized for LLM analysis
-- Data must first be imported using the 'snore-import' CLI tool
+- Data must first be imported using 'snore import-data <path>'
 
 AVAILABLE TOOLS:
 - list_profiles: List all available profiles in the database

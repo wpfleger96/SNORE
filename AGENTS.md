@@ -58,7 +58,7 @@ Via OSCAR:        Device SD Card → OSCAR Desktop → .000/.001 files → SNORE
 **What SNORE borrows from OSCAR:**
 
 1. **Channel ID System:** Uses OSCAR's exact channel IDs (0x1000=Pressure, 0x1100=ObstructiveApnea, 0x1200=Flow, 0x2000=SpO2) from `constants.py`
-2. **Binary Format Parsers:** Complete Qt binary format parsers in `parsers/oscar_format.py`, `oscar_summary.py`, `oscar_events.py`, `qdatastream.py`
+2. **Binary Format Parsers:** Complete Qt binary format parsers in `parsers/oscar_summary.py`, `oscar_events.py`, `qdatastream.py`
 3. **Flow Limitation Classes:** OSCAR's 7-class system (Sinusoidal→Normal, DoublePeak→Mild, etc.)
 4. **Algorithm Validation:** Tests compare against OSCAR's breath segmentation and metrics
 
@@ -70,7 +70,6 @@ Via OSCAR:        Device SD Card → OSCAR Desktop → .000/.001 files → SNORE
 - Settings stored as Qt QVariant types
 
 **Key OSCAR parsers:**
-- `oscar_format.py` - Core binary format, ProfileScanner, MachineDirectoryScanner
 - `oscar_summary.py` - Parse .000 files (session metadata, statistics) - **has settings skip hack** due to custom Qt types
 - `oscar_events.py` - Parse .001 files (waveforms, respiratory events) - **uses bit masking** on event types
 - `qdatastream.py` - Qt binary serialization (little-endian, type markers)
@@ -142,9 +141,8 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 2. **Integration test isolation:** Use `reset_database_state()` autouse fixture pattern
 3. **WAL cleanup:** Temp databases need `-wal` and `-shm` file cleanup
 4. **Profile resolution:** CLI flag > config > auto-detect fallback chain
-5. **OSCAR import incomplete:** `src/snore/importers/oscar_import.py` has placeholder logic
-6. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
-7. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
+5. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
+6. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
 
 ## Key Files by Task
 
@@ -157,5 +155,4 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 | Modify data models | `src/snore/models/unified.py` (data), `database/models.py` (ORM), use Pydantic |
 | Add MCP tool | `src/snore/server.py` |
 | Add test fixture | `tests/conftest.py`, `tests/helpers/` |
-| Work on OSCAR import | `src/snore/importers/oscar_import.py`, `parsers/oscar_*.py` |
 | Modify channel IDs | `src/snore/constants.py` (must align with OSCAR's schema.h) |

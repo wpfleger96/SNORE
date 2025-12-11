@@ -44,7 +44,6 @@ dev = [
 [project.scripts]
 snore-server = "snore.__main__:main"
 snore = "snore.cli:main"
-snore-import = "snore.importers.oscar_import:main"
 
 [build-system]
 requires = ["hatchling"]
