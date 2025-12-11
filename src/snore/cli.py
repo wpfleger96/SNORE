@@ -8,6 +8,8 @@ import logging
 import sys
 
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_version
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +42,11 @@ from snore.parsers.register_all import register_all_parsers
 from snore.parsers.registry import parser_registry
 
 logger = logging.getLogger(__name__)
+
+try:
+    __version__ = get_version("snore")
+except PackageNotFoundError:
+    __version__ = "dev"
 
 
 def ensure_profile(username: str) -> int:
@@ -107,7 +114,36 @@ def resolve_profile(explicit_profile: str | None, db_session: Session) -> str:
         )
 
 
+def version_callback(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    """Show version and check for updates."""
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo(f"snore, version {__version__}")
+
+    try:
+        from snore.bootstrap import check_tool_updates
+
+        update_info = check_tool_updates(timeout=3)
+        if update_info and update_info.has_update:
+            click.echo(
+                f"\nUpdate available: {update_info.current_version} → {update_info.latest_version}"
+            )
+            click.echo("Run 'snore upgrade' to install")
+    except Exception as e:
+        logger.debug(f"Failed to check for updates: {e}")
+
+    ctx.exit()
+
+
 @click.group()
+@click.option(
+    "--version",
+    is_flag=True,
+    callback=version_callback,
+    expose_value=False,
+    is_eager=True,
+    help="Show version and check for updates",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def cli(verbose: bool) -> None:
     """SNORE: CPAP Data Management Tool"""
