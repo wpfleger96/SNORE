@@ -33,6 +33,7 @@ from snore.constants import (
     EVENT_TYPE_HYPOPNEA,
     EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
+    FLOW_LIMITATION_CLASSES,
 )
 from snore.database import models
 from snore.database.importers import SessionImporter
@@ -1321,7 +1322,13 @@ def show_config_cmd() -> None:
             click.echo(f'    {key} = "{value}"')
 
 
-@cli.command()
+@cli.group()
+def analyze() -> None:
+    """Analyze CPAP sessions and view results."""
+    pass
+
+
+@analyze.command("run")
 @click.option(
     "--profile", required=False, help="Profile username (optional if default set)"
 )
@@ -1341,23 +1348,8 @@ def show_config_cmd() -> None:
     type=click.DateTime(formats=["%Y-%m-%d"]),
     help="End date for batch analysis (YYYY-MM-DD)",
 )
-@click.option(
-    "--limit",
-    type=int,
-    default=DEFAULT_LIST_SESSIONS_LIMIT,
-    help="Max sessions to show in list mode (use 0 for all)",
-)
-@click.option(
-    "--list",
-    "list_mode",
-    is_flag=True,
-    help="Show analysis status instead of running analysis",
-)
 @click.option("--db", type=click.Path(), help="Database path")
 @click.option("--no-store", is_flag=True, help="Don't store results in database")
-@click.option(
-    "--analyzed-only", is_flag=True, help="Show only analyzed sessions (with --list)"
-)
 @click.option(
     "--debug-events",
     is_flag=True,
@@ -1375,37 +1367,30 @@ def show_config_cmd() -> None:
     is_flag=True,
     help="Run all available detection modes",
 )
-def analyze(
+def run(
     profile: str | None,
     session_id: int | None,
     date: datetime | None,
     start: datetime | None,
     end: datetime | None,
-    limit: int,
-    list_mode: bool,
     db: str | None,
     no_store: bool,
-    analyzed_only: bool,
     debug_events: bool,
     mode: tuple[str, ...],
     all_modes: bool,
 ) -> int | None:
-    """Run programmatic analysis on CPAP sessions."""
-    # Initialize database
+    """Run analysis on CPAP sessions."""
     if db:
         init_database(str(Path(db)))
     else:
         init_database()
 
-    # Resolve profile using precedence: CLI > config > auto-detect
-    # Skip profile resolution if using --session-id without explicit --profile
     if session_id is not None and profile is None:
         resolved_profile = None
     else:
         with session_scope() as temp_session:
             resolved_profile = resolve_profile(profile, temp_session)
 
-    # Validate mutually exclusive options
     single_session_flags = [session_id is not None, date is not None]
     batch_flags = [start is not None, end is not None]
 
@@ -1424,17 +1409,13 @@ def analyze(
         sys.exit(1)
 
     if single_count == 0 and batch_count == 0:
-        # In list mode, no flags means "show recent sessions (limited by --limit)"
-        # In analyze mode, require selection flags for safety
-        if not list_mode:
-            click.echo(
-                "Error: Must provide at least one selection flag (--session-id, --date, --start, or --end)",
-                err=True,
-            )
-            sys.exit(1)
+        click.echo(
+            "Error: Must provide at least one selection flag (--session-id, --date, --start, or --end)",
+            err=True,
+        )
+        sys.exit(1)
 
     with session_scope() as session:
-        # Lookup profile (use resolved_profile)
         prof = None
         if resolved_profile is not None:
             prof = (
@@ -1446,14 +1427,7 @@ def analyze(
                 click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
                 sys.exit(1)
 
-        # Route to appropriate mode
-        if list_mode:
-            if prof is None:
-                click.echo("Error: --list mode requires a profile", err=True)
-                sys.exit(1)
-            _list_sessions(session, prof, start, end, limit, analyzed_only)
-        elif single_count > 0:
-            # For --date, profile is required. For --session-id, it's optional
+        if single_count > 0:
             if date is not None and prof is None:
                 click.echo(
                     "Error: --date requires a profile. Use --session-id instead.",
@@ -1480,6 +1454,140 @@ def analyze(
             )
 
     return None
+
+
+@analyze.command("list")
+@click.option(
+    "--profile", required=False, help="Profile username (optional if default set)"
+)
+@click.option(
+    "--start",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Start date for filtering (YYYY-MM-DD)",
+)
+@click.option(
+    "--end",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date for filtering (YYYY-MM-DD)",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=DEFAULT_LIST_SESSIONS_LIMIT,
+    help="Max sessions to show (use 0 for all)",
+)
+@click.option("--analyzed-only", is_flag=True, help="Show only analyzed sessions")
+@click.option("--db", type=click.Path(), help="Database path")
+def list_cmd(
+    profile: str | None,
+    start: datetime | None,
+    end: datetime | None,
+    limit: int,
+    analyzed_only: bool,
+    db: str | None,
+) -> None:
+    """List sessions with analysis status."""
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    with session_scope() as temp_session:
+        resolved_profile = resolve_profile(profile, temp_session)
+
+    with session_scope() as session:
+        prof = (
+            session.query(models.Profile).filter_by(username=resolved_profile).first()
+        )
+        if not prof:
+            click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
+            sys.exit(1)
+
+        _list_sessions(session, prof, start, end, limit, analyzed_only)
+
+
+@analyze.command("show")
+@click.option(
+    "--profile", required=False, help="Profile username (optional if default set)"
+)
+@click.option("--session-id", type=int, help="Show analysis for session ID")
+@click.option(
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Show analysis for session on date (YYYY-MM-DD)",
+)
+@click.option("--db", type=click.Path(), help="Database path")
+def show(
+    profile: str | None,
+    session_id: int | None,
+    date: datetime | None,
+    db: str | None,
+) -> None:
+    """Display stored analysis results."""
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    if session_id is None and date is None:
+        click.echo("Error: Must provide either --session-id or --date", err=True)
+        sys.exit(1)
+
+    if session_id is not None and date is not None:
+        click.echo("Error: --session-id and --date are mutually exclusive", err=True)
+        sys.exit(1)
+
+    if session_id is not None and profile is None:
+        resolved_profile = None
+    else:
+        with session_scope() as temp_session:
+            resolved_profile = resolve_profile(profile, temp_session)
+
+    with session_scope() as session:
+        prof = None
+        if resolved_profile is not None:
+            prof = (
+                session.query(models.Profile)
+                .filter_by(username=resolved_profile)
+                .first()
+            )
+            if not prof:
+                click.echo(f"Error: Profile '{resolved_profile}' not found", err=True)
+                sys.exit(1)
+
+        if date is not None:
+            if prof is None:
+                click.echo(
+                    "Error: --date requires a profile. Use --session-id instead.",
+                    err=True,
+                )
+                sys.exit(1)
+
+            db_session = (
+                session.query(models.Session)
+                .join(models.Day)
+                .filter(
+                    models.Day.profile_id == prof.id, models.Day.date == date.date()
+                )
+                .first()
+            )
+            if not db_session:
+                click.echo(f"Error: No session found for date {date.date()}", err=True)
+                sys.exit(1)
+            session_id = db_session.id
+
+        # At this point session_id is guaranteed to be set (either from parameter or date lookup)
+        assert session_id is not None, "session_id should not be None"
+
+        analysis_service = AnalysisService(session)
+        result = analysis_service.get_analysis_result(session_id)
+
+        if result is None:
+            click.echo(f"Error: No analysis found for session {session_id}", err=True)
+            sys.exit(1)
+
+        click.echo(f"Displaying stored analysis for session {session_id}...\n")
+        _display_analysis_result(result)
 
 
 def _display_analysis_result(result: AnalysisResult) -> None:
@@ -1567,7 +1675,29 @@ def _display_analysis_result(result: AnalysisResult) -> None:
     if result.flow_analysis:
         click.echo("\n" + "─" * 60)
         click.echo("FLOW LIMITATION ANALYSIS")
-        click.echo(f"  Flow Limitation Index: {result.flow_analysis['fl_index']:.2f}")
+        click.echo(
+            f"  Flow Limitation Index: {result.flow_analysis['flow_limitation_index']:.2f}"
+        )
+
+        total_breaths = result.flow_analysis["total_breaths"]
+        click.echo(f"  Total Breaths: {total_breaths}")
+
+        if total_breaths > 0:
+            click.echo("  Class Distribution:")
+            class_distribution = result.flow_analysis["class_distribution"]
+
+            # Show all 7 classes
+            for class_num in range(1, 8):
+                class_info = FLOW_LIMITATION_CLASSES[class_num]
+                # Handle both int keys (fresh) and string keys (from JSON/DB)
+                count = class_distribution.get(class_num, 0) or class_distribution.get(
+                    str(class_num), 0
+                )
+                percentage = (count / total_breaths * 100) if total_breaths > 0 else 0.0
+                click.echo(
+                    f"    Class {class_num} ({class_info['name']}): "
+                    f"{count} ({percentage:.1f}%) - {class_info['severity']}"
+                )
 
     click.echo("\n" + "=" * 60)
 

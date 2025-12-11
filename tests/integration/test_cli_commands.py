@@ -389,11 +389,47 @@ def db_with_analysis(temp_db):
             # Add multiple analysis results for first two sessions (to test --all-versions)
             num_analyses = 3 if i < 2 else 1
             for j in range(num_analyses):
+                # Create valid AnalysisResult JSON structure
+                analysis_json = {
+                    "session_id": sess.id,
+                    "timestamp_start": start_time.timestamp(),
+                    "timestamp_end": end_time.timestamp(),
+                    "session_duration_hours": 8.0,
+                    "total_breaths": 1000,
+                    "machine_events": [],
+                    "mode_results": {
+                        "aasm": {
+                            "mode_name": "aasm",
+                            "ahi": 5.0,
+                            "rdi": 5.0,
+                            "apneas": [],
+                            "hypopneas": [],
+                        }
+                    },
+                    "flow_analysis": {
+                        "total_breaths": 1000,
+                        "class_distribution": {
+                            1: 500,
+                            2: 200,
+                            3: 100,
+                            4: 100,
+                            5: 50,
+                            6: 30,
+                            7: 20,
+                        },
+                        "flow_limitation_index": 0.25,
+                        "average_confidence": 0.85,
+                        "patterns": [],
+                    },
+                    "csr_detection": None,
+                    "periodic_breathing": None,
+                }
+
                 analysis = models.AnalysisResult(
                     session_id=sess.id,
                     timestamp_start=start_time,
                     timestamp_end=end_time,
-                    programmatic_result_json={"test": f"analysis_{j}"},
+                    programmatic_result_json=analysis_json,
                     processing_time_ms=100,
                     engine_versions_json={"version": "1.0.0"},
                     created_at=start_time + timedelta(minutes=j),
@@ -697,12 +733,12 @@ class TestAnalyzeCommand:
     """Test consolidated analyze command."""
 
     def test_analyze_missing_selection_flag(self, cli_runner, temp_db):
-        """Test that analyze requires at least one selection flag."""
+        """Test that analyze run requires at least one selection flag."""
         init_database(str(temp_db))
 
         result = cli_runner.invoke(
             cli,
-            ["analyze", "--db", str(temp_db), "--profile", "testuser"],
+            ["analyze", "run", "--db", str(temp_db), "--profile", "testuser"],
         )
 
         assert result.exit_code == 1
@@ -716,6 +752,7 @@ class TestAnalyzeCommand:
             cli,
             [
                 "analyze",
+                "run",
                 "--db",
                 str(temp_db),
                 "--profile",
@@ -738,6 +775,7 @@ class TestAnalyzeCommand:
             cli,
             [
                 "analyze",
+                "run",
                 "--db",
                 str(temp_db),
                 "--profile",
@@ -760,11 +798,11 @@ class TestAnalyzeCommand:
             cli,
             [
                 "analyze",
+                "list",
                 "--db",
                 str(temp_db),
                 "--profile",
                 "nonexistent",
-                "--list",
             ],
         )
 
@@ -772,16 +810,16 @@ class TestAnalyzeCommand:
         assert "Profile 'nonexistent' not found" in result.output
 
     def test_analyze_list_mode(self, cli_runner, db_with_analysis):
-        """Test --list mode shows analysis status."""
+        """Test list subcommand shows analysis status."""
         result = cli_runner.invoke(
             cli,
             [
                 "analyze",
+                "list",
                 "--db",
                 str(db_with_analysis),
                 "--profile",
                 "testuser",
-                "--list",
             ],
         )
 
@@ -790,16 +828,16 @@ class TestAnalyzeCommand:
         assert "Analyzed" in result.output
 
     def test_analyze_list_with_date_range(self, cli_runner, db_with_analysis):
-        """Test --list mode with date range filtering."""
+        """Test list subcommand with date range filtering."""
         result = cli_runner.invoke(
             cli,
             [
                 "analyze",
+                "list",
                 "--db",
                 str(db_with_analysis),
                 "--profile",
                 "testuser",
-                "--list",
                 "--start",
                 "2025-10-01",
                 "--end",
@@ -808,3 +846,97 @@ class TestAnalyzeCommand:
         )
 
         assert result.exit_code == 0
+
+    def test_analyze_no_subcommand_shows_help(self, cli_runner, temp_db):
+        """Test that running 'analyze' without subcommand shows help."""
+        init_database(str(temp_db))
+
+        result = cli_runner.invoke(cli, ["analyze"])
+
+        # Click returns exit code 2 for groups invoked without subcommand
+        assert result.exit_code in [0, 2]
+        assert "Commands:" in result.output or "show" in result.output
+
+    def test_analyze_show_by_session_id(self, cli_runner, db_with_analysis):
+        """Test show subcommand displays stored analysis by session ID."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "show",
+                "--db",
+                str(db_with_analysis),
+                "--session-id",
+                "1",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Displaying stored analysis" in result.output
+        assert "ANALYSIS SUMMARY" in result.output
+
+    def test_analyze_show_by_date(self, cli_runner, db_with_analysis):
+        """Test show subcommand displays stored analysis by date."""
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "show",
+                "--db",
+                str(db_with_analysis),
+                "--profile",
+                "testuser",
+                "--date",
+                "2025-10-01",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Displaying stored analysis" in result.output
+        assert "ANALYSIS SUMMARY" in result.output
+
+    def test_analyze_show_no_analysis_found(self, cli_runner, temp_db):
+        """Test show subcommand gracefully handles missing analysis."""
+        init_database(str(temp_db))
+
+        with session_scope() as session:
+            profile = models.Profile(
+                username="testuser", settings={"day_split_time": "12:00:00"}
+            )
+            session.add(profile)
+            session.flush()
+
+            device = models.Device(
+                profile_id=profile.id,
+                manufacturer="Test",
+                model="Test",
+                serial_number="TEST",
+            )
+            session.add(device)
+            session.flush()
+
+            # Create session without analysis
+            sess = models.Session(
+                device_id=device.id,
+                device_session_id="test_session_1",
+                start_time=datetime(2025, 10, 1, 22, 0, 0),
+                end_time=datetime(2025, 10, 2, 6, 0, 0),
+                duration_seconds=8 * 3600,
+            )
+            session.add(sess)
+            session.commit()
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "analyze",
+                "show",
+                "--db",
+                str(temp_db),
+                "--session-id",
+                "1",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "No analysis found" in result.output

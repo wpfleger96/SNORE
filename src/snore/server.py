@@ -536,7 +536,7 @@ def analyze_session(
             )
 
             flow_analysis = result.flow_analysis
-            fli = flow_analysis["fl_index"] if flow_analysis else 0.0
+            fli = flow_analysis["flow_limitation_index"] if flow_analysis else 0.0
 
             # Get default mode results (AASM)
             default_mode = (
@@ -655,7 +655,11 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
                     hypopneas=mode_result.hypopneas,
                 )
 
-            fli = result.flow_analysis["fl_index"] if result.flow_analysis else 0.0
+            fli = (
+                result.flow_analysis["flow_limitation_index"]
+                if result.flow_analysis
+                else 0.0
+            )
 
             return DetailedAnalysisResult(
                 summary=AnalysisSummary(
