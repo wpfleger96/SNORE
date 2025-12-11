@@ -37,7 +37,7 @@ from snore.constants import (
 )
 from snore.database import models
 from snore.database.importers import SessionImporter
-from snore.database.session import init_database, session_scope
+from snore.database.session import cleanup_database, init_database, session_scope
 from snore.logging_config import setup_logging
 from snore.parsers.register_all import register_all_parsers
 from snore.parsers.registry import parser_registry
@@ -1141,14 +1141,34 @@ def db() -> None:
 def init(db: str | None) -> int | None:
     """Initialize database (creates tables if needed)."""
     from snore.constants import DEFAULT_DATABASE_PATH
+    from snore.database.models import Base
 
     if db:
-        db_path = str(Path(db))
+        db_path = Path(db)
     else:
-        db_path = DEFAULT_DATABASE_PATH
+        db_path = Path(DEFAULT_DATABASE_PATH)
 
-    init_database(db_path)
-    click.echo(f"✓ Database initialized at {db_path}")
+    db_existed = db_path.exists()
+
+    init_database(str(db_path))
+
+    table_names = sorted(Base.metadata.tables.keys())
+
+    if db_existed:
+        click.secho(
+            f"✓ Database already initialized at {db_path}", fg="blue", bold=True
+        )
+        click.echo("  Verified tables:")
+    else:
+        click.secho(f"✓ Created new database at {db_path}", fg="green", bold=True)
+        click.echo("  Initialized tables:")
+
+    for table_name in table_names:
+        click.echo(f"    - {table_name}")
+
+    if db_existed:
+        click.echo("  No changes needed - all tables exist")
+
     return None
 
 
@@ -1224,6 +1244,95 @@ def vacuum(db: str | None) -> None:
         session.commit()
 
     click.echo("✓ Database vacuumed successfully")
+
+
+@db.command()
+@click.option("--db", type=click.Path(), help="Database path")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def drop(db: str | None, force: bool) -> None:
+    """Drop database (permanently delete all CPAP data)."""
+    import os
+
+    from snore.constants import DEFAULT_DATABASE_PATH
+
+    if db:
+        db_path = Path(db)
+    else:
+        db_path = Path(DEFAULT_DATABASE_PATH)
+
+    if not db_path.exists():
+        click.echo(f"Database does not exist at {db_path}")
+        return
+
+    try:
+        init_database(str(db_path))
+        with session_scope() as session:
+            device_count = session.query(models.Device).count()
+            session_count = session.query(models.Session).count()
+            event_count = session.execute(text("SELECT COUNT(*) FROM events")).scalar()
+
+            first_session = session.execute(
+                text("SELECT MIN(start_time) as first FROM sessions")
+            ).scalar()
+
+            last_session = session.execute(
+                text("SELECT MAX(start_time) as last FROM sessions")
+            ).scalar()
+
+            size_bytes = os.path.getsize(db_path) if db_path.exists() else 0
+            size_gb = size_bytes / (1024 * 1024 * 1024)
+
+            click.echo(f"\nDatabase: {db_path}")
+            click.echo(f"Size: {size_gb:.1f} GB")
+            click.echo(f"Devices: {device_count}")
+            click.echo(f"Sessions: {session_count}")
+            click.echo(f"Events: {event_count:,}")
+
+            if first_session and last_session:
+                first_dt = (
+                    datetime.fromisoformat(first_session)
+                    if isinstance(first_session, str)
+                    else first_session
+                )
+                last_dt = (
+                    datetime.fromisoformat(last_session)
+                    if isinstance(last_session, str)
+                    else last_session
+                )
+                click.echo(f"Date range: {first_dt:%Y-%m-%d} to {last_dt:%Y-%m-%d}")
+
+    except Exception as e:
+        click.echo(f"Warning: Could not read database stats: {e}")
+
+    if not force:
+        click.echo("\n⚠️  WARNING: This will permanently delete all CPAP data!")
+        if not click.confirm(
+            "Are you sure you want to drop the database?", default=False
+        ):
+            click.echo("Database drop cancelled")
+            return
+
+    try:
+        cleanup_database()
+    except Exception as e:
+        click.echo(f"Warning during cleanup: {e}")
+
+    try:
+        if db_path.exists():
+            db_path.unlink()
+            click.echo(f"\n✓ Deleted database: {db_path}")
+
+        for ext in ["-wal", "-shm"]:
+            wal_file = Path(str(db_path) + ext)
+            if wal_file.exists():
+                wal_file.unlink()
+                click.echo(f"✓ Deleted: {wal_file.name}")
+
+        click.echo("\nDatabase dropped successfully")
+
+    except Exception as e:
+        click.echo(f"Error dropping database: {e}", err=True)
+        sys.exit(1)
 
 
 @cli.group()

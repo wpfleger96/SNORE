@@ -9,6 +9,7 @@ These tests verify the command-line interface functionality including:
 """
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -922,3 +923,59 @@ class TestAnalyzeCommand:
 
         assert result.exit_code == 1
         assert "No analysis found" in result.output
+
+
+class TestDbDropCommand:
+    """Test db drop command - focused on critical behavior."""
+
+    def test_db_drop_deletes_database(self, cli_runner, populated_test_db):
+        """Test that drop command actually deletes the database and associated files."""
+        assert populated_test_db.exists()
+
+        result = cli_runner.invoke(
+            cli,
+            ["db", "drop", "--db", str(populated_test_db)],
+            input="y\n",
+        )
+
+        assert result.exit_code == 0
+
+        assert not populated_test_db.exists()
+        assert not Path(str(populated_test_db) + "-wal").exists()
+        assert not Path(str(populated_test_db) + "-shm").exists()
+
+    def test_db_drop_force_flag(self, cli_runner, populated_test_db):
+        """Test that --force flag skips confirmation."""
+        result = cli_runner.invoke(
+            cli,
+            ["db", "drop", "--db", str(populated_test_db), "--force"],
+        )
+
+        assert result.exit_code == 0
+        assert not populated_test_db.exists()
+
+
+class TestDbInitCommand:
+    """Test db init command - focused on critical behavior."""
+
+    def test_db_init_creates_database(self, cli_runner, temp_db):
+        """Test that init creates a functional database."""
+        result = cli_runner.invoke(
+            cli,
+            ["db", "init", "--db", str(temp_db)],
+        )
+
+        assert result.exit_code == 0
+        assert temp_db.exists()
+
+        with session_scope() as session:
+            device_count = session.query(models.Device).count()
+            assert device_count == 0
+
+        result2 = cli_runner.invoke(
+            cli,
+            ["db", "init", "--db", str(temp_db)],
+        )
+
+        assert result2.exit_code == 0
+        assert temp_db.exists()
