@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from snore.database.models import Session as CPAPSession
 from snore.parsers.resmed_edf import ResmedEDFParser
 
-# Path to fixtures directory
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "recorded_sessions"
 
 
@@ -70,7 +69,6 @@ def get_fixture_files(fixture_name: str) -> dict:
 
     files = {}
     for file_path in fixture_path.glob("*.edf"):
-        # Extract file type from filename (e.g., "20250215_032456_BRP.edf" -> "BRP")
         parts = file_path.stem.split("_")
         if len(parts) >= 3:
             file_type = parts[2]
@@ -127,15 +125,12 @@ def import_to_test_db(
     """
     fixture_path, files = load_real_session(fixture_name)
 
-    # Find BRP file (main data file)
     if "BRP" not in files:
         raise ValueError(f"Fixture {fixture_name} missing BRP file")
 
-    # Extract session_id from BRP filename (e.g., "20250215_032456_BRP.edf" -> "20250215_032456")
     brp_filename = files["BRP"].stem
     session_id = "_".join(brp_filename.split("_")[:2])
 
-    # Create device info (minimal for test fixtures)
     from snore.models.unified import DeviceInfo
 
     device_info = DeviceInfo(
@@ -144,7 +139,6 @@ def import_to_test_db(
         serial_number="TEST_FIXTURE",
     )
 
-    # Parse using ResMed parser's internal method
     parser = ResmedEDFParser()
     unified_session = parser._parse_session_group(
         session_id=session_id,
@@ -153,14 +147,11 @@ def import_to_test_db(
         base_path=fixture_path,
     )
 
-    # Import directly into the provided test session instead of using SessionImporter
-    # which relies on the global session factory
     import json
 
     from snore.database import models
     from snore.database.importers import serialize_waveform
 
-    # Get or create device
     device = (
         db_session.query(models.Device)
         .filter_by(serial_number=unified_session.device_info.serial_number)
@@ -185,7 +176,6 @@ def import_to_test_db(
         db_session.add(device)
         db_session.flush()
 
-    # Check if session already exists
     existing = (
         db_session.query(models.Session)
         .filter_by(
@@ -199,7 +189,6 @@ def import_to_test_db(
             f"Session already exists in database: {unified_session.device_session_id}"
         )
 
-    # Create session
     notes_json = (
         json.dumps(unified_session.data_quality_notes)
         if unified_session.data_quality_notes
@@ -225,7 +214,6 @@ def import_to_test_db(
     db_session.add(new_session)
     db_session.flush()
 
-    # Import waveforms
     if unified_session.has_waveform_data:
         for waveform_type, waveform in unified_session.waveforms.items():
             data_blob = serialize_waveform(waveform)
@@ -248,7 +236,6 @@ def import_to_test_db(
             )
             db_session.add(waveform_record)
 
-    # Import events
     if unified_session.has_event_data:
         for event in unified_session.events:
             event_record = models.Event(
@@ -261,7 +248,6 @@ def import_to_test_db(
             )
             db_session.add(event_record)
 
-    # Import statistics
     if unified_session.has_statistics:
         stats = unified_session.statistics
         stats_record = models.Statistics(
@@ -308,7 +294,6 @@ def import_to_test_db(
         )
         db_session.add(stats_record)
 
-    # Import settings
     if unified_session.settings:
         settings = unified_session.settings
         settings_dict = {
@@ -338,7 +323,6 @@ def import_to_test_db(
 
     db_session.commit()
 
-    # Query the imported session from SQLAlchemy to return it
     cpap_session = (
         db_session.query(CPAPSession)
         .filter(CPAPSession.device_session_id == unified_session.device_session_id)
@@ -365,10 +349,8 @@ def get_fixture_metadata(fixture_name: str) -> dict:
     """
     fixture_path, files = load_real_session(fixture_name)
 
-    # Extract date from BRP filename if available
     session_date = None
     if "BRP" in files:
-        # Filename format: YYYYMMDD_HHMMSS_BRP.edf
         filename = files["BRP"].stem
         parts = filename.split("_")
         if len(parts) >= 2:
@@ -376,7 +358,6 @@ def get_fixture_metadata(fixture_name: str) -> dict:
             time_str = parts[1]
             session_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
 
-    # Calculate total size
     total_size = sum(f.stat().st_size for f in files.values())
 
     return {

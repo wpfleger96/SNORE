@@ -19,7 +19,6 @@ class MachineSummary(BaseModel):
         default=None, description="Last data import timestamp"
     )
 
-    # Computed fields
     session_count: int = Field(
         default=0, description="Total number of therapy sessions"
     )

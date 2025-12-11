@@ -79,19 +79,16 @@ class WaveformLoader:
             f"type={waveform_type}, filter={apply_filter}"
         )
 
-        # Load from database
         timestamps, values, metadata = load_waveform_from_db(
             self.db_session, session_id, waveform_type
         )
 
         logger.debug(f"Loaded {len(values)} samples at {metadata['sample_rate']} Hz")
 
-        # Apply noise filter
         if apply_filter:
             values = apply_noise_filter(values, sample_rate=metadata["sample_rate"])
             logger.debug("Applied Butterworth filter")
 
-        # Resample if requested
         if target_sample_rate and target_sample_rate != metadata["sample_rate"]:
             timestamps, values = handle_sample_rate_conversion(
                 timestamps,
@@ -103,7 +100,6 @@ class WaveformLoader:
             metadata["original_sample_rate"] = metadata["sample_rate"]
             logger.debug(f"Resampled to {target_sample_rate} Hz")
 
-        # Detect artifacts
         if detect_artifacts:
             artifact_mask = detect_and_mark_artifacts(values, waveform_type)
             metadata["artifact_indices"] = np.where(artifact_mask)[0]
@@ -143,10 +139,8 @@ def deserialize_waveform_blob(
         ... )
     """
     try:
-        # Convert bytes to float32 array
         data = np.frombuffer(blob_data, dtype=np.float32)
 
-        # Validate expected size
         expected_size = sample_count * 2  # 2 columns: timestamp, value
         if len(data) != expected_size:
             raise ValueError(
@@ -154,10 +148,8 @@ def deserialize_waveform_blob(
                 f"({sample_count} samples × 2 columns), got {len(data)}"
             )
 
-        # Reshape to (sample_count, 2)
         data = data.reshape((sample_count, 2))
 
-        # Split into separate arrays
         timestamps = data[:, 0]  # Seconds from session start
         values = data[:, 1]  # Signal values
 
@@ -199,7 +191,6 @@ def load_waveform_from_db(
         ...     session, session_id=123, waveform_type="flow"
         ... )
     """
-    # Query database
     waveform = (
         db_session.query(Waveform)
         .filter_by(session_id=session_id, waveform_type=waveform_type)
@@ -211,12 +202,10 @@ def load_waveform_from_db(
             f"Waveform not found: session_id={session_id}, type={waveform_type}"
         )
 
-    # Deserialize blob
     timestamps, values = deserialize_waveform_blob(
         waveform.data_blob, waveform.sample_count or 0
     )
 
-    # Build metadata dict
     metadata = {
         "waveform_id": waveform.id,
         "session_id": waveform.session_id,
@@ -263,7 +252,6 @@ def apply_noise_filter(
     if filter_type != "butterworth":
         raise ValueError(f"Unsupported filter type: {filter_type}")
 
-    # Validate inputs
     if cutoff_hz >= sample_rate / 2:
         raise ValueError(
             f"Cutoff frequency ({cutoff_hz} Hz) must be less than "
@@ -318,14 +306,11 @@ def handle_sample_rate_conversion(
     if from_rate == to_rate:
         return timestamps, values
 
-    # Calculate new number of samples
     duration = timestamps[-1] - timestamps[0]
     new_sample_count = int(duration * to_rate)
 
-    # Resample values using Fourier method
     resampled_values = signal.resample(values, new_sample_count)
 
-    # Create new timestamps at regular intervals
     resampled_timestamps = np.linspace(timestamps[0], timestamps[-1], new_sample_count)
 
     logger.debug(
@@ -357,7 +342,6 @@ def detect_and_mark_artifacts(data: np.ndarray, waveform_type: str) -> np.ndarra
     """
     artifact_mask = np.zeros(len(data), dtype=bool)
 
-    # Define thresholds by waveform type
     thresholds = {
         "flow": {"min": -120, "max": 120},  # L/min (typical -60 to +60)
         "pressure": {"min": 0, "max": 30},  # cmH2O (typical 4-20)
@@ -366,12 +350,10 @@ def detect_and_mark_artifacts(data: np.ndarray, waveform_type: str) -> np.ndarra
         "pulse": {"min": 30, "max": 200},  # bpm (typical 40-100)
     }
 
-    # Get thresholds for this waveform type
     if waveform_type in thresholds:
         min_val = thresholds[waveform_type]["min"]
         max_val = thresholds[waveform_type]["max"]
 
-        # Mark values outside realistic range
         artifact_mask |= (data < min_val) | (data > max_val)
 
     # Detect NaN or inf values
@@ -382,12 +364,9 @@ def detect_and_mark_artifacts(data: np.ndarray, waveform_type: str) -> np.ndarra
     # Small arrays don't have enough data for reliable baseline calculation
     if len(data) > 10:
         diffs = np.abs(np.diff(data))
-        # Use 50th percentile (median) for robust baseline estimation
         baseline_change = np.percentile(diffs, 50)
         if baseline_change > 0:
-            # Large jumps are >10x the baseline change
             large_jumps = diffs > (10 * baseline_change)
-            # Mark both points involved in the jump
             artifact_mask[:-1] |= large_jumps
             artifact_mask[1:] |= large_jumps
 
@@ -418,33 +397,26 @@ def handle_discontinuities(
         >>> segments = handle_discontinuities(timestamps, values, gap_threshold=60)
         >>> print(f"Found {len(segments)} continuous segments")
     """
-    # Empty arrays should return empty list
     if len(timestamps) == 0:
         return []
     if len(timestamps) < 2:
         return [(timestamps, values)]
 
-    # Calculate time differences between consecutive samples
     time_diffs = np.diff(timestamps)
 
-    # Find indices where gap exceeds threshold
     gap_indices = np.where(time_diffs > gap_threshold)[0]
 
     if len(gap_indices) == 0:
-        # No discontinuities found
         return [(timestamps, values)]
 
-    # Split into segments
     segments = []
     start_idx = 0
 
     for gap_idx in gap_indices:
-        # Segment ends at gap_idx (inclusive)
         end_idx = gap_idx + 1
         segments.append((timestamps[start_idx:end_idx], values[start_idx:end_idx]))
         start_idx = end_idx
 
-    # Add final segment
     segments.append((timestamps[start_idx:], values[start_idx:]))
 
     logger.info(

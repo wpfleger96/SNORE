@@ -61,13 +61,10 @@ class EventDetector:
         Returns:
             ModeResult with detected events and metrics
         """
-        # Detect apneas
         apneas = self._detect_apneas(breaths, flow_data)
 
-        # Detect hypopneas (requires SpO2 data per AASM)
         hypopneas = self._detect_hypopneas(breaths, flow_data, spo2_signal=None)
 
-        # Calculate AHI and RDI
         total_events = len(apneas) + len(hypopneas)
         ahi = (
             total_events / session_duration_hours if session_duration_hours > 0 else 0.0
@@ -116,7 +113,6 @@ class EventDetector:
             f"validation={self.config.apnea_validation_threshold * 100}%)"
         )
 
-        # Calculate baselines and reductions
         baselines = np.zeros(len(breaths))
         reductions = np.zeros(len(breaths))
 
@@ -141,7 +137,6 @@ class EventDetector:
             f"Reduction range: {np.min(reductions) * 100:.1f}% - {np.max(reductions) * 100:.1f}%, mean: {np.mean(reductions) * 100:.1f}%"
         )
 
-        # Find consecutive reduced breaths
         regions = self._find_consecutive_reduced_breaths(
             breaths,
             reductions,
@@ -151,7 +146,6 @@ class EventDetector:
 
         logger.debug(f"Found {len(regions)} potential apnea events (before merging)")
 
-        # Create apnea events
         apneas = []
         for start_idx, end_idx, duration in regions:
             event_breaths = breaths[start_idx:end_idx]
@@ -165,7 +159,6 @@ class EventDetector:
             ):
                 continue
 
-            # Validate event using configured threshold
             if not self._validate_event(reductions, start_idx, end_idx):
                 logger.debug(
                     f"  Rejecting apnea {start_idx}-{end_idx}: fails validation"
@@ -177,7 +170,6 @@ class EventDetector:
             avg_reduction = float(np.mean(event_reductions))
             avg_baseline = float(np.mean(event_baselines))
 
-            # Extract flow signal for classification
             flow_signal = None
             if flow_data is not None:
                 timestamps, flow_values = flow_data
@@ -206,12 +198,10 @@ class EventDetector:
                 )
             )
 
-        # Merge adjacent apneas
         apneas = cast(
             list[ApneaEvent], self._merge_adjacent_events(apneas, self.config.merge_gap)
         )
 
-        # Count by type
         oa = sum(1 for a in apneas if a.event_type == "OA")
         ca = sum(1 for a in apneas if a.event_type == "CA")
         ma = sum(1 for a in apneas if a.event_type == "MA")
@@ -221,7 +211,6 @@ class EventDetector:
             f"{self.config.name}: Detected {len(apneas)} apneas: {oa} OA, {ca} CA, {ma} MA, {ua} UA"
         )
 
-        # Mark breaths as part of events
         for apnea in apneas:
             for breath in breaths:
                 if (
@@ -262,7 +251,6 @@ class EventDetector:
 
         logger.info(f"{self.config.name}: Detecting hypopneas")
 
-        # Calculate baselines and reductions
         baselines = np.zeros(len(breaths))
         reductions = np.zeros(len(breaths))
 
@@ -280,7 +268,6 @@ class EventDetector:
             else:
                 reductions[i] = 0.0
 
-        # Find breaths in hypopnea range (30-89%)
         breaths_in_range = np.sum(
             (reductions >= self.config.hypopnea_min_threshold)
             & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
@@ -301,14 +288,12 @@ class EventDetector:
                 continue
             avg_reduction = float(np.mean(event_reductions))
 
-            # Skip if reduction is apnea-level
             if avg_reduction >= EDC.APNEA_FLOW_REDUCTION_THRESHOLD:
                 logger.debug(
                     f"  Skipping region {start_idx}-{end_idx}: avg reduction {avg_reduction * 100:.1f}% >= 90% (apnea)"
                 )
                 continue
 
-            # Validate event
             if not self._validate_event(
                 reductions,
                 start_idx,
@@ -328,7 +313,6 @@ class EventDetector:
             start_time = breaths[start_idx].start_time
             end_time = breaths[end_idx - 1].end_time
 
-            # Check for desaturation
             has_desaturation = None
             if spo2_signal is not None and flow_data is not None:
                 timestamps, _ = flow_data
@@ -393,7 +377,6 @@ class EventDetector:
 
         max_reduction = float(np.max(event_reductions))
 
-        # Use provided threshold or fall back to config
         validation_threshold = (
             threshold
             if threshold is not None
@@ -435,14 +418,12 @@ class EventDetector:
         current_time = current_breath.start_time
         window_start = current_time - self.config.baseline_window
 
-        # Collect breaths within time window
         values = []
         for i in range(current_idx - 1, -1, -1):
             breath = breaths[i]
             if breath.start_time < window_start:
                 break
 
-            # Extract metric value, excluding event breaths
             if not breath.in_event:
                 if self.config.metric == "amplitude":
                     if breath.amplitude > 0:
@@ -486,7 +467,6 @@ class EventDetector:
         if len(window) < 5:
             return 30.0 if self.config.metric == "amplitude" else 300.0
 
-        # Extract metric values, excluding event breaths
         values = []
         for b in window:
             if self.config.metric == "amplitude":
@@ -645,7 +625,6 @@ class EventDetector:
                 has_desaturation=event1.has_desaturation or event2.has_desaturation,
             )
 
-        # Fallback
         event_typed: ApneaEvent | HypopneaEvent = event1
         return event_typed
 

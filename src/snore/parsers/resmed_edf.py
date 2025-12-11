@@ -61,7 +61,6 @@ class ResmedEDFParser(DeviceParser):
         - YYYYMMDD_HHMMSS_CSL.edf (compliance)
     """
 
-    # ResMed file type suffixes
     FILE_TYPE_BRP = "_BRP.edf"  # Breathing waveforms
     FILE_TYPE_PLD = "_PLD.edf"  # Pressure/Leak data
     FILE_TYPE_SA2 = "_SA2.edf"  # Statistics
@@ -71,42 +70,32 @@ class ResmedEDFParser(DeviceParser):
     # Event type mapping from EDF annotations to unified types
     # Based on OSCAR's ResMed annotation mappings
     EVENT_TYPE_MAP = {
-        # Obstructive Apnea
         "Obstructive Apnea": RespiratoryEventType.OBSTRUCTIVE_APNEA,
         "ObstructiveApnea": RespiratoryEventType.OBSTRUCTIVE_APNEA,
-        "Obstructive apnea": RespiratoryEventType.OBSTRUCTIVE_APNEA,  # lowercase variant
+        "Obstructive apnea": RespiratoryEventType.OBSTRUCTIVE_APNEA,
         "OA": RespiratoryEventType.OBSTRUCTIVE_APNEA,
-        # Central Apnea
         "Central Apnea": RespiratoryEventType.CENTRAL_APNEA,
         "CentralApnea": RespiratoryEventType.CENTRAL_APNEA,
-        "Central apnea": RespiratoryEventType.CENTRAL_APNEA,  # lowercase variant
+        "Central apnea": RespiratoryEventType.CENTRAL_APNEA,
         "CA": RespiratoryEventType.CENTRAL_APNEA,
-        # Clear Airway (same as Central Apnea in some ResMed devices)
-        "Clear Airway": RespiratoryEventType.CLEAR_AIRWAY,
+        "Clear Airway": RespiratoryEventType.CLEAR_AIRWAY,  # (same as Central Apnea in some ResMed devices)
         "ClearAirway": RespiratoryEventType.CLEAR_AIRWAY,
-        # Unclassified Apnea
         "Apnea": RespiratoryEventType.UNCLASSIFIED_APNEA,
         "UA": RespiratoryEventType.UNCLASSIFIED_APNEA,
-        # Hypopnea
         "Hypopnea": RespiratoryEventType.HYPOPNEA,
         "H": RespiratoryEventType.HYPOPNEA,
-        # RERA (Respiratory Effort Related Arousal)
-        "RERA": RespiratoryEventType.RERA,
+        "RERA": RespiratoryEventType.RERA,  # (Respiratory Effort Related Arousal)
         "RE": RespiratoryEventType.RERA,
         "Arousal": RespiratoryEventType.RERA,  # OSCAR uses "Arousal" for RERA
-        # Flow Limitation
         "Flow Limitation": RespiratoryEventType.FLOW_LIMITATION,
         "FlowLimitation": RespiratoryEventType.FLOW_LIMITATION,
         "FL": RespiratoryEventType.FLOW_LIMITATION,
-        # Periodic Breathing
         "Periodic Breathing": RespiratoryEventType.PERIODIC_BREATHING,
         "PeriodicBreathing": RespiratoryEventType.PERIODIC_BREATHING,
         "PB": RespiratoryEventType.PERIODIC_BREATHING,
-        # Large Leak
         "Large Leak": RespiratoryEventType.LARGE_LEAK,
         "LargeLeak": RespiratoryEventType.LARGE_LEAK,
         "LL": RespiratoryEventType.LARGE_LEAK,
-        # Vibratory Snore
         "Vibratory Snore": RespiratoryEventType.VIBRATORY_SNORE,
         "VibratorySnore": RespiratoryEventType.VIBRATORY_SNORE,
         "VS": RespiratoryEventType.VIBRATORY_SNORE,
@@ -278,14 +267,12 @@ class ResmedEDFParser(DeviceParser):
         """
         path = Path(self._data_root if self._data_root else path)
 
-        # Try Identification.json first (newer devices)
         id_file = path / "Identification.json"
         if id_file.exists():
             try:
                 with open(id_file) as f:
                     data = json.load(f)
 
-                # Navigate the nested structure
                 fg = data.get("FlowGenerator", {})
                 profiles = fg.get("IdentificationProfiles", {})
                 product = profiles.get("Product", {})
@@ -302,23 +289,17 @@ class ResmedEDFParser(DeviceParser):
             except Exception as e:
                 logger.warning(f"Failed to parse Identification.json: {e}")
 
-        # Fall back to STR.edf
         str_file = path / "STR.edf"
         if str_file.exists():
             try:
                 with EDFReader(str_file) as edf:
                     header = edf.get_header()
 
-                    # Extract device info from patient/recording info fields
-                    # ResMed typically embeds device info in these fields
                     recording_info = header.recording_info
 
-                    # Try to parse model and serial from recording info
-                    # Format varies, but often includes model name
                     model = "Unknown"
                     serial = "Unknown"
 
-                    # Try to extract model name (e.g., "AirSense 10 AutoSet")
                     if "AirSense" in recording_info:
                         match = re.search(r"(AirSense \d+ [A-Za-z]+)", recording_info)
                         if match:
@@ -328,7 +309,6 @@ class ResmedEDFParser(DeviceParser):
                         if match:
                             model = match.group(1)
 
-                    # Try to extract serial number (usually numeric)
                     serial_match = re.search(r"SN[:\s]+(\d+)", recording_info)
                     if serial_match:
                         serial = serial_match.group(1)
@@ -340,7 +320,6 @@ class ResmedEDFParser(DeviceParser):
             except Exception as e:
                 logger.warning(f"Failed to parse STR.edf: {e}")
 
-        # Last resort
         return DeviceInfo(
             manufacturer="ResMed", model="Unknown", serial_number="Unknown"
         )
@@ -364,36 +343,26 @@ class ResmedEDFParser(DeviceParser):
         if not datalog_dir.exists():
             raise ParserError("DATALOG directory not found", self)
 
-        # Get device info once
         device_info = self.get_device_info(path)
 
-        # Find all session file groups (grouped by night date using noon cutoff)
         night_groups = self._group_session_files(datalog_dir)
 
-        # Count total segments across all nights
         total_segments = sum(len(segments) for segments in night_groups.values())
         logger.info(
             f"Found {len(night_groups)} nights with {total_segments} total segments "
             f"(avg {total_segments / len(night_groups):.1f} segments per night)"
         )
 
-        # Sort night groups if requested
         if sort_by == "date-asc":
-            # Oldest first - night_date is YYYYMMDD format
             night_items = sorted(night_groups.items(), key=lambda x: x[0])
         elif sort_by == "date-desc":
-            # Newest first
             night_items = sorted(night_groups.items(), key=lambda x: x[0], reverse=True)
         else:
-            # Filesystem order (default)
             night_items = list(night_groups.items())
 
-        # Track number of sessions yielded for limit
         sessions_yielded = 0
 
-        # Parse each night (which may contain multiple segments)
         for night_date, segments in night_items:
-            # EARLY DATE FILTER: Check night date BEFORE parsing
             if date_from or date_to:
                 try:
                     night_date_obj = datetime.strptime(night_date, "%Y%m%d").date()
@@ -416,22 +385,18 @@ class ResmedEDFParser(DeviceParser):
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Could not parse night date {night_date}: {e}")
 
-            # Check limit before parsing
             if limit is not None and sessions_yielded >= limit:
                 logger.info(f"Reached session limit of {limit}, stopping")
                 break
 
             try:
-                # Parse all segments for this night into a single session
                 session = self._parse_night_session(
                     night_date, segments, device_info, path
                 )
 
-                # Skip nights with no valid therapy data (device self-tests, etc.)
                 if session is None:
                     continue
 
-                # Apply date filters again as safety check
                 if date_from:
                     if (
                         session.start_time.date()
@@ -456,7 +421,6 @@ class ResmedEDFParser(DeviceParser):
 
             except Exception as e:
                 logger.error(f"Failed to parse night {night_date}: {e}")
-                # Continue with next night rather than failing completely
                 continue
 
     def _get_night_date(self, timestamp: datetime) -> str:
@@ -508,11 +472,9 @@ class ResmedEDFParser(DeviceParser):
         """
         groups: dict[str, dict[str, dict[str, Path]]] = {}
 
-        # Find all EDF files
         for edf_file in datalog_dir.rglob("*.edf"):
             filename = edf_file.name
 
-            # Extract timestamp (YYYYMMDD_HHMMSS)
             match = re.match(r"(\d{8}_\d{6})_([A-Z0-9]+)\.edf", filename)
             if not match:
                 continue
@@ -520,11 +482,9 @@ class ResmedEDFParser(DeviceParser):
             session_id = match.group(1)
             file_type = match.group(2)
 
-            # Parse timestamp and get night date
             timestamp = datetime.strptime(session_id, "%Y%m%d_%H%M%S")
             night_date = self._get_night_date(timestamp)
 
-            # Create nested structure: night_date -> session_id -> file_type -> path
             if night_date not in groups:
                 groups[night_date] = {}
             if session_id not in groups[night_date]:
@@ -557,7 +517,6 @@ class ResmedEDFParser(DeviceParser):
         Returns:
             Single UnifiedSession representing the entire night
         """
-        # Sort segments chronologically
         sorted_segments = sorted(segments.items(), key=lambda x: x[0])
 
         logger.info(
@@ -575,7 +534,6 @@ class ResmedEDFParser(DeviceParser):
                     f"Found EVE file for segment {segment_id}: {files['EVE'].name}"
                 )
 
-        # Parse each segment individually (skipping zero-record segments)
         segment_sessions = []
         for segment_id, files in sorted_segments:
             try:
@@ -584,7 +542,6 @@ class ResmedEDFParser(DeviceParser):
                 )
                 segment_sessions.append(segment_session)
             except ValueError as e:
-                # Skip zero-record segments
                 if "No valid data records" in str(e):
                     logger.info(f"Skipping zero-record segment {segment_id}")
                     continue
@@ -602,7 +559,6 @@ class ResmedEDFParser(DeviceParser):
             )
             return None
 
-        # If only one segment, still need to parse EVE files, then return
         if len(segment_sessions) == 1:
             session = segment_sessions[0]
             if eve_files:
@@ -612,33 +568,25 @@ class ResmedEDFParser(DeviceParser):
                 self._parse_eve_files_for_night(eve_files, session)
             return session
 
-        # Merge multiple segments into single session
         logger.info(f"Merging {len(segment_sessions)} segments for night {night_date}")
 
-        # Use first segment as base
         merged_session = segment_sessions[0]
 
-        # Update session ID to reflect it's a merged night
         merged_session.device_session_id = f"{night_date}_merged"
 
-        # Update end_time to last segment's end
         merged_session.end_time = segment_sessions[-1].end_time
 
-        # Merge waveforms from all segments
         cumulative_time_offset = 0.0
         for i, segment in enumerate(segment_sessions):
             if i == 0:
-                # First segment: keep waveforms as-is
                 cumulative_time_offset = (
                     segment.end_time - segment.start_time
                 ).total_seconds()
             else:
-                # Subsequent segments: adjust timestamps and append
                 segment_start_offset = (
                     segment.start_time - merged_session.start_time
                 ).total_seconds()
 
-                # Add gap note
                 gap_duration = segment_start_offset - cumulative_time_offset
                 if gap_duration > 0:
                     merged_session.data_quality_notes.append(
@@ -647,19 +595,15 @@ class ResmedEDFParser(DeviceParser):
                         f"{segment.start_time.strftime('%H:%M:%S')})"
                     )
 
-                # Merge waveforms
                 for waveform_type, segment_waveform in segment.waveforms.items():
                     if waveform_type in merged_session.waveforms:
-                        # Append to existing waveform with time offset
                         merged_waveform = merged_session.waveforms[waveform_type]
 
-                        # Adjust timestamps by segment offset (numpy array addition)
                         adjusted_timestamps = (
                             np.asarray(segment_waveform.timestamps)
                             + segment_start_offset
                         )
 
-                        # Append data using numpy concatenation
                         merged_waveform.timestamps = np.concatenate(
                             [merged_waveform.timestamps, adjusted_timestamps]
                         )
@@ -667,7 +611,6 @@ class ResmedEDFParser(DeviceParser):
                             [merged_waveform.values, segment_waveform.values]
                         )
 
-                        # Update statistics using numpy operations
                         merged_waveform.min_value = float(
                             np.min(merged_waveform.values)
                         )
@@ -678,12 +621,9 @@ class ResmedEDFParser(DeviceParser):
                             np.mean(merged_waveform.values)
                         )
                     else:
-                        # New waveform type in this segment
                         merged_session.add_waveform(segment_waveform)
 
-                # Merge events with time offset
                 for event in segment.events:
-                    # Adjust event timing
                     event.start_time = event.start_time + timedelta(
                         seconds=(
                             segment_start_offset
@@ -692,27 +632,20 @@ class ResmedEDFParser(DeviceParser):
                     )
                     merged_session.add_event(event)
 
-                # Update cumulative offset
                 cumulative_time_offset = (
                     segment.end_time - merged_session.start_time
                 ).total_seconds()
 
-        # Add summary note about segments
         merged_session.data_quality_notes.insert(
             0,
             f"Night composed of {len(segment_sessions)} segment(s) - mask removed during sleep",
         )
-
-        # Merge statistics (take average or sum as appropriate)
-        # For now, keep first segment's statistics as primary
-        # TODO: Could enhance to merge statistics more intelligently
 
         logger.info(
             f"Merged night {night_date}: {len(segment_sessions)} segments, "
             f"total duration {(merged_session.end_time - merged_session.start_time).total_seconds() / 3600:.2f}h"
         )
 
-        # Parse EVE files and apply events to merged session based on timestamp filtering
         if eve_files:
             logger.info(f"Parsing {len(eve_files)} EVE file(s) for night {night_date}")
             self._parse_eve_files_for_night(eve_files, merged_session)
@@ -729,18 +662,14 @@ class ResmedEDFParser(DeviceParser):
         """Parse a single session from its file group."""
         from .formats.edf import get_edf_record_count
 
-        # Parse timestamp from session_id
         start_time = datetime.strptime(session_id, "%Y%m%d_%H%M%S")
 
-        # Calculate session duration from EDF file headers
-        # Try each file type in priority order until we find one with valid data
         session_duration_seconds = None
-        for file_type in ["BRP", "PLD", "SA2"]:  # Priority order
+        for file_type in ["BRP", "PLD", "SA2"]:
             if file_type in files:
                 try:
                     record_count = get_edf_record_count(files[file_type])
                     if record_count > 0:
-                        # Open file to read record duration from header
                         with EDFReader(files[file_type]) as edf:
                             header = edf.get_header()
                             session_duration_seconds = (
@@ -756,7 +685,6 @@ class ResmedEDFParser(DeviceParser):
                     logger.warning(f"Could not read duration from {file_type}: {e}")
                     continue
 
-        # Check if this is an all-zero-record session (device turned on briefly but not used)
         if session_duration_seconds is None or session_duration_seconds == 0:
             logger.info(
                 f"Session {session_id}: All files have 0 data records "
@@ -764,7 +692,6 @@ class ResmedEDFParser(DeviceParser):
             )
             raise ValueError("No valid data records in any files for this session")
 
-        # Create session with calculated end_time
         session = UnifiedSession(
             device_session_id=session_id,
             device_info=device_info,
@@ -775,7 +702,6 @@ class ResmedEDFParser(DeviceParser):
             raw_data_path=str(base_path),
         )
 
-        # Parse each file type
         if "SA2" in files:
             self._parse_statistics(files["SA2"], session)
 
@@ -800,7 +726,6 @@ class ResmedEDFParser(DeviceParser):
         from .formats.edf import get_edf_record_count
 
         try:
-            # Check for zero-record files first (OSCAR allows these, pyedflib rejects them)
             record_count = get_edf_record_count(file_path)
             file_size = file_path.stat().st_size
 
@@ -811,11 +736,9 @@ class ResmedEDFParser(DeviceParser):
                 session.data_quality_notes.append(
                     "SA2: No data (device turned on briefly, not used)"
                 )
-                session.has_statistics = True  # Mark that we tried
-                return  # Skip parsing, no data available
+                session.has_statistics = True
+                return
 
-            # SA2 signal files are continuous by design (ResMed creates separate files per segment)
-            # If pyedflib rejects a file, it's genuinely corrupted or malformed
             logger.debug(
                 f"SA2 file {file_path.name} has {record_count} records (size={file_size} bytes)"
             )
@@ -823,33 +746,23 @@ class ResmedEDFParser(DeviceParser):
             with EDFReader(file_path) as edf:
                 has_valid_data = False
 
-                # Parse SpO2 waveform
                 spo2_signal = self._find_signal(edf, ["SpO2"])
                 if spo2_signal:
                     data, info = edf.read_signal(spo2_signal)
 
-                    # Filter out invalid values
-                    # -1 or 0 = no oximeter connected
-                    # Realistic SpO2 range: 70-100%
                     valid_mask = (data >= 70) & (data <= 100)
                     valid_data = data[valid_mask]
 
                     if len(valid_data) > 0:
-                        # We have real oximetry data
                         timestamps_seconds = edf.get_timestamps(spo2_signal, data)
 
-                        # Calculate statistics
                         spo2_min = float(np.min(valid_data))
                         spo2_max = float(np.max(valid_data))
                         spo2_mean = float(np.mean(valid_data))
 
-                        # Calculate time below 90% (critical metric)
                         below_90 = np.sum(valid_data < 90)
-                        time_below_90_seconds = int(
-                            below_90
-                        )  # 1 Hz data, so count = seconds
+                        time_below_90_seconds = int(below_90)
 
-                        # Create waveform (timestamps as offsets from session start)
                         waveform = WaveformData(
                             waveform_type=WaveformType.SPO2,
                             sample_rate=edf.get_sample_rate(spo2_signal),
@@ -863,7 +776,6 @@ class ResmedEDFParser(DeviceParser):
 
                         session.add_waveform(waveform)
 
-                        # Update statistics
                         session.statistics.spo2_min = spo2_min
                         session.statistics.spo2_max = spo2_max
                         session.statistics.spo2_mean = spo2_mean
@@ -876,27 +788,20 @@ class ResmedEDFParser(DeviceParser):
                     else:
                         logger.debug("SpO2 signal present but no valid data (all -1)")
 
-                # Parse Pulse waveform
                 pulse_signal = self._find_signal(edf, ["Pulse"])
                 if pulse_signal:
                     data, info = edf.read_signal(pulse_signal)
 
-                    # Filter out invalid values
-                    # -1 or 0 = no oximeter connected
-                    # Realistic heart rate range: 40-200 BPM (normal range during sleep)
                     valid_mask = (data >= 40) & (data <= 200)
                     valid_data = data[valid_mask]
 
                     if len(valid_data) > 0:
-                        # We have real pulse data
                         timestamps_seconds = edf.get_timestamps(pulse_signal, data)
 
-                        # Calculate statistics
                         pulse_min = float(np.min(valid_data))
                         pulse_max = float(np.max(valid_data))
                         pulse_mean = float(np.mean(valid_data))
 
-                        # Create waveform (timestamps as offsets from session start)
                         waveform = WaveformData(
                             waveform_type=WaveformType.PULSE,
                             sample_rate=edf.get_sample_rate(pulse_signal),
@@ -910,7 +815,6 @@ class ResmedEDFParser(DeviceParser):
 
                         session.add_waveform(waveform)
 
-                        # Update statistics
                         session.statistics.pulse_min = pulse_min
                         session.statistics.pulse_max = pulse_max
                         session.statistics.pulse_mean = pulse_mean
@@ -938,7 +842,6 @@ class ResmedEDFParser(DeviceParser):
         from .formats.edf import get_edf_record_count
 
         try:
-            # Check for zero-record files first (OSCAR allows these, pyedflib rejects them)
             record_count = get_edf_record_count(file_path)
             file_size = file_path.stat().st_size
 
@@ -949,10 +852,8 @@ class ResmedEDFParser(DeviceParser):
                 session.data_quality_notes.append(
                     "BRP: No data (device turned on briefly, not used)"
                 )
-                return  # Skip parsing, no data available
+                return
 
-            # BRP signal files are continuous by design (ResMed creates separate files per segment)
-            # If pyedflib rejects a file, it's genuinely corrupted or malformed
             logger.debug(
                 f"BRP file {file_path.name} has {record_count} records (size={file_size} bytes)"
             )
@@ -966,20 +867,16 @@ class ResmedEDFParser(DeviceParser):
                     data, info = edf.read_signal(flow_signal)
                     timestamps_seconds = edf.get_timestamps(flow_signal, data)
 
-                    # Skip if no data
                     if len(data) == 0:
                         logger.warning(f"No data in flow signal {flow_signal}")
                         return
 
-                    # Get unit and convert if necessary
                     unit = info.physical_dimension or "L/min"
 
-                    # Convert L/s to L/min if needed
                     if unit == "L/s":
                         data = data * 60.0
                         unit = "L/min"
 
-                    # Create waveform (timestamps as offsets from session start)
                     waveform = WaveformData(
                         waveform_type=WaveformType.FLOW_RATE,
                         sample_rate=edf.get_sample_rate(flow_signal),
@@ -1002,7 +899,6 @@ class ResmedEDFParser(DeviceParser):
 
     def _find_signal(self, edf: Any, patterns: list[str]) -> str | None:
         """Find signal name matching any of the patterns."""
-        # Works with both EDFReader and EDFDiscontinuousReader
         signals = edf.list_signal_labels()
         for pattern in patterns:
             signal: str
@@ -1016,7 +912,6 @@ class ResmedEDFParser(DeviceParser):
         from .formats.edf import get_edf_record_count
 
         try:
-            # Check for zero-record files first (OSCAR allows these, pyedflib rejects them)
             record_count = get_edf_record_count(file_path)
             file_size = file_path.stat().st_size
 
@@ -1027,16 +922,13 @@ class ResmedEDFParser(DeviceParser):
                 session.data_quality_notes.append(
                     "PLD: No data (device turned on briefly, not used)"
                 )
-                return  # Skip parsing, no data available
+                return
 
-            # PLD signal files are continuous by design (ResMed creates separate files per segment)
-            # If pyedflib rejects a file, it's genuinely corrupted or malformed
             logger.debug(
                 f"PLD file {file_path.name} has {record_count} records (size={file_size} bytes)"
             )
 
             with EDFReader(file_path) as edf:
-                # Parse pressure waveform
                 # ResMed uses names like "Press.2s", "MaskPress.2s", "Pressure", "MaskPressure"
                 pressure_signal = self._find_signal(edf, ["Press", "MaskPress"])
 
@@ -1044,11 +936,9 @@ class ResmedEDFParser(DeviceParser):
                     data, info = edf.read_signal(pressure_signal)
                     timestamps_seconds = edf.get_timestamps(pressure_signal, data)
 
-                    # Skip if no data
                     if len(data) == 0:
                         logger.warning(f"No data in pressure signal {pressure_signal}")
                     else:
-                        # Create waveform (timestamps as offsets from session start)
                         waveform = WaveformData(
                             waveform_type=WaveformType.MASK_PRESSURE,
                             sample_rate=edf.get_sample_rate(pressure_signal),
@@ -1062,7 +952,6 @@ class ResmedEDFParser(DeviceParser):
 
                         session.add_waveform(waveform)
 
-                # Parse leak waveform
                 # ResMed uses names like "Leak.2s", "LeakRate"
                 leak_signal = self._find_signal(edf, ["Leak"])
 
@@ -1070,19 +959,15 @@ class ResmedEDFParser(DeviceParser):
                     data, info = edf.read_signal(leak_signal)
                     timestamps_seconds = edf.get_timestamps(leak_signal, data)
 
-                    # Skip if no data
                     if len(data) == 0:
                         logger.warning(f"No data in leak signal {leak_signal}")
                     else:
-                        # Get unit and convert if necessary
                         unit = info.physical_dimension or "L/min"
 
-                        # Convert L/s to L/min if needed
                         if unit == "L/s":
                             data = data * 60.0
                             unit = "L/min"
 
-                        # Create waveform (timestamps as offsets from session start)
                         waveform = WaveformData(
                             waveform_type=WaveformType.LEAK_RATE,
                             sample_rate=edf.get_sample_rate(leak_signal),
@@ -1104,7 +989,6 @@ class ResmedEDFParser(DeviceParser):
 
     def _parse_events(self, file_path: Path, session: UnifiedSession) -> None:
         """Parse EVE events file."""
-        # Check if file is discontinuous and use appropriate reader
         from .formats.edf import EDFDiscontinuousReader, is_discontinuous_edf
 
         is_discontinuous = is_discontinuous_edf(file_path)
@@ -1119,42 +1003,33 @@ class ResmedEDFParser(DeviceParser):
             )
 
         try:
-            # Use appropriate reader based on file type
             if is_discontinuous:
-                # Use MNE-based reader for discontinuous files
                 with EDFDiscontinuousReader(file_path) as edf:
                     annotations = edf.read_annotations()
             else:
-                # Use pyedflib for continuous files
                 with EDFReader(file_path) as edf:
                     annotations = edf.read_annotations()
 
-            # Process annotations (same for both file types)
             event_count = 0
             filtered_count = 0
             unknown_count = 0
             unknown_annotations = set()
 
             for annotation in annotations:
-                # Map annotation text to event type
                 event_type = None
                 annotation_text = None
 
                 for text in annotation.annotations:
-                    # Filter out non-event annotations
                     if text in self.FILTERED_ANNOTATIONS:
                         filtered_count += 1
                         break
 
-                    # Map to event type
                     if text in self.EVENT_TYPE_MAP:
                         event_type = self.EVENT_TYPE_MAP[text]
                         annotation_text = text
                         break
 
-                # Skip filtered annotations
                 if annotation_text is None and event_type is None:
-                    # Check if this was an unknown annotation
                     for text in annotation.annotations:
                         if text not in self.FILTERED_ANNOTATIONS:
                             unknown_annotations.add(text)
@@ -1162,14 +1037,10 @@ class ResmedEDFParser(DeviceParser):
                     continue
 
                 if event_type is None:
-                    # Unknown event type, skip
                     continue
 
-                # Handle missing or zero duration (common for hypopneas)
-                # Default to 10 seconds if not specified
                 duration = annotation.duration if annotation.duration else 10.0
 
-                # Create respiratory event
                 event = RespiratoryEvent(
                     event_type=event_type,
                     start_time=annotation.to_datetime(session.start_time),
@@ -1179,7 +1050,6 @@ class ResmedEDFParser(DeviceParser):
                 session.add_event(event)
                 event_count += 1
 
-            # Log success message based on file type
             if is_discontinuous and event_count > 0:
                 logger.info(
                     f"Successfully parsed {event_count} events from discontinuous EVE file "
@@ -1199,7 +1069,6 @@ class ResmedEDFParser(DeviceParser):
                 )
 
         except Exception as e:
-            # Provide more context for discontinuous file errors
             if "discontinuous" in str(e).lower():
                 logger.warning(
                     "EVE file is discontinuous (mask removal during session) - events not imported"
@@ -1236,16 +1105,13 @@ class ResmedEDFParser(DeviceParser):
 
         for eve_file in eve_files:
             try:
-                # Check record count first
                 record_count = get_edf_record_count(eve_file)
                 if record_count == 0:
                     logger.debug(f"Skipping zero-record EVE file: {eve_file.name}")
                     continue
 
-                # Check if file is discontinuous
                 is_discontinuous = is_discontinuous_edf(eve_file)
 
-                # Read annotations using appropriate reader
                 if is_discontinuous:
                     with EDFDiscontinuousReader(eve_file) as edf:
                         annotations = edf.read_annotations()
@@ -1259,9 +1125,7 @@ class ResmedEDFParser(DeviceParser):
                     f"Processing EVE file {eve_file.name} with {len(annotations)} annotation(s)"
                 )
 
-                # Process each annotation
                 for annotation in annotations:
-                    # Convert annotation onset to absolute timestamp using EVE file's start time
                     event_timestamp = annotation.to_datetime(eve_start_time)
 
                     # Check if event falls within session time range (OSCAR's checkInside logic)
@@ -1269,15 +1133,12 @@ class ResmedEDFParser(DeviceParser):
                         total_events_filtered += 1
                         continue
 
-                    # Map annotation text to event type
                     event_type = None
 
                     for text in annotation.annotations:
-                        # Skip filtered annotations
                         if text in self.FILTERED_ANNOTATIONS:
                             break
 
-                        # Map to event type
                         if text in self.EVENT_TYPE_MAP:
                             event_type = self.EVENT_TYPE_MAP[text]
                             break
@@ -1285,10 +1146,8 @@ class ResmedEDFParser(DeviceParser):
                     if event_type is None:
                         continue
 
-                    # Handle missing or zero duration
                     duration = annotation.duration if annotation.duration else 10.0
 
-                    # Create and add event
                     event = RespiratoryEvent(
                         event_type=event_type,
                         start_time=event_timestamp,

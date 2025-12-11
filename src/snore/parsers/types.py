@@ -6,10 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-# ============================================================================
-# Parser Metadata Types
-# ============================================================================
-
 
 class ParserMetadata(BaseModel):
     """Metadata about a parser implementation."""
@@ -25,11 +21,6 @@ class ParserMetadata(BaseModel):
     )
 
 
-# ============================================================================
-# Discovery Types
-# ============================================================================
-
-
 class DataRoot(BaseModel):
     """Information about a discovered CPAP data root."""
 
@@ -42,11 +33,6 @@ class DataRoot(BaseModel):
     )
     device_serial: str | None = Field(default=None, description="Device serial number")
     confidence: float = Field(ge=0, le=1, description="Discovery confidence")
-
-
-# ============================================================================
-# OSCAR Event Types
-# ============================================================================
 
 
 class EventListType(IntEnum):
@@ -81,7 +67,6 @@ class EventList(BaseModel):
     min_value2: float = Field(default=0.0, description="Min value for field 2")
     max_value2: float = Field(default=0.0, description="Max value for field 2")
 
-    # Data arrays
     data: list[int] = Field(default_factory=list, description="Primary data (int16)")
     data2: list[int] = Field(default_factory=list, description="Secondary data")
     time_deltas: list[int] = Field(
@@ -119,7 +104,6 @@ class EventList(BaseModel):
             List of timestamps in milliseconds since epoch
         """
         if self.event_type == EventListType.WAVEFORM:
-            # Calculate timestamps from sample rate
             if self.sample_rate <= 0:
                 return []
 
@@ -128,7 +112,6 @@ class EventList(BaseModel):
                 int(self.first_timestamp + i * interval_ms) for i in range(self.count)
             ]
         else:
-            # Use delta times
             return [self.first_timestamp + delta for delta in self.time_deltas]
 
     @property
@@ -144,7 +127,6 @@ class SessionEvents(BaseModel):
     Contains all EventLists for all channels in the session.
     """
 
-    # Header fields
     magic: int = Field(description="File magic number")
     version: int = Field(description="File format version")
     file_type: int = Field(description="File type identifier")
@@ -153,15 +135,9 @@ class SessionEvents(BaseModel):
     first_timestamp: int = Field(description="First timestamp (ms)")
     last_timestamp: int = Field(description="Last timestamp (ms)")
 
-    # EventLists keyed by channel ID (each channel can have multiple EventLists)
     event_lists: dict[int, list[EventList]] = Field(
         default_factory=dict, description="EventLists by channel ID"
     )
-
-
-# ============================================================================
-# OSCAR Summary Types
-# ============================================================================
 
 
 class SessionSummary(BaseModel):
@@ -171,7 +147,6 @@ class SessionSummary(BaseModel):
     Contains all statistics and metadata for a single therapy session.
     """
 
-    # Header fields
     magic: int = Field(description="File magic number")
     version: int = Field(description="File format version")
     file_type: int = Field(description="File type identifier")
@@ -180,7 +155,6 @@ class SessionSummary(BaseModel):
     first_timestamp: int = Field(description="First timestamp (ms since epoch)")
     last_timestamp: int = Field(description="Last timestamp (ms since epoch)")
 
-    # Session data
     settings: dict[int, Any] = Field(
         default_factory=dict, description="Device settings"
     )
@@ -227,7 +201,6 @@ class SessionSummary(BaseModel):
         default_factory=list, description="Available channel IDs"
     )
 
-    # Additional fields
     time_above_threshold: dict[int, int] = Field(
         default_factory=dict, description="Time above threshold"
     )

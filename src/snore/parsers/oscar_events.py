@@ -61,10 +61,8 @@ class OscarEventsParser:
 
     def _parse_stream(self, stream: BinaryIO) -> SessionEvents:
         """Parse events file from binary stream."""
-        # Read and validate header
         header = self._parse_header(stream)
 
-        # Create session events object
         events = SessionEvents(
             magic=header["magic"],
             version=header["version"],
@@ -75,31 +73,21 @@ class OscarEventsParser:
             last_timestamp=header["last_timestamp"],
         )
 
-        # Store compression info for decompression logic
         compression = header["compression"]
 
-        # Handle compression if present
         if compression == 1:
-            # Read compressed data
             compressed_data = stream.read()
 
             try:
-                # Decompress using Qt's qUncompress
                 decompressed_data = qUncompress(compressed_data)
-
-                # Create new stream from decompressed data
                 stream = io.BytesIO(decompressed_data)
             except QtCompressionError as e:
                 raise OscarEventsParseError(f"Failed to decompress data: {e}") from e
 
-        # Parse event data using QDataStream
         reader = QDataStreamReader(stream)
 
         try:
-            # Parse channel metadata first
             channel_metadata = self._parse_channel_metadata(reader, events.version)
-
-            # Parse channel data
             events.event_lists = self._parse_channel_data(reader, channel_metadata)
 
         except EOFError as e:
@@ -151,13 +139,11 @@ class OscarEventsParser:
             crc16,
         ) = struct.unpack("<IHH II qq HH iH", header_data)
 
-        # Validate magic number
         if magic != OSCAR_MAGIC_NUMBER:
             raise OscarEventsParseError(
                 f"Invalid magic number: 0x{magic:08x} (expected 0x{OSCAR_MAGIC_NUMBER:08x})"
             )
 
-        # Validate file type
         if file_type != 1:
             raise OscarEventsParseError(
                 f"Invalid file type: {file_type} (expected 1 for events)"
@@ -190,7 +176,6 @@ class OscarEventsParser:
         """
         metadata_list = []
 
-        # Read number of channels
         num_channels = reader.read_int16()
 
         for _ in range(num_channels):
@@ -215,7 +200,6 @@ class OscarEventsParser:
                 try:
                     parsed_event_type = EventListType(event_type_value)
                 except ValueError:
-                    # Unknown event type, default to WAVEFORM
                     import warnings
 
                     warnings.warn(
@@ -241,7 +225,6 @@ class OscarEventsParser:
                     "max_value2": 0.0,
                 }
 
-                # Version 7+ supports second field
                 if version >= 7:
                     has_second = reader.read_bool()
                     metadata["has_second_field"] = has_second
@@ -267,20 +250,16 @@ class OscarEventsParser:
         result: dict[int, list[EventList]] = {}
 
         for metadata in metadata_list:
-            # Read primary data array
             data = reader.read_qvector_int16()
 
-            # Read secondary data array if present
             data2 = []
             if metadata["has_second_field"]:
                 data2 = reader.read_qvector_int16()
 
-            # Read time delta array for events (not waveforms)
             time_deltas = []
             if metadata["event_type"] != EventListType.WAVEFORM:
                 time_deltas = reader.read_qvector_uint32()
 
-            # Create EventList object
             event_list = EventList(
                 channel_id=metadata["channel_id"],
                 first_timestamp=metadata["first_timestamp"],
@@ -301,7 +280,6 @@ class OscarEventsParser:
                 time_deltas=time_deltas,
             )
 
-            # Add to result dictionary
             channel_id = metadata["channel_id"]
             if channel_id not in result:
                 result[channel_id] = []

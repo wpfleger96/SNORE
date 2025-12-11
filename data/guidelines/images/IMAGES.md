@@ -172,24 +172,19 @@ Examples:
 
 ## Adding New Images
 
-1. **Extract from PDF**:
-   ```bash
-   python scripts/extract_pdf_images.py --pdf path/to/document.pdf
-   ```
-
-2. **Review and Rename**:
+1. **Review and Rename**:
    - Check images in `temp/` directory
    - Delete irrelevant images (logos, borders)
    - Rename with descriptive names following convention
 
-3. **Organize by Category**:
+2. **Organize by Category**:
    - Medical patterns → `patterns/`
    - Flow limitation diagrams → `flow_limitation/`
    - Chart examples → `charts/`
    - UI screenshots → `ui/`
    - Event displays → `events/`
 
-4. **Update Code References**:
+3. **Update Code References**:
    ```python
    # In patterns.py or chart_examples.py
    "reference_images": [
@@ -197,7 +192,7 @@ Examples:
    ]
    ```
 
-5. **Commit to Git**:
+4. **Commit to Git**:
    ```bash
    git add data/guidelines/images/
    git commit -m "Add reference images for [description]"

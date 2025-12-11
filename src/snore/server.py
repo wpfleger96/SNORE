@@ -94,11 +94,6 @@ CLINICAL CONTEXT:
 server = FastMCP(name="snore", instructions=INSTRUCTIONS)
 
 
-# ============================================================================
-# Resources (Documentation)
-# ============================================================================
-
-
 @server.resource("docs://channels")
 def get_channels_documentation() -> str:
     """Documentation of available OSCAR data channels."""
@@ -157,11 +152,6 @@ def get_compliance_info() -> str:
     )
 
 
-# ============================================================================
-# Tools (Actions)
-# ============================================================================
-
-
 @server.tool("list_profiles")
 def list_profiles() -> list[ProfileSummary]:
     """
@@ -176,7 +166,6 @@ def list_profiles() -> list[ProfileSummary]:
 
             result = []
             for profile in profiles:
-                # Calculate summary information
                 machine_count = len(profile.devices)
                 total_days = len(profile.days)
 
@@ -187,7 +176,7 @@ def list_profiles() -> list[ProfileSummary]:
                 result.append(
                     ProfileSummary(
                         id=profile.id,
-                        name=profile.username,  # Map username to name for API compatibility
+                        name=profile.username,
                         first_name=profile.first_name,
                         last_name=profile.last_name,
                         date_of_birth=profile.date_of_birth,
@@ -226,10 +215,8 @@ def get_therapy_summary(
         Therapy summary with detailed text report
     """
     try:
-        # Validate profile
         validate_profile_exists(profile_name)
 
-        # Parse dates
         if end_date is None:
             end_dt = date.today()
         else:
@@ -242,7 +229,6 @@ def get_therapy_summary(
 
         validate_date_range(start_dt, end_dt)
 
-        # Query days in range
         with session_scope() as session:
             profile = (
                 session.query(models.Profile).filter_by(username=profile_name).first()
@@ -260,7 +246,6 @@ def get_therapy_summary(
                 .all()
             )
 
-            # Generate summary
             summary_text = generate_period_summary(profile_name, days, start_dt, end_dt)
 
             return TherapySummary(
@@ -290,11 +275,9 @@ def get_day_report(*, profile_name: str, date_str: str) -> DayTextReport:
         Day report with human-readable summary
     """
     try:
-        # Validate
         validate_profile_exists(profile_name)
         query_date = validate_date_format(date_str)
 
-        # Query day
         with session_scope() as session:
             profile = (
                 session.query(models.Profile).filter_by(username=profile_name).first()
@@ -316,7 +299,6 @@ def get_day_report(*, profile_name: str, date_str: str) -> DayTextReport:
                     summary=f"No therapy data found for {profile_name} on {query_date.strftime('%B %d, %Y')}.",
                 )
 
-            # Generate summary
             summary_text = generate_day_summary(day)
 
             return DayTextReport(date=query_date, summary=summary_text)
@@ -344,13 +326,11 @@ def get_compliance_report(
         Compliance report with statistics
     """
     try:
-        # Validate
         validate_profile_exists(profile_name)
         start_dt = validate_date_format(start_date)
         end_dt = validate_date_format(end_date)
         validate_date_range(start_dt, end_dt)
 
-        # Query days
         with session_scope() as session:
             profile = (
                 session.query(models.Profile).filter_by(username=profile_name).first()
@@ -368,7 +348,6 @@ def get_compliance_report(
                 .all()
             )
 
-            # Calculate compliance
             days_in_period = (end_dt - start_dt).days + 1
             days_used = len(days)
 
@@ -410,7 +389,6 @@ def list_machines(*, profile_name: str) -> list[MachineSummary]:
         List of machine summaries
     """
     try:
-        # Validate
         validate_profile_exists(profile_name)
 
         with session_scope() as session:
@@ -433,13 +411,11 @@ def list_machines(*, profile_name: str) -> list[MachineSummary]:
                     if s.duration_seconds
                 )
 
-                # Construct machine_id from device info
                 machine_id = (
                     f"{device.manufacturer}_{device.model}_{device.serial_number}"
                 )
 
-                # Determine machine type (basic heuristic, can be enhanced)
-                machine_type = "CPAP"  # Default
+                machine_type = "CPAP"
                 if device.model:
                     model_lower = device.model.lower()
                     if "auto" in model_lower or "apap" in model_lower:
@@ -527,7 +503,6 @@ def analyze_session(
 
                 session_id = db_session.id
 
-            # session_id is guaranteed to be set (either from date lookup or parameter)
             assert session_id is not None, "session_id should not be None"
 
             analysis_service = AnalysisService(session)
@@ -538,7 +513,6 @@ def analyze_session(
             flow_analysis = result.flow_analysis
             fli = flow_analysis["flow_limitation_index"] if flow_analysis else 0.0
 
-            # Get default mode results (AASM)
             default_mode = (
                 list(result.mode_results.keys())[0] if result.mode_results else "aasm"
             )
@@ -575,8 +549,6 @@ def analyze_session(
             else:
                 overall_severity = "severe"
 
-            # Note: get_analysis_result now returns AnalysisResult | None (not dict)
-            # For now, we'll just note that analysis_id isn't available from live results
             analysis_id = None
 
             summary = AnalysisSummary(
@@ -633,7 +605,6 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
                     f"No analysis found for session {session_id}. Run analyze_session first."
                 )
 
-            # Get primary mode (prefer "aasm", fallback to first available)
             primary_mode_name = (
                 "aasm"
                 if "aasm" in result.mode_results
@@ -641,8 +612,6 @@ def get_analysis_results(session_id: int) -> DetailedAnalysisResult:
             )
             primary_mode = result.mode_results[primary_mode_name]
 
-            # Convert mode_results dict[str, ModeResult] to dict[str, EventTimeline]
-            # ModeResult and EventTimeline are both Pydantic models with same structure
             from snore.analysis.shared.types import EventTimeline as SharedEventTimeline
 
             mode_timelines = {}

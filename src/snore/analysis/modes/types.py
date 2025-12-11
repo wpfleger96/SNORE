@@ -26,11 +26,9 @@ class DetectionModeConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    # Identity
     name: str = Field(description="Mode name (e.g., 'aasm')")
     description: str = Field(description="Mode description")
 
-    # Baseline calculation
     baseline_method: BaselineMethod = Field(description="Baseline calculation method")
     baseline_window: float = Field(
         description="Window size (seconds for TIME, count for BREATH)"
@@ -39,7 +37,6 @@ class DetectionModeConfig(BaseModel):
         default=90, ge=0, le=100, description="Baseline percentile"
     )
 
-    # Apnea detection
     apnea_threshold: float = Field(
         default=EDC.APNEA_FLOW_REDUCTION_THRESHOLD,
         ge=0,
@@ -53,7 +50,6 @@ class DetectionModeConfig(BaseModel):
         description="Apnea validation threshold",
     )
 
-    # Hypopnea detection
     hypopnea_min_threshold: float = Field(
         default=EDC.HYPOPNEA_MIN_REDUCTION,
         ge=0,
@@ -67,7 +63,6 @@ class DetectionModeConfig(BaseModel):
         description="Hypopnea maximum threshold",
     )
 
-    # Shared parameters
     min_event_duration: float = Field(
         default=EDC.MIN_EVENT_DURATION,
         ge=0,

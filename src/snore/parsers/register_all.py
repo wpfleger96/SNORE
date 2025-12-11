@@ -23,7 +23,6 @@ def register_all_parsers() -> None:
     """
     from snore.parsers.registry import parser_registry
 
-    # ResMed EDF+ Parser
     try:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
@@ -33,28 +32,6 @@ def register_all_parsers() -> None:
         logger.warning(f"ResMed EDF+ parser not available: {e}")
     except Exception as e:
         logger.error(f"Failed to register ResMed EDF+ parser: {e}", exc_info=True)
-
-    # Future parsers go here...
-    #
-    # Philips Binary Parser
-    # try:
-    #     from snore.parsers.philips_binary import PhilipsBinaryParser
-    #     parser_registry.register(PhilipsBinaryParser())
-    #     logger.info("Registered Philips Binary parser")
-    # except ImportError as e:
-    #     logger.warning(f"Philips Binary parser not available: {e}")
-    # except Exception as e:
-    #     logger.error(f"Failed to register Philips Binary parser: {e}", exc_info=True)
-    #
-    # Fisher & Paykel Parser
-    # try:
-    #     from snore.parsers.fisher_paykel import FisherPaykelParser
-    #     parser_registry.register(FisherPaykelParser())
-    #     logger.info("Registered Fisher & Paykel parser")
-    # except ImportError as e:
-    #     logger.warning(f"Fisher & Paykel parser not available: {e}")
-    # except Exception as e:
-    #     logger.error(f"Failed to register Fisher & Paykel parser: {e}", exc_info=True)
 
     registered_count = len(parser_registry.list_parsers())
     logger.info(f"Parser registration complete: {registered_count} parser(s) available")

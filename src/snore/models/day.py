@@ -38,18 +38,15 @@ class DayReport(BaseModel):
     total_therapy_hours: float | None = None
     session_count: int = Field(default=0, description="Number of therapy sessions")
 
-    # Indices
     ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
     rdi: float | None = Field(default=None, description="Respiratory Disturbance Index")
 
-    # Event counts
     obstructive_apneas: int = 0
     hypopneas: int = 0
     central_apneas: int = 0
     reras: int = 0
     flow_limitations: int = 0
 
-    # Pressure statistics
     pressure_median: float | None = Field(
         default=None, description="Median pressure (cmH₂O)"
     )
@@ -60,7 +57,6 @@ class DayReport(BaseModel):
         default=None, description="Maximum pressure (cmH₂O)"
     )
 
-    # Leak statistics
     leak_median: float | None = Field(
         default=None, description="Median leak rate (L/min)"
     )
@@ -71,7 +67,6 @@ class DayReport(BaseModel):
         default=None, description="Maximum leak rate (L/min)"
     )
 
-    # SpO2 statistics (if available)
     spo2_avg: float | None = Field(default=None, description="Average SpO₂ (%)")
     spo2_min: float | None = Field(default=None, description="Minimum SpO₂ (%)")
     spo2_median: float | None = Field(default=None, description="Median SpO₂ (%)")
@@ -79,7 +74,6 @@ class DayReport(BaseModel):
         default=None, description="Average pulse rate (bpm)"
     )
 
-    # Compliance
     compliant: bool = Field(
         default=False, description="Met minimum 4-hour usage requirement"
     )

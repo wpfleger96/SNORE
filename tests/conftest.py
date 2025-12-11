@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-# Register datetime adapters for SQLite (Python 3.12+)
 sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
 sqlite3.register_converter("DATETIME", lambda s: datetime.fromisoformat(s.decode()))
 
@@ -75,7 +74,6 @@ def parser_registry():
     from snore.parsers.register_all import register_all_parsers
     from snore.parsers.registry import parser_registry
 
-    # Explicitly register parsers for testing
     register_all_parsers()
 
     return parser_registry
@@ -94,10 +92,8 @@ def temp_db():
 
     yield db_path
 
-    # Cleanup
     if db_path.exists():
         db_path.unlink()
-    # Also clean up WAL files if they exist
     for ext in ["-wal", "-shm"]:
         wal_file = Path(str(db_path) + ext)
         if wal_file.exists():
@@ -112,19 +108,15 @@ def db_session(temp_db):
 
     from snore.database.models import Base
 
-    # Create engine with SQLite
     engine = create_engine(f"sqlite:///{temp_db}")
 
-    # Create all tables fresh for this test
     Base.metadata.create_all(engine)
 
-    # Create session factory
     Session = sessionmaker(bind=engine)
     session = Session()
 
     yield session
 
-    # Cleanup
     session.close()
     engine.dispose()
 
@@ -138,14 +130,11 @@ def initialized_db(temp_db):
         session_scope,
     )
 
-    # Initialize database with global session factory
     init_database(str(temp_db))
 
-    # Yield the session scope context manager
     with session_scope() as session:
         yield session
 
-    # Cleanup: Dispose engine and reset global session factory
     cleanup_database()
 
 
@@ -177,7 +166,7 @@ def test_device(db_session, test_profile_factory):
 
     from snore.database.models import Device
 
-    profile = test_profile_factory()  # Will auto-generate unique username
+    profile = test_profile_factory()
     device = Device(
         profile_id=profile.id,
         manufacturer="Test Manufacturer",
@@ -208,12 +197,10 @@ def test_session_factory(db_session):
         db_session.add(session)
         db_session.flush()
 
-        # Add statistics if provided
         if stats_kwargs:
             stats = Statistics(session_id=session.id, **stats_kwargs)
             db_session.add(stats)
             db_session.flush()
-            # Important: refresh session to load the relationship
             db_session.refresh(session)
 
         return session
@@ -222,7 +209,7 @@ def test_session_factory(db_session):
 
 
 # =============================================================================
-# Integration Test Fixtures (Real Session Data)
+# Integration Test Fixtures
 # =============================================================================
 
 

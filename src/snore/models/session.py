@@ -11,7 +11,6 @@ class SessionSummary(BaseModel):
     machine_brand: str | None = None
     machine_model: str | None = None
 
-    # Timing
     start_time: int = Field(
         description="Session start time (Unix timestamp in milliseconds)"
     )
@@ -20,7 +19,6 @@ class SessionSummary(BaseModel):
     )
     duration_hours: float = Field(description="Session duration in hours")
 
-    # Key metrics
     ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
     pressure_median: float | None = Field(
         default=None, description="Median pressure (cmH₂O)"
@@ -54,42 +52,34 @@ class SessionDetail(BaseModel):
     machine_brand: str | None = None
     machine_model: str | None = None
 
-    # Timing
     start_time: int = Field(description="Unix timestamp in milliseconds")
     end_time: int = Field(description="Unix timestamp in milliseconds")
     duration_hours: float
 
-    # Event counts
     obstructive_apneas: int = 0
     hypopneas: int = 0
     central_apneas: int = 0
     reras: int = 0
 
-    # Indices
     ahi: float | None = None
 
-    # Pressure statistics
     pressure_min: float | None = None
     pressure_max: float | None = None
     pressure_median: float | None = None
     pressure_95th: float | None = None
 
-    # Leak statistics
     leak_median: float | None = None
     leak_95th: float | None = None
     leak_max: float | None = None
 
-    # Respiratory statistics
     resp_rate_avg: float | None = None
     tidal_volume_avg: float | None = None
     minute_vent_avg: float | None = None
 
-    # SpO2 statistics (if available)
     spo2_avg: float | None = None
     spo2_min: float | None = None
     pulse_avg: float | None = None
 
-    # Settings
     settings: dict[str, str] = Field(default_factory=dict)
 
     class Config:

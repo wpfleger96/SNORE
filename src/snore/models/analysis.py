@@ -10,7 +10,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-# Import shared types from analysis module
 from snore.analysis.shared.types import EventTimeline
 
 

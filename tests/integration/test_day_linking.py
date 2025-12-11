@@ -56,17 +56,14 @@ class TestDayRecordCreation:
         """Test that creating a session with day linking works."""
         profile_id, device_id = profile_with_device
 
-        # Create session
         start_time = datetime(2025, 10, 15, 22, 0, 0)
 
         with session_scope() as session:
             profile = session.get(models.Profile, profile_id)
 
-            # Get the day for this session
             day_date = DayManager.get_day_for_session(start_time, profile)
             day = DayManager.create_or_update_day(profile_id, day_date, session)
 
-            # Create session linked to day
             new_session = models.Session(
                 device_id=device_id,
                 device_session_id="test_session_1",
@@ -78,38 +75,30 @@ class TestDayRecordCreation:
             session.add(new_session)
             session.commit()
 
-            # Verify day_id is set
             assert new_session.day_id is not None, "Session should have day_id set"
 
-            # Verify Day record exists
             day = session.query(models.Day).filter_by(id=new_session.day_id).first()
             assert day is not None, "Day record should exist"
             assert day.profile_id == profile_id
-            assert (
-                day.date == datetime(2025, 10, 15).date()
-            )  # Session after noon belongs to same day
+            assert day.date == datetime(2025, 10, 15).date()
 
     def test_link_sessions_to_same_day(self, temp_db, profile_with_device):
         """Test that multiple sessions on same day link to same Day record."""
         profile_id, device_id = profile_with_device
 
-        # Create two sessions on the same day
         start_time_1 = datetime(2025, 10, 15, 22, 0, 0)
         start_time_2 = datetime(2025, 10, 16, 0, 30, 0)
 
         with session_scope() as session:
             profile = session.get(models.Profile, profile_id)
 
-            # Both should map to same day
             day_date_1 = DayManager.get_day_for_session(start_time_1, profile)
             day_date_2 = DayManager.get_day_for_session(start_time_2, profile)
 
             assert day_date_1 == day_date_2, "Both sessions should map to same day"
 
-            # Create Day
             day = DayManager.create_or_update_day(profile_id, day_date_1, session)
 
-            # Create both sessions
             sess1 = models.Session(
                 device_id=device_id,
                 device_session_id="test_session_1",
@@ -130,11 +119,9 @@ class TestDayRecordCreation:
             session.add(sess2)
             session.commit()
 
-            # Both should have day_id set
             assert sess1.day_id is not None
             assert sess2.day_id is not None
 
-            # Should be linked to same Day
             assert sess1.day_id == sess2.day_id, (
                 "Sessions on same day should link to same Day record"
             )
@@ -147,16 +134,13 @@ class TestDaySplittingLogic:
         """Test that session starting after noon belongs to same day."""
         profile_id, device_id = profile_with_device
 
-        # Session starts at 22:00 (after noon)
         start_time = datetime(2025, 10, 15, 22, 0, 0)
 
         with session_scope() as session:
             profile = session.get(models.Profile, profile_id)
 
-            # Get the day for this session
             day_date = DayManager.get_day_for_session(start_time, profile)
 
-            # Day should be Oct 15 (session after noon belongs to same day)
             expected_date = datetime(2025, 10, 15).date()
             assert day_date == expected_date
 
@@ -166,16 +150,13 @@ class TestDaySplittingLogic:
         """Test that session starting before noon belongs to previous day."""
         profile_id, device_id = profile_with_device
 
-        # Session starts at 09:00 (before noon)
         start_time = datetime(2025, 10, 16, 9, 0, 0)
 
         with session_scope() as session:
             profile = session.get(models.Profile, profile_id)
 
-            # Get the day for this session
             day_date = DayManager.get_day_for_session(start_time, profile)
 
-            # Day should be Oct 15 (session before noon belongs to previous day)
             expected_date = datetime(2025, 10, 15).date()
             assert day_date == expected_date
 
@@ -184,20 +165,16 @@ class TestDaySplittingLogic:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Profile with 14:00 (2pm) split time
             profile = models.Profile(
                 username="testuser", settings={"day_split_time": "14:00:00"}
             )
             session.add(profile)
             session.commit()
 
-            # Session starts at 13:00 (before 14:00 split)
             start_time = datetime(2025, 10, 16, 13, 0, 0)
 
-            # Get the day for this session
             day_date = DayManager.get_day_for_session(start_time, profile)
 
-            # Day should be Oct 15 (before split time belongs to previous day)
             expected_date = datetime(2025, 10, 15).date()
             assert day_date == expected_date
 
@@ -211,14 +188,12 @@ class TestListProfilesIntegration:
         """Test that list-profiles queries work correctly with day-linked sessions."""
         profile_id, device_id = profile_with_device
 
-        # Create 3 sessions on different days
         with session_scope() as session:
             profile = session.get(models.Profile, profile_id)
 
             for i in range(3):
                 start_time = datetime(2025, 10, 15 + i, 22, 0, 0)
 
-                # Get day and create session with day link
                 day_date = DayManager.get_day_for_session(start_time, profile)
                 day = DayManager.create_or_update_day(profile_id, day_date, session)
 
@@ -234,7 +209,6 @@ class TestListProfilesIntegration:
 
             session.commit()
 
-            # Count sessions through Day relationship
             total_sessions = (
                 session.query(models.Session)
                 .join(models.Day)
@@ -246,7 +220,6 @@ class TestListProfilesIntegration:
                 "Should find all 3 sessions through Day relationship"
             )
 
-            # Count days
             days_count = (
                 session.query(models.Day).filter_by(profile_id=profile_id).count()
             )
@@ -257,19 +230,17 @@ class TestListProfilesIntegration:
         profile_id, device_id = profile_with_device
 
         with session_scope() as session:
-            # Create a session WITHOUT going through importer (simulating the bug)
             orphan_session = models.Session(
                 device_id=device_id,
                 device_session_id="orphan_session",
                 start_time=datetime(2025, 10, 15, 22, 0, 0),
                 end_time=datetime(2025, 10, 16, 6, 0, 0),
                 duration_seconds=8 * 3600,
-                day_id=None,  # Explicitly NULL
+                day_id=None,
             )
             session.add(orphan_session)
             session.commit()
 
-            # Query like list-profiles does (through Day relationship)
             sessions_through_day = (
                 session.query(models.Session)
                 .join(models.Day)
@@ -277,12 +248,10 @@ class TestListProfilesIntegration:
                 .count()
             )
 
-            # Should be 0 because session has no day_id
             assert sessions_through_day == 0, (
                 "Sessions without day_id should not be counted"
             )
 
-            # But direct query should find it
             direct_count = (
                 session.query(models.Session).filter_by(device_id=device_id).count()
             )
@@ -303,11 +272,9 @@ class TestDayManagerFunctions:
             session.add(profile)
             session.commit()
 
-            # 22:00 is after 12:00 split
             session_time = datetime(2025, 10, 15, 22, 0, 0)
             day_date = DayManager.get_day_for_session(session_time, profile)
 
-            # Should return Oct 15 (same day)
             assert day_date == datetime(2025, 10, 15).date()
 
     def test_get_day_for_session_before_split(self, temp_db):
@@ -321,11 +288,9 @@ class TestDayManagerFunctions:
             session.add(profile)
             session.commit()
 
-            # 09:00 is before 12:00 split
             session_time = datetime(2025, 10, 16, 9, 0, 0)
             day_date = DayManager.get_day_for_session(session_time, profile)
 
-            # Should return Oct 15 (previous day)
             assert day_date == datetime(2025, 10, 15).date()
 
     def test_create_or_update_day_creates_new(self, temp_db, profile_with_device):
@@ -335,7 +300,6 @@ class TestDayManagerFunctions:
         with session_scope() as session:
             day_date = datetime(2025, 10, 16).date()
 
-            # Should not exist yet
             existing = (
                 session.query(models.Day)
                 .filter_by(profile_id=profile_id, date=day_date)
@@ -343,11 +307,9 @@ class TestDayManagerFunctions:
             )
             assert existing is None
 
-            # Create it
             day = DayManager.create_or_update_day(profile_id, day_date, session)
             session.commit()
 
-            # Should exist now
             assert day.id is not None
             assert day.profile_id == profile_id
             assert day.date == day_date
@@ -359,18 +321,14 @@ class TestDayManagerFunctions:
         with session_scope() as session:
             day_date = datetime(2025, 10, 16).date()
 
-            # Create first time
             day1 = DayManager.create_or_update_day(profile_id, day_date, session)
             session.commit()
             day1_id = day1.id
 
-            # Call again with same date
             day2 = DayManager.create_or_update_day(profile_id, day_date, session)
 
-            # Should be same Day
             assert day2.id == day1_id
 
-            # Should not have created duplicate
             count = (
                 session.query(models.Day)
                 .filter_by(profile_id=profile_id, date=day_date)

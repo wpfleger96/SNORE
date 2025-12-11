@@ -61,10 +61,8 @@ class OscarSummaryParser:
 
     def _parse_stream(self, stream: Any) -> SessionSummary:
         """Parse summary file from binary stream."""
-        # Read and validate header
         header = self._parse_header(stream)
 
-        # Create session summary object
         summary = SessionSummary(
             magic=header["magic"],
             version=header["version"],
@@ -75,18 +73,12 @@ class OscarSummaryParser:
             last_timestamp=header["last_timestamp"],
         )
 
-        # Skip settings by finding where statistics start
-        # Settings contain custom Qt types that we can't reliably parse
-        # Statistics start with m_cnt (QHash<uint32, float> of event counts)
         self._skip_to_statistics(stream)
 
-        # Parse session data using QDataStream
         reader = QDataStreamReader(stream)
 
         try:
-            # Version 18 format
             if summary.version >= 18:
-                # Now we're at m_cnt (counts per channel)
                 summary.counts = reader.read_qhash_uint32_float()
                 summary.sums = reader.read_qhash_uint32_double()
                 summary.averages = reader.read_qhash_uint32_float()
@@ -104,7 +96,6 @@ class OscarSummaryParser:
                 summary.gains = reader.read_qhash_uint32_float()
                 summary.available_channels = reader.read_qlist_uint32()
 
-                # Additional fields (version 18+)
                 summary.time_above_threshold = reader.read_qhash_uint32_uint64()
                 summary.upper_threshold = reader.read_qhash_uint32_float()
                 summary.time_below_threshold = reader.read_qhash_uint32_uint64()
@@ -112,9 +103,6 @@ class OscarSummaryParser:
 
                 summary.summary_only = reader.read_bool()
                 summary.no_settings = reader.read_bool()
-
-                # Skip session slices for now (not critical for basic stats)
-                # TODO: Parse session slices if needed
 
             else:
                 raise OscarSummaryParseError(
@@ -140,26 +128,20 @@ class OscarSummaryParser:
         - Followed by channel IDs in range 0x1000-0x3000
         - Followed by reasonable float values
         """
-        # Save current position
         start_pos = stream.tell()
 
-        # Read rest of file for searching
         data = stream.read()
 
-        # Search for potential start of m_cnt
         for offset in range(0, len(data) - 100, 4):
-            # Read count
             count_bytes = data[offset : offset + 4]
             if len(count_bytes) < 4:
                 continue
 
             count = struct.unpack("<I", count_bytes)[0]
 
-            # Check if count is reasonable
             if not (5 <= count <= 50):
                 continue
 
-            # Check if next values look like channel ID + float pairs
             valid = True
             pos = offset + 4
             for _ in range(min(3, count)):
@@ -175,14 +157,12 @@ class OscarSummaryParser:
                     valid = False
                     break
 
-                # Validate channel ID range and value reasonableness
-                # Channel IDs should be in typical OSCAR ranges
                 if not (
                     (0x0001 <= channel_id <= 0x0100) or (0x1000 <= channel_id <= 0x3000)
                 ):
                     valid = False
                     break
-                # Values should be non-negative and not NaN/Inf
+
                 import math
 
                 if value < 0 or not math.isfinite(value) or value > 1000000:
@@ -192,11 +172,9 @@ class OscarSummaryParser:
                 pos += 8
 
             if valid:
-                # Found the statistics section!
                 stream.seek(start_pos + offset)
                 return
 
-        # If we couldn't find it, raise an error
         raise OscarSummaryParseError("Could not locate statistics section in file")
 
     def _parse_header(self, stream: Any) -> dict[str, Any]:
@@ -222,7 +200,6 @@ class OscarSummaryParser:
         if len(header_data) != 32:
             raise OscarSummaryParseError("File too short to contain header")
 
-        # Unpack header (little-endian)
         (
             magic,
             version,
@@ -233,13 +210,11 @@ class OscarSummaryParser:
             last_timestamp,
         ) = struct.unpack("<IHH II qq", header_data)
 
-        # Validate magic number
         if magic != OSCAR_MAGIC_NUMBER:
             raise OscarSummaryParseError(
                 f"Invalid magic number: 0x{magic:08x} (expected 0x{OSCAR_MAGIC_NUMBER:08x})"
             )
 
-        # Validate file type
         if file_type != 0:
             raise OscarSummaryParseError(
                 f"Invalid file type: {file_type} (expected 0 for summary)"

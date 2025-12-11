@@ -72,7 +72,6 @@ class BreathSegmenter:
         Example:
             >>> breaths = segmenter.segment_breaths(t, flow, 25.0)
         """
-        # Handle empty input
         if len(flow_data) == 0 or len(timestamps) == 0:
             logger.debug("Empty input arrays, returning no breaths")
             return []
@@ -82,38 +81,32 @@ class BreathSegmenter:
             f"(duration: {timestamps[-1] - timestamps[0]:.1f}s)"
         )
 
-        # Detect zero crossings
         crossings = self.detect_zero_crossings(flow_data)
 
-        # Identify breath boundaries
         boundaries = self.identify_breath_boundaries(
             crossings, timestamps, sample_rate, flow_data
         )
 
         logger.debug(f"Identified {len(boundaries)} potential breaths")
 
-        # Process each breath with rolling calculations
         breaths: list[BreathMetrics] = []
-        tv_history: list[float] = []  # For 5-point TV smoothing
+        tv_history: list[float] = []
 
         for idx, (start_idx, end_idx) in enumerate(boundaries):
             breath_segment = flow_data[start_idx:end_idx]
             breath_timestamps = timestamps[start_idx:end_idx]
 
-            # Calculate initial metrics (without rolling RR/smoothed TV)
             metrics = self.calculate_breath_metrics(
                 breath_number=idx + 1,
                 timestamps=breath_timestamps,
                 flow_values=breath_segment,
                 sample_rate=sample_rate,
                 tv_history=tv_history,
-                all_breaths=breaths,  # For rolling RR calculation
+                all_breaths=breaths,
             )
 
-            # Only include complete, valid breaths
             if metrics.is_complete:
                 breaths.append(metrics)
-                # Update TV history for smoothing (keep last 3)
                 tv_history.append(metrics.tidal_volume)
                 if len(tv_history) > 3:
                     tv_history.pop(0)
@@ -156,23 +149,18 @@ class BreathSegmenter:
         last_crossing_idx = -1
 
         for i, value in enumerate(flow_data):
-            # Determine current state based on hysteresis
             if value > self.hysteresis:
                 new_state = "positive"
             elif value < -self.hysteresis:
                 new_state = "negative"
             else:
-                # In hysteresis band - maintain current state
                 continue
 
-            # Check for state transition (zero crossing)
             if current_state is None:
-                # First state establishment - record as initial crossing
                 crossings.append((i, new_state))
                 last_crossing_idx = i
             elif new_state != current_state:
-                # State transition - record if enough time has passed since last crossing
-                if i - last_crossing_idx > 5:  # At least 5 samples apart
+                if i - last_crossing_idx > 5:
                     crossings.append((i, new_state))
                     last_crossing_idx = i
 
@@ -212,30 +200,24 @@ class BreathSegmenter:
         """
         boundaries = []
 
-        # Look for positive → negative → positive sequences
         i = 0
         while i < len(crossings) - 1:
             crossing_idx, direction = crossings[i]
 
-            # Start breath at positive crossing (start of inspiration)
             if direction == "positive":
-                # Find next positive crossing (end of next expiration)
                 found_complete = False
                 for j in range(i + 1, len(crossings)):
                     next_idx, next_dir = crossings[j]
                     if next_dir == "positive":
-                        # Found complete breath boundary
                         start_idx = crossing_idx
                         end_idx = next_idx
 
-                        # Validate duration
                         duration = timestamps[end_idx] - timestamps[start_idx]
                         if not (
                             self.min_breath_duration
                             <= duration
                             <= self.max_breath_duration
                         ):
-                            # Move to this crossing for next iteration
                             i = j - 1
                             break
 
@@ -246,27 +228,20 @@ class BreathSegmenter:
                             amplitude
                             <= BreathSegmentationConstants.MIN_BREATH_AMPLITUDE
                         ):
-                            # Insufficient amplitude - skip this breath
                             i = j - 1
                             break
 
-                        # Passed all validations
                         boundaries.append((start_idx, end_idx))
                         found_complete = True
 
-                        # Move to this crossing for next iteration
                         i = j - 1
                         break
 
-                # If no complete boundary found, check for incomplete breath at end
                 if not found_complete and i == len(crossings) - 2:
-                    # This might be a partial breath at the end
-                    # Check if there's a negative crossing after this positive
                     if i + 1 < len(crossings) and crossings[i + 1][1] == "negative":
                         start_idx = crossing_idx
-                        end_idx = len(flow_data) - 1  # Extend to end of data
+                        end_idx = len(flow_data) - 1
 
-                        # Validate duration and amplitude (lowered from 8.0 to 2.0)
                         duration = timestamps[end_idx] - timestamps[start_idx]
                         if (
                             self.min_breath_duration
@@ -302,12 +277,10 @@ class BreathSegmenter:
             >>> phases = segmenter.classify_breath_phase(t, flow)
             >>> print(f"Inspiration: {len(phases.inspiration_indices)} samples")
         """
-        # Inspiration: flow > 0
         inspiration_mask = flow_values > 0
         inspiration_indices = np.where(inspiration_mask)[0]
         inspiration_values = flow_values[inspiration_mask]
 
-        # Expiration: flow < 0
         expiration_mask = flow_values < 0
         expiration_indices = np.where(expiration_mask)[0]
         expiration_values = flow_values[expiration_mask]
@@ -347,20 +320,16 @@ class BreathSegmenter:
             ...     1, timestamps, flow, 25.0, tv_history, all_breaths
             ... )
         """
-        # Basic timing
         start_time = timestamps[0]
         end_time = timestamps[-1]
         duration = end_time - start_time
 
-        # Separate phases
         phases = self.classify_breath_phase(timestamps, flow_values)
 
-        # Check if breath is complete (has both inspiration and expiration)
         has_inspiration = len(phases.inspiration_indices) > 0
         has_expiration = len(phases.expiration_indices) > 0
         is_complete = has_inspiration and has_expiration
 
-        # Calculate phase durations and find middle (transition point)
         if has_inspiration and has_expiration:
             insp_time = len(phases.inspiration_indices) / sample_rate
             exp_time = len(phases.expiration_indices) / sample_rate
@@ -390,25 +359,20 @@ class BreathSegmenter:
             peak_exp_flow = 0.0
             middle_time = (start_time + end_time) / 2
 
-        # Calculate I:E ratio
         if exp_time > 0:
             i_e_ratio = insp_time / exp_time
         else:
             i_e_ratio = 0.0
 
-        # Calculate amplitude (peak-to-peak)
-        # peak_exp_flow is already positive (abs of min), so add them
         amplitude = peak_insp_flow + peak_exp_flow
 
         # Calculate tidal volume (integrate flow over inspiration)
         # Flow is in L/min, need to convert to L/s then integrate
         if has_inspiration:
-            # Numerical integration using trapezoidal rule
-            # Convert L/min to L/s by dividing by 60
             flow_L_per_s = phases.inspiration_values / 60.0
-            time_steps = 1.0 / sample_rate  # Time between samples
-            tidal_volume_L = np.trapezoid(flow_L_per_s, dx=time_steps)  # Liters
-            tidal_volume = float(tidal_volume_L * 1000.0)  # Convert to mL
+            time_steps = 1.0 / sample_rate
+            tidal_volume_L = np.trapezoid(flow_L_per_s, dx=time_steps)
+            tidal_volume = float(tidal_volume_L * 1000.0)
         else:
             tidal_volume = 0.0
 
@@ -417,17 +381,15 @@ class BreathSegmenter:
             tv_history, tidal_volume
         )
 
-        # Calculate respiratory rates
-        # Instantaneous rate (simple)
         if duration > 0:
-            respiratory_rate = 60.0 / duration  # breaths/min
+            respiratory_rate = 60.0 / duration
         else:
             respiratory_rate = 0.0
 
         # Rolling window rate (OSCAR's method)
         respiratory_rate_rolling = self.calculate_rolling_respiratory_rate(
             all_breaths,
-            len(all_breaths),  # Current breath will be added next
+            len(all_breaths),
         )
 
         # Calculate minute ventilation using rolling RR (more stable)
@@ -437,7 +399,6 @@ class BreathSegmenter:
                 tidal_volume_smoothed / 1000.0
             ) * respiratory_rate_rolling
         else:
-            # Fallback to instantaneous if rolling not available
             minute_ventilation = (tidal_volume_smoothed / 1000.0) * respiratory_rate
 
         return BreathMetrics(
@@ -491,25 +452,19 @@ class BreathSegmenter:
 
         breath_count = 0.0
 
-        # Step backward through breaths counting those in window
         for i in range(current_breath_idx, -1, -1):
             breath = breaths[i]
 
-            # Check if breath ends before window
             if breath.end_time < window_start:
                 break
 
-            # Check if breath starts before window (partial breath)
             if breath.start_time < window_start:
-                # Weight proportionally
                 overlap = breath.end_time - window_start
                 weight = overlap / breath.duration if breath.duration > 0 else 0
                 breath_count += weight
             else:
-                # Fully in window
                 breath_count += 1.0
 
-        # Calculate actual window duration (may be less than 60s at start)
         if current_breath_idx == 0:
             actual_window = current_breath.end_time - current_breath.start_time
         else:
@@ -518,7 +473,6 @@ class BreathSegmenter:
                 first_breath.start_time, window_start
             )
 
-        # Normalize to full minute if window is shorter
         if actual_window < window_seconds and actual_window > 0:
             breath_count *= window_seconds / actual_window
 
@@ -552,7 +506,6 @@ class BreathSegmenter:
         elif len(tv_history) == 2:
             return (tv_history[0] + tv_history[1] + current_tv * 2) / 4
         else:
-            # Full 5-point average (last 3 + current*2)
             return (
                 tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2
             ) / 5
@@ -590,7 +543,6 @@ class BreathSegmenter:
         amplitudes = np.array([b.amplitude for b in breaths])
         percentile_60 = np.percentile(amplitudes, 60)
 
-        # Calculate cutoff value
         cutoff_amplitude = percentile_60 * (restriction_percent / 100.0)
 
         logger.debug(
@@ -598,25 +550,19 @@ class BreathSegmenter:
             f"cutoff={cutoff_amplitude:.2f} ({restriction_percent}%)"
         )
 
-        # Scan for restriction events
         restriction_events = []
         current_event_start = None
         current_event_duration = 0.0
 
         for i, breath in enumerate(breaths):
             if breath.amplitude < cutoff_amplitude:
-                # Breath is restricted
                 if current_event_start is None:
-                    # Start new event
                     current_event_start = i
                     current_event_duration = breath.duration
                 else:
-                    # Continue current event
                     current_event_duration += breath.duration
             else:
-                # Breath is not restricted
                 if current_event_start is not None:
-                    # End current event if it meets duration threshold
                     if current_event_duration >= duration_threshold:
                         restriction_events.append((current_event_start, i - 1))
                         logger.debug(
@@ -626,7 +572,6 @@ class BreathSegmenter:
                     current_event_start = None
                     current_event_duration = 0.0
 
-        # Check for event at end of session
         if current_event_start is not None:
             if current_event_duration >= duration_threshold:
                 restriction_events.append((current_event_start, len(breaths) - 1))

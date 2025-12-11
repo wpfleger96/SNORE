@@ -23,12 +23,10 @@ class TestFlatnessIndexCalculation:
         """Perfectly flat waveform should have flatness near 1.0."""
         extractor = WaveformFeatureExtractor()
 
-        # Flat waveform (constant value)
         waveform = np.ones(100) * 30.0
 
         shape = extractor.extract_shape_features(waveform, sample_rate=25.0)
 
-        # Should be very high flatness
         assert shape.flatness_index > 0.95
 
     def test_flatness_sharp_peak(self):
@@ -36,7 +34,6 @@ class TestFlatnessIndexCalculation:
         extractor = WaveformFeatureExtractor()
         _, flow = generate_sinusoidal_breath(duration=2.0)
 
-        # Extract only inspiration phase
         insp_flow = flow[flow > 0]
 
         shape = extractor.extract_shape_features(insp_flow, sample_rate=25.0)
@@ -56,7 +53,6 @@ class TestFlatnessIndexCalculation:
 
         shape = extractor.extract_shape_features(insp_flow, sample_rate=25.0)
 
-        # Should have moderate flatness
         assert 0.4 < shape.flatness_index < 0.9
 
     def test_flatness_in_valid_range(self):
@@ -97,7 +93,6 @@ class TestPlateauDetection:
 
         shape = extractor.extract_shape_features(insp_flow, sample_rate=25.0)
 
-        # Should detect substantial plateau
         assert shape.plateau_duration > 0.3
 
     def test_plateau_duration_reasonable(self):
@@ -109,7 +104,6 @@ class TestPlateauDetection:
 
         shape = extractor.extract_shape_features(insp_flow, sample_rate=25.0)
 
-        # Plateau can't be longer than inspiration
         assert shape.plateau_duration < 2.0
 
 
@@ -125,7 +119,6 @@ class TestPeakDetection:
 
         peak = extractor.extract_peak_features(insp_flow, sample_rate=25.0)
 
-        # Should detect 1 peak
         assert peak.peak_count == 1
 
     def test_peak_detection_double_peak(self):
@@ -137,7 +130,6 @@ class TestPeakDetection:
 
         peak = extractor.extract_peak_features(insp_flow, sample_rate=25.0)
 
-        # Should detect 2 peaks (may detect 1-3 depending on exact waveform)
         assert 1 <= peak.peak_count <= 3
 
     def test_peak_detection_multiple_peaks(self):
@@ -149,17 +141,15 @@ class TestPeakDetection:
 
         peak = extractor.extract_peak_features(insp_flow, sample_rate=25.0)
 
-        # Should detect multiple peaks
         assert peak.peak_count >= 2
 
     def test_peak_detection_no_peaks(self):
         """Flat waveform should have no peaks."""
         extractor = WaveformFeatureExtractor()
-        waveform = np.ones(100) * 20.0  # Flat
+        waveform = np.ones(100) * 20.0
 
         peak = extractor.extract_peak_features(waveform, sample_rate=25.0)
 
-        # Flat waveform has no peaks
         assert peak.peak_count == 0
 
     def test_peak_positions_in_range(self):
@@ -260,13 +250,11 @@ class TestSpectralFeatures:
         """Should detect dominant frequency in periodic signal."""
         extractor = WaveformFeatureExtractor()
 
-        # 5 Hz sine wave
         t = np.linspace(0, 1, 100)
         waveform = np.sin(2 * np.pi * 5 * t)
 
         spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
 
-        # Should detect ~5 Hz as dominant
         assert 4.0 < spectral.dominant_frequency < 6.0
 
     def test_spectral_entropy(self):
@@ -277,7 +265,6 @@ class TestSpectralFeatures:
 
         spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
 
-        # Should be positive
         assert spectral.spectral_entropy > 0
 
     def test_spectral_psd_shape(self):
@@ -288,9 +275,7 @@ class TestSpectralFeatures:
 
         spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
 
-        # PSD should be an array
         assert len(spectral.power_spectral_density) > 0
-        # All values should be non-negative
         assert np.all(spectral.power_spectral_density >= 0)
 
     def test_spectral_very_short_signal(self):
@@ -300,7 +285,6 @@ class TestSpectralFeatures:
 
         spectral = extractor.extract_spectral_features(waveform, sample_rate=25.0)
 
-        # Should not crash
         assert spectral is not None
 
 
@@ -344,7 +328,6 @@ class TestAllFeaturesExtraction:
             flow, sample_rate=25.0, include_spectral=False
         )
 
-        # Should not raise
         assert_features_in_range(shape=shape, peak=peak, statistical=stats)
 
 
@@ -358,7 +341,6 @@ class TestFeatureExtractionEdgeCases:
 
         shape = extractor.extract_shape_features(waveform, sample_rate=25.0)
 
-        # Should not crash, values should be in range
         assert 0 <= shape.flatness_index <= 1
 
     def test_features_from_extreme_values(self):
@@ -368,7 +350,6 @@ class TestFeatureExtractionEdgeCases:
 
         shape = extractor.extract_shape_features(waveform, sample_rate=25.0)
 
-        # Should not crash
         assert shape is not None
 
     def test_features_from_constant_zero(self):
@@ -378,5 +359,4 @@ class TestFeatureExtractionEdgeCases:
 
         shape = extractor.extract_shape_features(waveform, sample_rate=25.0)
 
-        # Should not crash (may return zeros or defaults)
         assert shape is not None

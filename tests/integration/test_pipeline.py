@@ -34,7 +34,6 @@ class TestEndToEndPipeline:
         session = db.query(Session).first()
         assert session is not None
 
-        # Load waveform
         loader = WaveformLoader(db)
         timestamps, flow_values, metadata = loader.load_waveform(
             session_id=session.id, waveform_type="flow", apply_filter=False
@@ -43,7 +42,6 @@ class TestEndToEndPipeline:
         assert len(timestamps) > 0
         assert len(timestamps) == len(flow_values)
 
-        # Segment breaths
         segmenter = BreathSegmenter()
         breaths = segmenter.segment_breaths(
             timestamps, flow_values, sample_rate=metadata["sample_rate"]
@@ -51,7 +49,6 @@ class TestEndToEndPipeline:
 
         assert len(breaths) > 0
 
-        # Extract features from first breath
         extractor = WaveformFeatureExtractor()
         start_idx = int(breaths[0].start_time * metadata["sample_rate"])
         end_idx = int(breaths[0].end_time * metadata["sample_rate"])
@@ -76,16 +73,13 @@ class TestEndToEndPipeline:
             session_id=session.id, waveform_type="flow"
         )
 
-        # Check for discontinuities (gaps > 60 seconds)
         time_diffs = np.diff(timestamps)
         gaps = np.where(time_diffs > 60.0)[0]
 
         if len(gaps) > 0:
-            # Should detect and report segments
             assert "segments" in metadata
             assert len(metadata["segments"]) >= 2
 
-        # Segmentation should still work
         segmenter = BreathSegmenter()
         breaths = segmenter.segment_breaths(
             timestamps, flow_values, sample_rate=metadata["sample_rate"]
@@ -115,11 +109,8 @@ class TestPhysiologicalValidation:
         rr_values = [b.respiratory_rate for b in breaths]
         mean_rr = np.mean(rr_values)
 
-        # Mean should be in typical sleeping range
         assert 8 <= mean_rr <= 25, f"Mean RR out of typical range: {mean_rr}"
 
-        # Allow small percentage of outliers beyond physiological limits (5-60)
-        # Real data may have a few edge cases near the duration threshold
         outliers = [rr for rr in rr_values if rr < 5 or rr > 60]
         outlier_percent = len(outliers) / len(rr_values) * 100
         assert outlier_percent < 0.5, (
@@ -143,10 +134,8 @@ class TestPhysiologicalValidation:
         tv_values = [b.tidal_volume for b in breaths]
         mean_tv = np.mean(tv_values)
 
-        # Mean should be in typical range
         assert 300 <= mean_tv <= 800, f"Mean TV out of typical range: {mean_tv}"
 
-        # Allow outliers but most should be reasonable
         in_range = sum(200 <= tv <= 1000 for tv in tv_values)
         assert in_range / len(tv_values) >= 0.95, "Too many TV outliers"
 
@@ -165,11 +154,9 @@ class TestPhysiologicalValidation:
         )
 
         for breath in breaths:
-            # PIF should be positive, reasonable range
             assert 0 < breath.peak_inspiratory_flow <= 100, (
                 f"PIF out of range: {breath.peak_inspiratory_flow}"
             )
-            # PEF is stored as absolute value (positive), per breath_segmenter.py:408
             assert 0 < breath.peak_expiratory_flow <= 100, (
                 f"PEF out of range: {breath.peak_expiratory_flow}"
             )
@@ -191,7 +178,6 @@ class TestPhysiologicalValidation:
         ie_ratios = [b.i_e_ratio for b in breaths]
         mean_ie = np.mean(ie_ratios)
 
-        # Mean should be in typical sleep range
         assert 0.3 <= mean_ie <= 2.0, f"Mean I:E ratio unusual: {mean_ie}"
 
 
@@ -213,7 +199,6 @@ class TestOSCARAlgorithms:
             timestamps, flow_values, sample_rate=metadata["sample_rate"]
         )
 
-        # All returned breaths must pass amplitude threshold
         for breath in breaths:
             assert breath.amplitude > 2.0, (
                 f"Breath {breath.breath_number} below 2 L/min threshold"
@@ -234,11 +219,9 @@ class TestOSCARAlgorithms:
         )
 
         if len(breaths) >= 20:
-            # Skip first few breaths (ramp-up period)
             inst_rr = [b.respiratory_rate for b in breaths[10:]]
             roll_rr = [b.respiratory_rate_rolling for b in breaths[10:]]
 
-            # Rolling should have lower variance (key OSCAR algorithm property)
             assert np.std(roll_rr) < np.std(inst_rr), (
                 "Rolling RR not smoothing variability"
             )
@@ -258,11 +241,9 @@ class TestOSCARAlgorithms:
         )
 
         if len(breaths) >= 10:
-            # Skip first few breaths (history building)
             raw_tv = [b.tidal_volume for b in breaths[5:]]
             smoothed_tv = [b.tidal_volume_smoothed for b in breaths[5:]]
 
-            # Smoothed should have lower variance
             assert np.std(smoothed_tv) <= np.std(raw_tv), (
                 "TV smoothing not reducing variability"
             )
@@ -309,7 +290,6 @@ class TestFeatureExtraction:
 
         extractor = WaveformFeatureExtractor()
 
-        # Test first 10 breaths
         for breath in breaths[:10]:
             start_idx = int(breath.start_time * metadata["sample_rate"])
             end_idx = int(breath.end_time * metadata["sample_rate"])

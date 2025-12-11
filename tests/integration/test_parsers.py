@@ -28,11 +28,9 @@ class TestEDFSignalParsing:
         assert brp_file.exists(), f"BRP fixture not found: {brp_file}"
 
         with EDFReader(brp_file) as edf:
-            # Verify file opens and has expected signals
             header = edf.get_header()
             assert header.num_signals > 0
 
-            # Find Flow signal (may have suffix like .40ms)
             signals = edf.list_signal_labels()
             flow_signal = None
             for sig in signals:
@@ -44,24 +42,19 @@ class TestEDFSignalParsing:
                 f"No Flow signal found. Available: {signals}"
             )
 
-            # Read flow signal (read first 100 samples for testing)
             data, info = edf.read_signal(flow_signal, start_sample=0, num_samples=100)
 
-            # Verify signal properties
-            # ResMed may use L/s or L/min - both are valid
             assert info.physical_dimension in [
                 "L/s",
                 "L/min",
             ], f"Unexpected unit: {info.physical_dimension}"
             assert len(data) > 0, "No flow data read"
 
-            # Convert to L/min if needed for range checking
             if info.physical_dimension == "L/s":
                 data_lmin = data * 60.0
             else:
                 data_lmin = data
 
-            # Verify data is in reasonable range for flow (-60 to +60 L/min)
             assert -6000 < np.min(data_lmin) < 6000, (
                 f"Flow min out of range: {np.min(data_lmin)}"
             )
@@ -69,7 +62,6 @@ class TestEDFSignalParsing:
                 f"Flow max out of range: {np.max(data_lmin)}"
             )
 
-            # Verify sample rate
             sample_rate = edf.get_sample_rate(flow_signal)
             assert sample_rate > 0, f"Invalid sample rate: {sample_rate}"
 
@@ -82,24 +74,20 @@ class TestEDFSignalParsing:
         with EDFReader(pld_file) as edf:
             signals = edf.list_signal_labels()
 
-            # Test pressure signal
-            # ResMed uses "Press.2s", "MaskPress.2s", "Pressure", or "MaskPressure"
             pressure_signal = None
             for name in signals:
-                if "Press" in name and name != "EprPress.2s":  # EprPress is different
+                if "Press" in name and name != "EprPress.2s":
                     pressure_signal = name
                     break
 
             assert pressure_signal is not None, f"No pressure signal found in {signals}"
 
-            # Read first 100 samples for testing
             pressure_data, pressure_info = edf.read_signal(
                 pressure_signal, start_sample=0, num_samples=100
             )
             assert pressure_info.physical_dimension == "cmH2O"
             assert len(pressure_data) > 0
 
-            # Verify reasonable CPAP pressure range (4-25 cmH2O typically)
             assert 0 <= np.min(pressure_data) <= 30, (
                 f"Pressure out of range: {np.min(pressure_data)}"
             )
@@ -107,8 +95,6 @@ class TestEDFSignalParsing:
                 f"Pressure out of range: {np.max(pressure_data)}"
             )
 
-            # Test leak signal
-            # ResMed uses "Leak.2s" or "LeakRate"
             leak_signal = None
             for name in signals:
                 if "Leak" in name:
@@ -117,24 +103,20 @@ class TestEDFSignalParsing:
 
             assert leak_signal is not None, f"No leak signal found in {signals}"
 
-            # Read first 100 samples for testing
             leak_data, leak_info = edf.read_signal(
                 leak_signal, start_sample=0, num_samples=100
             )
-            # ResMed may use L/s or L/min - both are valid
             assert leak_info.physical_dimension in [
                 "L/s",
                 "L/min",
             ], f"Unexpected leak unit: {leak_info.physical_dimension}"
             assert len(leak_data) > 0
 
-            # Convert to L/min if needed for range checking
             if leak_info.physical_dimension == "L/s":
                 leak_data_lmin = leak_data * 60.0
             else:
                 leak_data_lmin = leak_data
 
-            # Verify reasonable leak range (0-200 L/min)
             assert 0 <= np.min(leak_data_lmin) <= 200, (
                 f"Leak out of range: {np.min(leak_data_lmin)}"
             )
@@ -149,23 +131,19 @@ class TestEDFSignalParsing:
         assert sa2_file.exists(), f"SA2 fixture not found: {sa2_file}"
 
         with EDFReader(sa2_file) as edf:
-            # SA2 contains summary statistics (oximetry data)
             signals = edf.list_signal_labels()
             assert len(signals) > 0, "No signals found in SA2 file"
 
-            # SA2 files typically contain Pulse and SpO2 (oximetry) data
             found_signal = False
 
             for signal_name in signals:
-                if signal_name in ["Crc16"]:  # Skip checksum signals
+                if signal_name in ["Crc16"]:
                     continue
 
-                # Read first 10 samples for testing
                 data, info = edf.read_signal(
                     signal_name, start_sample=0, num_samples=10
                 )
                 if len(data) > 0:
-                    # Statistics should have reasonable values (not all zero/NaN)
                     if not np.isnan(data).all() and not (data == 0).all():
                         found_signal = True
                         break
@@ -184,49 +162,39 @@ class TestWaveformConversion:
 
         session = sessions[0]
 
-        # Verify waveforms were parsed
         assert len(session.waveforms) > 0, "No waveforms were parsed"
 
-        # Check flow waveform if present
         if WaveformType.FLOW_RATE in session.waveforms:
             flow = session.waveforms[WaveformType.FLOW_RATE]
 
             assert flow.unit == "L/min", f"Expected L/min, got {flow.unit}"
-            # ResMed EDF files report actual sample rate (e.g., 850 Hz)
-            # Signal names like "Flow.40ms" are nominal but file contains higher rate data
             assert flow.sample_rate > 0, f"Invalid sample rate: {flow.sample_rate}"
             assert len(flow.values) > 0, "No flow values"
             assert len(flow.timestamps) == len(flow.values), "Timestamp/value mismatch"
 
-            # Verify timestamps are sequential and properly spaced
             if len(flow.timestamps) >= 10:
                 expected_interval = 1.0 / flow.sample_rate
                 for i in range(1, 10):
                     if isinstance(flow.timestamps, np.ndarray):
-                        # Timestamps are seconds offset
                         delta = float(flow.timestamps[i] - flow.timestamps[i - 1])
                     else:
                         delta = (
                             flow.timestamps[i] - flow.timestamps[i - 1]
                         ).total_seconds()
-                    # Allow 10% tolerance for timing precision
                     assert abs(delta - expected_interval) < (expected_interval * 0.1), (
                         f"Timestamp delta {delta} doesn't match expected {expected_interval}"
                     )
 
-            # Verify values are in physical units (L/min)
             assert all(-100 < v < 100 for v in flow.values[:100]), (
                 "Flow values out of range"
             )
 
-        # Check pressure waveform if present
         if WaveformType.MASK_PRESSURE in session.waveforms:
             pressure = session.waveforms[WaveformType.MASK_PRESSURE]
 
             assert pressure.unit == "cmH2O", f"Expected cmH2O, got {pressure.unit}"
             assert len(pressure.values) > 0, "No pressure values"
 
-            # Check first 100 samples are in reasonable range
             sample_check = pressure.values[: min(100, len(pressure.values))]
             assert all(0 <= v <= 40 for v in sample_check), (
                 "Pressure values out of range"
@@ -238,16 +206,13 @@ class TestWaveformConversion:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # Flow should be in L/min, not digital units
         if WaveformType.FLOW_RATE in session.waveforms:
             flow = session.waveforms[WaveformType.FLOW_RATE]
-            # Digital values would be in thousands, physical in reasonable range
             sample_check = flow.values[: min(100, len(flow.values))]
             assert all(-100 < v < 100 for v in sample_check), (
                 "Flow values appear to be in digital units, not physical"
             )
 
-        # Pressure should be in cmH2O
         if WaveformType.MASK_PRESSURE in session.waveforms:
             pressure = session.waveforms[WaveformType.MASK_PRESSURE]
             sample_check = pressure.values[: min(100, len(pressure.values))]
@@ -255,7 +220,6 @@ class TestWaveformConversion:
                 "Pressure values appear to be in digital units, not physical"
             )
 
-        # Leak should be in L/min
         if WaveformType.LEAK_RATE in session.waveforms:
             leak = session.waveforms[WaveformType.LEAK_RATE]
             sample_check = leak.values[: min(100, len(leak.values))]
@@ -276,20 +240,16 @@ class TestSessionParsing:
 
         session = sessions[0]
 
-        # Verify session is UnifiedSession
         assert isinstance(session, UnifiedSession)
 
-        # Verify session identifiers
         assert session.device_session_id == "20240621_013454"
         assert session.import_source == "resmed_edf"
         assert session.parser_version == "1.0.0"
 
-        # Verify device info
         assert session.device_info.manufacturer == "ResMed"
         assert session.device_info.serial_number == "22231974465"
         assert session.device_info.model == "AirSense11AutoSet"
 
-        # Verify timing
         assert isinstance(session.start_time, datetime)
         assert isinstance(session.end_time, datetime)
         assert session.end_time > session.start_time
@@ -300,23 +260,19 @@ class TestSessionParsing:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # Duration should be calculated from actual data
         assert session.duration_hours > 0, "Duration should be positive"
         assert session.duration_hours < 24, (
             f"Duration too long: {session.duration_hours} hours"
         )
 
-        # Start and end times should make sense
         assert session.end_time > session.start_time
 
-        # If we have waveforms, duration should match data length
         if session.waveforms:
             for waveform_type, waveform in session.waveforms.items():
                 if len(waveform.timestamps) > 1:
                     waveform_duration = waveform.duration_seconds
                     session_duration = session.duration_seconds
 
-                    # They should be close (within 5% tolerance)
                     relative_diff = (
                         abs(waveform_duration - session_duration) / session_duration
                     )
@@ -333,7 +289,7 @@ class TestSessionParsing:
         assert device_info.serial_number == "22231974465"
         assert device_info.model == "AirSense11AutoSet"
         assert device_info.firmware_version is not None
-        assert "SW04600" in device_info.firmware_version  # ResMed firmware format
+        assert "SW04600" in device_info.firmware_version
         assert device_info.product_code == "39485"
 
 
@@ -352,14 +308,12 @@ class TestParserDetection:
     @pytest.mark.parser
     def test_detect_missing_datalog(self, resmed_parser, tmp_path):
         """Test detection fails gracefully without DATALOG directory."""
-        # Create empty STR.edf file - will fail validation
         str_file = tmp_path / "STR.edf"
         str_file.touch()
 
         result = resmed_parser.detect(tmp_path)
 
         assert not result.detected, "Should not detect with invalid EDF"
-        # Either "not a valid EDF" or "DATALOG" should be in message
         assert "not a valid EDF" in result.message or "DATALOG" in result.message, (
             f"Unexpected message: {result.message}"
         )
@@ -389,13 +343,10 @@ class TestDataQuality:
         """Test that parsing errors are captured in data_quality_notes."""
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
 
-        # Should not crash even if some files fail to parse
         assert len(sessions) > 0
 
-        # Check if any sessions have quality notes
         for session in sessions:
             if session.data_quality_notes:
-                # Notes should be meaningful
                 for note in session.data_quality_notes:
                     assert isinstance(note, str)
                     assert len(note) > 0
@@ -407,18 +358,15 @@ class TestDataQuality:
         session = sessions[0]
 
         for waveform_type, waveform in session.waveforms.items():
-            # Timestamps and values should match
             assert len(waveform.timestamps) == len(waveform.values), (
                 f"{waveform_type}: timestamp/value count mismatch"
             )
 
-            # Should have min/max/mean calculated
             if len(waveform.values) > 0:
                 assert waveform.min_value is not None
                 assert waveform.max_value is not None
                 assert waveform.mean_value is not None
 
-                # Sanity check: min <= mean <= max
                 assert waveform.min_value <= waveform.mean_value <= waveform.max_value
 
     @pytest.mark.parser
@@ -429,7 +377,6 @@ class TestDataQuality:
 
         for waveform_type, waveform in session.waveforms.items():
             if len(waveform.timestamps) > 1:
-                # Check first 100 timestamps are ascending
                 check_count = min(100, len(waveform.timestamps))
                 for i in range(1, check_count):
                     assert waveform.timestamps[i] >= waveform.timestamps[i - 1], (
@@ -447,13 +394,10 @@ class TestEVEEventParsing:
         assert eve_file.exists(), f"EVE fixture not found: {eve_file}"
 
         with EDFReader(eve_file) as edf:
-            # Verify file opens and has annotations
             annotations = edf.read_annotations()
 
-            # Test file should have multiple annotations
             assert len(annotations) > 0, "No annotations found in EVE file"
 
-            # Check annotation structure
             for annotation in annotations:
                 assert hasattr(annotation, "onset_time")
                 assert hasattr(annotation, "duration")
@@ -466,11 +410,9 @@ class TestEVEEventParsing:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # Check that events were parsed
         assert session.has_event_data, "No event data parsed from EVE file"
         assert len(session.events) > 0, "No events found in session"
 
-        # Verify event types are valid
         valid_event_types = set(RespiratoryEventType)
         for event in session.events:
             assert event.event_type in valid_event_types, (
@@ -501,13 +443,10 @@ class TestEVEEventParsing:
         session = sessions[0]
 
         for event in session.events:
-            # All events should have positive duration
             assert event.duration_seconds > 0, (
                 f"{event.event_type} has invalid duration: {event.duration_seconds}"
             )
 
-            # Typical respiratory events are 10-60 seconds
-            # (Some may be longer for flow limitation, etc.)
             assert event.duration_seconds <= 300, (
                 f"{event.event_type} has unusually long duration: {event.duration_seconds}"
             )
@@ -518,16 +457,12 @@ class TestEVEEventParsing:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # Collect all event types found
         event_types_found = {event.event_type for event in session.events}
 
-        # Test data should contain multiple event types
-        # (At minimum: OA, CA, H based on our test file)
         assert len(event_types_found) >= 3, (
             f"Expected multiple event types, found: {event_types_found}"
         )
 
-        # Check for specific event types in test data
         expected_types = {
             RespiratoryEventType.OBSTRUCTIVE_APNEA,
             RespiratoryEventType.CENTRAL_APNEA,
@@ -545,13 +480,10 @@ class TestEVEEventParsing:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # "Recording starts" and "SpO2 Desaturation" should be filtered
-        # So event count should be less than total annotation count
         eve_file = resmed_fixture_path / "DATALOG" / "2024" / "20240621_013454_EVE.edf"
         with EDFReader(eve_file) as edf:
             total_annotations = len(edf.read_annotations())
 
-        # Event count should be less due to filtering
         assert len(session.events) < total_annotations, (
             "Non-event annotations should be filtered out"
         )
@@ -562,15 +494,12 @@ class TestEVEEventParsing:
         sessions = list(resmed_parser.parse_sessions(resmed_fixture_path))
         session = sessions[0]
 
-        # Count events by type
         event_counts = {}
         for event in session.events:
             event_type = event.event_type
             event_counts[event_type] = event_counts.get(event_type, 0) + 1
 
-        # Test data should have multiple events of each type
         for event_type, count in event_counts.items():
             assert count > 0, f"No events found for {event_type}"
 
-        # Total events should match sum of individual counts
         assert len(session.events) == sum(event_counts.values())

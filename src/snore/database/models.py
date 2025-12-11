@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from snore.database.types import ValidatedJSON, ValidatedJSONWithDefault
+from snore.database.types import ValidatedJSONWithDefault
 
 
 class Base(DeclarativeBase):
@@ -51,7 +51,7 @@ class Profile(Base):
     height_cm: Mapped[int | None] = mapped_column(Integer)
     settings: Mapped[dict[str, Any]] = mapped_column(
         ValidatedJSONWithDefault, default=dict
-    )  # Profile-specific settings
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -178,7 +178,7 @@ class Session(Base):
     parser_version: Mapped[str | None] = mapped_column(String)
     data_quality_notes: Mapped[dict[str, Any]] = mapped_column(
         ValidatedJSONWithDefault, default=dict
-    )  # JSON array
+    )
     has_waveform_data: Mapped[bool] = mapped_column(Boolean, default=False)
     has_event_data: Mapped[bool] = mapped_column(Boolean, default=False)
     has_statistics: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -355,16 +355,8 @@ class Setting(Base):
         return f"<Setting(id={self.id}, session_id={self.session_id}, key={self.key})>"
 
 
-# ============================================================================
-# MEDICAL ANALYSIS INFRASTRUCTURE
-# ============================================================================
-# Simplified schema - reference knowledge stored in Python constants
-# (see src/snore/knowledge/patterns.py and thresholds.py)
-# Database only stores runtime analysis data and results
-
-
 class AnalysisResult(Base):
-    """Track dual-engine analysis results (programmatic + LLM)."""
+    """Track programmatic analysis results for sessions."""
 
     __tablename__ = "analysis_results"
 
@@ -376,30 +368,20 @@ class AnalysisResult(Base):
     timestamp_end: Mapped[datetime] = mapped_column(DateTime)
     programmatic_result_json: Mapped[dict[str, Any]] = mapped_column(
         ValidatedJSONWithDefault, default=dict
-    )  # Algorithmic analysis results
-    llm_result_json: Mapped[dict[str, Any]] = mapped_column(
-        ValidatedJSONWithDefault, default=dict
-    )  # LLM analysis
-    combined_result_json: Mapped[dict[str, Any]] = mapped_column(
-        ValidatedJSONWithDefault, default=dict
-    )  # Combined/reconciled results
-    agreement_score: Mapped[float | None] = mapped_column(Float)
+    )
     processing_time_ms: Mapped[int | None] = mapped_column(Integer)
     engine_versions_json: Mapped[dict[str, Any]] = mapped_column(
         ValidatedJSONWithDefault, default=dict
-    )  # Version info for reproducibility
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     session = relationship("Session", back_populates="analysis_results")
     detected_patterns = relationship(
         "DetectedPattern", back_populates="analysis", cascade="all, delete-orphan"
     )
-    feedback = relationship(
-        "AnalysisFeedback", back_populates="analysis", cascade="all, delete-orphan"
-    )
 
     def __repr__(self) -> str:
-        return f"<AnalysisResult(id={self.id}, session_id={self.session_id}, agreement={self.agreement_score})>"
+        return f"<AnalysisResult(id={self.id}, session_id={self.session_id})>"
 
 
 class DetectedPattern(Base):
@@ -416,66 +398,17 @@ class DetectedPattern(Base):
     analysis_result_id: Mapped[int] = mapped_column(
         ForeignKey("analysis_results.id", ondelete="CASCADE")
     )
-    pattern_id: Mapped[str] = mapped_column(
-        String(100)
-    )  # References patterns.py constants
+    pattern_id: Mapped[str] = mapped_column(String(100))
     start_time: Mapped[datetime] = mapped_column(DateTime)
     duration: Mapped[float | None] = mapped_column(Float)  # seconds
     confidence: Mapped[float] = mapped_column(Float)
-    detected_by: Mapped[str] = mapped_column(String(20))  # programmatic, llm, both
+    detected_by: Mapped[str] = mapped_column(String(20))  # programmatic
     metrics_json: Mapped[dict[str, Any]] = mapped_column(
         ValidatedJSONWithDefault, default=dict
-    )  # Pattern-specific
+    )
     notes: Mapped[str | None] = mapped_column(Text)
 
     analysis = relationship("AnalysisResult", back_populates="detected_patterns")
 
     def __repr__(self) -> str:
         return f"<DetectedPattern(id={self.id}, pattern={self.pattern_id}, confidence={self.confidence})>"
-
-
-class AnalysisFeedback(Base):
-    """Learning and improvement tracking for analysis system."""
-
-    __tablename__ = "analysis_feedback"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    analysis_result_id: Mapped[int] = mapped_column(
-        ForeignKey("analysis_results.id", ondelete="CASCADE")
-    )
-    feedback_type: Mapped[str] = mapped_column(String(50))
-    discrepancy_description: Mapped[str | None] = mapped_column(Text)
-    suggested_improvement: Mapped[str | None] = mapped_column(Text)
-    implemented: Mapped[bool] = mapped_column(Boolean, default=False)
-    reviewed_by: Mapped[str | None] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-
-    analysis = relationship("AnalysisResult", back_populates="feedback")
-
-    def __repr__(self) -> str:
-        return f"<AnalysisFeedback(id={self.id}, type={self.feedback_type}, implemented={self.implemented})>"
-
-
-class AlgorithmConfig(Base):
-    """Algorithm parameters and configuration versioning."""
-
-    __tablename__ = "algorithm_configs"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    algorithm_name: Mapped[str] = mapped_column(String(100), unique=True)
-    version: Mapped[str] = mapped_column(String(50))
-    parameters_json: Mapped[dict[str, Any]] = mapped_column(
-        ValidatedJSON
-    )  # Algorithm parameters
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    performance_metrics_json: Mapped[dict[str, Any]] = mapped_column(
-        ValidatedJSONWithDefault, default=dict
-    )  # Perf
-    last_updated: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=utc_now,
-        onupdate=utc_now,
-    )
-
-    def __repr__(self) -> str:
-        return f"<AlgorithmConfig(name={self.algorithm_name}, version={self.version}, active={self.is_active})>"

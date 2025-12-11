@@ -281,7 +281,6 @@ class TestOrphanedRecordCleanup:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
             session.execute(
                 text(
@@ -289,7 +288,6 @@ class TestOrphanedRecordCleanup:
                 )
             )
             session.commit()
-            # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
 
         with session_scope() as session:
@@ -311,13 +309,10 @@ class TestOrphanedRecordCleanup:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
-            # Use ORM to create orphaned record (defaults applied automatically)
             orphaned_stat = models.Statistics(session_id=999, ahi=5.2)
             session.add(orphaned_stat)
             session.commit()
-            # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
 
         with session_scope() as session:
@@ -339,7 +334,6 @@ class TestOrphanedRecordCleanup:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
             session.execute(
                 text(
@@ -347,7 +341,6 @@ class TestOrphanedRecordCleanup:
                 )
             )
             session.commit()
-            # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
 
         with session_scope() as session:
@@ -369,7 +362,6 @@ class TestOrphanedRecordCleanup:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
             session.execute(
                 text(
@@ -377,7 +369,6 @@ class TestOrphanedRecordCleanup:
                 )
             )
             session.commit()
-            # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
 
         with session_scope() as session:
@@ -399,9 +390,7 @@ class TestOrphanedRecordCleanup:
         init_database(str(temp_db))
 
         with session_scope() as session:
-            # Temporarily disable foreign keys to create orphaned records
             session.execute(text("PRAGMA foreign_keys = OFF"))
-            # Use ORM to create orphaned records (defaults applied automatically)
             from datetime import datetime
 
             orphaned_event = models.Event(
@@ -414,7 +403,6 @@ class TestOrphanedRecordCleanup:
             orphaned_setting = models.Setting(session_id=999, key="mode", value="CPAP")
             session.add_all([orphaned_event, orphaned_stat, orphaned_setting])
             session.commit()
-            # Re-enable foreign keys
             session.execute(text("PRAGMA foreign_keys = ON"))
 
         with session_scope() as session:

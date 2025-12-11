@@ -57,13 +57,11 @@ def generate_noisy_breath(
         duration, amplitude, sample_rate
     )
 
-    # Calculate noise power from SNR
     signal_power = np.mean(clean_signal**2)
     snr_linear = 10 ** (snr_db / 10)
     noise_power = signal_power / snr_linear
     noise_std = np.sqrt(noise_power)
 
-    # Add Gaussian noise
     noise = np.random.normal(0, noise_std, len(clean_signal))
     noisy_signal = clean_signal + noise
 
@@ -94,18 +92,14 @@ def generate_flattened_breath(
     n_samples = int(duration * sample_rate)
     timestamps = np.linspace(0, duration, n_samples)
 
-    # Split into inspiration and expiration
     half = n_samples // 2
 
-    # Inspiration: flatten the top portion
     insp_t = np.linspace(0, np.pi, half)
     insp_flow = amplitude * np.sin(insp_t)
 
-    # Apply flattening: values above threshold become plateau
     plateau_threshold = amplitude * (1 - flatness_index)
     insp_flow = np.where(insp_flow > plateau_threshold, amplitude, insp_flow)
 
-    # Expiration: normal sinusoidal
     exp_t = np.linspace(0, np.pi, n_samples - half)
     exp_flow = -amplitude * 0.7 * np.sin(exp_t)
 
@@ -137,18 +131,14 @@ def generate_multi_peak_breath(
     n_samples = int(duration * sample_rate)
     timestamps = np.linspace(0, duration, n_samples)
 
-    # Split into inspiration and expiration
     half = n_samples // 2
 
-    # Inspiration: create multiple peaks
     insp_t = np.linspace(0, np.pi, half)
     base_insp = amplitude * np.sin(insp_t)
 
-    # Add oscillation to create multiple peaks
     oscillation = 0.3 * amplitude * np.sin(peak_count * np.pi * insp_t / np.pi)
     insp_flow = base_insp + oscillation
 
-    # Expiration: normal
     exp_t = np.linspace(0, np.pi, n_samples - half)
     exp_flow = -amplitude * 0.7 * np.sin(exp_t)
 
@@ -186,14 +176,12 @@ def create_session(
     current_time = 0.0
 
     for _i in range(num_breaths):
-        # Vary duration and amplitude
         duration = np.random.normal(avg_duration, duration_variability)
         duration = max(1.0, duration)  # Minimum 1 second
 
         amplitude = np.random.normal(avg_amplitude, amplitude_variability)
         amplitude = max(10.0, amplitude)  # Minimum 10 L/min
 
-        # Generate breath based on type
         if breath_type == "sinusoidal":
             t, flow = generate_sinusoidal_breath(duration, amplitude, sample_rate)
         elif breath_type == "flattened":
@@ -203,7 +191,6 @@ def create_session(
         else:
             raise ValueError(f"Unknown breath type: {breath_type}")
 
-        # Offset timestamps to current time
         t = t + current_time
         current_time = t[-1]
 
@@ -259,13 +246,10 @@ def add_artifacts(
     artifact_indices = np.random.choice(len(waveform), n_artifacts, replace=False)
 
     if artifact_type == "spike":
-        # Large spikes (sensor glitches)
         corrupted[artifact_indices] = np.random.uniform(-150, 150, n_artifacts)
     elif artifact_type == "dropout":
-        # Zero values (sensor disconnection)
         corrupted[artifact_indices] = 0.0
     elif artifact_type == "nan":
-        # NaN values (data corruption)
         corrupted[artifact_indices] = np.nan
     else:
         raise ValueError(f"Unknown artifact type: {artifact_type}")
@@ -298,19 +282,16 @@ def create_multi_segment_session(
     current_time = 0.0
 
     for i in range(segment_count):
-        # Generate segment
         t, flow = create_session(
             num_breaths=breaths_per_segment, sample_rate=sample_rate
         )
 
-        # Offset to current time
         t = t + current_time
         current_time = t[-1]
 
         all_timestamps.extend(t)
         all_flow_values.extend(flow)
 
-        # Add gap (except after last segment)
         if i < segment_count - 1:
             gap_start = current_time
             current_time += gap_duration

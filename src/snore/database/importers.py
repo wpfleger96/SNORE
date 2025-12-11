@@ -127,7 +127,6 @@ class SessionImporter:
             True if imported, False if skipped (already exists)
         """
         with session_scope() as db:
-            # Auto-assign Default profile for SD card imports without profile
             if self.profile_id is None:
                 self.profile_id = self.get_or_create_default_profile(db)
 

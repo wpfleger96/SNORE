@@ -158,7 +158,6 @@ class WaveformFeatureExtractor:
             symmetry_score = float(np.clip(raw_skewness / 3.0, -1.0, 1.0))
             kurtosis_value = float(stats.kurtosis(waveform))
 
-        # Rise and fall times
         rise_time = self._calculate_rise_time(waveform, peak_flow, sample_rate)
         fall_time = self._calculate_fall_time(waveform, peak_flow, sample_rate)
 
@@ -187,7 +186,6 @@ class WaveformFeatureExtractor:
         """
         above_threshold = waveform > threshold
 
-        # Find continuous runs above threshold
         changes = np.diff(np.concatenate([[0], above_threshold, [0]]).astype(int))
         starts = np.where(changes == 1)[0]
         ends = np.where(changes == -1)[0]
@@ -195,7 +193,6 @@ class WaveformFeatureExtractor:
         if len(starts) == 0:
             return 0.0
 
-        # Find longest run
         run_lengths = ends - starts
         max_length = np.max(run_lengths)
 
@@ -218,13 +215,11 @@ class WaveformFeatureExtractor:
         threshold_10 = 0.1 * peak_flow
         threshold_90 = 0.9 * peak_flow
 
-        # Find first crossing of 10% threshold
         above_10 = np.where(waveform >= threshold_10)[0]
         if len(above_10) == 0:
             return 0.0
         idx_10 = above_10[0]
 
-        # Find first crossing of 90% threshold after 10%
         above_90 = np.where(waveform[idx_10:] >= threshold_90)[0]
         if len(above_90) == 0:
             return 0.0
@@ -249,17 +244,14 @@ class WaveformFeatureExtractor:
         threshold_90 = 0.9 * peak_flow
         threshold_10 = 0.1 * peak_flow
 
-        # Find peak index
         peak_idx = np.argmax(waveform)
 
-        # Find last crossing of 90% threshold after peak
         after_peak = waveform[peak_idx:]
         above_90 = np.where(after_peak >= threshold_90)[0]
         if len(above_90) == 0:
             return 0.0
         idx_90 = peak_idx + above_90[-1]
 
-        # Find first crossing below 10% threshold after 90%
         after_90 = waveform[idx_90:]
         below_10 = np.where(after_90 < threshold_10)[0]
         if len(below_10) == 0:
@@ -306,7 +298,6 @@ class WaveformFeatureExtractor:
                 inter_peak_intervals=[],
             )
 
-        # Find peaks with prominence threshold
         min_prominence = self.peak_prominence_threshold * peak_flow
         peaks, properties = signal.find_peaks(
             waveform, prominence=min_prominence, distance=5
@@ -314,12 +305,10 @@ class WaveformFeatureExtractor:
 
         peak_count = len(peaks)
 
-        # Calculate relative positions (0-1 scale)
         if peak_count > 0:
             peak_positions = (peaks / len(waveform)).tolist()
             peak_prominences = properties["prominences"].tolist()
 
-            # Calculate inter-peak intervals
             if peak_count > 1:
                 inter_peak_intervals = (np.diff(peaks) / sample_rate).tolist()
             else:
@@ -367,16 +356,13 @@ class WaveformFeatureExtractor:
         median_val = np.median(waveform)
         std_val = np.std(waveform)
 
-        # Percentiles
         p25, p50, p75, p95 = np.percentile(waveform, [25, 50, 75, 95])
 
-        # Coefficient of variation
         if mean_val != 0:
             cv = std_val / abs(mean_val)
         else:
             cv = 0.0
 
-        # Zero crossing rate (for sign changes)
         if len(waveform) > 1:
             zero_crossings = np.sum(np.diff(np.sign(waveform)) != 0)
             zcr = zero_crossings / (len(waveform) - 1)
@@ -422,12 +408,10 @@ class WaveformFeatureExtractor:
                 power_spectral_density=np.array([]),
             )
 
-        # Compute power spectral density using Welch's method
         frequencies, psd = signal.welch(
             waveform, fs=sample_rate, nperseg=min(len(waveform), 256)
         )
 
-        # Find dominant frequency (excluding DC component)
         if len(frequencies) > 1:
             dominant_idx = np.argmax(psd[1:]) + 1
             dominant_frequency = frequencies[dominant_idx]

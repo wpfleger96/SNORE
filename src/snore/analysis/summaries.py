@@ -33,7 +33,6 @@ def generate_day_summary(day: models.Day) -> str:
     date_str = day.date.strftime("%B %d, %Y")
     summary_parts = [f"On {date_str}"]
 
-    # Usage
     if day.total_therapy_hours:
         compliant = is_compliant(day.total_therapy_hours)
         compliance_text = (
@@ -46,7 +45,6 @@ def generate_day_summary(day: models.Day) -> str:
         summary_parts.append(", no therapy data was recorded.")
         return "".join(summary_parts)
 
-    # AHI
     if day.ahi is not None:
         severity = get_ahi_severity(day.ahi)
         ahi_desc = {
@@ -60,7 +58,6 @@ def generate_day_summary(day: models.Day) -> str:
             f" The AHI was {day.ahi:.1f} events per hour ({ahi_desc})."
         )
 
-        # Event details
         events = []
         if day.obstructive_apneas > 0:
             events.append(
@@ -79,7 +76,6 @@ def generate_day_summary(day: models.Day) -> str:
             events_text = ", ".join(events)
             summary_parts.append(f" There were {events_text}.")
 
-    # Pressure
     if day.pressure_median is not None:
         summary_parts.append(
             f" Median pressure was {format_pressure(day.pressure_median)}"
@@ -91,14 +87,12 @@ def generate_day_summary(day: models.Day) -> str:
         else:
             summary_parts.append(".")
 
-    # Leak
     if day.leak_median is not None:
         leak_assessment = "well controlled" if day.leak_median < 24 else "elevated"
         summary_parts.append(
             f" Leak rates were {leak_assessment} with a median of {format_leak(day.leak_median)}."
         )
 
-    # SpO2
     if day.spo2_avg is not None:
         spo2_assessment = "healthy" if day.spo2_avg >= 95 else "concerning"
         summary_parts.append(
@@ -109,7 +103,6 @@ def generate_day_summary(day: models.Day) -> str:
         else:
             summary_parts.append(".")
 
-    # Overall assessment
     if day.ahi is not None:
         if day.ahi < 5 and is_compliant(day.total_therapy_hours):
             summary_parts.append(
@@ -151,7 +144,6 @@ def generate_period_summary(
 
     summary_parts = []
 
-    # Header
     date_range = format_date_range(period_start, period_end)
     days_in_period = (period_end - period_start).days + 1
     summary_parts.append(
@@ -159,7 +151,6 @@ def generate_period_summary(
         f"in the period {date_range}"
     )
 
-    # Compliance
     compliance_pct, compliant_days, total_days = calculate_compliance_rate(days)
     compliance_assessment = (
         "excellent"
@@ -175,7 +166,6 @@ def generate_period_summary(
         f"({compliant_days} days with >= 4 hours usage, {compliance_assessment})."
     )
 
-    # Usage statistics
     total_hours = calculate_total_hours(days)
     avg_hours = calculate_average_hours_per_day(days)
     summary_parts.append(
@@ -183,7 +173,6 @@ def generate_period_summary(
         f"with a total of {format_duration(total_hours)}."
     )
 
-    # AHI and effectiveness
     avg_ahi = calculate_average_ahi(days)
     if avg_ahi is not None:
         effectiveness = assess_therapy_effectiveness(avg_ahi)
@@ -198,7 +187,6 @@ def generate_period_summary(
             f" The average AHI was {avg_ahi:.1f} events per hour, indicating {effectiveness_desc}."
         )
 
-    # Pressure statistics (if available)
     pressure_values = [
         day.pressure_median for day in days if day.pressure_median is not None
     ]
@@ -206,7 +194,6 @@ def generate_period_summary(
         avg_pressure = sum(pressure_values) / len(pressure_values)
         summary_parts.append(f" Pressure averaged {format_pressure(avg_pressure)}")
 
-        # Leak statistics
         leak_values = [day.leak_median for day in days if day.leak_median is not None]
         if leak_values:
             avg_leak = sum(leak_values) / len(leak_values)
@@ -219,7 +206,6 @@ def generate_period_summary(
         else:
             summary_parts.append(".")
 
-    # SpO2 statistics (if available)
     spo2_values = [day.spo2_avg for day in days if day.spo2_avg is not None]
     if spo2_values:
         avg_spo2 = sum(spo2_values) / len(spo2_values)
@@ -242,7 +228,6 @@ def generate_period_summary(
         else:
             summary_parts.append(".")
 
-    # Overall assessment
     if avg_ahi is not None and compliance_pct >= 70:
         if avg_ahi < 5:
             summary_parts.append(

@@ -381,15 +381,12 @@ def db_with_analysis(temp_db):
             session.add(sess)
             session.flush()
 
-            # Link session to day
             day_date = DayManager.get_day_for_session(start_time, profile)
             day = DayManager.create_or_update_day(profile.id, day_date, session)
             sess.day_id = day.id
 
-            # Add multiple analysis results for first two sessions (to test --all-versions)
             num_analyses = 3 if i < 2 else 1
             for j in range(num_analyses):
-                # Create valid AnalysisResult JSON structure
                 analysis_json = {
                     "session_id": sess.id,
                     "timestamp_start": start_time.timestamp(),
@@ -437,12 +434,11 @@ def db_with_analysis(temp_db):
                 session.add(analysis)
                 session.flush()
 
-                # Add detected patterns for each analysis
                 pattern = models.DetectedPattern(
                     analysis_result_id=analysis.id,
                     pattern_id="TEST_PATTERN",
                     start_time=start_time,
-                    duration=8 * 3600,  # 8 hours in seconds
+                    duration=8 * 3600,
                     confidence=0.95,
                     detected_by="programmatic",
                     metrics_json={"test": "pattern"},
@@ -459,12 +455,11 @@ class TestDeleteAnalysisCommand:
 
     def test_delete_analysis_single_session(self, cli_runner, db_with_analysis):
         """Test deleting analysis for a single session (latest only)."""
-        # Verify initial state
         with session_scope() as session:
             analysis_before = (
                 session.query(models.AnalysisResult).filter_by(session_id=1).count()
             )
-            assert analysis_before == 3  # Session 1 has 3 analysis versions
+            assert analysis_before == 3
 
         result = cli_runner.invoke(
             cli,
@@ -481,14 +476,12 @@ class TestDeleteAnalysisCommand:
         assert result.exit_code == 0
         assert "Successfully deleted 1 analysis record(s)" in result.output
 
-        # Verify only latest was deleted
         with session_scope() as session:
             analysis_after = (
                 session.query(models.AnalysisResult).filter_by(session_id=1).count()
             )
-            assert analysis_after == 2  # Should have 2 remaining (deleted latest)
+            assert analysis_after == 2
 
-            # Verify session still exists
             sess = session.query(models.Session).filter_by(id=1).first()
             assert sess is not None
 
@@ -516,7 +509,6 @@ class TestDeleteAnalysisCommand:
             )
             assert analysis_after == 0
 
-            # Verify session still exists
             sess = session.query(models.Session).filter_by(id=1).first()
             assert sess is not None
 
@@ -539,7 +531,6 @@ class TestDeleteAnalysisCommand:
         assert "3 session(s)" in result.output
 
         with session_scope() as session:
-            # Latest deleted from each session
             analysis_1 = (
                 session.query(models.AnalysisResult).filter_by(session_id=1).count()
             )
@@ -550,9 +541,9 @@ class TestDeleteAnalysisCommand:
                 session.query(models.AnalysisResult).filter_by(session_id=3).count()
             )
 
-            assert analysis_1 == 2  # Had 3, deleted latest
-            assert analysis_2 == 2  # Had 3, deleted latest
-            assert analysis_3 == 0  # Had 1, deleted it
+            assert analysis_1 == 2
+            assert analysis_2 == 2
+            assert analysis_3 == 0
 
     def test_delete_analysis_date_range(self, cli_runner, db_with_analysis):
         """Test deleting analysis by date range."""
@@ -565,7 +556,7 @@ class TestDeleteAnalysisCommand:
                 "--from-date",
                 "2025-10-01",
                 "--to-date",
-                "2025-10-03",  # Changed to 10-03 to include session 1 (starts at 22:00 on 10-02)
+                "2025-10-03",
                 "--force",
             ],
         )
@@ -574,9 +565,7 @@ class TestDeleteAnalysisCommand:
         assert "Successfully deleted" in result.output
 
         with session_scope() as session:
-            # Sessions 0 and 1 should have had analysis deleted
             total_analysis = session.query(models.AnalysisResult).count()
-            # Started with 3+3+1+1+1=9, deleted 2 (one from each of first two sessions)
             assert total_analysis == 7
 
     def test_delete_analysis_dry_run(self, cli_runner, db_with_analysis):
@@ -602,7 +591,7 @@ class TestDeleteAnalysisCommand:
 
         with session_scope() as session:
             analysis_after = session.query(models.AnalysisResult).count()
-            assert analysis_after == analysis_before  # Nothing deleted
+            assert analysis_after == analysis_before
 
     def test_delete_analysis_cancellation(self, cli_runner, db_with_analysis):
         """Test that user can cancel deletion."""
@@ -619,7 +608,7 @@ class TestDeleteAnalysisCommand:
             analysis = (
                 session.query(models.AnalysisResult).filter_by(session_id=1).count()
             )
-            assert analysis == 3  # Nothing deleted
+            assert analysis == 3
 
     def test_delete_analysis_no_filter_error(self, cli_runner, db_with_analysis):
         """Test that command errors when no filter is provided."""
@@ -650,7 +639,6 @@ class TestDeleteAnalysisCommand:
             session.add(device)
             session.flush()
 
-            # Create session without analysis
             sess = models.Session(
                 device_id=device.id,
                 device_session_id="test_session_1",
@@ -672,7 +660,6 @@ class TestDeleteAnalysisCommand:
     def test_delete_analysis_cascades_to_patterns(self, cli_runner, db_with_analysis):
         """Test that deleting analysis cascades to detected patterns."""
         with session_scope() as session:
-            # Get analysis ID for session 1
             analysis = (
                 session.query(models.AnalysisResult)
                 .filter_by(session_id=1)
@@ -703,7 +690,6 @@ class TestDeleteAnalysisCommand:
         assert result.exit_code == 0
 
         with session_scope() as session:
-            # Verify patterns were deleted
             patterns_after = (
                 session.query(models.DetectedPattern)
                 .filter_by(analysis_result_id=latest_analysis_id)
@@ -723,10 +709,8 @@ class TestDeleteAnalysisCommand:
         assert "5 session(s)" in result.output
 
         with session_scope() as session:
-            # Latest from each session deleted
             total_analysis = session.query(models.AnalysisResult).count()
-            # Started with 9 (3+3+1+1+1), deleted 5 latest
-            assert total_analysis == 4  # 2 remaining from session 1, 2 from session 2
+            assert total_analysis == 4
 
 
 class TestAnalyzeCommand:
@@ -853,7 +837,6 @@ class TestAnalyzeCommand:
 
         result = cli_runner.invoke(cli, ["analyze"])
 
-        # Click returns exit code 2 for groups invoked without subcommand
         assert result.exit_code in [0, 2]
         assert "Commands:" in result.output or "show" in result.output
 
@@ -915,7 +898,6 @@ class TestAnalyzeCommand:
             session.add(device)
             session.flush()
 
-            # Create session without analysis
             sess = models.Session(
                 device_id=device.id,
                 device_session_id="test_session_1",

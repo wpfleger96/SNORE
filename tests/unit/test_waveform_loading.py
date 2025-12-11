@@ -27,16 +27,13 @@ class TestWaveformDeserialization:
 
     def test_deserialize_valid_blob(self):
         """Valid blob should deserialize correctly."""
-        # Create test data
         timestamps = np.array([0.0, 0.04, 0.08, 0.12], dtype=np.float32)
         values = np.array([10.0, 20.0, 15.0, 5.0], dtype=np.float32)
         data = np.column_stack([timestamps, values])
         blob = data.tobytes()
 
-        # Deserialize
         result_t, result_v = deserialize_waveform_blob(blob, sample_count=4)
 
-        # Verify
         np.testing.assert_array_almost_equal(result_t, timestamps)
         np.testing.assert_array_almost_equal(result_v, values)
 
@@ -47,17 +44,14 @@ class TestWaveformDeserialization:
 
     def test_deserialize_size_mismatch(self):
         """Blob with wrong size should raise ValueError."""
-        # Create blob for 4 samples
         data = np.zeros((4, 2), dtype=np.float32)
         blob = data.tobytes()
 
-        # Try to deserialize as 5 samples
         with pytest.raises(ValueError, match="Blob size mismatch"):
             deserialize_waveform_blob(blob, sample_count=5)
 
     def test_deserialize_corrupted_blob(self):
         """Corrupted blob should raise ValueError."""
-        # Random bytes that don't represent valid float32 data
         corrupted_blob = b"invalid_data_here"
 
         with pytest.raises(ValueError, match="Invalid waveform blob"):
@@ -65,16 +59,13 @@ class TestWaveformDeserialization:
 
     def test_deserialize_preserves_precision(self):
         """Deserialization should preserve float32 precision."""
-        # Create data with specific float32 values
         timestamps = np.array([0.0, 1.234567, 2.345678], dtype=np.float32)
         values = np.array([12.34, -56.78, 90.12], dtype=np.float32)
         data = np.column_stack([timestamps, values])
         blob = data.tobytes()
 
-        # Round-trip
         result_t, result_v = deserialize_waveform_blob(blob, sample_count=3)
 
-        # Should match exactly (float32 precision)
         np.testing.assert_array_equal(result_t, timestamps)
         np.testing.assert_array_equal(result_v, values)
 
@@ -92,7 +83,6 @@ class TestWaveformLoading:
 
     def test_load_waveform_returns_metadata(self):
         """Should return timestamps, values, and complete metadata."""
-        # Create mock waveform record
         mock_waveform = Mock()
         timestamps = np.array([0.0, 1.0, 2.0], dtype=np.float32)
         values = np.array([10.0, 20.0, 15.0], dtype=np.float32)
@@ -112,14 +102,11 @@ class TestWaveformLoading:
         mock_session = Mock()
         mock_session.query().filter_by().first.return_value = mock_waveform
 
-        # Load
         t, v, metadata = load_waveform_from_db(mock_session, 123, "flow")
 
-        # Verify data
         assert len(t) == 3
         assert len(v) == 3
 
-        # Verify metadata
         assert metadata["session_id"] == 123
         assert metadata["waveform_type"] == "flow"
         assert metadata["sample_rate"] == 25.0
@@ -135,15 +122,12 @@ class TestNoiseFiltering:
         sample_rate = 100.0
         t = np.linspace(0, 1, 100)
 
-        # Signal: 1 Hz + 20 Hz noise
         signal = np.sin(2 * np.pi * 1 * t)
         noise = 0.5 * np.sin(2 * np.pi * 20 * t)
         noisy = signal + noise
 
-        # Filter with 5 Hz cutoff (should remove 20 Hz)
         filtered = apply_noise_filter(noisy, sample_rate, cutoff_hz=5.0)
 
-        # Filtered should be closer to clean signal
         noise_power_before = np.mean((noisy - signal) ** 2)
         noise_power_after = np.mean((filtered - signal) ** 2)
 
@@ -154,7 +138,6 @@ class TestNoiseFiltering:
         data = np.array([1.0, 2.0, 3.0, 2.0, 1.0])
         sample_rate = 10.0
 
-        # Cutoff at 6 Hz exceeds Nyquist (5 Hz)
         with pytest.raises(ValueError, match="Nyquist"):
             apply_noise_filter(data, sample_rate, cutoff_hz=6.0)
 
@@ -171,7 +154,6 @@ class TestSampleRateConversion:
             timestamps, values, from_rate=1.0, to_rate=2.0
         )
 
-        # Should have ~2x samples
         assert len(new_v) > len(values)
         assert len(new_t) == len(new_v)
 
@@ -184,9 +166,8 @@ class TestSampleRateConversion:
             timestamps, values, from_rate=100.0, to_rate=10.0
         )
 
-        # Should have ~10x fewer samples
         assert len(new_v) < len(values)
-        assert len(new_v) >= 10  # Approximately 10 samples
+        assert len(new_v) >= 10
 
     def test_resample_no_change(self):
         """Same sample rate should return original arrays."""
@@ -206,9 +187,7 @@ class TestArtifactDetection:
 
     def test_detect_out_of_range_values(self):
         """Should detect values outside physiological range."""
-        flow_data = np.array(
-            [10.0, 20.0, 150.0, 15.0, -200.0]
-        )  # Spikes at indices 2, 4
+        flow_data = np.array([10.0, 20.0, 150.0, 15.0, -200.0])
 
         artifacts = detect_and_mark_artifacts(flow_data, "flow")
 
@@ -237,8 +216,6 @@ class TestArtifactDetection:
 
     def test_detect_sudden_jumps(self):
         """Should detect sudden large jumps (sensor disconnection)."""
-        # Normal gradual changes (realistic breath pattern), then sudden jump
-        # Need >10 samples for jump detection to work
         data = np.array(
             [
                 10.0,
@@ -255,11 +232,10 @@ class TestArtifactDetection:
                 100.0,
                 11.0,
             ]
-        )  # Jump at index 11
+        )
 
         artifacts = detect_and_mark_artifacts(data, "flow")
 
-        # Should flag the jump (index 11) or transition point (index 10 or 11)
         assert artifacts[11] or artifacts[10]
 
     def test_no_artifacts_in_clean_data(self):
@@ -287,19 +263,17 @@ class TestDiscontinuityHandling:
 
     def test_single_discontinuity(self):
         """Single large gap should create two segments."""
-        # Gap of 100 seconds between index 2 and 3
         timestamps = np.array([0.0, 1.0, 2.0, 102.0, 103.0])
         values = np.array([1.0, 2.0, 3.0, 2.0, 1.0])
 
         segments = handle_discontinuities(timestamps, values, gap_threshold=50.0)
 
         assert len(segments) == 2
-        assert len(segments[0][0]) == 3  # First 3 samples
-        assert len(segments[1][0]) == 2  # Last 2 samples
+        assert len(segments[0][0]) == 3
+        assert len(segments[1][0]) == 2
 
     def test_multiple_discontinuities(self):
         """Multiple gaps should create multiple segments."""
-        # Gaps at indices 2-3 and 5-6
         timestamps = np.array([0.0, 1.0, 2.0, 100.0, 101.0, 102.0, 200.0, 201.0])
         values = np.ones(8)
 

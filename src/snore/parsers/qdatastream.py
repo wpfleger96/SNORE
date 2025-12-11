@@ -109,21 +109,18 @@ class QDataStreamReader:
         """
         length = self.read_uint32()
 
-        # Check for null string marker
         if length == 0xFFFFFFFF:
             return None
 
         if length == 0:
             return ""
 
-        # Read UTF-16 encoded bytes
         data = self.read_bytes(length)
 
         # Decode UTF-16 (little-endian)
         try:
             return data.decode("utf-16-le")
         except UnicodeDecodeError:
-            # Fallback to latin-1 if UTF-16 fails
             return data.decode("latin-1", errors="replace")
 
     def read_qvariant(self) -> Any:
@@ -141,7 +138,6 @@ class QDataStreamReader:
         if is_null:
             return None
 
-        # Map Qt type to reader method
         if type_code == QVariantType.Bool:
             return self.read_bool()
         elif type_code == QVariantType.Int:
@@ -157,15 +153,11 @@ class QDataStreamReader:
         elif type_code == QVariantType.String:
             return self.read_qstring()
         elif type_code == QVariantType.ByteArray:
-            # Read byte array (4-byte length + data)
             length = self.read_uint32()
             if length == 0xFFFFFFFF:
                 return None
             return self.read_bytes(length)
         else:
-            # Unknown/user-defined type - try to skip it
-            # For user types, OSCAR might serialize them differently
-            # For now, return None and log warning
             import warnings
 
             warnings.warn(
@@ -182,16 +174,13 @@ class QDataStreamReader:
         count = self.read_uint32()
 
         for _ in range(count):
-            # Skip key
             self.read_uint32()
-            # Skip value - read type and null flag
             type_code = self.read_uint32()
             is_null = self.read_bool()
 
             if is_null:
                 continue
 
-            # Skip data based on type
             if type_code == QVariantType.Bool:
                 self.read_bool()
             elif type_code == QVariantType.Int:
@@ -210,8 +199,6 @@ class QDataStreamReader:
                 length = self.read_uint32()
                 if length != 0xFFFFFFFF:
                     self.skip_bytes(length)
-            # For unknown types, we can't reliably skip them
-            # So this method only works if all types are known
 
     def read_qhash_uint32_qvariant(self) -> dict[int, Any]:
         """
@@ -377,7 +364,6 @@ class QDataStreamReader:
         if count == 0:
             return []
 
-        # Read all int16 values at once
         data = self.read_bytes(count * 2)
         result = list(struct.unpack(f"{self.byte_order}{count}h", data))
 
@@ -397,7 +383,6 @@ class QDataStreamReader:
         if count == 0:
             return []
 
-        # Read all uint32 values at once
         data = self.read_bytes(count * 4)
         result = list(struct.unpack(f"{self.byte_order}{count}I", data))
 

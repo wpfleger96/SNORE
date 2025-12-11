@@ -6,10 +6,6 @@ import numpy as np
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# ============================================================================
-# Breath Segmentation Types
-# ============================================================================
-
 
 class BreathPhases(BaseModel):
     """
@@ -80,11 +76,6 @@ class BreathMetrics(BaseModel):
     )
 
 
-# ============================================================================
-# Event Detection Types
-# ============================================================================
-
-
 class ApneaEvent(BaseModel):
     """
     Detected apnea event.
@@ -152,11 +143,6 @@ class EventTimeline(BaseModel):
     total_events: int = Field(ge=0, description="Total event count")
     ahi: float = Field(ge=0, description="Apnea-Hypopnea Index (events/hour)")
     rdi: float = Field(ge=0, description="Respiratory Disturbance Index")
-
-
-# ============================================================================
-# Feature Extraction Types
-# ============================================================================
 
 
 class ShapeFeatures(BaseModel):
@@ -257,11 +243,6 @@ class SpectralFeatures(BaseModel):
     power_spectral_density: np.ndarray = Field(description="Power distribution")
 
 
-# ============================================================================
-# Flow Limitation Types
-# ============================================================================
-
-
 class FlowPattern(BaseModel):
     """
     Classification result for a single breath.
@@ -300,11 +281,6 @@ class SessionFlowAnalysis(BaseModel):
     flow_limitation_index: float = Field(ge=0, le=1, description="Overall FL index")
     average_confidence: float = Field(ge=0, le=1, description="Mean confidence")
     patterns: list[FlowPattern] = Field(description="Individual breath classifications")
-
-
-# ============================================================================
-# Pattern Detection Types
-# ============================================================================
 
 
 class CSRDetection(BaseModel):

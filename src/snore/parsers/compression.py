@@ -80,15 +80,12 @@ def encode_delta_times(timestamps: list[int]) -> bytes:
     if not timestamps:
         return b""
 
-    # First value is stored as-is
     deltas = [timestamps[0]]
 
-    # Subsequent values are stored as deltas
     for i in range(1, len(timestamps)):
         delta = timestamps[i] - timestamps[i - 1]
         deltas.append(delta)
 
-    # Pack as unsigned 32-bit integers
     return struct.pack(f"<{len(deltas)}I", *deltas)
 
 
@@ -111,10 +108,8 @@ def decode_delta_times(data: bytes) -> list[int]:
     if not deltas:
         return []
 
-    # First value is absolute
     timestamps = [deltas[0]]
 
-    # Reconstruct absolute values from deltas
     for i in range(1, len(deltas)):
         timestamps.append(timestamps[-1] + deltas[i])
 
@@ -176,19 +171,15 @@ def qUncompress(data: bytes) -> bytes:
     if len(data) < 4:
         raise QtCompressionError("Data too short for Qt compressed format")
 
-    # Read uncompressed size (big-endian)
     uncompressed_size = struct.unpack(">I", data[:4])[0]
 
-    # Extract compressed data
     compressed_data = data[4:]
 
     try:
-        # Decompress using zlib
         decompressed = zlib.decompress(compressed_data)
     except zlib.error as e:
         raise QtCompressionError(f"zlib decompression failed: {e}") from e
 
-    # Verify size matches header
     if len(decompressed) != uncompressed_size:
         raise QtCompressionError(
             f"Decompressed size mismatch: expected {uncompressed_size}, got {len(decompressed)}"
@@ -219,12 +210,10 @@ def qCompress(data: bytes, compression_level: int = 6) -> bytes:
         raise ValueError("Compression level must be between 1 and 9")
 
     try:
-        # Compress using zlib
         compressed = zlib.compress(data, level=compression_level)
     except zlib.error as e:
         raise QtCompressionError(f"zlib compression failed: {e}") from e
 
-    # Prepend uncompressed size (big-endian)
     uncompressed_size = len(data)
     header = struct.pack(">I", uncompressed_size)
 

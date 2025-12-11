@@ -52,7 +52,6 @@ def _get_user_logging_config() -> dict[str, Any]:
         config = load_config()
         logging_config = config.get("logging", {})
 
-        # Validate that it's actually a dict before returning
         if isinstance(logging_config, dict):
             return logging_config
         return {}
@@ -80,7 +79,6 @@ def _build_logging_config(
     max_bytes = user_config.get("max_size_mb", 10) * 1024 * 1024
     backup_count = user_config.get("backup_count", DEFAULT_LOG_BACKUP_COUNT)
 
-    # Ensure log directory exists
     log_file = get_log_path()
 
     console_fmt = (
@@ -89,7 +87,7 @@ def _build_logging_config(
 
     config: dict[str, Any] = {
         "version": 1,
-        "disable_existing_loggers": False,  # Critical: don't disable pre-existing loggers
+        "disable_existing_loggers": False,
         "formatters": {
             "console": {"format": console_fmt},
             "file": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
@@ -108,7 +106,6 @@ def _build_logging_config(
         },
     }
 
-    # Add file handler if enabled
     if file_enabled:
         config["handlers"]["file"] = {
             "class": "logging.handlers.RotatingFileHandler",
@@ -148,7 +145,6 @@ def setup_logging(
         config = _build_logging_config(verbose=verbose, console_format=console_format)
         logging.config.dictConfig(config)
     except Exception as e:
-        # Fallback to basic config if dictConfig fails
         sys.stderr.write(f"WARNING: Failed to configure logging: {e}\n")
         logging.basicConfig(
             level=logging.DEBUG if verbose else logging.INFO,

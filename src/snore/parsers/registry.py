@@ -60,20 +60,16 @@ class ParserRegistry:
         """
         parser_id = parser.parser_id
 
-        # Check for duplicate IDs
         if parser_id in self._parsers_by_id:
             existing = self._parsers_by_id[parser_id]
             raise ValueError(
                 f"Parser ID '{parser_id}' already registered by {existing.__class__.__name__}"
             )
 
-        # Add to main list
         self._parsers.append(parser)
 
-        # Index by ID
         self._parsers_by_id[parser_id] = parser
 
-        # Index by manufacturer
         manufacturer = parser.manufacturer.lower()
         if manufacturer not in self._parsers_by_manufacturer:
             self._parsers_by_manufacturer[manufacturer] = []
@@ -96,13 +92,10 @@ class ParserRegistry:
 
         parser = self._parsers_by_id[parser_id]
 
-        # Remove from main list
         self._parsers.remove(parser)
 
-        # Remove from ID index
         del self._parsers_by_id[parser_id]
 
-        # Remove from manufacturer index
         manufacturer = parser.manufacturer.lower()
         if manufacturer in self._parsers_by_manufacturer:
             self._parsers_by_manufacturer[manufacturer].remove(parser)
@@ -141,21 +134,17 @@ class ParserRegistry:
             logger.warning(f"Path does not exist: {path}")
             return None
 
-        # Build list of parsers to try
         parsers_to_try = []
 
-        # If manufacturer hint provided, try those first
         if manufacturer_hint:
             hint_lower = manufacturer_hint.lower()
             if hint_lower in self._parsers_by_manufacturer:
                 parsers_to_try.extend(self._parsers_by_manufacturer[hint_lower])
 
-        # Add all other parsers
         for parser in self._parsers:
             if parser not in parsers_to_try:
                 parsers_to_try.append(parser)
 
-        # Try each parser and track results
         best_match: tuple[DeviceParser, ParserDetectionResult] | None = None
 
         for parser in parsers_to_try:
@@ -167,14 +156,12 @@ class ParserRegistry:
                         f"Parser {parser.parser_id} detected data with confidence {result.confidence}"
                     )
 
-                    # Track best match
                     if (
                         best_match is None
                         or result.confidence > best_match[1].confidence
                     ):
                         best_match = (parser, result)
 
-                    # If perfect confidence, stop searching
                     if result.confidence >= 1.0:
                         break
 
@@ -369,8 +356,6 @@ class ParserRegistry:
         return f"ParserRegistry with {self.parser_count} parsers for {len(manufacturers)} manufacturers"
 
 
-# Global singleton registry instance
-# Import this in other modules to register/use parsers
 parser_registry = ParserRegistry()
 
 

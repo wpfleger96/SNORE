@@ -23,14 +23,12 @@ class TestProfileValidation:
         """Valid profile should be returned."""
         from snore.database.models import Profile
 
-        # Create a test profile
         profile = Profile(
             username="test_user_validation", first_name="Test", last_name="User"
         )
         initialized_db.add(profile)
         initialized_db.commit()
 
-        # Validate should return the profile
         result = validate_profile_exists("test_user_validation")
 
         assert result is not None
@@ -43,7 +41,6 @@ class TestProfileValidation:
         with pytest.raises(ValueError) as exc_info:
             validate_profile_exists("nonexistent_user")
 
-        # Verify error message is helpful
         error_msg = str(exc_info.value)
         assert "not found" in error_msg.lower()
         assert "nonexistent_user" in error_msg
@@ -57,11 +54,9 @@ class TestProfileValidation:
         initialized_db.add(profile)
         initialized_db.commit()
 
-        # Exact match should work
         result = validate_profile_exists("TestUser")
         assert result.username == "TestUser"
 
-        # Different case should fail
         with pytest.raises(ValueError):
             validate_profile_exists("testuser")
 
@@ -78,16 +73,16 @@ class TestDateValidation:
         """Test various valid date formats."""
         assert validate_date_format("2024-01-01") == date(2024, 1, 1)
         assert validate_date_format("2024-12-31") == date(2024, 12, 31)
-        assert validate_date_format("2024-02-29") == date(2024, 2, 29)  # Leap year
+        assert validate_date_format("2024-02-29") == date(2024, 2, 29)
 
     def test_invalid_date_format_raises_error(self):
         """Invalid date formats should raise ValueError."""
         invalid_formats = [
-            "11/05/2024",  # US format
-            "05-11-2024",  # DD-MM-YYYY
-            "Nov 5 2024",  # Text month
-            "2024/11/05",  # Slashes instead of dashes
-            "not-a-date",  # Invalid
+            "11/05/2024",
+            "05-11-2024",
+            "Nov 5 2024",
+            "2024/11/05",
+            "not-a-date",
         ]
 
         for invalid_format in invalid_formats:
@@ -101,10 +96,10 @@ class TestDateValidation:
     def test_invalid_date_values(self):
         """Invalid date values should raise ValueError."""
         invalid_dates = [
-            "2024-02-30",  # Invalid day for February
-            "2024-13-01",  # Invalid month
-            "2024-00-01",  # Invalid month (zero)
-            "2024-01-00",  # Invalid day (zero)
+            "2024-02-30",
+            "2024-13-01",
+            "2024-00-01",
+            "2024-01-00",
         ]
 
         for invalid_date in invalid_dates:

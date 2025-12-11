@@ -20,9 +20,8 @@ class ValidatedJSON(TypeDecorator[dict[str, Any]]):
         class MyModel(Base):
             data = Column(ValidatedJSON, nullable=False)
 
-        # Usage
-        obj.data = {"key": "value"}  # Automatically validated and serialized
-        print(obj.data)  # Automatically deserialized to dict
+        obj.data = {"key": "value"}
+        print(obj.data)
     """
 
     impl = Text
@@ -87,9 +86,8 @@ class ValidatedJSONWithDefault(ValidatedJSON):
         class MyModel(Base):
             metadata = Column(ValidatedJSONWithDefault)
 
-        # Usage
         obj.metadata = None
-        print(obj.metadata)  # Returns {} instead of None
+        print(obj.metadata)
     """
 
     def process_result_value(self, value: str | None, dialect: Any) -> Any:

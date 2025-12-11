@@ -150,8 +150,6 @@ class TestMetricsRealism:
         )
 
         for breath in breaths:
-            # Allow slight tolerance for floating-point edge cases near threshold
-            # Breaths validated at boundary may be slightly below 1.0s after slicing
             assert 0.95 <= breath.duration <= 20.0, (
                 f"Breath duration out of range: {breath.duration}"
             )
@@ -182,7 +180,7 @@ class TestFeatureVariability:
         extractor = WaveformFeatureExtractor()
         flatness_values = []
 
-        for breath in breaths[:50]:  # Test first 50 breaths
+        for breath in breaths[:50]:
             start_idx = int(breath.start_time * metadata["sample_rate"])
             end_idx = int(breath.end_time * metadata["sample_rate"])
             breath_flow = flow_values[start_idx:end_idx]
@@ -192,7 +190,6 @@ class TestFeatureVariability:
             )
             flatness_values.append(shape.flatness_index)
 
-        # Should have some variation (not all breaths identical)
         assert np.std(flatness_values) > 0.05, "No variation in flatness index"
 
     def test_amplitude_shows_variation(self, recorded_session):
@@ -211,5 +208,4 @@ class TestFeatureVariability:
 
         amplitudes = [b.amplitude for b in breaths]
 
-        # Should have meaningful variation
         assert np.std(amplitudes) > 2.0, "No variation in breath amplitude"

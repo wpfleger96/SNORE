@@ -173,7 +173,6 @@ class AnalysisService:
         except Exception as e:
             logger.info(f"No SpO2 data available: {e}")
 
-        # Breath segmentation
         breaths = self.breath_segmenter.segment_breaths(
             timestamps, flow_values, sample_rate
         )
@@ -182,7 +181,6 @@ class AnalysisService:
         if not breaths:
             raise ValueError(f"No breaths segmented for session {session_id}")
 
-        # Feature extraction for flow limitation analysis
         breath_features = []
         for breath in breaths:
             breath_start_idx = np.searchsorted(timestamps, breath.start_time)
@@ -200,11 +198,9 @@ class AnalysisService:
                 )
                 breath_features.append((breath.breath_number, shape, peaks))
 
-        # Flow limitation analysis
         flow_analysis = self.flow_classifier.analyze_session(breath_features)
         logger.info(f"Flow limitation index: {flow_analysis.flow_limitation_index:.3f}")
 
-        # Pattern detection
         tidal_volumes = np.array([b.tidal_volume for b in breaths])
         breath_timestamps = np.array([b.start_time for b in breaths])
         respiratory_rates = np.array([b.respiratory_rate_rolling for b in breaths])
@@ -217,7 +213,6 @@ class AnalysisService:
             breath_timestamps, tidal_volumes, respiratory_rates
         )
 
-        # Event detection via modes
         mode_results = {}
         for mode_name in modes:
             try:

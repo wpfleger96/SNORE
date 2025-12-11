@@ -8,10 +8,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TypedDict
 
-# ============================================================================
-# Machine Types
-# ============================================================================
-
 
 class MachineType(str, Enum):
     """CPAP device types supported by OSCAR."""
@@ -23,11 +19,6 @@ class MachineType(str, Enum):
     OXIMETER = "Oximeter"
     POSITION = "Position"
     SLEEP_STAGE = "SleepStage"
-
-
-# ============================================================================
-# Channel Types
-# ============================================================================
 
 
 class ChannelType(str, Enum):
@@ -56,10 +47,6 @@ class CalculationType(str, Enum):
     CPH = "cph"  # Count per hour
     SPH = "sph"  # Sum per hour
 
-
-# ============================================================================
-# Channel IDs
-# ============================================================================
 
 # CPAP Pressure Channels
 CPAP_PRESSURE = 0x1000
@@ -115,11 +102,6 @@ POS_POSITION = 0x3000
 SLEEP_STAGE = 0x4000
 
 
-# ============================================================================
-# Channel Definitions
-# ============================================================================
-
-
 class ChannelDefinition:
     """Definition of a data channel."""
 
@@ -144,9 +126,7 @@ class ChannelDefinition:
         self.calculations = calculations or []
 
 
-# Map of channel IDs to their definitions
 CHANNEL_DEFINITIONS: dict[int, ChannelDefinition] = {
-    # Pressure channels
     CPAP_PRESSURE: ChannelDefinition(
         CPAP_PRESSURE,
         "CPAP_Pressure",

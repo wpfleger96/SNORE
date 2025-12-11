@@ -51,7 +51,6 @@ class DeviceParser(ABC):
                 return (path / "STR.edf").exists()
 
             def parse_sessions(self, path):
-                # Parse ResMed EDF+ files
                 yield unified_session
 
     The rest of the system doesn't need to know anything about ResMed!
@@ -79,7 +78,6 @@ class DeviceParser(ABC):
                 description="Parser for ResMed EDF+ files"
             )
         """
-        pass
 
     @abstractmethod
     def detect(self, path: Path) -> ParserDetectionResult:
@@ -96,7 +94,6 @@ class DeviceParser(ABC):
             ParserDetectionResult indicating if this parser can handle the data
 
         Example:
-            # ResMed parser checks for STR.edf and DATALOG folder
             str_file = path / "STR.edf"
             datalog = path / "DATALOG"
             if str_file.exists() and datalog.is_dir():
@@ -107,7 +104,6 @@ class DeviceParser(ABC):
                 )
             return ParserDetectionResult(detected=False)
         """
-        pass
 
     @abstractmethod
     def get_device_info(self, path: Path) -> DeviceInfo:
@@ -161,15 +157,12 @@ class DeviceParser(ABC):
 
         Example:
             for session_file in self._find_session_files(path):
-                # Parse native format
                 native_data = self._parse_native_format(session_file)
 
-                # Convert to unified format
                 unified = self._to_unified_session(native_data)
 
                 yield unified
         """
-        pass
 
     def parse_single_session(
         self, path: Path, session_id: str

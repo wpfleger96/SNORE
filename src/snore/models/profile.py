@@ -17,7 +17,6 @@ class ProfileSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    # Computed fields
     machine_count: int = Field(default=0, description="Number of devices")
     total_days: int = Field(default=0, description="Total days of therapy data")
     date_range_start: date | None = Field(default=None, description="First day of data")
@@ -55,7 +54,6 @@ class ProfileDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    # Therapy summary
     total_therapy_hours: float = Field(default=0, description="Total hours of therapy")
     avg_ahi: float | None = Field(
         default=None, description="Average AHI across all days"

@@ -602,7 +602,6 @@ def list_sessions(
         init_database()
 
     with session_scope() as session:
-        # Build base WHERE clause for both count and data queries
         where_clause = "WHERE 1=1"
         params: dict[str, Any] = {}
 
@@ -733,7 +732,6 @@ def delete_sessions(
     else:
         init_database()
 
-    # Validate that at least one filter is provided
     if not any([session_ids, from_date, to_date, delete_all]):
         click.echo("❌ Error: You must specify at least one filter:", err=True)
         click.echo("  • --session-id <ids>")
@@ -928,7 +926,6 @@ def delete_analysis(
     else:
         init_database()
 
-    # Validate that at least one filter is provided
     if not any([session_ids, from_date, to_date, delete_all]):
         raise click.ClickException(
             "You must specify at least one filter:\n"
@@ -939,7 +936,6 @@ def delete_analysis(
         )
 
     with session_scope() as session:
-        # Build query to select sessions with analysis
         query = """
             SELECT DISTINCT
                 sessions.id,
@@ -990,10 +986,8 @@ def delete_analysis(
             )
             return 0
 
-        # Get session IDs
         session_ids_list = [s.id for s in sessions_with_analysis]
 
-        # Count analysis records per session
         analysis_counts = session.execute(
             text(
                 """
@@ -1013,7 +1007,6 @@ def delete_analysis(
             total_analysis_records if all_versions else len(sessions_with_analysis)
         )
 
-        # Get detected patterns count (for display)
         patterns_count = session.execute(
             text(
                 """
@@ -1027,7 +1020,6 @@ def delete_analysis(
             {"session_ids": session_ids_list},
         ).scalar()
 
-        # Display analysis to be deleted
         click.echo(f"\n{'=' * 80}")
         if dry_run:
             click.echo("🔍 DRY RUN MODE - No data will be deleted")
@@ -1056,7 +1048,6 @@ def delete_analysis(
                 f"{device_name:<25}"
             )
 
-        # Display summary
         click.echo("\n" + "=" * 80)
         click.echo("📊 Deletion Summary")
         click.echo("=" * 80)
@@ -1083,7 +1074,6 @@ def delete_analysis(
         )
         click.echo("=" * 80 + "\n")
 
-        # Dry-run mode: exit without deleting
         if dry_run:
             click.echo("✓ Dry run complete. Use without --dry-run to delete.")
             return 0
@@ -1098,9 +1088,7 @@ def delete_analysis(
                 click.echo("Deletion cancelled")
                 return 0
 
-        # Perform deletion
         if all_versions:
-            # Delete all analysis records for matching sessions
             session.execute(
                 text(
                     "DELETE FROM analysis_results WHERE session_id IN :session_ids"
@@ -1109,10 +1097,8 @@ def delete_analysis(
             )
             deleted_count = records_to_delete
         else:
-            # Delete only the latest analysis record per session
             deleted_count = 0
             for session_id in session_ids_list:
-                # Get the latest analysis ID for this session
                 latest_result = session.execute(
                     text(
                         """
@@ -1138,7 +1124,6 @@ def delete_analysis(
             f"\n✓ Successfully deleted {deleted_count} analysis record(s) for {len(sessions_with_analysis)} session(s)"
         )
 
-        # Suggest vacuum for large deletions
         if deleted_count > 10:
             click.echo("\n💡 Tip: Run 'snore db vacuum' to reclaim disk space")
 
@@ -1576,7 +1561,6 @@ def show(
                 sys.exit(1)
             session_id = db_session.id
 
-        # At this point session_id is guaranteed to be set (either from parameter or date lookup)
         assert session_id is not None, "session_id should not be None"
 
         analysis_service = AnalysisService(session)
@@ -1600,7 +1584,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
 
     click.echo(f"\nSession Duration: {result.session_duration_hours:.1f} hours")
 
-    # Display machine events
     machine_events = result.machine_events
     if machine_events:
         machine_event_counts: dict[str, int] = {}
@@ -1634,7 +1617,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
         if h_count > 0:
             click.echo(f"    - Hypopneas (H): {h_count}")
 
-    # Display results for each mode
     for mode_name, mode_result in result.mode_results.items():
         click.echo("\n" + "─" * 60)
         click.echo(f"MODE: {mode_name}")
@@ -1646,7 +1628,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
 
         if mode_result.apneas:
             click.echo(f"    - Apneas: {len(mode_result.apneas)}")
-            # Count by type
             for apnea_type in ["OA", "CA", "MA", "UA"]:
                 count = sum(1 for a in mode_result.apneas if a.event_type == apnea_type)
                 if count > 0:
@@ -1655,14 +1636,12 @@ def _display_analysis_result(result: AnalysisResult) -> None:
         if mode_result.hypopneas:
             click.echo(f"    - Hypopneas: {len(mode_result.hypopneas)}")
 
-        # Calculate match rate if machine events available
         if machine_events:
-            # Simple matching: count events within tolerance
             matched = 0
             for mode_apnea in mode_result.apneas:
                 for machine_event in machine_events:
                     time_diff = abs(mode_apnea.start_time - machine_event.start_time)
-                    if time_diff <= 5.0:  # 5 second tolerance
+                    if time_diff <= 5.0:
                         matched += 1
                         break
 
@@ -1671,7 +1650,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
                 f"  Match Rate: {match_rate:.0f}% ({matched}/{len(machine_events)} machine events)"
             )
 
-    # Display flow limitation if available
     if result.flow_analysis:
         click.echo("\n" + "─" * 60)
         click.echo("FLOW LIMITATION ANALYSIS")
@@ -1686,7 +1664,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
             click.echo("  Class Distribution:")
             class_distribution = result.flow_analysis["class_distribution"]
 
-            # Show all 7 classes
             for class_num in range(1, 8):
                 class_info = FLOW_LIMITATION_CLASSES[class_num]
                 # Handle both int keys (fresh) and string keys (from JSON/DB)
@@ -1730,7 +1707,6 @@ def _analyze_single_session(
         if not db_session:
             click.echo(f"Error: Session {session_id} not found", err=True)
             sys.exit(1)
-        # Use Day.date for consistency
         day_date = (
             db_session.day.date if db_session.day else db_session.start_time.date()
         )
@@ -1742,7 +1718,6 @@ def _analyze_single_session(
 
     assert session_id is not None, "session_id should not be None"
 
-    # Build modes list (None = use default)
     modes = None
     if all_modes:
         modes = list(AVAILABLE_CONFIGS.keys())
@@ -1794,7 +1769,6 @@ def _analyze_batch(
         click.echo("No sessions found for the specified criteria")
         return
 
-    # Build modes list (None = use default)
     modes = None
     if all_modes:
         modes = list(AVAILABLE_CONFIGS.keys())
@@ -1841,26 +1815,21 @@ def _list_sessions(
     Args:
         limit: Maximum sessions to show (0 for unlimited)
     """
-    # Build query
     query = (
         session.query(models.Session)
         .join(models.Day)
         .filter(models.Day.profile_id == prof.id)
     )
 
-    # Apply date filters if specified
     if start:
         query = query.filter(models.Day.date >= start.date())
     if end:
         query = query.filter(models.Day.date <= end.date())
 
-    # Order by most recent first
     query = query.order_by(models.Day.date.desc())
 
-    # Count total before limiting
     total_sessions = query.count()
 
-    # Apply limit if specified (0 means no limit)
     if limit > 0:
         query = query.limit(limit)
 
@@ -1875,7 +1844,6 @@ def _list_sessions(
     )
     click.echo("-" * 60)
 
-    # Track displayed count (may be less than len(sessions) with analyzed_only)
     displayed_count = 0
 
     for db_session in sessions:
@@ -1901,8 +1869,6 @@ def _list_sessions(
         analyzed_str = "✓" if has_analysis else "✗"
         analysis_id_str = str(analysis.id) if analysis else "-"
 
-        # Use Day.date for consistency with --date queries
-        # Fallback to start_time.date() if session somehow lacks day assignment
         day_date = (
             db_session.day.date if db_session.day else db_session.start_time.date()
         )
@@ -1911,7 +1877,6 @@ def _list_sessions(
             f"{analyzed_str:<10} {analysis_id_str:<12}"
         )
 
-    # Show helpful messages
     if analyzed_only and displayed_count > 0:
         click.echo(f"\nShowing {displayed_count} analyzed session(s)")
     elif limit > 0 and total_sessions > limit:

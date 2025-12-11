@@ -33,7 +33,6 @@ class EDFSignalInfo(BaseModel):
     samples_per_record: int = Field(ge=0, description="Samples per data record")
     signal_index: int = Field(ge=0, description="Signal index in EDF file")
 
-    # Computed values
     gain: float = Field(default=0.0, description="Digital->physical gain")
     offset: float = Field(default=0.0, description="Digital->physical offset")
 
@@ -41,7 +40,6 @@ class EDFSignalInfo(BaseModel):
     @classmethod
     def compute_conversion_params(cls, v: float, info: Any) -> float:
         """Calculate gain and offset for digital->physical conversion."""
-        # This runs during initialization, compute from other fields
         values = info.data
         if "digital_min" in values and "digital_max" in values:
             digital_range = values["digital_max"] - values["digital_min"]

@@ -15,7 +15,6 @@ from snore.database.models import Session as SessionModel
 class DayManager:
     """Manages day splitting and aggregation logic (OSCAR-compatible)."""
 
-    # Default day split time (noon, like OSCAR)
     DEFAULT_SPLIT_TIME = time(12, 0)
 
     @classmethod
@@ -74,7 +73,7 @@ class DayManager:
         if not day:
             day = Day(profile_id=profile_id, date=day_date)
             db_session.add(day)
-            db_session.flush()  # Get day.id for session linking
+            db_session.flush()
 
         cls._aggregate_day_statistics(day, db_session)
 

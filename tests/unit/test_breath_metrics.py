@@ -33,7 +33,6 @@ class TestTidalVolumeCalculation:
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         for breath in breaths:
-            # Reasonable range for adults
             assert 100 <= breath.tidal_volume <= 1500
 
     def test_tidal_volume_scales_with_amplitude(self):
@@ -66,27 +65,21 @@ class TestRespiratoryRateCalculation:
     def test_respiratory_rate_fast_breathing(self):
         """Fast breathing (short duration) should give high RR."""
         segmenter = BreathSegmenter()
-        t, flow = generate_sinusoidal_breath(
-            duration=2.0, amplitude=30.0
-        )  # 30 breaths/min
+        t, flow = generate_sinusoidal_breath(duration=2.0, amplitude=30.0)
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         if breaths:
-            # 2 second breath = 30 breaths/min
             assert breaths[0].respiratory_rate >= 25
 
     def test_respiratory_rate_slow_breathing(self):
         """Slow breathing (long duration) should give low RR."""
         segmenter = BreathSegmenter()
-        t, flow = generate_sinusoidal_breath(
-            duration=6.0, amplitude=30.0
-        )  # 10 breaths/min
+        t, flow = generate_sinusoidal_breath(duration=6.0, amplitude=30.0)
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         if breaths:
-            # 6 second breath = 10 breaths/min
             assert breaths[0].respiratory_rate <= 12
 
     def test_rolling_rr_vs_instantaneous(self):
@@ -102,7 +95,6 @@ class TestRespiratoryRateCalculation:
             inst_rr = [b.respiratory_rate for b in breaths[5:]]
             roll_rr = [b.respiratory_rate_rolling for b in breaths[5:]]
 
-            # Rolling should have lower std dev (more stable)
             assert np.std(roll_rr) <= np.std(inst_rr)
 
 
@@ -118,18 +110,16 @@ class TestIERatioCalculation:
 
         for breath in breaths:
             if breath.is_complete:
-                # Physiological range
                 assert 0.3 <= breath.i_e_ratio <= 3.0
 
     def test_ie_ratio_symmetric_breath(self):
         """Symmetric breath should have I:E ratio near 1.0."""
         segmenter = BreathSegmenter()
-        t, flow = generate_sinusoidal_breath(duration=4.0)  # Symmetric
+        t, flow = generate_sinusoidal_breath(duration=4.0)
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         if breaths and breaths[0].is_complete:
-            # Should be close to 1:1
             assert 0.8 <= breaths[0].i_e_ratio <= 1.2
 
 
@@ -147,7 +137,6 @@ class TestAmplitudeCalculation:
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         for breath in breaths:
-            # peak_exp_flow is already absolute value (see breath_segmenter.py:390)
             calculated_amp = breath.peak_inspiratory_flow + breath.peak_expiratory_flow
             assert abs(breath.amplitude - calculated_amp) < 0.01
 
@@ -184,7 +173,6 @@ class TestBreathCompleteness:
 
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
-        # All returned breaths should be complete
         for breath in breaths:
             assert breath.is_complete
 
@@ -225,20 +213,18 @@ class TestBreathValidationHelpers:
         breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
 
         if breaths:
-            # Should not raise
             assert_breath_valid(breaths[0])
 
     def test_assert_breath_valid_catches_invalid(self):
         """Invalid breath should fail validation."""
         from snore.analysis.shared.breath_segmenter import BreathMetrics
 
-        # Create invalid breath (negative duration) using model_construct to bypass Pydantic validation
         bad_breath = BreathMetrics.model_construct(
             breath_number=1,
             start_time=10.0,
-            middle_time=5.0,  # Before start!
-            end_time=0.0,  # Before start!
-            duration=-5.0,  # Negative!
+            middle_time=5.0,
+            end_time=0.0,
+            duration=-5.0,
             tidal_volume=500.0,
             tidal_volume_smoothed=500.0,
             peak_inspiratory_flow=30.0,
