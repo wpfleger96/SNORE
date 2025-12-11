@@ -137,12 +137,13 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 
 ## Common Gotchas
 
-1. **Refresh after relationship changes:** `db_session.refresh(session)` after adding statistics
-2. **Integration test isolation:** Use `reset_database_state()` autouse fixture pattern
-3. **WAL cleanup:** Temp databases need `-wal` and `-shm` file cleanup
-4. **Profile resolution:** CLI flag > config > auto-detect fallback chain
-5. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
-6. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
+1. **OSCAR day-splitting logic:** Sessions before noon belong to previous day (e.g., 01:50 AM Dec 8 = Dec 7's sleep). Use `Day.date` for display/queries, not `session.start_time.date()`. See `day_manager.py:45-47` and `cli.py:664` (list-sessions uses day_date with fallback)
+2. **Refresh after relationship changes:** `db_session.refresh(session)` after adding statistics
+3. **Integration test isolation:** Use `reset_database_state()` autouse fixture pattern
+4. **WAL cleanup:** Temp databases need `-wal` and `-shm` file cleanup
+5. **Profile resolution:** CLI flag > config > auto-detect fallback chain
+6. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
+7. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
 
 ## Key Files by Task
 

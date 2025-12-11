@@ -629,12 +629,14 @@ def list_sessions(
                 sessions.duration_seconds,
                 devices.manufacturer,
                 devices.model,
-                profiles.username as profile_name
+                profiles.username as profile_name,
+                days.date as day_date
             FROM sessions
             JOIN devices ON sessions.device_id = devices.id
             LEFT JOIN profiles ON devices.profile_id = profiles.id
+            LEFT JOIN days ON sessions.day_id = days.id
             {where_clause}
-            ORDER BY sessions.start_time DESC
+            ORDER BY COALESCE(days.date, DATE(sessions.start_time)) DESC, sessions.start_time DESC
         """
 
         if limit > 0:
@@ -659,6 +661,7 @@ def list_sessions(
                 if isinstance(sess.start_time, str)
                 else sess.start_time
             )
+            display_date = sess.day_date if sess.day_date else start.date()
             duration_hours = (
                 sess.duration_seconds / 3600 if sess.duration_seconds else 0
             )
@@ -673,7 +676,7 @@ def list_sessions(
             ahi = f"{stats.ahi:.1f}" if stats and stats.ahi is not None else "N/A"
 
             click.echo(
-                f"{start:%Y-%m-%d}   {sess.session_id:<6} {start:%H:%M:%S}  "
+                f"{display_date}   {sess.session_id:<6} {start:%H:%M:%S}  "
                 f"{duration_hours:>6.1f}h    "
                 f"{profile_name:<15} "
                 f"{device_name:<20} "
