@@ -169,13 +169,15 @@ uv run snore analyze --list
 ```
 
 **Available Detection Modes:**
-- `aasm` (default) - AASM Scoring Manual v2.6 compliant detection
+- `aasm` (default) - AASM Scoring Manual v2.6 compliant detection with 3% SpO2 desaturation
 - `aasm_relaxed` - AASM-based with relaxed thresholds for machine matching
+- `resmed` - ResMed machine approximation using flow-only hypopnea detection
 
 **Analysis Output:**
-- Detected apneas (obstructive, central, mixed, unspecified)
-- Detected hypopneas
-- AHI (Apnea-Hypopnea Index) and RDI (Respiratory Disturbance Index)
+- Detected apneas (obstructive, central, mixed, unspecified) with confidence levels
+- Detected hypopneas (configurable modes: AASM 3%/4% SpO2, flow-only, disabled)
+- Detected RERAs (Respiratory Effort-Related Arousals)
+- AHI (Apnea-Hypopnea Index) and RDI (Respiratory Disturbance Index including RERAs)
 - Flow limitation analysis
 - Complex pattern detection (CSR, periodic breathing)
 

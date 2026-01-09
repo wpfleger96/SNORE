@@ -550,8 +550,6 @@ class FlowLimitationClassInfo(TypedDict):
     clinical_significance: str
     severity: str
     weight: float
-    reference_image: str
-    reference_section: str
 
 
 FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
@@ -562,8 +560,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Healthy unobstructed breathing pattern",
         "severity": "normal",
         "weight": 0.0,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 1",
     },
     2: {
         "name": "Double Peak",
@@ -572,8 +568,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Mild flow limitation - upper airway reopening after initial collapse",
         "severity": "mild",
         "weight": 0.3,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 2",
     },
     3: {
         "name": "Flattened with Multiple Peaks",
@@ -582,8 +576,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Mild-moderate flow limitation - soft tissue vibration during inspiration",
         "severity": "mild-moderate",
         "weight": 0.4,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 3",
     },
     4: {
         "name": "Peak During Initial Phase",
@@ -592,8 +584,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Moderate flow limitation - initial opening followed by restricted flow",
         "severity": "moderate",
         "weight": 0.6,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 4",
     },
     5: {
         "name": "Peak at Midpoint",
@@ -602,8 +592,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Moderate-severe flow limitation - intensive phasic muscle activity",
         "severity": "moderate-severe",
         "weight": 0.7,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 5",
     },
     6: {
         "name": "Peak During Late Phase",
@@ -612,8 +600,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Severe flow limitation - marked tracheal support during lung inflation",
         "severity": "severe",
         "weight": 0.9,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 6",
     },
     7: {
         "name": "Plateau Throughout",
@@ -622,8 +608,6 @@ FLOW_LIMITATION_CLASSES: dict[int, FlowLimitationClassInfo] = {
         "clinical_significance": "Severe flow limitation - collapsed noncompliant upper airway",
         "severity": "severe",
         "weight": 1.0,
-        "reference_image": "data/guidelines/images/flow_limitation/OSCAR_flow_limitation_classes.png",
-        "reference_section": "Class 7",
     },
 }
 
@@ -695,16 +679,6 @@ DEFAULT_LOG_BACKUP_COUNT = 5
 
 # CLI display defaults
 DEFAULT_LIST_SESSIONS_LIMIT = 20
-
-# Knowledge base image paths (relative to project root)
-KNOWLEDGE_IMAGE_BASE = Path("data/guidelines/images")
-IMAGE_DIRS = {
-    "flow_limitation": KNOWLEDGE_IMAGE_BASE / "flow_limitation",
-    "events": KNOWLEDGE_IMAGE_BASE / "events",
-    "patterns": KNOWLEDGE_IMAGE_BASE / "patterns",
-    "charts": KNOWLEDGE_IMAGE_BASE / "charts",
-    "ui": KNOWLEDGE_IMAGE_BASE / "ui",
-}
 
 # ============================================================================
 # Parser Configuration

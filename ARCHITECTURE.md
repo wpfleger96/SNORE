@@ -201,13 +201,24 @@ analysis/
    - Time-based baseline (120 seconds, 2 minutes)
    - 90% validation threshold
    - Strict apnea detection (≥90% flow reduction)
-   - Hypopnea detection (30-89% reduction)
+   - Hypopnea detection (30% flow + 3% SpO2 desaturation)
+   - RERA detection enabled
 
 2. **AASM Relaxed Mode**
    - AASM-based with relaxed thresholds
    - Breath-based baseline (30 breaths)
    - 85% validation threshold
+   - Hypopnea detection (30% flow + 3% SpO2 desaturation)
+   - RERA detection enabled
    - Better for matching machine-detected events
+
+3. **ResMed Mode**
+   - Approximates ResMed machine detection logic
+   - Breath-based baseline (40 breaths)
+   - 85% validation threshold
+   - Flow-only hypopnea detection (40% reduction, no SpO2 required)
+   - RERA detection enabled
+   - Designed to match ResMed AirSense/AirCurve event counts
 
 **Configuration Parameters:**
 ```python
@@ -221,9 +232,18 @@ DetectionModeConfig(
     hypopnea_max_threshold=0.89,
     min_event_duration=10.0,
     merge_gap=3.0,
-    metric="amplitude"
+    metric="amplitude",
+    hypopnea_mode=HypopneaMode.AASM_3PCT | AASM_4PCT | FLOW_ONLY | DISABLED,
+    hypopnea_flow_only_fallback=True,  # Fallback if no SpO2 data
+    rera_detection_enabled=True  # Detect RERA-like events
 )
 ```
+
+**Hypopnea Detection Modes:**
+- `AASM_3PCT` - 30% flow + 3% SpO2 drop (AASM recommended)
+- `AASM_4PCT` - 30% flow + 4% SpO2 drop (CMS/Medicare)
+- `FLOW_ONLY` - 40% flow reduction (ResMed-style, no SpO2)
+- `DISABLED` - Skip hypopnea detection
 
 ### Analysis Pipeline
 
@@ -244,9 +264,10 @@ DetectionModeConfig(
    → Detects periodic breathing
    ↓
 6. EventDetector.detect_events() (per mode)
-   → Detects apneas (obstructive, central, mixed, unspecified)
-   → Detects hypopneas
-   → Calculates AHI, RDI
+   → Detects apneas (obstructive, central, mixed, unspecified) with confidence levels
+   → Detects hypopneas (mode-dependent: SpO2-based or flow-only)
+   → Detects RERAs (Respiratory Effort-Related Arousals)
+   → Calculates AHI, RDI (includes RERAs)
    ↓
 7. AnalysisResult (stored in database)
    → mode_results: {mode_name: ModeResult}
@@ -262,7 +283,7 @@ DetectionModeConfig(
 
 **Key Types:**
 - `BreathMetrics` - Individual breath measurements (Pydantic)
-- `ApneaEvent`, `HypopneaEvent` - Detected events (Pydantic)
+- `ApneaEvent`, `HypopneaEvent`, `RERAEvent` - Detected events (Pydantic)
 - `ModeResult` - Per-mode detection results (Pydantic)
 - `AnalysisResult` - Complete analysis output (Pydantic)
 - `DetectionModeConfig` - Mode configuration (frozen Pydantic)

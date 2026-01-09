@@ -38,10 +38,10 @@ uv run snore --version                         # Show version and check for upda
 src/snore/
 ├── cli.py              # CLI commands (Click)
 ├── config.py           # Configuration management
-├── constants.py        # Channel IDs, mappings
+├── constants.py        # Channel IDs, mappings, flow limitation classes
 ├── analysis/           # Analysis algorithms
 │   ├── shared/         # Breath segmentation, feature extraction, flow limitation
-│   ├── modes/          # Event detection modes (AASM, AASM Relaxed)
+│   ├── modes/          # Event detection modes (AASM, AASM Relaxed, ResMed)
 │   └── service.py      # AnalysisService orchestrator (direct component calls)
 ├── database/           # SQLAlchemy ORM layer
 │   ├── models.py       # DB models
@@ -52,6 +52,12 @@ src/snore/
     ├── base.py         # DeviceParser abstract class
     ├── registry.py     # parser_registry singleton
     └── resmed_edf.py   # ResMed EDF+ parser
+docs/
+├── apnea_detection_reference.md  # Algorithm guide with Vancouver-style citations
+├── manufacturers/resmed.md        # ResMed-specific documentation
+└── references/                    # Research papers, clinical guidelines (9 PDFs)
+    ├── README.md                  # Index with full citations
+    └── PMC*.pdf                   # Open-access research papers
 tests/
 ├── conftest.py         # Main fixtures
 ├── fixtures/           # Test data (recorded sessions, device data)
@@ -124,11 +130,12 @@ with session_scope() as session:
 **Analysis Architecture:** Direct orchestration in `service.py`:
 - BreathSegmenter → feature extraction → FlowLimitationClassifier → ComplexPatternDetector → EventDetector
 - Event detection via modes with `DetectionModeConfig`:
-  - `aasm` - AASM Scoring Manual v2.6 compliant (default, AASM_3PCT hypopneas, RERA enabled, flow-only fallback)
-  - `aasm_relaxed` - AASM with relaxed thresholds for machine matching (breath-based baseline)
-  - `resmed` - ResMed device algorithm matching (FLOW_ONLY hypopneas at 40% threshold)
-- Detected events: Obstructive Apnea (OA), Central Apnea (CA), Mixed Apnea (MA), Hypopnea, RERA (flow-based without EEG)
-- All events include confidence scores (0-1) indicating detection quality
+  - `aasm` - AASM Scoring Manual v2.6 compliant (default, time-based baseline 120s, AASM_3PCT hypopneas with 3% SpO2 drop, RERA enabled, flow-only fallback)
+  - `aasm_relaxed` - AASM with relaxed thresholds for machine matching (breath-based baseline 30 breaths, 85% validation, AASM_3PCT hypopneas, RERA enabled)
+  - `resmed` - ResMed device algorithm matching (breath-based baseline 40 breaths, FLOW_ONLY hypopneas at 40% threshold no SpO2, RERA enabled)
+- Detected events: Obstructive Apnea (OA), Central Apnea (CA), Mixed Apnea (MA), Hypopnea (mode-dependent), RERA (flow-based without EEG)
+- All apneas include `classification_confidence` (OA/CA/MA from flow-only is approximation)
+- RDI calculation includes RERAs (AHI + RERAs/hour)
 - All types use Pydantic models (validation, serialization)
 
 **Unified Data Model:** All device data converts to `UnifiedSession` → `WaveformData` → `RespiratoryEvent`
@@ -172,6 +179,7 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 10. **RERA confidence capped at 0.7:** Flow-based RERA detection without EEG cannot exceed 0.7 confidence (true RERAs require EEG arousal). Detection uses ≥2 flow-limited breaths + recovery breath ≥50% amplitude increase.
 11. **Apnea classification confidence:** OA vs CA vs MA classification from flow-only data is approximation (true classification needs thoracic/abdominal effort bands). All apneas include `classification_confidence` field (0-1) based on effort score distinctiveness.
 12. **SpO2/Flow timestamp alignment:** `_detect_hypopneas()` validates SpO2 and flow signal lengths match before indexing. Mismatch logs warning and skips desaturation check to prevent IndexError with external oximeters at different sample rates.
+13. **Documentation citations:** Use Vancouver-style numbered citations [1], [2] in `docs/apnea_detection_reference.md`. Add PDF to `docs/references/` and update both inline citation and References section. See existing format: author list, journal, year, volume, pages, DOI, PMCID, local path, URL.
 
 ## Key Files by Task
 
@@ -188,3 +196,5 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 | Add configuration setting | `src/snore/config.py` (stored in ~/.snore/config.toml) |
 | Add test fixture | `tests/conftest.py`, `tests/helpers/` |
 | Modify channel IDs | `src/snore/constants.py` (must align with OSCAR's schema.h) |
+| Update algorithm documentation | `docs/apnea_detection_reference.md` (add inline citations [#]) |
+| Add research reference | `docs/references/` (add PDF + update README.md index) |
