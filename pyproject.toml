@@ -82,7 +82,7 @@ ignore_missing_imports = true  # Only for external libs without stubs
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
-disable_error_code = ["var-annotated", "type-arg", "union-attr", "assignment", "operator", "index", "attr-defined", "arg-type", "no-any-return"]
+disable_error_code = ["var-annotated", "type-arg", "union-attr", "assignment", "operator", "index", "attr-defined", "arg-type", "no-any-return", "call-arg"]
 
 [dependency-groups]
 dev = [

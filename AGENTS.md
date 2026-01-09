@@ -122,11 +122,13 @@ with session_scope() as session:
 ```
 
 **Analysis Architecture:** Direct orchestration in `service.py`:
-- BreathSegmenter → feature extraction → FlowLimitationClassifier → ComplexPatternDetector
+- BreathSegmenter → feature extraction → FlowLimitationClassifier → ComplexPatternDetector → EventDetector
 - Event detection via modes with `DetectionModeConfig`:
-  - `aasm` - AASM Scoring Manual v2.6 compliant (default)
-  - `aasm_relaxed` - AASM with relaxed thresholds for machine matching
-  - `resmed` - ResMed device algorithm matching
+  - `aasm` - AASM Scoring Manual v2.6 compliant (default, AASM_3PCT hypopneas, RERA enabled, flow-only fallback)
+  - `aasm_relaxed` - AASM with relaxed thresholds for machine matching (breath-based baseline)
+  - `resmed` - ResMed device algorithm matching (FLOW_ONLY hypopneas at 40% threshold)
+- Detected events: Obstructive Apnea (OA), Central Apnea (CA), Mixed Apnea (MA), Hypopnea, RERA (flow-based without EEG)
+- All events include confidence scores (0-1) indicating detection quality
 - All types use Pydantic models (validation, serialization)
 
 **Unified Data Model:** All device data converts to `UnifiedSession` → `WaveformData` → `RespiratoryEvent`
@@ -166,6 +168,10 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
    - **Installed tool (any directory)**: `snore <command>` → runs installed version from `~/.local/share/uv/tools/`
    - Running `snore` without `uv run` will NOT reflect your local changes
    - **NEVER use editable install** (`uv pip install -e .`) - risks conflicts with installed version, unnecessary complexity
+9. **Hypopnea detection modes:** `HypopneaMode` enum controls detection (AASM_3PCT, AASM_4PCT, FLOW_ONLY, DISABLED). AASM modes fall back to FLOW_ONLY (40% threshold) when no SpO2 data available unless `hypopnea_flow_only_fallback=False`. ResMed mode always uses FLOW_ONLY.
+10. **RERA confidence capped at 0.7:** Flow-based RERA detection without EEG cannot exceed 0.7 confidence (true RERAs require EEG arousal). Detection uses ≥2 flow-limited breaths + recovery breath ≥50% amplitude increase.
+11. **Apnea classification confidence:** OA vs CA vs MA classification from flow-only data is approximation (true classification needs thoracic/abdominal effort bands). All apneas include `classification_confidence` field (0-1) based on effort score distinctiveness.
+12. **SpO2/Flow timestamp alignment:** `_detect_hypopneas()` validates SpO2 and flow signal lengths match before indexing. Mismatch logs warning and skips desaturation check to prevent IndexError with external oximeters at different sample rates.
 
 ## Key Files by Task
 
@@ -175,6 +181,9 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 | Add device parser | `src/snore/parsers/base.py`, `registry.py`, create new parser file |
 | Add analysis algorithm | `src/snore/analysis/shared/` (breath/feature algorithms) or `modes/` (event detection) |
 | Add detection mode | `src/snore/analysis/modes/config.py` (add `DetectionModeConfig`), update `detector.py` |
+| Modify event detection | `src/snore/analysis/modes/detector.py` (apnea/hypopnea/RERA detection logic) |
+| Add event type | `src/snore/analysis/shared/types.py` (event models), update `detector.py`, add to `EventTimeline` |
+| Tune detection thresholds | `src/snore/analysis/modes/config.py` (DetectionModeConfig fields), validate with `validate_against_machine_events()` |
 | Modify data models | `src/snore/models/unified.py` (data), `database/models.py` (ORM), use Pydantic |
 | Add configuration setting | `src/snore/config.py` (stored in ~/.snore/config.toml) |
 | Add test fixture | `tests/conftest.py`, `tests/helpers/` |

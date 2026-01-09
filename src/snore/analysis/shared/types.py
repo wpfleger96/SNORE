@@ -87,6 +87,7 @@ class ApneaEvent(BaseModel):
         event_type: OA (obstructive), CA (central), UA (unclassified), or MA (mixed)
         flow_reduction: Percentage flow reduction (0-1)
         confidence: Detection confidence (0-1)
+        classification_confidence: Confidence in OA vs CA vs MA classification (0-1)
         baseline_flow: Baseline flow before event (L/min)
         detection_method: Method used to detect event (amplitude, gap, near_zero_flow)
     """
@@ -97,6 +98,12 @@ class ApneaEvent(BaseModel):
     event_type: Literal["OA", "CA", "MA", "UA"] = Field(description="Apnea type")
     flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
     confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
+    classification_confidence: float = Field(
+        default=0.5,
+        ge=0,
+        le=1,
+        description="Confidence in OA/CA/MA classification (0-1)",
+    )
     baseline_flow: float = Field(description="Baseline flow before event (L/min)")
     detection_method: str = Field(
         default="amplitude",
@@ -131,6 +138,38 @@ class HypopneaEvent(BaseModel):
     )
 
 
+class RERAEvent(BaseModel):
+    """
+    Detected RERA (Respiratory Effort-Related Arousal) event.
+
+    Detected from flow patterns (FLOW event algorithm) without EEG.
+    Represents sequences of flow-limited breaths ending with a recovery breath.
+
+    Attributes:
+        start_time: Event start timestamp (seconds)
+        end_time: Event end timestamp (seconds)
+        duration: Event duration (seconds)
+        obstructed_breath_count: Number of breaths showing flow limitation
+        recovery_breath_amplitude: Recovery breath amplitude increase (% vs baseline)
+        confidence: Detection confidence (0-1, lower without EEG)
+        baseline_flow: Baseline flow before event (L/min)
+    """
+
+    start_time: float = Field(description="Event start timestamp (seconds)")
+    end_time: float = Field(description="Event end timestamp (seconds)")
+    duration: float = Field(ge=0, description="Event duration (seconds)")
+    obstructed_breath_count: int = Field(
+        ge=2, description="Breaths showing flow limitation"
+    )
+    recovery_breath_amplitude: float = Field(
+        ge=0, description="Recovery breath amplitude increase (%)"
+    )
+    confidence: float = Field(
+        ge=0, le=1, description="Detection confidence (0-1, lower without EEG)"
+    )
+    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
+
+
 class EventTimeline(BaseModel):
     """
     Complete timeline of detected respiratory events.
@@ -138,16 +177,22 @@ class EventTimeline(BaseModel):
     Attributes:
         apneas: List of detected apnea events
         hypopneas: List of detected hypopnea events
+        reras: List of detected RERA events
         total_events: Total count of all events
         ahi: Apnea-Hypopnea Index (events per hour)
-        rdi: Respiratory Disturbance Index
+        rdi: Respiratory Disturbance Index (AHI + RERAs per hour)
     """
 
     apneas: list[ApneaEvent] = Field(description="Detected apnea events")
     hypopneas: list[HypopneaEvent] = Field(description="Detected hypopnea events")
+    reras: list[RERAEvent] = Field(
+        default_factory=list, description="Detected RERA events"
+    )
     total_events: int = Field(ge=0, description="Total event count")
     ahi: float = Field(ge=0, description="Apnea-Hypopnea Index (events/hour)")
-    rdi: float = Field(ge=0, description="Respiratory Disturbance Index")
+    rdi: float = Field(
+        ge=0, description="Respiratory Disturbance Index (AHI + RERAs/hour)"
+    )
 
 
 class ShapeFeatures(BaseModel):

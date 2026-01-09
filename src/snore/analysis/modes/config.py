@@ -1,6 +1,10 @@
 """Predefined detection mode configurations."""
 
-from snore.analysis.modes.types import BaselineMethod, DetectionModeConfig
+from snore.analysis.modes.types import (
+    BaselineMethod,
+    DetectionModeConfig,
+    HypopneaMode,
+)
 from snore.constants import EventDetectionConstants as EDC
 
 __all__ = [
@@ -29,6 +33,9 @@ AASM_CONFIG = DetectionModeConfig(
     min_event_duration=EDC.MIN_EVENT_DURATION,  # 10.0 seconds
     merge_gap=EDC.MERGE_GAP_SECONDS,  # 3.0 seconds
     metric="amplitude",
+    hypopnea_mode=HypopneaMode.AASM_3PCT,
+    hypopnea_flow_only_fallback=True,
+    rera_detection_enabled=True,
 )
 
 # ============================================================================
@@ -48,6 +55,9 @@ AASM_RELAXED_CONFIG = DetectionModeConfig(
     min_event_duration=EDC.MIN_EVENT_DURATION,  # 10.0 seconds
     merge_gap=EDC.MERGE_GAP_SECONDS,  # 3.0 seconds
     metric="amplitude",
+    hypopnea_mode=HypopneaMode.AASM_3PCT,
+    hypopnea_flow_only_fallback=True,
+    rera_detection_enabled=True,
 )
 
 # ============================================================================
@@ -67,6 +77,9 @@ RESMED_CONFIG = DetectionModeConfig(
     min_event_duration=EDC.MIN_EVENT_DURATION,  # 10.0 seconds
     merge_gap=EDC.MERGE_GAP_SECONDS,  # 3.0 seconds
     metric="amplitude",
+    hypopnea_mode=HypopneaMode.FLOW_ONLY,
+    hypopnea_flow_only_fallback=False,  # Already flow-only, no fallback needed
+    rera_detection_enabled=True,
 )
 
 # ============================================================================

@@ -5,7 +5,12 @@ import pytest
 
 from snore.analysis.modes.config import AASM_CONFIG, AASM_RELAXED_CONFIG, RESMED_CONFIG
 from snore.analysis.modes.detector import EventDetector, _calculate_event_overlap
-from snore.analysis.shared.types import ApneaEvent, BreathMetrics, HypopneaEvent
+from snore.analysis.modes.types import HypopneaMode
+from snore.analysis.shared.types import (
+    ApneaEvent,
+    BreathMetrics,
+    HypopneaEvent,
+)
 
 
 @pytest.fixture
@@ -860,9 +865,12 @@ class TestClassifyApneaType:
         """High effort flow signal should be classified as OA."""
         flow_signal = np.array([5, -5, 6, -6, 5, -5, 6, -6, 5, -5])
 
-        apnea_type = aasm_detector._classify_apnea_type(flow_signal=flow_signal)
+        apnea_type, confidence = aasm_detector._classify_apnea_type(
+            flow_signal=flow_signal
+        )
 
         assert apnea_type == "OA"
+        assert 0.5 <= confidence <= 1.0  # Should have reasonable confidence
 
     def test_classify_central(self, aasm_detector):
         """Flat flow signal should be classified as CA."""
@@ -870,9 +878,12 @@ class TestClassifyApneaType:
             [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
         )
 
-        apnea_type = aasm_detector._classify_apnea_type(flow_signal=flow_signal)
+        apnea_type, confidence = aasm_detector._classify_apnea_type(
+            flow_signal=flow_signal
+        )
 
         assert apnea_type == "CA"
+        assert 0.5 <= confidence <= 1.0  # Should have reasonable confidence
 
     def test_classify_mixed(self, aasm_detector):
         """Medium effort should be classified as MA."""
@@ -880,15 +891,19 @@ class TestClassifyApneaType:
             [0.06, -0.06, 0.07, -0.05, 0.06, -0.06, 0.07, -0.05, 0.06, -0.06]
         )
 
-        apnea_type = aasm_detector._classify_apnea_type(flow_signal=flow_signal)
+        apnea_type, confidence = aasm_detector._classify_apnea_type(
+            flow_signal=flow_signal
+        )
 
         assert apnea_type == "MA"
+        assert 0.3 <= confidence <= 0.6  # MA should have lower confidence (borderline)
 
     def test_classify_no_flow_data(self, aasm_detector):
         """No flow data should be classified as UA."""
-        apnea_type = aasm_detector._classify_apnea_type(flow_signal=None)
+        apnea_type, confidence = aasm_detector._classify_apnea_type(flow_signal=None)
 
         assert apnea_type == "UA"
+        assert confidence == 0.2  # UA should have low confidence
 
 
 class TestCheckDesaturation:
@@ -1257,3 +1272,636 @@ class TestCalculateBreathBasedBaseline:
         baseline = aasm_relaxed_detector._calculate_breath_based_baseline(breaths, 45)
 
         assert baseline >= 10.0
+
+
+class TestDetectReras:
+    """Tests for RERA detection using flow patterns."""
+
+    def test_detect_rera_basic_pattern(self, aasm_detector):
+        """Two flow-limited breaths followed by recovery breath."""
+        breaths = []
+        # Add 10 normal breaths to establish baseline (40 seconds)
+        for i in range(10):
+            breaths.append(
+                BreathMetrics(
+                    breath_number=i + 1,
+                    start_time=float(i * 4),
+                    middle_time=float(i * 4 + 2),
+                    end_time=float(i * 4 + 4),
+                    duration=4.0,
+                    tidal_volume=500.0,
+                    tidal_volume_smoothed=500.0,
+                    peak_inspiratory_flow=30.0,
+                    peak_expiratory_flow=25.0,
+                    inspiration_time=2.0,
+                    expiration_time=2.0,
+                    i_e_ratio=1.0,
+                    respiratory_rate=15.0,
+                    respiratory_rate_rolling=15.0,
+                    minute_ventilation=7.5,
+                    amplitude=50.0,
+                    is_complete=True,
+                )
+            )
+
+        # Flow-limited breath 1 (25% reduction)
+        breaths.append(
+            BreathMetrics(
+                breath_number=11,
+                start_time=40.0,
+                middle_time=42.0,
+                end_time=44.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            )
+        )
+        # Flow-limited breath 2 (25% reduction)
+        breaths.append(
+            BreathMetrics(
+                breath_number=12,
+                start_time=44.0,
+                middle_time=46.0,
+                end_time=48.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            )
+        )
+        # Recovery breath (higher amplitude - 60% increase from 37.5)
+        breaths.append(
+            BreathMetrics(
+                breath_number=13,
+                start_time=48.0,
+                middle_time=50.0,
+                end_time=52.0,
+                duration=4.0,
+                tidal_volume=500.0,
+                tidal_volume_smoothed=500.0,
+                peak_inspiratory_flow=30.0,
+                peak_expiratory_flow=25.0,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=60.0,  # 60% increase from 37.5
+                is_complete=True,
+            )
+        )
+
+        reras = aasm_detector._detect_reras(breaths, [], [])
+        assert len(reras) == 1
+        assert reras[0].obstructed_breath_count == 2
+        assert reras[0].start_time == 40.0
+        assert reras[0].confidence >= 0.4
+
+    def test_detect_rera_insufficient_recovery(self, aasm_detector):
+        """Sequence without sufficient recovery breath should not be detected."""
+        breaths = [
+            # Normal
+            BreathMetrics(
+                breath_number=1,
+                start_time=0.0,
+                middle_time=2.0,
+                end_time=4.0,
+                duration=4.0,
+                tidal_volume=500.0,
+                tidal_volume_smoothed=500.0,
+                peak_inspiratory_flow=30.0,
+                peak_expiratory_flow=25.0,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=50.0,
+                is_complete=True,
+            ),
+            # Flow-limited 1
+            BreathMetrics(
+                breath_number=2,
+                start_time=4.0,
+                middle_time=6.0,
+                end_time=8.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            ),
+            # Flow-limited 2
+            BreathMetrics(
+                breath_number=3,
+                start_time=8.0,
+                middle_time=10.0,
+                end_time=12.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            ),
+            # Weak recovery (only 20% increase - not enough)
+            BreathMetrics(
+                breath_number=4,
+                start_time=12.0,
+                middle_time=14.0,
+                end_time=16.0,
+                duration=4.0,
+                tidal_volume=450.0,
+                tidal_volume_smoothed=450.0,
+                peak_inspiratory_flow=27.0,
+                peak_expiratory_flow=22.5,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=45.0,
+                is_complete=True,
+            ),
+        ]
+
+        reras = aasm_detector._detect_reras(breaths, [], [])
+        assert len(reras) == 0
+
+    def test_detect_rera_excluded_by_apnea(self, aasm_detector):
+        """Breaths in apnea events should be excluded from RERA detection."""
+        breaths = [
+            BreathMetrics(
+                breath_number=1,
+                start_time=0.0,
+                middle_time=2.0,
+                end_time=4.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            ),
+            BreathMetrics(
+                breath_number=2,
+                start_time=4.0,
+                middle_time=6.0,
+                end_time=8.0,
+                duration=4.0,
+                tidal_volume=375.0,
+                tidal_volume_smoothed=375.0,
+                peak_inspiratory_flow=22.5,
+                peak_expiratory_flow=18.75,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=37.5,
+                is_complete=True,
+            ),
+        ]
+
+        apnea = ApneaEvent(
+            start_time=0.0,
+            end_time=8.0,
+            duration=8.0,
+            event_type="OA",
+            flow_reduction=0.9,
+            confidence=0.8,
+            baseline_flow=50.0,
+        )
+
+        reras = aasm_detector._detect_reras(breaths, [apnea], [])
+        assert len(reras) == 0
+
+
+class TestDetectHypopneasModes:
+    """Tests for hypopnea detection with different modes."""
+
+    def test_hypopnea_flow_only_mode(self, aasm_detector):
+        """FLOW_ONLY mode should detect hypopneas with 40% threshold."""
+        # Override config for this test
+        from snore.analysis.modes.config import DetectionModeConfig
+        from snore.analysis.modes.types import BaselineMethod
+
+        config = DetectionModeConfig(
+            name="test",
+            description="Test config for FLOW_ONLY mode",
+            baseline_method=BaselineMethod.TIME,
+            baseline_window=120.0,
+            hypopnea_mode=HypopneaMode.FLOW_ONLY,
+            hypopnea_min_threshold=0.30,  # This will be overridden to 0.40 by FLOW_ONLY
+            hypopnea_flow_only_fallback=False,
+        )
+        detector = EventDetector(config)
+
+        # Add 30 normal breaths to establish baseline (120 seconds)
+        breaths = [
+            BreathMetrics(
+                breath_number=i + 1,
+                start_time=float(i * 4),
+                middle_time=float(i * 4 + 2),
+                end_time=float(i * 4 + 4),
+                duration=4.0,
+                tidal_volume=500.0,
+                tidal_volume_smoothed=500.0,
+                peak_inspiratory_flow=30.0,
+                peak_expiratory_flow=25.0,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=50.0,
+                is_complete=True,
+            )
+            for i in range(30)
+        ]
+
+        # Add 3 breaths with 50% reduction (should trigger with 40% threshold)
+        for i in range(30, 33):
+            breaths.append(
+                BreathMetrics(
+                    breath_number=i + 1,
+                    start_time=float(i * 4),
+                    middle_time=float(i * 4 + 2),
+                    end_time=float(i * 4 + 4),
+                    duration=4.0,
+                    tidal_volume=250.0,
+                    tidal_volume_smoothed=250.0,
+                    peak_inspiratory_flow=15.0,
+                    peak_expiratory_flow=12.5,
+                    inspiration_time=2.0,
+                    expiration_time=2.0,
+                    i_e_ratio=1.0,
+                    respiratory_rate=15.0,
+                    respiratory_rate_rolling=15.0,
+                    minute_ventilation=7.5,
+                    amplitude=25.0,  # 50% reduction from 50.0
+                    is_complete=True,
+                )
+            )
+
+        hypopneas = detector._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None
+        )
+        assert len(hypopneas) >= 1
+        if len(hypopneas) > 0:
+            assert hypopneas[0].flow_reduction >= 0.40
+
+    def test_hypopnea_disabled_mode(self, aasm_detector):
+        """DISABLED mode should skip hypopnea detection entirely."""
+        from snore.analysis.modes.config import DetectionModeConfig
+        from snore.analysis.modes.types import BaselineMethod
+
+        config = DetectionModeConfig(
+            name="test",
+            description="Test config for DISABLED mode",
+            baseline_method=BaselineMethod.TIME,
+            baseline_window=120.0,
+            hypopnea_mode=HypopneaMode.DISABLED,
+        )
+        detector = EventDetector(config)
+
+        breaths = [
+            BreathMetrics(
+                breath_number=i,
+                start_time=float(i * 4),
+                middle_time=float(i * 4 + 2),
+                end_time=float(i * 4 + 4),
+                duration=4.0,
+                tidal_volume=250.0,  # 50% reduction
+                tidal_volume_smoothed=250.0,
+                peak_inspiratory_flow=15.0,
+                peak_expiratory_flow=12.5,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=25.0,
+                is_complete=True,
+            )
+            for i in range(3)
+        ]
+
+        hypopneas = detector._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None
+        )
+        assert len(hypopneas) == 0
+
+    def test_hypopnea_fallback_to_flow_only(self, aasm_detector):
+        """AASM mode with fallback should use FLOW_ONLY when no SpO2."""
+        from snore.analysis.modes.config import DetectionModeConfig
+        from snore.analysis.modes.types import BaselineMethod
+
+        config = DetectionModeConfig(
+            name="test",
+            description="Test config for AASM_3PCT with fallback",
+            baseline_method=BaselineMethod.TIME,
+            baseline_window=120.0,
+            hypopnea_mode=HypopneaMode.AASM_3PCT,
+            hypopnea_flow_only_fallback=True,
+            hypopnea_min_threshold=0.30,
+        )
+        detector = EventDetector(config)
+
+        # Add 30 normal breaths to establish baseline (120 seconds)
+        breaths = [
+            BreathMetrics(
+                breath_number=i + 1,
+                start_time=float(i * 4),
+                middle_time=float(i * 4 + 2),
+                end_time=float(i * 4 + 4),
+                duration=4.0,
+                tidal_volume=500.0,
+                tidal_volume_smoothed=500.0,
+                peak_inspiratory_flow=30.0,
+                peak_expiratory_flow=25.0,
+                inspiration_time=2.0,
+                expiration_time=2.0,
+                i_e_ratio=1.0,
+                respiratory_rate=15.0,
+                respiratory_rate_rolling=15.0,
+                minute_ventilation=7.5,
+                amplitude=50.0,
+                is_complete=True,
+            )
+            for i in range(30)
+        ]
+
+        # Add 3 breaths with 50% reduction
+        for i in range(30, 33):
+            breaths.append(
+                BreathMetrics(
+                    breath_number=i + 1,
+                    start_time=float(i * 4),
+                    middle_time=float(i * 4 + 2),
+                    end_time=float(i * 4 + 4),
+                    duration=4.0,
+                    tidal_volume=250.0,
+                    tidal_volume_smoothed=250.0,
+                    peak_inspiratory_flow=15.0,
+                    peak_expiratory_flow=12.5,
+                    inspiration_time=2.0,
+                    expiration_time=2.0,
+                    i_e_ratio=1.0,
+                    respiratory_rate=15.0,
+                    respiratory_rate_rolling=15.0,
+                    minute_ventilation=7.5,
+                    amplitude=25.0,  # 50% reduction from 50.0
+                    is_complete=True,
+                )
+            )
+
+        # No SpO2 data - should fall back to FLOW_ONLY
+        hypopneas = detector._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None
+        )
+        assert len(hypopneas) >= 1
+
+
+class TestValidateAgainstMachineEvents:
+    """Tests for cross-validation framework."""
+
+    def test_validation_perfect_match(self, aasm_detector):
+        """All events match perfectly."""
+        prog_apneas = [
+            ApneaEvent(
+                start_time=10.0,
+                end_time=20.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+            ApneaEvent(
+                start_time=50.0,
+                end_time=60.0,
+                duration=10.0,
+                event_type="CA",
+                flow_reduction=0.95,
+                confidence=0.85,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        machine_apneas = [
+            ApneaEvent(
+                start_time=10.5,
+                end_time=20.5,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+            ApneaEvent(
+                start_time=50.5,
+                end_time=60.5,
+                duration=10.0,
+                event_type="CA",
+                flow_reduction=0.95,
+                confidence=0.85,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        result = aasm_detector.validate_against_machine_events(
+            prog_apneas, [], machine_apneas, []
+        )
+
+        assert result["apnea_validation"].matched_events == 2
+        assert result["apnea_validation"].false_positives == 0
+        assert result["apnea_validation"].false_negatives == 0
+        assert result["apnea_validation"].sensitivity == 1.0
+        assert result["apnea_validation"].precision == 1.0
+        assert result["apnea_validation"].f1_score == 1.0
+
+    def test_validation_with_false_positives(self, aasm_detector):
+        """Programmatic detector finds extra events."""
+        prog_apneas = [
+            ApneaEvent(
+                start_time=10.0,
+                end_time=20.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+            ApneaEvent(
+                start_time=50.0,
+                end_time=60.0,
+                duration=10.0,
+                event_type="CA",
+                flow_reduction=0.95,
+                confidence=0.85,
+                baseline_flow=50.0,
+            ),
+            ApneaEvent(
+                start_time=90.0,
+                end_time=100.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.85,
+                confidence=0.75,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        machine_apneas = [
+            ApneaEvent(
+                start_time=10.5,
+                end_time=20.5,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        result = aasm_detector.validate_against_machine_events(
+            prog_apneas, [], machine_apneas, []
+        )
+
+        assert result["apnea_validation"].matched_events == 1
+        assert result["apnea_validation"].false_positives == 2
+        assert result["apnea_validation"].false_negatives == 0
+        assert result["apnea_validation"].sensitivity == 1.0
+        assert result["apnea_validation"].precision < 1.0
+
+    def test_validation_no_machine_events(self, aasm_detector):
+        """Edge case: no machine events, but programmatic events exist."""
+        prog_apneas = [
+            ApneaEvent(
+                start_time=10.0,
+                end_time=20.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        result = aasm_detector.validate_against_machine_events(prog_apneas, [], [], [])
+
+        assert result["apnea_validation"].matched_events == 0
+        assert result["apnea_validation"].false_positives == 1
+        assert result["apnea_validation"].false_negatives == 0
+        assert result["apnea_validation"].sensitivity == 0.0
+        assert result["apnea_validation"].precision == 0.0
+
+    def test_validation_no_programmatic_events(self, aasm_detector):
+        """Edge case: no programmatic events, but machine events exist."""
+        machine_apneas = [
+            ApneaEvent(
+                start_time=10.0,
+                end_time=20.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        result = aasm_detector.validate_against_machine_events(
+            [], [], machine_apneas, []
+        )
+
+        assert result["apnea_validation"].matched_events == 0
+        assert result["apnea_validation"].false_positives == 0
+        assert result["apnea_validation"].false_negatives == 1
+        assert result["apnea_validation"].sensitivity == 0.0
+        assert result["apnea_validation"].precision == 1.0
+
+    def test_validation_different_tolerances(self, aasm_detector):
+        """Tolerance affects matching."""
+        prog_apneas = [
+            ApneaEvent(
+                start_time=10.0,
+                end_time=20.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        machine_apneas = [
+            ApneaEvent(
+                start_time=17.0,
+                end_time=27.0,
+                duration=10.0,
+                event_type="OA",
+                flow_reduction=0.9,
+                confidence=0.8,
+                baseline_flow=50.0,
+            ),
+        ]
+
+        # Tight tolerance - no match (7 seconds apart)
+        result_tight = aasm_detector.validate_against_machine_events(
+            prog_apneas, [], machine_apneas, [], tolerance_seconds=3.0
+        )
+        assert result_tight["apnea_validation"].matched_events == 0
+
+        # Loose tolerance - match
+        result_loose = aasm_detector.validate_against_machine_events(
+            prog_apneas, [], machine_apneas, [], tolerance_seconds=10.0
+        )
+        assert result_loose["apnea_validation"].matched_events == 1

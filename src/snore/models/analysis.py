@@ -13,6 +13,44 @@ from pydantic import BaseModel, Field
 from snore.analysis.shared.types import EventTimeline
 
 
+class EventValidationResult(BaseModel):
+    """
+    Validation results comparing programmatic vs machine-detected events.
+
+    Useful for tuning detection thresholds and assessing algorithm accuracy.
+    """
+
+    machine_event_count: int = Field(description="Events detected by CPAP machine")
+    programmatic_event_count: int = Field(
+        description="Events detected programmatically"
+    )
+    matched_events: int = Field(
+        description="Events matched between machine and programmatic (within 5s)"
+    )
+    false_positives: int = Field(
+        description="Programmatic events not matched to machine events"
+    )
+    false_negatives: int = Field(
+        description="Machine events not matched to programmatic events"
+    )
+    sensitivity: float = Field(
+        ge=0, le=1, description="Recall: matched / (matched + false_negatives)"
+    )
+    precision: float = Field(
+        ge=0, le=1, description="Precision: matched / (matched + false_positives)"
+    )
+    f1_score: float = Field(
+        ge=0,
+        le=1,
+        description="F1 score: 2 * (precision * sensitivity) / (precision + sensitivity)",
+    )
+    agreement_percentage: float = Field(
+        ge=0,
+        le=100,
+        description="Overall agreement: matched / max(machine, programmatic) * 100",
+    )
+
+
 class AnalysisSummary(BaseModel):
     """
     High-level analysis summary for a CPAP session.

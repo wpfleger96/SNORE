@@ -10,8 +10,13 @@ import numpy as np
 from scipy import signal
 
 from snore.analysis.modes.config import DetectionModeConfig
-from snore.analysis.modes.types import BaselineMethod, ModeResult
-from snore.analysis.shared.types import ApneaEvent, BreathMetrics, HypopneaEvent
+from snore.analysis.modes.types import BaselineMethod, HypopneaMode, ModeResult
+from snore.analysis.shared.types import (
+    ApneaEvent,
+    BreathMetrics,
+    HypopneaEvent,
+    RERAEvent,
+)
 from snore.constants import EventDetectionConstants as EDC
 
 logger = logging.getLogger(__name__)
@@ -147,16 +152,26 @@ class EventDetector:
 
         hypopneas = self._detect_hypopneas(breaths, flow_data, spo2_signal=None)
 
+        reras: list[RERAEvent] = []
+        if self.config.rera_detection_enabled:
+            reras = self._detect_reras(breaths, apneas, hypopneas)
+
         total_events = len(apneas) + len(hypopneas)
         ahi = (
             total_events / session_duration_hours if session_duration_hours > 0 else 0.0
         )
-        rdi = ahi  # Without RERA detection, RDI equals AHI
+
+        rdi = (
+            (total_events + len(reras)) / session_duration_hours
+            if session_duration_hours > 0
+            else 0.0
+        )
 
         return ModeResult(
             mode_name=self.config.name,
             apneas=apneas,
             hypopneas=hypopneas,
+            reras=reras,
             ahi=ahi,
             rdi=rdi,
             metadata={
@@ -164,6 +179,7 @@ class EventDetector:
                 "baseline_method": self.config.baseline_method.value,
                 "apnea_threshold": self.config.apnea_threshold,
                 "validation_threshold": self.config.apnea_validation_threshold,
+                "rera_count": len(reras),
             },
         )
 
@@ -258,14 +274,17 @@ class EventDetector:
                 mask = (timestamps >= start_time) & (timestamps <= end_time)
                 flow_signal = flow_values[mask]
 
-            event_type = self._classify_apnea_type(flow_signal=flow_signal)
+            event_type, classification_confidence = self._classify_apnea_type(
+                flow_signal=flow_signal
+            )
             confidence = self._calculate_apnea_confidence(
                 avg_reduction, duration, avg_baseline
             )
 
             logger.debug(
                 f"  Apnea at {start_time:.1f}s: type={event_type}, duration={duration:.1f}s, "
-                f"reduction={avg_reduction * 100:.1f}%, baseline={avg_baseline:.1f}, confidence={confidence:.2f}"
+                f"reduction={avg_reduction * 100:.1f}%, baseline={avg_baseline:.1f}, "
+                f"confidence={confidence:.2f}, classification_confidence={classification_confidence:.2f}"
             )
 
             apneas.append(
@@ -276,6 +295,7 @@ class EventDetector:
                     event_type=event_type,
                     flow_reduction=float(avg_reduction),
                     confidence=float(confidence),
+                    classification_confidence=float(classification_confidence),
                     baseline_flow=float(avg_baseline),
                 )
             )
@@ -310,14 +330,19 @@ class EventDetector:
         spo2_signal: np.ndarray | None = None,
     ) -> list[HypopneaEvent]:
         """
-        Detect hypopnea events.
+        Detect hypopnea events using configured mode.
 
-        Per AASM standards, requires SpO2 desaturation (≥3%) or arousal.
+        Supports multiple detection modes:
+        - AASM_3PCT/4PCT: Requires SpO2 desaturation (3% or 4%)
+        - FLOW_ONLY: 40% flow reduction without SpO2
+        - DISABLED: Skip detection
+
+        Falls back to FLOW_ONLY if SpO2 unavailable and fallback enabled.
 
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
-            spo2_signal: SpO2 data for desaturation detection (required per AASM)
+            spo2_signal: SpO2 data for desaturation detection
 
         Returns:
             List of detected hypopnea events
@@ -325,13 +350,37 @@ class EventDetector:
         if not breaths:
             return []
 
-        if spo2_signal is None:
-            logger.info(
-                f"{self.config.name}: Skipping hypopnea detection - no SpO2 data (AASM requirement)"
-            )
+        if self.config.hypopnea_mode == HypopneaMode.DISABLED:
+            logger.info(f"{self.config.name}: Hypopnea detection disabled")
             return []
 
-        logger.info(f"{self.config.name}: Detecting hypopneas")
+        has_spo2 = spo2_signal is not None
+        actual_mode = self.config.hypopnea_mode
+
+        if not has_spo2:
+            if self.config.hypopnea_mode in (
+                HypopneaMode.AASM_3PCT,
+                HypopneaMode.AASM_4PCT,
+            ):
+                if self.config.hypopnea_flow_only_fallback:
+                    logger.info(
+                        f"{self.config.name}: No SpO2 data, falling back to flow-only hypopnea detection"
+                    )
+                    actual_mode = HypopneaMode.FLOW_ONLY
+                else:
+                    logger.info(
+                        f"{self.config.name}: Skipping hypopnea detection - no SpO2 data and fallback disabled"
+                    )
+                    return []
+
+        logger.info(
+            f"{self.config.name}: Detecting hypopneas (mode: {actual_mode.value})"
+        )
+
+        if actual_mode == HypopneaMode.FLOW_ONLY:
+            min_threshold = 0.40  # 40% reduction for flow-only
+        else:
+            min_threshold = self.config.hypopnea_min_threshold  # 30%
 
         baselines = np.zeros(len(breaths))
         reductions = np.zeros(len(breaths))
@@ -351,15 +400,17 @@ class EventDetector:
                 reductions[i] = 0.0
 
         breaths_in_range = np.sum(
-            (reductions >= self.config.hypopnea_min_threshold)
+            (reductions >= min_threshold)
             & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
         )
-        logger.debug(f"Breaths in hypopnea range (30-89%): {breaths_in_range}")
+        logger.debug(
+            f"Breaths in hypopnea range ({min_threshold * 100:.0f}-89%): {breaths_in_range}"
+        )
 
         regions = self._find_consecutive_reduced_breaths(
             breaths,
             reductions,
-            self.config.hypopnea_min_threshold,
+            min_threshold,
             self.config.min_event_duration,
         )
 
@@ -380,7 +431,7 @@ class EventDetector:
                 reductions,
                 start_idx,
                 end_idx,
-                threshold=self.config.hypopnea_min_threshold,
+                threshold=min_threshold,
             ):
                 logger.debug(
                     f"  Rejecting hypopnea {start_idx}-{end_idx}: fails validation"
@@ -398,12 +449,26 @@ class EventDetector:
             has_desaturation = None
             if spo2_signal is not None and flow_data is not None:
                 timestamps, _ = flow_data
-                mask = (timestamps >= start_time) & (timestamps <= end_time)
-                if np.any(mask):
-                    has_desaturation = self._check_desaturation(spo2_signal[mask])
+                if len(spo2_signal) != len(timestamps):
+                    logger.warning(
+                        f"SpO2/flow timestamp mismatch: {len(spo2_signal)} vs {len(timestamps)} - "
+                        "skipping desaturation check"
+                    )
+                    has_desaturation = None
+                else:
+                    mask = (timestamps >= start_time) & (timestamps <= end_time)
+                    if np.any(mask):
+                        if actual_mode == HypopneaMode.AASM_4PCT:
+                            has_desaturation = self._check_desaturation(
+                                spo2_signal[mask], threshold=4.0
+                            )
+                        else:
+                            has_desaturation = self._check_desaturation(
+                                spo2_signal[mask]
+                            )
 
             confidence = self._calculate_hypopnea_confidence(
-                avg_reduction, duration, has_desaturation
+                avg_reduction, duration, has_desaturation, detection_mode=actual_mode
             )
 
             logger.debug(
@@ -431,6 +496,153 @@ class EventDetector:
         logger.info(f"{self.config.name}: Detected {len(hypopneas)} hypopneas")
 
         return hypopneas
+
+    def _detect_reras(
+        self,
+        breaths: list[BreathMetrics],
+        apneas: list[ApneaEvent],
+        hypopneas: list[HypopneaEvent],
+    ) -> list[RERAEvent]:
+        """
+        Detect RERA-like events using FLOW event algorithm.
+
+        Detects sequences of flow-limited breaths ending with recovery breath,
+        without EEG arousal detection. Uses amplitude reduction as proxy for
+        flow limitation.
+
+        Algorithm:
+        1. Find sequences of ≥2 breaths with moderate flow reduction (20-30%)
+        2. Look for recovery breath with ≥50% amplitude increase
+        3. Ensure ≥2-breath separation from apneas/hypopneas
+
+        Args:
+            breaths: List of BreathMetrics objects
+            apneas: Detected apnea events (to avoid overlap)
+            hypopneas: Detected hypopnea events (to avoid overlap)
+
+        Returns:
+            List of detected RERA events
+        """
+        if not breaths or len(breaths) < 3:
+            return []
+
+        logger.info(f"{self.config.name}: Detecting RERA events")
+
+        baselines = np.zeros(len(breaths))
+        reductions = np.zeros(len(breaths))
+
+        for i, breath in enumerate(breaths):
+            baseline = self._calculate_baseline(breaths, i)
+            baselines[i] = baseline
+
+            if baseline > 0:
+                reduction = 1.0 - (breath.amplitude / baseline)
+                reductions[i] = max(0.0, min(1.0, reduction))
+            else:
+                reductions[i] = 0.0
+
+        excluded = np.zeros(len(breaths), dtype=bool)
+        for event in list(apneas) + list(hypopneas):
+            for i, breath in enumerate(breaths):
+                if (
+                    breath.start_time >= event.start_time
+                    and breath.end_time <= event.end_time
+                ):
+                    excluded[i] = True
+
+        reras = []
+        i = 0
+        while i < len(breaths) - 2:
+            if excluded[i]:
+                i += 1
+                continue
+
+            if 0.20 <= reductions[i] < 0.30:
+                seq_start = i
+                seq_count = 0
+                while (
+                    i < len(breaths)
+                    and not excluded[i]
+                    and 0.20 <= reductions[i] < 0.30
+                ):
+                    seq_count += 1
+                    i += 1
+
+                if seq_count >= 2 and i < len(breaths):
+                    recovery_found = False
+                    recovery_idx = -1
+
+                    for j in range(i, min(i + 2, len(breaths))):
+                        if excluded[j]:
+                            continue
+
+                        if reductions[j] < 0.10:
+                            seq_avg_amplitude = np.mean(
+                                [breaths[k].amplitude for k in range(seq_start, i)]
+                            )
+                            recovery_amplitude = breaths[j].amplitude
+
+                            if seq_avg_amplitude > 0:
+                                increase_pct = (
+                                    recovery_amplitude - seq_avg_amplitude
+                                ) / seq_avg_amplitude
+
+                                if increase_pct >= 0.50:
+                                    recovery_found = True
+                                    recovery_idx = j
+                                    break
+
+                    if recovery_found and recovery_idx >= 0:
+                        start_time = breaths[seq_start].start_time
+                        end_time = breaths[recovery_idx].end_time
+                        duration = end_time - start_time
+
+                        if duration >= self.config.min_event_duration:
+                            seq_baseline = np.mean(baselines[seq_start:i])
+                            recovery_amplitude = breaths[recovery_idx].amplitude
+                            seq_avg_amplitude = np.mean(
+                                [breaths[k].amplitude for k in range(seq_start, i)]
+                            )
+
+                            amplitude_increase = (
+                                (recovery_amplitude - seq_avg_amplitude)
+                                / seq_avg_amplitude
+                                if seq_avg_amplitude > 0
+                                else 0.0
+                            )
+
+                            confidence = self._calculate_rera_confidence(
+                                seq_count, float(amplitude_increase), duration
+                            )
+
+                            logger.debug(
+                                f"  RERA at {start_time:.1f}s: duration={duration:.1f}s, "
+                                f"obstructed_breaths={seq_count}, recovery_increase={amplitude_increase * 100:.1f}%, "
+                                f"confidence={confidence:.2f}"
+                            )
+
+                            reras.append(
+                                RERAEvent(
+                                    start_time=float(start_time),
+                                    end_time=float(end_time),
+                                    duration=float(duration),
+                                    obstructed_breath_count=seq_count,
+                                    recovery_breath_amplitude=float(
+                                        amplitude_increase * 100
+                                    ),
+                                    confidence=float(confidence),
+                                    baseline_flow=float(seq_baseline),
+                                )
+                            )
+
+                            i = recovery_idx + 1
+                            continue
+
+            i += 1
+
+        logger.info(f"{self.config.name}: Detected {len(reras)} RERA events")
+
+        return reras
 
     def _validate_event(
         self,
@@ -606,6 +818,7 @@ class EventDetector:
                         event_type="CA",  # Gap = no effort = central
                         flow_reduction=1.0,  # 100% - no breathing at all
                         confidence=0.85,
+                        classification_confidence=0.9,  # High confidence: gap = no effort = CA
                         baseline_flow=0.0,  # No flow during gap
                         detection_method="gap",
                     )
@@ -672,6 +885,7 @@ class EventDetector:
                             event_type="CA",
                             flow_reduction=1.0,
                             confidence=0.80,
+                            classification_confidence=0.85,  # High confidence: near-zero = CA
                             baseline_flow=0.0,
                             detection_method="near_zero_flow",
                         )
@@ -690,6 +904,7 @@ class EventDetector:
                         event_type="CA",
                         flow_reduction=1.0,
                         confidence=0.80,
+                        classification_confidence=0.85,  # High confidence: near-zero = CA
                         baseline_flow=0.0,
                         detection_method="near_zero_flow",
                     )
@@ -883,6 +1098,9 @@ class EventDetector:
                 event_type=event1.event_type,
                 flow_reduction=(event1.flow_reduction + event2.flow_reduction) / 2,
                 confidence=min(event1.confidence, event2.confidence),
+                classification_confidence=min(
+                    event1.classification_confidence, event2.classification_confidence
+                ),
                 baseline_flow=event1.baseline_flow,
                 detection_method=event1.detection_method,
             )
@@ -904,7 +1122,7 @@ class EventDetector:
     def _classify_apnea_type(
         self,
         flow_signal: np.ndarray | None = None,
-    ) -> Literal["OA", "CA", "MA", "UA"]:
+    ) -> tuple[Literal["OA", "CA", "MA", "UA"], float]:
         """
         Classify apnea as obstructive, central, or unclassified.
 
@@ -914,19 +1132,29 @@ class EventDetector:
             flow_signal: Flow values during the apnea event
 
         Returns:
-            Event type code: "OA", "CA", "MA", or "UA"
+            Tuple of (event_type, classification_confidence)
+            - event_type: "OA", "CA", "MA", or "UA"
+            - classification_confidence: 0-1 score based on effort score distinctiveness
         """
         if flow_signal is not None and len(flow_signal) > 5:
             effort_from_flow = self._estimate_effort_from_flow(flow_signal)
 
             if effort_from_flow > 0.15:
-                return "OA"
-            elif effort_from_flow < 0.05:
-                return "CA"
-            else:
-                return "MA"
+                distance_from_boundary = min(effort_from_flow - 0.15, 0.35)
+                classification_confidence = 0.5 + (distance_from_boundary / 0.35) * 0.5
+                return "OA", float(classification_confidence)
 
-        return "UA"
+            elif effort_from_flow < 0.05:
+                distance_from_boundary = min(0.05 - effort_from_flow, 0.05)
+                classification_confidence = 0.5 + (distance_from_boundary / 0.05) * 0.5
+                return "CA", float(classification_confidence)
+
+            else:
+                distance_from_midpoint = abs(effort_from_flow - 0.10)
+                classification_confidence = 0.3 + (distance_from_midpoint / 0.05) * 0.2
+                return "MA", float(classification_confidence)
+
+        return "UA", 0.2
 
     def _estimate_effort_from_flow(self, flow_signal: np.ndarray) -> float:
         """
@@ -1006,10 +1234,36 @@ class EventDetector:
         return min(1.0, confidence)
 
     def _calculate_hypopnea_confidence(
-        self, reduction: float, duration: float, has_desaturation: bool | None
+        self,
+        reduction: float,
+        duration: float,
+        has_desaturation: bool | None,
+        detection_mode: HypopneaMode,
     ) -> float:
-        """Calculate confidence score for hypopnea detection."""
-        confidence = EDC.HYPOPNEA_BASE_CONFIDENCE
+        """
+        Calculate confidence score for hypopnea detection.
+
+        Confidence levels by detection method:
+        - HIGH: SpO2-validated (≥50% reduction OR 30-50% with desaturation)
+        - MEDIUM: Flow-only ≥50% reduction
+        - LOW: Flow-only 30-50% reduction
+
+        Args:
+            reduction: Flow reduction percentage (0-1)
+            duration: Event duration in seconds
+            has_desaturation: Whether SpO2 desaturation occurred (if available)
+            detection_mode: Detection mode used
+
+        Returns:
+            Confidence score (0-1)
+        """
+        if detection_mode == HypopneaMode.FLOW_ONLY:
+            if reduction >= 0.50:
+                confidence = 0.6  # MEDIUM
+            else:
+                confidence = 0.4  # LOW
+        else:
+            confidence = EDC.HYPOPNEA_BASE_CONFIDENCE
 
         if (
             EDC.HYPOPNEA_IDEAL_MIN_REDUCTION
@@ -1017,15 +1271,28 @@ class EventDetector:
             <= EDC.HYPOPNEA_IDEAL_MAX_REDUCTION
         ):
             confidence += 0.1
+
         if duration > EDC.HYPOPNEA_LONG_DURATION_THRESHOLD:
             confidence += 0.1
+
         if has_desaturation:
             confidence += EDC.HYPOPNEA_DESATURATION_BONUS
 
         return min(1.0, confidence)
 
-    def _check_desaturation(self, spo2_values: np.ndarray) -> bool:
-        """Check if SpO2 desaturation occurred (≥3% drop)."""
+    def _check_desaturation(
+        self, spo2_values: np.ndarray, threshold: float = 3.0
+    ) -> bool:
+        """
+        Check if SpO2 desaturation occurred.
+
+        Args:
+            spo2_values: SpO2 signal values
+            threshold: Desaturation threshold (default 3% for AASM, 4% for CMS)
+
+        Returns:
+            True if desaturation >= threshold occurred
+        """
         if len(spo2_values) < 2:
             return False
 
@@ -1033,4 +1300,152 @@ class EventDetector:
         min_spo2 = np.min(spo2_values)
         drop = max_spo2 - min_spo2
 
-        return bool(drop >= EDC.SPO2_DESATURATION_DROP)
+        return bool(drop >= threshold)
+
+    def _calculate_rera_confidence(
+        self, breath_count: int, amplitude_increase: float, duration: float
+    ) -> float:
+        """
+        Calculate confidence score for RERA detection.
+
+        RERAs detected from flow patterns (without EEG) have inherently
+        lower confidence than EEG-confirmed events.
+
+        Confidence factors:
+        - More obstructed breaths = higher confidence
+        - Larger recovery amplitude = higher confidence
+        - Longer duration = higher confidence
+
+        Args:
+            breath_count: Number of flow-limited breaths in sequence
+            amplitude_increase: Recovery breath amplitude increase (0-1 = 0-100%)
+            duration: Event duration in seconds
+
+        Returns:
+            Confidence score (0-1), typically 0.4-0.7 for flow-only detection
+        """
+        confidence = 0.4
+
+        if breath_count >= 3:
+            confidence += 0.1
+        if breath_count >= 5:
+            confidence += 0.1
+
+        if amplitude_increase >= 1.0:  # 100% increase (doubling)
+            confidence += 0.2
+        elif amplitude_increase >= 0.75:  # 75% increase
+            confidence += 0.1
+
+        if duration >= 15.0:
+            confidence += 0.1
+
+        return min(0.7, confidence)  # Cap at 0.7 without EEG
+
+    def validate_against_machine_events(
+        self,
+        programmatic_apneas: list[ApneaEvent],
+        programmatic_hypopneas: list[HypopneaEvent],
+        machine_apneas: list[ApneaEvent],
+        machine_hypopneas: list[HypopneaEvent],
+        tolerance_seconds: float = 5.0,
+    ) -> dict[str, Any]:
+        """
+        Validate programmatic event detection against machine-detected events.
+
+        Compares timing of detected events with machine events and calculates
+        agreement statistics (sensitivity, precision, F1 score).
+
+        Args:
+            programmatic_apneas: Apneas detected by our algorithm
+            programmatic_hypopneas: Hypopneas detected by our algorithm
+            machine_apneas: Apneas reported by the CPAP machine
+            machine_hypopneas: Hypopneas reported by the CPAP machine
+            tolerance_seconds: Max time difference for event matching (default 5s)
+
+        Returns:
+            Dictionary with validation metrics for apneas and hypopneas
+        """
+        from snore.models.analysis import EventValidationResult
+
+        def validate_event_type(
+            programmatic: Sequence[ApneaEvent | HypopneaEvent],
+            machine: Sequence[ApneaEvent | HypopneaEvent],
+        ) -> EventValidationResult:
+            """Validate a single event type."""
+            matched = 0
+            matched_machine_indices = set()
+
+            for prog_event in programmatic:
+                for m_idx, mach_event in enumerate(machine):
+                    if m_idx in matched_machine_indices:
+                        continue
+
+                    time_diff = abs(prog_event.start_time - mach_event.start_time)
+                    if time_diff <= tolerance_seconds:
+                        matched += 1
+                        matched_machine_indices.add(m_idx)
+                        break
+
+            machine_count = len(machine)
+            programmatic_count = len(programmatic)
+            false_positives = programmatic_count - matched
+            false_negatives = machine_count - matched
+
+            if machine_count == 0:
+                sensitivity = 1.0 if programmatic_count == 0 else 0.0
+            elif matched + false_negatives > 0:
+                sensitivity = matched / (matched + false_negatives)
+            else:
+                sensitivity = 0.0
+
+            if matched + false_positives > 0:
+                precision = matched / (matched + false_positives)
+            else:
+                precision = 0.0 if machine_count == 0 else 1.0
+
+            if precision + sensitivity > 0:
+                f1_score = 2 * (precision * sensitivity) / (precision + sensitivity)
+            else:
+                f1_score = 0.0
+
+            total_unique = machine_count + programmatic_count - matched
+            agreement_percentage = (
+                (matched / total_unique * 100) if total_unique > 0 else 100.0
+            )
+
+            return EventValidationResult(
+                machine_event_count=machine_count,
+                programmatic_event_count=programmatic_count,
+                matched_events=matched,
+                false_positives=false_positives,
+                false_negatives=false_negatives,
+                sensitivity=sensitivity,
+                precision=precision,
+                f1_score=f1_score,
+                agreement_percentage=agreement_percentage,
+            )
+
+        apnea_validation = validate_event_type(programmatic_apneas, machine_apneas)
+        hypopnea_validation = validate_event_type(
+            programmatic_hypopneas, machine_hypopneas
+        )
+
+        return {
+            "apnea_validation": apnea_validation,
+            "hypopnea_validation": hypopnea_validation,
+            "overall_agreement": {
+                "total_machine_events": len(machine_apneas) + len(machine_hypopneas),
+                "total_programmatic_events": len(programmatic_apneas)
+                + len(programmatic_hypopneas),
+                "average_sensitivity": (
+                    apnea_validation.sensitivity + hypopnea_validation.sensitivity
+                )
+                / 2,
+                "average_precision": (
+                    apnea_validation.precision + hypopnea_validation.precision
+                )
+                / 2,
+                "average_f1": (apnea_validation.f1_score + hypopnea_validation.f1_score)
+                / 2,
+            },
+        }
