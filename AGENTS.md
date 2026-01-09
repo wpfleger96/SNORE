@@ -5,6 +5,7 @@ SNORE (Sleep eNvironment Observation & Respiratory Evaluation) is an MCP server 
 ## Quick Commands
 
 ```bash
+# Development workflow
 just                # Quick check: sync, type-check, lint-check, format-check
 just test           # Run pytest
 just check-all      # Full quality check + tests
@@ -13,7 +14,15 @@ just ci             # CI workflow (same as pre-commit but checks only)
 just lint           # Ruff lint with auto-fix
 just format         # Ruff format
 uv sync             # Install dependencies
+
+# Testing
 uv run pytest tests/unit/test_file.py  # Single test file
+
+# CLI (local development - use `uv run`)
+uv run snore import <path>              # Import device data
+uv run snore list                       # List sessions
+uv run snore analyze <session-id>       # Analyze session
+uv run snore-server                     # Run MCP server
 ```
 
 ## Project Structure
@@ -144,6 +153,11 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 5. **Profile resolution:** CLI flag > config > auto-detect fallback chain
 6. **Type safety:** Use proper types (`list[BreathMetrics]` not `list[Any]`) - mypy strict mode enabled
 7. **Pydantic validation:** Use `model_construct()` to bypass validation when testing invalid data
+8. **Local development vs installed tool** - **CRITICAL**: Always use `uv run snore` when developing locally:
+   - **Local dev (from repo)**: `uv run snore <command>` → runs YOUR local code changes directly
+   - **Installed tool (any directory)**: `snore <command>` → runs installed version from `~/.local/share/uv/tools/`
+   - Running `snore` without `uv run` will NOT reflect your local changes
+   - **NEVER use editable install** (`uv pip install -e .`) - risks conflicts with installed version, unnecessary complexity
 
 ## Key Files by Task
 
