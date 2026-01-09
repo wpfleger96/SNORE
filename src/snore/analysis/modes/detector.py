@@ -17,6 +17,29 @@ from snore.constants import EventDetectionConstants as EDC
 logger = logging.getLogger(__name__)
 
 
+def _calculate_event_overlap(event1: ApneaEvent, event2: ApneaEvent) -> float:
+    """
+    Calculate overlap ratio between two events.
+
+    Args:
+        event1: First apnea event
+        event2: Second apnea event
+
+    Returns:
+        Overlap ratio (0.0-1.0) relative to shorter event duration
+    """
+    overlap_start = max(event1.start_time, event2.start_time)
+    overlap_end = min(event1.end_time, event2.end_time)
+
+    if overlap_start >= overlap_end:
+        return 0.0
+
+    overlap_duration = overlap_end - overlap_start
+    shorter_duration = min(event1.duration, event2.duration)
+
+    return overlap_duration / shorter_duration
+
+
 class EventDetector:
     """
     Configurable respiratory event detector.
@@ -44,6 +67,58 @@ class EventDetector:
         """Get mode description."""
         return self.config.description
 
+    def _detect_events_resmed(
+        self,
+        breaths: list[BreathMetrics],
+        flow_data: tuple[np.ndarray, np.ndarray] | None,
+    ) -> list[ApneaEvent]:
+        """
+        ResMed-style detection combining multiple strategies.
+
+        1. Gap detection - finds periods with no breaths
+        2. Near-zero flow - finds sustained low flow in raw signal
+        3. Amplitude reduction - lower threshold (50% vs 90%)
+
+        Deduplicates overlapping detections from different methods.
+
+        Args:
+            breaths: List of BreathMetrics objects
+            flow_data: Optional tuple of (timestamps, flow_values)
+
+        Returns:
+            List of deduplicated and merged apnea events
+        """
+        logger.info(f"{self.config.name}: Running multi-strategy detection")
+
+        all_events = []
+
+        gap_events = self._detect_breath_gaps(breaths, min_gap_seconds=10.0)
+        all_events.extend(gap_events)
+
+        if flow_data is not None:
+            timestamps, flow_values = flow_data
+            if len(timestamps) > 1:
+                zero_events = self._detect_near_zero_flow(
+                    flow_values, timestamps, zero_threshold=2.0, min_duration=10.0
+                )
+                all_events.extend(zero_events)
+
+        amplitude_events = self._detect_apneas(breaths, flow_data)
+        all_events.extend(amplitude_events)
+
+        logger.info(
+            f"{self.config.name}: Combined {len(all_events)} events from all strategies"
+        )
+
+        deduplicated = self._deduplicate_events(all_events, overlap_threshold=0.5)
+
+        merged = cast(
+            list[ApneaEvent],
+            self._merge_adjacent_events(deduplicated, self.config.merge_gap),
+        )
+
+        return merged
+
     def detect_events(
         self,
         breaths: list[BreathMetrics],
@@ -53,6 +128,10 @@ class EventDetector:
         """
         Run detection algorithm and return results.
 
+        Branches to mode-specific detection:
+        - ResMed: Multi-strategy (gap + near-zero + amplitude)
+        - AASM/aasm_relaxed: Amplitude-based only
+
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
@@ -61,7 +140,10 @@ class EventDetector:
         Returns:
             ModeResult with detected events and metrics
         """
-        apneas = self._detect_apneas(breaths, flow_data)
+        if self.config.name == "resmed":
+            apneas = self._detect_events_resmed(breaths, flow_data)
+        else:
+            apneas = self._detect_apneas(breaths, flow_data)
 
         hypopneas = self._detect_hypopneas(breaths, flow_data, spo2_signal=None)
 
@@ -487,6 +569,196 @@ class EventDetector:
     # Shared Utilities (no duplication - single implementation)
     # ========================================================================
 
+    def _detect_breath_gaps(
+        self,
+        breaths: list[BreathMetrics],
+        min_gap_seconds: float = 10.0,
+    ) -> list[ApneaEvent]:
+        """
+        Detect apneas based on absence of breaths (gap detection).
+
+        Finds periods ≥min_gap_seconds between consecutive breaths.
+        Gaps indicate breathing cessation - classified as Central Apnea
+        since no respiratory effort is detectable.
+
+        This complements amplitude-based detection for events where
+        breath segmentation fails entirely (no breaths to measure).
+
+        Args:
+            breaths: List of BreathMetrics objects
+            min_gap_seconds: Minimum gap duration to qualify as apnea (default 10.0s)
+
+        Returns:
+            List of detected gap-based apnea events
+        """
+        events = []
+        for i in range(1, len(breaths)):
+            prev_end = breaths[i - 1].end_time
+            curr_start = breaths[i].start_time
+            gap = curr_start - prev_end
+
+            if gap >= min_gap_seconds:
+                events.append(
+                    ApneaEvent(
+                        start_time=float(prev_end),
+                        end_time=float(curr_start),
+                        duration=float(gap),
+                        event_type="CA",  # Gap = no effort = central
+                        flow_reduction=1.0,  # 100% - no breathing at all
+                        confidence=0.85,
+                        baseline_flow=0.0,  # No flow during gap
+                        detection_method="gap",
+                    )
+                )
+
+        if events:
+            logger.info(f"{self.config.name}: Detected {len(events)} gap-based apneas")
+
+        return events
+
+    def _detect_near_zero_flow(
+        self,
+        flow_signal: np.ndarray,
+        timestamps: np.ndarray,
+        zero_threshold: float = 2.0,
+        min_duration: float = 10.0,
+    ) -> list[ApneaEvent]:
+        """
+        Detect apneas based on sustained near-zero flow in raw signal.
+
+        Complements breath-based detection for cases where:
+        - Breath segmentation misses the event entirely
+        - Flow is too low to segment into distinct breaths
+
+        Uses contiguous region detection to find periods where |flow| < threshold.
+
+        Note: This is DIFFERENT from flow limitation flatness, which
+        measures time at PEAK flow. This measures time at ZERO flow.
+
+        Args:
+            flow_signal: Raw flow signal values (L/min)
+            timestamps: Timestamp array corresponding to flow samples
+            zero_threshold: Flow threshold for "near-zero" (default 2.0 L/min)
+            min_duration: Minimum event duration in seconds (default 10.0s)
+
+        Returns:
+            List of detected near-zero flow apnea events
+        """
+        total_duration = timestamps[-1] - timestamps[0]
+        sample_rate = len(timestamps) / total_duration
+        min_samples = int(min_duration * sample_rate)
+
+        near_zero_mask = np.abs(flow_signal) < zero_threshold
+
+        events = []
+        in_event = False
+        event_start = 0
+
+        for i, is_near_zero in enumerate(near_zero_mask):
+            if is_near_zero and not in_event:
+                in_event = True
+                event_start = i
+            elif not is_near_zero and in_event:
+                in_event = False
+                event_length = i - event_start
+                if event_length >= min_samples:
+                    start_time = float(timestamps[event_start])
+                    end_time = float(timestamps[i - 1])
+                    events.append(
+                        ApneaEvent(
+                            start_time=start_time,
+                            end_time=end_time,
+                            duration=end_time - start_time,
+                            event_type="CA",
+                            flow_reduction=1.0,
+                            confidence=0.80,
+                            baseline_flow=0.0,
+                            detection_method="near_zero_flow",
+                        )
+                    )
+
+        if in_event:
+            event_length = len(near_zero_mask) - event_start
+            if event_length >= min_samples:
+                start_time = float(timestamps[event_start])
+                end_time = float(timestamps[-1])
+                events.append(
+                    ApneaEvent(
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration=end_time - start_time,
+                        event_type="CA",
+                        flow_reduction=1.0,
+                        confidence=0.80,
+                        baseline_flow=0.0,
+                        detection_method="near_zero_flow",
+                    )
+                )
+
+        if events:
+            logger.info(
+                f"{self.config.name}: Detected {len(events)} near-zero flow apneas"
+            )
+
+        return events
+
+    def _deduplicate_events(
+        self,
+        events: list[ApneaEvent],
+        overlap_threshold: float = 0.5,
+    ) -> list[ApneaEvent]:
+        """
+        Remove duplicate/overlapping events, keeping highest confidence.
+
+        When multiple detection methods find the same event, keep the
+        detection with highest confidence. Merge events that overlap
+        by more than overlap_threshold (50% default).
+
+        Args:
+            events: List of apnea events (potentially overlapping)
+            overlap_threshold: Minimum overlap ratio to consider duplicates (0.0-1.0)
+
+        Returns:
+            List of deduplicated events
+        """
+        if not events:
+            return []
+
+        sorted_events = sorted(events, key=lambda e: e.start_time)
+
+        deduplicated = []
+        current = sorted_events[0]
+
+        for next_event in sorted_events[1:]:
+            overlap = _calculate_event_overlap(current, next_event)
+
+            if overlap > overlap_threshold:
+                if next_event.confidence > current.confidence:
+                    logger.debug(
+                        f"  Replacing {current.detection_method} event at {current.start_time:.1f}s "
+                        f"(conf={current.confidence:.2f}) with {next_event.detection_method} "
+                        f"(conf={next_event.confidence:.2f})"
+                    )
+                    current = next_event
+                else:
+                    logger.debug(
+                        f"  Keeping {current.detection_method} event at {current.start_time:.1f}s "
+                        f"(conf={current.confidence:.2f}), dropping {next_event.detection_method} "
+                        f"(conf={next_event.confidence:.2f})"
+                    )
+            else:
+                deduplicated.append(current)
+                current = next_event
+
+        deduplicated.append(current)
+
+        if len(events) > len(deduplicated):
+            logger.info(
+                f"{self.config.name}: Deduplicated {len(events)} events to {len(deduplicated)}"
+            )
+
+        return deduplicated
+
     def _find_consecutive_reduced_breaths(
         self,
         breaths: list[BreathMetrics],
@@ -612,6 +884,7 @@ class EventDetector:
                 flow_reduction=(event1.flow_reduction + event2.flow_reduction) / 2,
                 confidence=min(event1.confidence, event2.confidence),
                 baseline_flow=event1.baseline_flow,
+                detection_method=event1.detection_method,
             )
         elif isinstance(event1, HypopneaEvent) and isinstance(event2, HypopneaEvent):
             return HypopneaEvent(

@@ -88,6 +88,7 @@ class ApneaEvent(BaseModel):
         flow_reduction: Percentage flow reduction (0-1)
         confidence: Detection confidence (0-1)
         baseline_flow: Baseline flow before event (L/min)
+        detection_method: Method used to detect event (amplitude, gap, near_zero_flow)
     """
 
     start_time: float = Field(description="Event start timestamp (seconds)")
@@ -97,6 +98,10 @@ class ApneaEvent(BaseModel):
     flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
     confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
     baseline_flow: float = Field(description="Baseline flow before event (L/min)")
+    detection_method: str = Field(
+        default="amplitude",
+        description="Detection method (amplitude, gap, near_zero_flow)",
+    )
 
 
 class HypopneaEvent(BaseModel):

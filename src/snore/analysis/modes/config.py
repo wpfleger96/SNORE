@@ -7,6 +7,7 @@ __all__ = [
     "DetectionModeConfig",
     "AASM_CONFIG",
     "AASM_RELAXED_CONFIG",
+    "RESMED_CONFIG",
     "AVAILABLE_CONFIGS",
     "DEFAULT_MODE",
 ]
@@ -50,12 +51,32 @@ AASM_RELAXED_CONFIG = DetectionModeConfig(
 )
 
 # ============================================================================
+# ResMed Machine Approximation Configuration
+# ============================================================================
+
+RESMED_CONFIG = DetectionModeConfig(
+    name="resmed",
+    description="ResMed machine approximation (gap + low-flow detection)",
+    baseline_method=BaselineMethod.TIME,
+    baseline_window=EDC.BASELINE_WINDOW_SECONDS,  # 120.0 seconds (2 minutes)
+    baseline_percentile=90,
+    apnea_threshold=0.50,  # 50% reduction (vs 90% AASM)
+    apnea_validation_threshold=0.50,
+    hypopnea_min_threshold=0.20,  # Lower threshold
+    hypopnea_max_threshold=0.49,
+    min_event_duration=EDC.MIN_EVENT_DURATION,  # 10.0 seconds
+    merge_gap=EDC.MERGE_GAP_SECONDS,  # 3.0 seconds
+    metric="amplitude",
+)
+
+# ============================================================================
 # Mode Registry
 # ============================================================================
 
 AVAILABLE_CONFIGS: dict[str, DetectionModeConfig] = {
     "aasm": AASM_CONFIG,
     "aasm_relaxed": AASM_RELAXED_CONFIG,
+    "resmed": RESMED_CONFIG,
 }
 
 DEFAULT_MODE = "aasm"
