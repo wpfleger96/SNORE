@@ -10,7 +10,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 
 ```
 ┌─────────────────────────────────────────────┐
-│         MCP Server (Parser Agnostic)        │
+│        Analysis Layer (Parser Agnostic)     │
 │  get_sessions(), analyze_therapy(), etc.    │
 │         Zero knowledge of formats           │
 ├─────────────────────────────────────────────┤
@@ -41,7 +41,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 
 ### Key Design Principles
 
-1. **Separation of Concerns**: MCP server never knows about parser formats
+1. **Separation of Concerns**: Analysis layer never knows about parser formats
 2. **Extensibility**: Add new device support without touching existing code
 3. **Single Source of Truth**: SQLite database stores unified format
 4. **Auto-Detection**: Users just point to data, it "just works"
@@ -258,7 +258,6 @@ DetectionModeConfig(
 **All analysis types use Pydantic models:**
 - Validation at construction time
 - Automatic JSON serialization via `model_dump()`
-- JSON schema generation (required for MCP tools)
 - No manual `to_dict()`/`from_dict()` methods needed
 
 **Key Types:**
@@ -338,9 +337,9 @@ Session Importer (src/snore/database/importers.py)
     ↓
 SQLite Database (~/.snore/snore.db)
     ↓
-MCP Server Tools (TODO)
+Analysis Tools
     ↓
-Claude Analysis
+CLI/Reports
 ```
 
 ### Other Devices Flow (Partial)
@@ -549,7 +548,7 @@ Philips SD Card → SNORE → Database
 ## Architecture Benefits
 
 1. ✅ **Extensibility**
-   - New parsers require zero MCP server changes
+   - New parsers require zero analysis code changes
    - Add device support by creating one file
    - Database schema supports all device types
    - New analysis modes via simple config addition

@@ -1,8 +1,8 @@
 """
-Pydantic models for analysis results (MCP server responses).
+Pydantic models for analysis results.
 
-These models are specifically for MCP server responses and may include
-aggregated/transformed data beyond what's in the core analysis types.
+These models may include aggregated/transformed data beyond what's in
+the core analysis types.
 """
 
 from datetime import datetime

@@ -1,7 +1,7 @@
 [project]
 name = "snore"
 version = "0.1.0"
-description = "MCP server for analyzing and inspecting OSCAR CPAP/APAP therapy data"
+description = "CLI tool for analyzing and inspecting CPAP/APAP therapy data"
 requires-python = ">=3.13"
 readme = "README.md"
 license = { text = "MIT" }
@@ -9,7 +9,6 @@ authors = [
     { name = "SNORE Contributors" }
 ]
 dependencies = [
-    "mcp[cli]>=1.9.0",
     "pydantic>=2.11.4",
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
@@ -42,7 +41,6 @@ dev = [
 ]
 
 [project.scripts]
-snore-server = "snore.__main__:main"
 snore = "snore.cli:main"
 
 [build-system]
@@ -78,7 +76,7 @@ explicit_package_bases = true
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "scipy.*", "mne.*", "pyedflib.*", "mcp.*", "fitz.*"]
+module = ["numpy.*", "scipy.*", "mne.*", "pyedflib.*", "fitz.*"]
 ignore_missing_imports = true  # Only for external libs without stubs
 
 [[tool.mypy.overrides]]

@@ -6,11 +6,11 @@
 [![Lines of Code](https://aschey.tech/tokei/github/wpfleger96/snore?category=code)](https://github.com/wpfleger96/snore)
 [![License](https://img.shields.io/github/license/wpfleger96/snore.svg)](https://github.com/wpfleger96/snore/blob/main/LICENSE)
 
-MCP (Model Context Protocol) server for analyzing and inspecting CPAP/APAP therapy data.
+CLI tool for analyzing and inspecting CPAP/APAP therapy data.
 
 ## Overview
 
-SNORE provides an MCP interface for CPAP therapy data analysis, enabling LLMs like Claude to analyze sleep therapy data, generate reports, and answer questions about treatment effectiveness.
+SNORE analyzes CPAP therapy data, generates reports, and provides insights about treatment effectiveness. Import data directly from your CPAP device's SD card.
 
 ### Features
 
@@ -28,7 +28,6 @@ SNORE provides an MCP interface for CPAP therapy data analysis, enabling LLMs li
 - **Modular Parser System**: Abstract base class + registry for device detection
 - **Universal Data Model**: All devices convert to unified format
 - **SQLite Database**: Universal schema supporting all device types
-- **Parser-Agnostic MCP Server**: Tools work with any device
 - **UV Package Management**: Modern Python dependency management
 
 ## Installation
@@ -281,7 +280,6 @@ MIT License
 ## Acknowledgments
 
 - OSCAR (Open Source CPAP Analysis Reporter) project for the desktop application
-- MCP (Model Context Protocol) for the server framework
 - The sleep apnea community for supporting open-source analysis tools
 
 ## Support

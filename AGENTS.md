@@ -1,6 +1,6 @@
 # AGENTS.md
 
-SNORE (Sleep eNvironment Observation & Respiratory Evaluation) is an MCP server for analyzing CPAP/APAP therapy data, with CLI tools for importing, querying, and analyzing sleep therapy sessions.
+SNORE (Sleep eNvironment Observation & Respiratory Evaluation) is a CLI tool for analyzing CPAP/APAP therapy data with commands for importing, querying, and analyzing sleep therapy sessions.
 
 ## Quick Commands
 
@@ -19,10 +19,17 @@ uv sync             # Install dependencies
 uv run pytest tests/unit/test_file.py  # Single test file
 
 # CLI (local development - use `uv run`)
-uv run snore import <path>              # Import device data
-uv run snore list                       # List sessions
-uv run snore analyze <session-id>       # Analyze session
-uv run snore-server                     # Run MCP server
+uv run snore import-data <path>                # Import device data
+uv run snore list-sessions                     # List sessions
+uv run snore analyze run --session-id <id>     # Analyze session
+uv run snore analyze list                      # List sessions with analysis status
+uv run snore analyze show --date YYYY-MM-DD    # Show analysis results
+uv run snore config set-default-profile <name> # Set default profile
+uv run snore db drop                           # Drop database (with confirmation)
+uv run snore db init                           # Initialize database
+uv run snore setup --github                    # Install as uv tool from GitHub
+uv run snore upgrade                           # Upgrade to latest version
+uv run snore --version                         # Show version and check for updates
 ```
 
 ## Project Structure
@@ -30,7 +37,6 @@ uv run snore-server                     # Run MCP server
 ```
 src/snore/
 ├── cli.py              # CLI commands (Click)
-├── server.py           # MCP server implementation
 ├── config.py           # Configuration management
 ├── constants.py        # Channel IDs, mappings
 ├── analysis/           # Analysis algorithms
@@ -85,13 +91,12 @@ Via OSCAR:        Device SD Card → OSCAR Desktop → .000/.001 files → SNORE
 - `compression.py` - Qt qCompress/qUncompress, CRC16, delta-time decoding
 
 **SNORE vs OSCAR:**
-- SNORE: MCP server, CLI-first, Python 3.13+, SQLite, direct device import
+- SNORE: CLI-first, Python 3.13+, SQLite, direct device import (ResMed only)
 - OSCAR: Desktop GUI, Qt/C++, proprietary binary storage, broad device support
 
 ## Tech Stack
 
 - Python 3.13+ with UV package manager
-- MCP (Model Context Protocol) server framework
 - SQLAlchemy 2.0 ORM with SQLite (~/.snore/snore.db)
 - Click CLI framework
 - Pydantic for validation
@@ -118,7 +123,10 @@ with session_scope() as session:
 
 **Analysis Architecture:** Direct orchestration in `service.py`:
 - BreathSegmenter → feature extraction → FlowLimitationClassifier → ComplexPatternDetector
-- Event detection via modes with `DetectionModeConfig` (AASM, AASM Relaxed)
+- Event detection via modes with `DetectionModeConfig`:
+  - `aasm` - AASM Scoring Manual v2.6 compliant (default)
+  - `aasm_relaxed` - AASM with relaxed thresholds for machine matching
+  - `resmed` - ResMed device algorithm matching
 - All types use Pydantic models (validation, serialization)
 
 **Unified Data Model:** All device data converts to `UnifiedSession` → `WaveformData` → `RespiratoryEvent`
@@ -168,6 +176,6 @@ Key fixtures: `db_session`, `test_profile_factory`, `test_session_factory`, `rec
 | Add analysis algorithm | `src/snore/analysis/shared/` (breath/feature algorithms) or `modes/` (event detection) |
 | Add detection mode | `src/snore/analysis/modes/config.py` (add `DetectionModeConfig`), update `detector.py` |
 | Modify data models | `src/snore/models/unified.py` (data), `database/models.py` (ORM), use Pydantic |
-| Add MCP tool | `src/snore/server.py` |
+| Add configuration setting | `src/snore/config.py` (stored in ~/.snore/config.toml) |
 | Add test fixture | `tests/conftest.py`, `tests/helpers/` |
 | Modify channel IDs | `src/snore/constants.py` (must align with OSCAR's schema.h) |

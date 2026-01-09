@@ -5,8 +5,8 @@ This module defines the universal data structures that ALL parsers must convert 
 data into, regardless of manufacturer or file format. This enables complete separation
 between the parser layer and the rest of the system.
 
-Key Principle: The MCP server, database layer, and analysis tools only work with
-these unified structures - they never see parser-specific formats.
+Key Principle: The database layer and analysis tools only work with these
+unified structures - they never see parser-specific formats.
 """
 
 from datetime import datetime, timedelta
@@ -254,7 +254,7 @@ class UnifiedSession(BaseModel):
 
     This is the lingua franca of the CPAP data platform - every parser
     converts its native format into this structure, and all downstream
-    components (database, MCP server, analysis) work exclusively with this.
+    components (database, analysis) work exclusively with this.
     """
 
     session_id: UUID = Field(default_factory=uuid4, description="Internal session ID")
