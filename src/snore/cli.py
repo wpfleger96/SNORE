@@ -7,7 +7,7 @@ Provides commands for importing CPAP data, querying sessions, and database manag
 import logging
 import sys
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_version
 from pathlib import Path
@@ -19,7 +19,10 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from snore.analysis.modes import AVAILABLE_CONFIGS
+from snore.analysis.modes.types import ModeResult
 from snore.analysis.service import AnalysisResult, AnalysisService
+from snore.analysis.types import AnalysisEvent
+from snore.analysis.utils import convert_machine_events
 from snore.config import (
     get_config_path,
     get_default_profile,
@@ -34,6 +37,7 @@ from snore.constants import (
     EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
     FLOW_LIMITATION_CLASSES,
+    abbreviate_event_type,
 )
 from snore.database import models
 from snore.database.importers import SessionImporter
@@ -1686,6 +1690,116 @@ def show(
         _display_analysis_result(result)
 
 
+def _display_validation_metrics(
+    mode_result: ModeResult,
+    machine_events: list[AnalysisEvent],
+    mode: str,
+) -> None:
+    """
+    Display comprehensive validation metrics comparing programmatic vs machine events.
+
+    Args:
+        mode_result: Detection mode results with programmatic events
+        machine_events: Machine-detected events from CPAP device
+        mode: Detection mode name (for looking up correct config)
+    """
+    from snore.analysis.modes.config import AASM_CONFIG
+    from snore.analysis.modes.detector import EventDetector
+    from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
+
+    machine_apneas, machine_hypopneas, machine_session_start = convert_machine_events(
+        machine_events
+    )
+
+    config = AVAILABLE_CONFIGS.get(mode, AASM_CONFIG)
+    detector = EventDetector(config)
+    validation = detector.validate_against_machine_events(
+        mode_result.apneas,
+        mode_result.hypopneas,
+        machine_apneas,
+        machine_hypopneas,
+    )
+
+    click.echo("\n  Validation vs Machine Events:")
+
+    apnea_val = validation["apnea_validation"]
+    hypopnea_val = validation["hypopnea_validation"]
+
+    if apnea_val.machine_event_count > 0 or apnea_val.programmatic_event_count > 0:
+        click.echo(
+            f"    Apneas:     "
+            f"Sens: {apnea_val.sensitivity * 100:.0f}% ({apnea_val.matched_events}/{apnea_val.machine_event_count})  "
+            f"Prec: {apnea_val.precision * 100:.0f}% ({apnea_val.matched_events}/{apnea_val.programmatic_event_count})  "
+            f"F1: {apnea_val.f1_score:.2f}"
+        )
+
+    if (
+        hypopnea_val.machine_event_count > 0
+        or hypopnea_val.programmatic_event_count > 0
+    ):
+        click.echo(
+            f"    Hypopneas:  "
+            f"Sens: {hypopnea_val.sensitivity * 100:.0f}% ({hypopnea_val.matched_events}/{hypopnea_val.machine_event_count})  "
+            f"Prec: {hypopnea_val.precision * 100:.0f}% ({hypopnea_val.matched_events}/{hypopnea_val.programmatic_event_count})  "
+            f"F1: {hypopnea_val.f1_score:.2f}"
+        )
+
+    false_negatives: list[AnalysisEvent] = []
+
+    for machine_event in machine_events:
+        is_matched = False
+        machine_relative_time = machine_event.start_time - machine_session_start
+        all_programmatic = list(mode_result.apneas) + list(mode_result.hypopneas)
+
+        for prog_event in all_programmatic:
+            time_diff = abs(prog_event.start_time - machine_relative_time)
+            if time_diff <= 5.0:
+                is_matched = True
+                break
+
+        if not is_matched:
+            false_negatives.append(machine_event)
+
+    false_positives: list[ApneaEvent | HypopneaEvent] = []
+
+    for prog_event in list(mode_result.apneas) + list(mode_result.hypopneas):
+        is_matched = False
+
+        for machine_event in machine_events:
+            machine_relative_time = machine_event.start_time - machine_session_start
+            time_diff = abs(prog_event.start_time - machine_relative_time)
+            if time_diff <= 5.0:
+                is_matched = True
+                break
+
+        if not is_matched:
+            false_positives.append(prog_event)
+
+    if false_negatives:
+        fn_strs = []
+        for event in false_negatives:
+            time_offset = event.start_time - machine_session_start
+            event_abbr = abbreviate_event_type(event.event_type)
+            fn_strs.append(f"{_format_time_offset(time_offset)} ({event_abbr})")
+
+        click.echo(f"    False Negatives (missed): {', '.join(fn_strs)}")
+
+    if false_positives:
+        fp_strs = []
+        fp_event: ApneaEvent | HypopneaEvent
+        for fp_event in false_positives:
+            time_offset = fp_event.start_time
+
+            if isinstance(fp_event, ApneaEvent):
+                event_abbr = fp_event.event_type
+            else:
+                event_abbr = "H"
+
+            fp_strs.append(f"{_format_time_offset(time_offset)} ({event_abbr})")
+
+        click.echo(f"    False Positives (extra):  {', '.join(fp_strs)}")
+
+
 def _display_analysis_result(result: AnalysisResult) -> None:
     """Display analysis results with machine comparison."""
     click.echo("✓ Analysis complete\n")
@@ -1693,6 +1807,10 @@ def _display_analysis_result(result: AnalysisResult) -> None:
     click.echo("=" * 60)
     click.echo("ANALYSIS SUMMARY")
     click.echo("=" * 60)
+    click.echo(
+        "\nLegend: OA=Obstructive Apnea, CA=Central Apnea, MA=Mixed Apnea, "
+        "UA=Unclassified Apnea, H=Hypopnea, RE=RERA"
+    )
 
     click.echo(f"\nSession Duration: {result.session_duration_hours:.1f} hours")
 
@@ -1749,18 +1867,7 @@ def _display_analysis_result(result: AnalysisResult) -> None:
             click.echo(f"    - Hypopneas: {len(mode_result.hypopneas)}")
 
         if machine_events:
-            matched = 0
-            for mode_apnea in mode_result.apneas:
-                for machine_event in machine_events:
-                    time_diff = abs(mode_apnea.start_time - machine_event.start_time)
-                    if time_diff <= 5.0:
-                        matched += 1
-                        break
-
-            match_rate = (matched / len(machine_events) * 100) if machine_events else 0
-            click.echo(
-                f"  Match Rate: {match_rate:.0f}% ({matched}/{len(machine_events)} machine events)"
-            )
+            _display_validation_metrics(mode_result, machine_events, mode_name)
 
     if result.flow_analysis:
         click.echo("\n" + "─" * 60)
@@ -1778,7 +1885,6 @@ def _display_analysis_result(result: AnalysisResult) -> None:
 
             for class_num in range(1, 8):
                 class_info = FLOW_LIMITATION_CLASSES[class_num]
-                # Handle both int keys (fresh) and string keys (from JSON/DB)
                 count = class_distribution.get(class_num, 0) or class_distribution.get(
                     str(class_num), 0
                 )
@@ -2202,6 +2308,429 @@ def logs_clear() -> None:
         click.echo(f"Removed {removed_count} log file(s)")
     else:
         click.echo("No log files to remove")
+
+
+@cli.command()
+@click.option(
+    "--from",
+    "date_from",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--to",
+    "date_to",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date (YYYY-MM-DD)",
+)
+@click.option(
+    "--profile",
+    type=str,
+    help="Profile username (optional if default set)",
+)
+@click.option(
+    "--mode",
+    "-m",
+    default="aasm",
+    type=str,
+    help="Detection mode to validate (default: aasm)",
+)
+@click.option(
+    "--export",
+    type=click.Path(),
+    help="Export report to file (.json or .csv)",
+)
+@click.option("--db", type=click.Path(exists=True), help="Database path")
+def validate(
+    date_from: datetime,
+    date_to: datetime,
+    profile: str | None,
+    mode: str,
+    export: str | None,
+    db: str | None,
+) -> None:
+    """
+    Run batch validation across multiple sessions.
+
+    Validates SNORE's detection against machine events for sessions in the specified
+    date range, and displays aggregate metrics.
+    """
+    from pathlib import Path
+
+    from snore.validation import BatchValidator, export_report_csv, export_report_json
+
+    if date_from > date_to:
+        click.echo("Error: --from date must be before or equal to --to date", err=True)
+        sys.exit(1)
+
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    with session_scope() as temp_session:
+        profile = resolve_profile(profile, temp_session)
+
+    with session_scope() as db_session:
+        try:
+            validator = BatchValidator(db_session, profile)
+
+            click.echo(
+                f"Running validation from {date_from.date()} to {date_to.date()}..."
+            )
+            click.echo(f"Profile: {profile}")
+            click.echo(f"Mode: {mode}\n")
+
+            report = validator.validate_date_range(
+                date_from.strftime("%Y-%m-%d"),
+                date_to.strftime("%Y-%m-%d"),
+                mode=mode,
+            )
+
+            click.echo("=" * 60)
+            click.echo("VALIDATION REPORT")
+            click.echo("=" * 60)
+            click.echo(
+                f"Date Range: {report.date_range_start} to {report.date_range_end}"
+            )
+            click.echo(f"Sessions Analyzed: {report.aggregate.total_sessions}")
+            click.echo(f"Total Machine Events: {report.aggregate.total_machine_events}")
+            click.echo(
+                f"Total Programmatic Events: {report.aggregate.total_programmatic_events}"
+            )
+
+            click.echo("\nAggregate Metrics:")
+            click.echo(
+                f"  Apneas:     "
+                f"Avg Sens: {report.aggregate.avg_apnea_sensitivity * 100:.0f}%  "
+                f"Avg Prec: {report.aggregate.avg_apnea_precision * 100:.0f}%  "
+                f"Avg F1: {report.aggregate.avg_apnea_f1:.2f}"
+            )
+            click.echo(
+                f"  Hypopneas:  "
+                f"Avg Sens: {report.aggregate.avg_hypopnea_sensitivity * 100:.0f}%  "
+                f"Avg Prec: {report.aggregate.avg_hypopnea_precision * 100:.0f}%  "
+                f"Avg F1: {report.aggregate.avg_hypopnea_f1:.2f}"
+            )
+
+            if report.aggregate.low_sensitivity_sessions:
+                click.echo(
+                    f"\nSessions with Low Sensitivity (<60%): "
+                    f"{len(report.aggregate.low_sensitivity_sessions)}"
+                )
+                click.echo(
+                    f"  Session IDs: {report.aggregate.low_sensitivity_sessions[:10]}"
+                )
+                if len(report.aggregate.low_sensitivity_sessions) > 10:
+                    click.echo(
+                        f"  ... and {len(report.aggregate.low_sensitivity_sessions) - 10} more"
+                    )
+
+            click.echo("\nPer-Session Results:")
+            click.echo(
+                f"{'Date':<12} {'ID':<6} {'Machine':<8} {'Prog':<8} {'Apnea Sens':<11} {'Hypopnea Sens':<13}"
+            )
+            click.echo("=" * 60)
+
+            for session in report.sessions[:10]:
+                click.echo(
+                    f"{session.date:<12} "
+                    f"{session.session_id:<6} "
+                    f"{session.machine_event_count:<8} "
+                    f"{session.programmatic_event_count:<8} "
+                    f"{session.apnea_sensitivity * 100:>6.0f}%     "
+                    f"{session.hypopnea_sensitivity * 100:>6.0f}%"
+                )
+
+            if len(report.sessions) > 10:
+                click.echo(f"... and {len(report.sessions) - 10} more sessions")
+
+            if export:
+                export_path = Path(export)
+                if export_path.suffix == ".json":
+                    export_report_json(report, export_path)
+                    click.echo(f"\nReport exported to {export_path}")
+                elif export_path.suffix == ".csv":
+                    export_report_csv(report, export_path)
+                    click.echo(f"\nReport exported to {export_path}")
+                else:
+                    click.echo(
+                        f"Error: Unknown export format '{export_path.suffix}'. "
+                        f"Use .json or .csv",
+                        err=True,
+                    )
+
+        except Exception as e:
+            click.echo(f"Validation error: {e}", err=True)
+            if "--verbose" in sys.argv or "-v" in sys.argv:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
+
+
+@cli.group()
+def events() -> None:
+    """Event data export commands."""
+    pass
+
+
+@events.command("export")
+@click.option(
+    "--session-id",
+    type=int,
+    help="Session ID to export events from",
+)
+@click.option(
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Export events from session on this date (YYYY-MM-DD)",
+)
+@click.option(
+    "--profile",
+    type=str,
+    help="Profile username (optional if default set)",
+)
+@click.option(
+    "--output",
+    "-o",
+    required=True,
+    type=click.Path(),
+    help="Output CSV file path",
+)
+@click.option("--db", type=click.Path(exists=True), help="Database path")
+@click.option(
+    "--mode",
+    "-m",
+    default="aasm",
+    type=str,
+    help="Detection mode to export (default: aasm)",
+)
+def export_events(
+    session_id: int | None,
+    date: datetime | None,
+    profile: str | None,
+    output: str,
+    db: str | None,
+    mode: str,
+) -> None:
+    """
+    Export event data to CSV for comparison with OSCAR.
+
+    Exports both machine-detected and programmatic events with timestamps,
+    types, durations, and match status.
+    """
+    import csv
+
+    from pathlib import Path
+
+    if not session_id and not date:
+        click.echo("Error: Must specify either --session-id or --date", err=True)
+        sys.exit(1)
+
+    if session_id and date:
+        click.echo(
+            "Error: Cannot specify both --session-id and --date. Choose one.",
+            err=True,
+        )
+        sys.exit(1)
+
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    with session_scope() as temp_session:
+        profile = resolve_profile(profile, temp_session)
+
+    with session_scope() as db_session:
+        try:
+            if date:
+                from snore.database import models
+
+                sessions = (
+                    db_session.query(models.Session)
+                    .filter(
+                        models.Session.start_time >= date,
+                        models.Session.start_time < date + timedelta(days=1),
+                    )
+                    .all()
+                )
+
+                if not sessions:
+                    click.echo(f"Error: No session found on {date.date()}", err=True)
+                    sys.exit(1)
+
+                if len(sessions) > 1:
+                    click.echo(
+                        f"Warning: Multiple sessions found on {date.date()}, using first one"
+                    )
+
+                session_id = sessions[0].id
+
+            assert session_id is not None, "session_id must be set"
+
+            from snore.analysis.service import AnalysisService
+
+            analysis_service = AnalysisService(db_session)
+            result = analysis_service.get_analysis_result(session_id)
+
+            if not result:
+                click.echo(f"Running analysis for session {session_id}...")
+                result = analysis_service.analyze_session(session_id, modes=[mode])
+
+            if mode not in result.mode_results:
+                click.echo(
+                    f"Error: Mode {mode} not found in analysis results", err=True
+                )
+                sys.exit(1)
+
+            mode_result = result.mode_results[mode]
+            machine_events = result.machine_events
+
+            from snore.database import models
+
+            session = db_session.get(models.Session, session_id)
+            if not session:
+                click.echo(f"Error: Session {session_id} not found", err=True)
+                sys.exit(1)
+
+            session_start_unix = session.start_time.timestamp()
+
+            if machine_events:
+                machine_session_start = min(
+                    event.start_time for event in machine_events
+                )
+            else:
+                machine_session_start = 0.0
+
+            export_events_list = []
+
+            for event in machine_events:
+                time_offset = event.start_time - machine_session_start
+                export_events_list.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(event.start_time).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "time_into_session": _format_time_offset(time_offset),
+                        "event_type": abbreviate_event_type(event.event_type),
+                        "duration_sec": f"{event.duration:.1f}",
+                        "source": "machine",
+                        "matched": "?",
+                    }
+                )
+
+            for apnea in mode_result.apneas:
+                time_offset = apnea.start_time
+                timestamp_unix = session_start_unix + time_offset
+                export_events_list.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(timestamp_unix).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "time_into_session": _format_time_offset(time_offset),
+                        "event_type": apnea.event_type,
+                        "duration_sec": f"{apnea.duration:.1f}",
+                        "source": "programmatic",
+                        "matched": "?",
+                    }
+                )
+
+            for hypopnea in mode_result.hypopneas:
+                time_offset = hypopnea.start_time
+                timestamp_unix = session_start_unix + time_offset
+                export_events_list.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(timestamp_unix).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "time_into_session": _format_time_offset(time_offset),
+                        "event_type": "H",
+                        "duration_sec": f"{hypopnea.duration:.1f}",
+                        "source": "programmatic",
+                        "matched": "?",
+                    }
+                )
+
+            export_events_list.sort(key=lambda x: x["time_into_session"])
+
+            import bisect
+
+            prog_times = sorted(
+                _parse_time_offset(e["time_into_session"])
+                for e in export_events_list
+                if e["source"] == "programmatic"
+            )
+            machine_times = sorted(
+                _parse_time_offset(e["time_into_session"])
+                for e in export_events_list
+                if e["source"] == "machine"
+            )
+
+            for i, event_dict in enumerate(export_events_list):
+                if event_dict["source"] == "machine":
+                    machine_time = _parse_time_offset(event_dict["time_into_session"])
+                    idx = bisect.bisect_left(prog_times, machine_time - 5.0)
+                    is_matched = any(
+                        abs(machine_time - prog_times[j]) <= 5.0
+                        for j in range(idx, min(idx + 10, len(prog_times)))
+                    )
+                    export_events_list[i]["matched"] = "yes" if is_matched else "no"
+                else:
+                    prog_time = _parse_time_offset(event_dict["time_into_session"])
+                    idx = bisect.bisect_left(machine_times, prog_time - 5.0)
+                    is_matched = any(
+                        abs(prog_time - machine_times[j]) <= 5.0
+                        for j in range(idx, min(idx + 10, len(machine_times)))
+                    )
+                    export_events_list[i]["matched"] = "yes" if is_matched else "no"
+
+            output_path = Path(output)
+            with open(output_path, "w", newline="") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "timestamp",
+                        "time_into_session",
+                        "event_type",
+                        "duration_sec",
+                        "source",
+                        "matched",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerows(export_events_list)
+
+            click.echo(f"Exported {len(export_events_list)} events to {output_path}")
+            click.echo(f"  Machine events: {len(machine_events)}")
+            click.echo(
+                f"  Programmatic events: {len(mode_result.apneas) + len(mode_result.hypopneas)}"
+            )
+
+        except Exception as e:
+            click.echo(f"Export error: {e}", err=True)
+            if "--verbose" in sys.argv or "-v" in sys.argv:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
+
+
+def _format_time_offset(seconds: float) -> str:
+    """Format time offset as HH:MM:SS."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _parse_time_offset(time_str: str) -> float:
+    """Parse HH:MM:SS to seconds."""
+    parts = time_str.split(":")
+    return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
 
 
 def main() -> None:

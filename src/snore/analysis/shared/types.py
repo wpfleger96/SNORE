@@ -1,10 +1,12 @@
 """Shared analysis algorithm type definitions."""
 
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from snore.constants import ApneaEventType
 
 
 class BreathPhases(BaseModel):
@@ -95,7 +97,7 @@ class ApneaEvent(BaseModel):
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
     duration: float = Field(ge=0, description="Event duration (seconds)")
-    event_type: Literal["OA", "CA", "MA", "UA"] = Field(description="Apnea type")
+    event_type: ApneaEventType = Field(description="Apnea type")
     flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
     confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
     classification_confidence: float = Field(

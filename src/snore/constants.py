@@ -6,7 +6,7 @@ Based on OSCAR's schema.h and machine_common.h definitions.
 
 from enum import Enum
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class MachineType(str, Enum):
@@ -649,6 +649,45 @@ EVENT_TYPE_NAMES = {
     EVENT_TYPE_FLOW_LIMITATION: "Flow Limitation",
     EVENT_TYPE_UNCLASSIFIED_APNEA: "Unclassified Apnea",
 }
+
+# Type alias for valid apnea event types (used by ApneaEvent model)
+ApneaEventType = Literal["OA", "CA", "MA", "UA"]
+
+# Mapping from storage event types to ApneaEventType
+APNEA_TYPE_MAP: dict[str, ApneaEventType] = {
+    EVENT_TYPE_OBSTRUCTIVE_APNEA: "OA",
+    EVENT_TYPE_CENTRAL_APNEA: "CA",
+    EVENT_TYPE_CLEAR_AIRWAY: "CA",
+    EVENT_TYPE_MIXED_APNEA: "MA",
+    EVENT_TYPE_UNCLASSIFIED_APNEA: "UA",
+}
+
+
+def get_apnea_type(event_type: str) -> ApneaEventType | None:
+    """Convert storage event type to ApneaEventType, or None if not an apnea."""
+    return APNEA_TYPE_MAP.get(event_type)
+
+
+def is_apnea_type(event_type: str) -> bool:
+    """Check if event type is an apnea (not hypopnea/RERA)."""
+    return event_type in APNEA_TYPE_MAP
+
+
+EVENT_TYPE_ABBREVIATIONS: dict[str, str] = {
+    EVENT_TYPE_OBSTRUCTIVE_APNEA: "OA",
+    EVENT_TYPE_CENTRAL_APNEA: "CA",
+    EVENT_TYPE_CLEAR_AIRWAY: "CA",
+    EVENT_TYPE_MIXED_APNEA: "MA",
+    EVENT_TYPE_HYPOPNEA: "H",
+    EVENT_TYPE_RERA: "RE",
+    EVENT_TYPE_UNCLASSIFIED_APNEA: "UA",
+}
+
+
+def abbreviate_event_type(event_type: str) -> str:
+    """Convert event type constant to display abbreviation."""
+    return EVENT_TYPE_ABBREVIATIONS.get(event_type, event_type)
+
 
 # Event types that count toward AHI
 AHI_EVENT_TYPES = {
