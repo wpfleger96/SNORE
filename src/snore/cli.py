@@ -45,6 +45,8 @@ from snore.database.session import cleanup_database, init_database, session_scop
 from snore.logging_config import setup_logging
 from snore.parsers.register_all import register_all_parsers
 from snore.parsers.registry import parser_registry
+from snore.waveform import AsciiWaveformRenderer, WaveformInspector
+from snore.waveform.inspector import parse_time_offset
 
 logger = logging.getLogger(__name__)
 
@@ -2731,6 +2733,382 @@ def _parse_time_offset(time_str: str) -> float:
     """Parse HH:MM:SS to seconds."""
     parts = time_str.split(":")
     return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+
+
+@cli.group()
+def waveform() -> None:
+    """Waveform inspection and visualization commands."""
+    pass
+
+
+@waveform.command("show")
+@click.option("--session-id", type=int, help="Session ID")
+@click.option(
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Session date (YYYY-MM-DD)",
+)
+@click.option("--time", required=True, help="Time offset (HH:MM:SS)")
+@click.option(
+    "--window", type=int, default=60, help="Window size in seconds (default: 60)"
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["ascii", "csv"]),
+    default="ascii",
+    help="Output format",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output file path (required for csv format)",
+)
+@click.option("--profile", help="Profile username (optional if default set)")
+@click.option("--db", type=click.Path(), help="Database path")
+@click.option(
+    "--mode", "-m", default="aasm", help="Detection mode to compare (default: aasm)"
+)
+def show_waveform(
+    session_id: int | None,
+    date: datetime | None,
+    time: str,
+    window: int,
+    output_format: str,
+    output: str | None,
+    profile: str | None,
+    db: str | None,
+    mode: str,
+) -> None:
+    """
+    Display flow waveform at a specific time.
+
+    View the flow waveform data centered on a specific time offset to visually
+    inspect detected respiratory events.
+
+    Examples:
+        snore waveform show --session-id 37 --time 05:56:22 --window 30
+        snore waveform show --date 2025-10-25 --time 01:25:16 --format csv --output waveform.csv
+    """
+    if session_id is None and date is None:
+        click.echo("Error: Either --session-id or --date must be provided", err=True)
+        sys.exit(1)
+
+    if output_format == "csv" and output is None:
+        click.echo("Error: --output is required for csv format", err=True)
+        sys.exit(1)
+
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    try:
+        center_seconds = parse_time_offset(time)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    with session_scope() as db_session:
+        if session_id is None:
+            if not profile:
+                profile = get_default_profile()
+                if not profile:
+                    click.echo(
+                        "Error: No default profile set. Use --profile.", err=True
+                    )
+                    sys.exit(1)
+
+            if date is None:
+                click.echo(
+                    "Error: --date is required when --session-id is not provided",
+                    err=True,
+                )
+                sys.exit(1)
+
+            prof = db_session.query(models.Profile).filter_by(username=profile).first()
+            if not prof:
+                click.echo(f"Error: Profile '{profile}' not found", err=True)
+                sys.exit(1)
+
+            session = (
+                db_session.query(models.Session)
+                .join(models.Day)
+                .filter(
+                    models.Day.profile_id == prof.id,
+                    models.Day.date == date.date(),
+                )
+                .first()
+            )
+
+            if not session:
+                click.echo(f"Error: No session found for date {date.date()}", err=True)
+                sys.exit(1)
+
+            session_id = session.id
+
+        inspector = WaveformInspector(db_session)
+        try:
+            timestamps, flow_values, metadata = inspector.get_window(
+                session_id=session_id,
+                center_seconds=center_seconds,
+                window_seconds=float(window),
+            )
+        except Exception as e:
+            click.echo(f"Error loading waveform: {e}", err=True)
+            sys.exit(1)
+
+        if len(timestamps) == 0:
+            click.echo("No data in window", err=True)
+            sys.exit(1)
+
+        analysis_service = AnalysisService(db_session)
+        try:
+            result = analysis_service.get_analysis_result(session_id)
+        except Exception:
+            result = None
+
+        machine_events = []
+        programmatic_events = []
+
+        if result:
+            start_time = center_seconds - window / 2
+            end_time = center_seconds + window / 2
+
+            if result.machine_events:
+                machine_events = inspector.find_events_in_window(
+                    result.machine_events, start_time, end_time
+                )
+
+            if mode in result.mode_results:
+                mode_result = result.mode_results[mode]
+                all_prog_events = list(mode_result.apneas) + list(mode_result.hypopneas)
+                programmatic_events = inspector.find_events_in_window(
+                    all_prog_events, start_time, end_time
+                )
+
+        if output_format == "ascii":
+            renderer = AsciiWaveformRenderer(width=80, height=20, show_events=True)
+            output_str = renderer.render(
+                timestamps=timestamps,
+                flow_values=flow_values,
+                machine_events=machine_events,
+                programmatic_events=programmatic_events,
+                session_id=session_id,
+                center_time=time,
+            )
+            click.echo(output_str)
+
+        elif output_format == "csv":
+            import csv
+
+            if output is None:
+                click.echo("Error: --output is required for csv format", err=True)
+                sys.exit(1)
+
+            with open(output, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp_seconds", "flow_lpm"])
+                for ts, flow in zip(timestamps, flow_values, strict=True):
+                    writer.writerow([f"{ts:.3f}", f"{flow:.3f}"])
+
+            click.echo(f"Exported {len(timestamps)} samples to {output}")
+
+
+@waveform.command("compare")
+@click.option("--session-id", type=int, help="Session ID")
+@click.option(
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Session date (YYYY-MM-DD)",
+)
+@click.option(
+    "--mode", "-m", default="aasm", help="Detection mode to compare (default: aasm)"
+)
+@click.option("--show-unmatched", is_flag=True, help="Only show unmatched events")
+@click.option("--profile", help="Profile username (optional if default set)")
+@click.option("--db", type=click.Path(), help="Database path")
+def compare_events(
+    session_id: int | None,
+    date: datetime | None,
+    mode: str,
+    show_unmatched: bool,
+    profile: str | None,
+    db: str | None,
+) -> None:
+    """
+    Compare machine vs programmatic events with waveform inspection commands.
+
+    Lists false positives and false negatives with commands to inspect each event.
+
+    Examples:
+        snore waveform compare --session-id 37 --mode aasm
+        snore waveform compare --date 2025-10-25 --mode resmed --show-unmatched
+    """
+    if session_id is None and date is None:
+        click.echo("Error: Either --session-id or --date must be provided", err=True)
+        sys.exit(1)
+
+    if db:
+        init_database(str(Path(db)))
+    else:
+        init_database()
+
+    with session_scope() as db_session:
+        if session_id is None:
+            if not profile:
+                profile = get_default_profile()
+                if not profile:
+                    click.echo(
+                        "Error: No default profile set. Use --profile.", err=True
+                    )
+                    sys.exit(1)
+
+            if date is None:
+                click.echo(
+                    "Error: --date is required when --session-id is not provided",
+                    err=True,
+                )
+                sys.exit(1)
+
+            prof = db_session.query(models.Profile).filter_by(username=profile).first()
+            if not prof:
+                click.echo(f"Error: Profile '{profile}' not found", err=True)
+                sys.exit(1)
+
+            session = (
+                db_session.query(models.Session)
+                .join(models.Day)
+                .filter(
+                    models.Day.profile_id == prof.id,
+                    models.Day.date == date.date(),
+                )
+                .first()
+            )
+
+            if not session:
+                click.echo(f"Error: No session found for date {date.date()}", err=True)
+                sys.exit(1)
+
+            session_id = session.id
+
+        analysis_service = AnalysisService(db_session)
+        try:
+            result = analysis_service.get_analysis_result(session_id)
+        except Exception as e:
+            click.echo(f"Error loading analysis: {e}", err=True)
+            sys.exit(1)
+
+        if result is None:
+            click.echo(
+                f"Error: No analysis results found for session {session_id}", err=True
+            )
+            sys.exit(1)
+
+        if mode not in result.mode_results:
+            click.echo(f"Error: Mode {mode} not found in analysis results", err=True)
+            sys.exit(1)
+
+        mode_result = result.mode_results[mode]
+
+        machine_events = result.machine_events or []
+        machine_apneas, machine_hypopneas, machine_session_start = (
+            convert_machine_events(machine_events)
+        )
+
+        prog_apneas = list(mode_result.apneas)
+        prog_hypopneas = list(mode_result.hypopneas)
+
+        false_negatives = []
+        false_positives_apnea = []
+        false_positives_hypopnea = []
+
+        for m_event in machine_apneas + machine_hypopneas:
+            machine_relative_time = m_event.start_time + machine_session_start
+            is_matched = False
+
+            for p_event in prog_apneas + prog_hypopneas:
+                if abs(p_event.start_time - machine_relative_time) <= 5.0:
+                    is_matched = True
+                    break
+
+            if not is_matched:
+                false_negatives.append(m_event)
+
+        for p_event in prog_apneas:
+            is_matched = False
+
+            for m_event in machine_apneas + machine_hypopneas:
+                machine_relative_time = m_event.start_time + machine_session_start
+                if abs(p_event.start_time - machine_relative_time) <= 5.0:
+                    is_matched = True
+                    break
+
+            if not is_matched:
+                false_positives_apnea.append(p_event)
+
+        for p_event in prog_hypopneas:
+            is_matched = False
+
+            for m_event in machine_apneas + machine_hypopneas:
+                machine_relative_time = m_event.start_time + machine_session_start
+                if abs(p_event.start_time - machine_relative_time) <= 5.0:
+                    is_matched = True
+                    break
+
+            if not is_matched:
+                false_positives_hypopnea.append(p_event)
+
+        click.echo(f"Session {session_id} - Event Comparison ({mode} mode)")
+        click.echo(
+            f"Machine: {len(machine_events)} events | Programmatic: {len(prog_apneas) + len(prog_hypopneas)} events"
+        )
+        click.echo("")
+
+        if not show_unmatched or len(false_negatives) > 0:
+            click.echo(
+                f"FALSE NEGATIVES (machine events missed by programmatic): {len(false_negatives)}"
+            )
+            for event in false_negatives:
+                time_str = _format_time_offset(event.start_time)
+                event_type = getattr(event, "event_type", "H")
+                click.echo(f"  {event_type} at {time_str} ({event.duration:.1f}s)")
+                click.echo(
+                    f"    → View: snore waveform show --session-id {session_id} --time {time_str}"
+                )
+            click.echo("")
+
+        if (
+            not show_unmatched
+            or len(false_positives_apnea) + len(false_positives_hypopnea) > 0
+        ):
+            click.echo(
+                f"FALSE POSITIVES (programmatic events not in machine): {len(false_positives_apnea) + len(false_positives_hypopnea)}"
+            )
+
+            for event in false_positives_apnea:
+                time_str = _format_time_offset(event.start_time)
+                event_type = event.event_type
+                conf = getattr(event, "confidence", 0)
+                flow_red = getattr(event, "flow_reduction", 0)
+                click.echo(
+                    f"  {event_type} at {time_str} (conf: {conf:.2f}, flow_red: {flow_red * 100:.0f}%)"
+                )
+                click.echo(
+                    f"    → View: snore waveform show --session-id {session_id} --time {time_str}"
+                )
+
+            for event in false_positives_hypopnea:
+                time_str = _format_time_offset(event.start_time)
+                conf = getattr(event, "confidence", 0)
+                flow_red = getattr(event, "flow_reduction", 0)
+                click.echo(
+                    f"  H at {time_str} (conf: {conf:.2f}, flow_red: {flow_red * 100:.0f}%)"
+                )
+                click.echo(
+                    f"    → View: snore waveform show --session-id {session_id} --time {time_str}"
+                )
 
 
 def main() -> None:
