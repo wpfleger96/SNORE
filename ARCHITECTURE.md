@@ -429,6 +429,8 @@ created_at, updated_at
 UNIQUE(device_id, date)
 ```
 
+After any membership change a `days` row survives only if at least one `sessions` row (enabled or disabled) still references it; `DayManager.recalculate_day` prunes orphaned rows after session deletion, import-time replacement, and `snore db recompute-days` (migration `017` removed shells left by earlier versions). `session_count` counts enabled sessions, so a day whose sessions are all disabled persists with `session_count = 0` and reset aggregates. Requesting a fully deleted day by date therefore returns not-found rather than a zeroed row.
+
 **sessions**
 ```sql
 id, device_id (FK devices), day_id (FK days),
