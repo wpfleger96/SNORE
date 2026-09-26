@@ -564,7 +564,11 @@ class HealthNightlySummary(Base):
 
 
 class Day(Base):
-    """Daily aggregated statistics (OSCAR-compatible pre-calculated cache)."""
+    """Daily aggregated statistics (OSCAR-compatible pre-calculated cache).
+
+    Rows no Session references are pruned by ``DayManager.recalculate_day``,
+    which documents the lifecycle rule.
+    """
 
     __tablename__ = "days"
 
@@ -730,6 +734,10 @@ class Session(Base):
         # start_time range scan.  Run per imported session; index prevents full table
         # scan growth as diagnostic-blip sessions accumulate.
         Index("ix_sessions_device_id_start_time", "device_id", "start_time"),
+        # Day aggregation and the orphan-day probe both look sessions up by
+        # day_id; without this index each is a full sessions scan, making
+        # ``db recompute-days`` O(days x sessions).
+        Index("ix_sessions_day_id", "day_id"),
     )
 
     def __repr__(self) -> str:

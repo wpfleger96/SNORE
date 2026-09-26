@@ -988,7 +988,8 @@ class TestGetDeviceCapabilities:
         """get_device_capabilities returns NO_DATA_IN_RANGE for a Day row with no sessions.
 
         Empty Day cache rows (session_count=0, no Session children) must not inflate
-        nights_with_data or produce a non-null actual date range.
+        nights_with_data or produce a non-null actual date range.  DayManager now
+        prunes such rows, so this models legacy or hand-edited data.
         plan §13 lines 949-961: actual endpoints derived from dates with ≥1 session.
         """
         from snore.database import models as _m  # noqa: PLC0415

@@ -70,7 +70,8 @@ class CapabilitiesMixin(_BreathServiceCore):
             )
 
         # Date range of actual data — only days with at least one Session count
-        # as "imported nights"; empty Day rows never widen the reported range.
+        # as "imported nights".  DayManager.recalculate_day prunes orphaned Day
+        # rows, so this predicate is defence-in-depth against hand-edited data.
         day_stmt = select(models.Day).where(
             models.Day.device_id == device_id,
             exists().where(models.Session.day_id == models.Day.id),
