@@ -532,12 +532,9 @@ class SessionImporter:
                 for day_id in batch_day_ids:
                     day_record = await db.get(models.Day, day_id)
                     if day_record:
-                        await DayManager._aggregate_day_statistics(day_record, db)
-                        # A replaced session may have been the sole occupant of its
-                        # Day row.  Delete orphan Day rows so they don't appear in
-                        # day listings with zero sessions.
-                        if day_record.session_count == 0:
-                            await db.delete(day_record)
+                        # A replaced session may have been the sole occupant of
+                        # its Day row; recalculate_day prunes the orphaned row.
+                        await DayManager.recalculate_day(day_record, db)
 
         # Force and overlap-replace imports delete existing sessions (cascading
         # to their waveforms) before inserting replacements, so SQLite may reuse

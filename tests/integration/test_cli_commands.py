@@ -375,6 +375,60 @@ class TestDbRecomputeDaysCommand:
         assert len(ahi_values) == 10
         assert all(v == pytest.approx(5.2) for v in ahi_values)
 
+    def test_recompute_days_prunes_orphans_and_keeps_disabled_only_days(
+        self, cli_runner, populated_test_db, db_session
+    ):
+        """Under the production engine (FK enforcement on), recompute-days
+        deletes a Day whose sessions are gone and keeps a Day whose only
+        session is disabled, reporting the pruned count."""
+        orphan_day_id, disabled_day_id = (
+            db_session.execute(
+                text(
+                    "SELECT day_id FROM sessions WHERE device_session_id IN "
+                    "('test_session_0', 'test_session_1') ORDER BY device_session_id"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        db_session.execute(
+            text("DELETE FROM sessions WHERE device_session_id = 'test_session_0'")
+        )
+        db_session.execute(
+            text(
+                "UPDATE sessions SET enabled = 0 "
+                "WHERE device_session_id = 'test_session_1'"
+            )
+        )
+        db_session.commit()
+
+        result = cli_runner.invoke(
+            cli,
+            ["db", "recompute-days", "--db", str(populated_test_db)],
+            input="y\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Recomputed 9 day(s)" in result.output
+        assert "pruned 1 orphaned day(s)" in result.output
+
+        db_session.expire_all()
+        remaining = db_session.execute(text("SELECT id FROM days")).scalars().all()
+        assert orphan_day_id not in remaining
+        assert len(remaining) == 9
+        disabled_count = db_session.execute(
+            text("SELECT session_count FROM days WHERE id = :id"),
+            {"id": disabled_day_id},
+        ).scalar_one()
+        assert disabled_count == 0
+        assert (
+            db_session.execute(
+                text("SELECT COUNT(*) FROM sessions WHERE day_id = :id"),
+                {"id": disabled_day_id},
+            ).scalar_one()
+            == 1
+        )
+
     def test_recompute_days_empty_database(self, cli_runner, temp_db):
         """recompute-days on an empty database reports zero days."""
         asyncio.run(init_database(str(temp_db)))

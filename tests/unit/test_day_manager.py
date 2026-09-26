@@ -6,11 +6,14 @@ that determines which calendar day sessions belong to and how statistics
 are aggregated across multiple sessions.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
+from sqlalchemy import select
+
 from snore.database.day_manager import DayManager
+from snore.database.models import Day, Session
 
 
 class TestDaySplitLogic:
@@ -210,7 +213,7 @@ class TestStatisticalAggregation:
 
         session.day_id = None
         await async_db_session.flush()
-        await DayManager._aggregate_day_statistics(day, async_db_session)
+        await DayManager.aggregate_day_statistics(day, async_db_session)
 
         assert day.session_count == 0
         assert day.total_therapy_hours == 0.0
@@ -247,7 +250,7 @@ class TestStatisticalAggregation:
 
         session.day_id = None
         await async_db_session.flush()
-        await DayManager._aggregate_day_statistics(day, async_db_session)
+        await DayManager.aggregate_day_statistics(day, async_db_session)
 
         assert day.epap_min is None
         assert day.epap_max is None
@@ -501,3 +504,93 @@ class TestStatisticalAggregation:
         day = await DayManager.link_session_to_day(session, device.id, async_db_session)
 
         assert day.total_therapy_hours == pytest.approx(0.0, abs=0.001)
+
+
+class TestDayPruning:
+    """Test DayManager.recalculate_day's orphan-pruning lifecycle rule."""
+
+    async def test_recalculate_day_prunes_unreferenced_day(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """A day no Session row references is deleted, not reset in place."""
+        device = async_test_device
+
+        session = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=8.0,
+        )
+        day = await DayManager.link_session_to_day(session, device.id, async_db_session)
+        day_id = day.id
+
+        await async_db_session.delete(session)
+        await async_db_session.flush()
+
+        assert await DayManager.recalculate_day(day, async_db_session) is False
+        assert await async_db_session.get(Day, day_id) is None
+
+    async def test_recalculate_day_keeps_day_with_only_disabled_sessions(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """A disabled session still references its day, so the row survives
+        with zeroed aggregates rather than being pruned."""
+        device = async_test_device
+
+        session = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=8.0,
+            ahi=5.0,
+        )
+        day = await DayManager.link_session_to_day(session, device.id, async_db_session)
+        day_id = day.id
+
+        session.enabled = False
+        await async_db_session.flush()
+
+        assert await DayManager.recalculate_day(day, async_db_session) is True
+
+        await async_db_session.flush()
+        async_db_session.expire_all()
+        stored = (
+            await async_db_session.execute(select(Day).where(Day.id == day_id))
+        ).scalar_one()
+        assert stored.session_count == 0
+        assert stored.ahi is None
+
+    async def test_recalculate_day_sees_pending_session_before_pruning(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """A Session added but not yet flushed still counts as a reference.
+
+        The existence probe is a Core statement that bypasses autoflush; without
+        an explicit flush the pending session would be invisible and the day
+        deleted out from under it.
+        """
+        device = async_test_device
+
+        first = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=8.0,
+        )
+        day = await DayManager.link_session_to_day(first, device.id, async_db_session)
+        day_id = day.id
+
+        await async_db_session.delete(first)
+        await async_db_session.flush()
+
+        start = datetime(2024, 11, 6, 2, 0, 0)
+        pending = Session(
+            device_id=device.id,
+            device_session_id="pending_session",
+            start_time=start,
+            end_time=start + timedelta(hours=4),
+            duration_seconds=4 * 3600,
+            day_id=day_id,
+        )
+        async_db_session.add(pending)
+
+        assert await DayManager.recalculate_day(day, async_db_session) is True
+        assert await async_db_session.get(Day, day_id) is day
+        assert day.session_count == 1

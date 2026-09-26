@@ -170,7 +170,10 @@ def cleanup_orphans(db: str | None) -> None:
 @db.command("recompute-days")
 @db_option
 @click.confirmation_option(
-    prompt="Re-derive every Day's metrics from stored session statistics?"
+    prompt=(
+        "Re-derive every Day's metrics from stored session statistics "
+        "and delete Day rows no session references?"
+    )
 )
 def recompute_days(db: str | None) -> None:
     """Recompute all Day aggregates from stored session statistics (no reparse).
@@ -178,7 +181,8 @@ def recompute_days(db: str | None) -> None:
     Re-runs day aggregation over the ``Statistics`` already stored for each
     session, refreshing every Day row across all devices and profiles.  Use
     after an aggregation-formula change (e.g. a new weighting) to update
-    historical Day rows without re-importing raw device data.
+    historical Day rows without re-importing raw device data.  Day rows that
+    no session references are deleted rather than recomputed.
 
     Days are processed in chunks, each committed in its own gated write
     transaction (like ``cleanup-orphans``), so the SQLite write lock is
@@ -218,6 +222,7 @@ def recompute_days(db: str | None) -> None:
             console=console,
         ) as progress:
             task = progress.add_task("Recomputing days", total=len(day_ids))
+            pruned = 0
             for chunk in iter_id_chunks(day_ids):
                 async with write_gate(), session_scope(immediate=True) as session:
                     days = (
@@ -226,10 +231,14 @@ def recompute_days(db: str | None) -> None:
                         .all()
                     )
                     for day in days:
-                        await DayManager.aggregate_day_statistics(day, session)
+                        if not await DayManager.recalculate_day(day, session):
+                            pruned += 1
                 progress.update(task, advance=len(chunk))
 
-        print_success(f"Recomputed {len(day_ids)} day(s) from session statistics")
+        summary = f"Recomputed {len(day_ids) - pruned} day(s) from session statistics"
+        if pruned:
+            summary += f"; pruned {pruned} orphaned day(s)"
+        print_success(summary)
 
     asyncio.run(_run())
 

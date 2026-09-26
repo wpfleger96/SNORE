@@ -446,6 +446,49 @@ class TestOverlapGuardReplacement:
         assert len(days) == 1
         assert days[0].session_count == 1
 
+    async def test_replacement_keeps_day_with_disabled_sibling(
+        self, async_db_session, importer, device
+    ):
+        """A disabled session still references its Day, so replacing the day's
+        only enabled session must not prune the row.
+
+        The old ``session_count == 0`` check counted enabled sessions only, so
+        the ORM delete would have tried to null the sibling's FK and aborted the
+        import with an IntegrityError."""
+        # Enabled session on therapy day 20, replaced below by one on day 19.
+        await _seed_session(
+            async_db_session, device, "20260120_130000", _dt(20, 13), _dt(20, 19)
+        )
+        # Disabled sibling on therapy day 20 that survives the replacement.
+        disabled = await _seed_session(
+            async_db_session, device, "20260120_210000", _dt(20, 21), _dt(20, 22)
+        )
+        disabled.enabled = False
+        await async_db_session.flush()
+
+        # 11:00-20:00 covers the 13:00-19:00 session and lands on therapy day 19.
+        incoming = _make_unified(_SERIAL, "20260120_merged", _dt(20, 11), _dt(20, 20))
+        full_importer = SessionImporter(profile_id=importer.profile_id)
+        imported, skipped, failed, _ = await full_importer.import_sessions_batch(
+            [incoming], db=async_db_session
+        )
+        assert (imported, skipped, failed) == (1, 0, 0)
+        assert not await _session_exists(async_db_session, "20260120_130000")
+        assert await _session_exists(async_db_session, "20260120_210000")
+
+        days = (
+            (
+                await async_db_session.execute(
+                    select(models.Day)
+                    .where(models.Day.device_id == device.id)
+                    .order_by(models.Day.date)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(d.date.day, d.session_count) for d in days] == [(19, 1), (20, 0)]
+
 
 class TestOldFormatPurge:
     """Old noon-bucket rows (e.g. ``20260130_merged``) are purged unconditionally.
