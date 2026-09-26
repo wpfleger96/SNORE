@@ -385,33 +385,29 @@ class TestStartReaperSpoolSweepFn:
 
         A job created AFTER the reaper starts must appear in a subsequent tick's
         skip set, proving the lambda does not capture a snapshot at startup.
+        The sweep signals only once it actually observes the late job, so a tick
+        whose snapshot predates create_job cannot satisfy the wait.
         """
-        captured: list[frozenset[object]] = []
-        ticked = threading.Event()
+        spool = tmp_path / "late_spool"
+        spool.mkdir()
+        first_tick = threading.Event()
+        saw_late_job = threading.Event()
 
         def _recording_sweep() -> None:
-            captured.append(get_live_spool_dirs())
-            ticked.set()
+            if spool in get_live_spool_dirs():
+                saw_late_job.set()
+            first_tick.set()
 
         thread, stop = start_reaper(interval=0.01, spool_sweep_fn=_recording_sweep)
         try:
-            # Wait for the first tick (before the late job exists).
-            ticked.wait(timeout=2.0)
-            ticked.clear()
-
-            # Create a job AFTER the reaper has already ticked at least once.
-            spool = tmp_path / "late_spool"
-            spool.mkdir()
+            assert first_tick.wait(timeout=2.0), "Reaper never ticked"
             create_job(JobType.UPLOAD, temp_dir=spool)
-
-            # Wait for the next tick to pick up the new job.
-            fired = ticked.wait(timeout=2.0)
+            fired = saw_late_job.wait(timeout=2.0)
         finally:
             stop.set()
             thread.join(timeout=1.0)
 
-        assert fired, "Reaper did not tick after job was created"
-        assert spool in captured[-1], (
+        assert fired, (
             "get_live_spool_dirs() must be re-evaluated per tick, not captured at start"
         )
 
