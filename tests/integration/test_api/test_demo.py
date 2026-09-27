@@ -926,15 +926,15 @@ class TestScrubDemo:
         The scrub copies all columns except session_id verbatim; a future
         date/string/PII column must fail here instead of being silently cloned.
         """
-        from sqlalchemy import Integer, Numeric  # noqa: PLC0415
+        from sqlalchemy import Float, Integer, Numeric  # noqa: PLC0415
 
         from snore.cli.groups.db import _STATS_CLONE_EXCLUDED_COLUMNS  # noqa: PLC0415
 
         for col in models.Statistics.__table__.columns:
             if col.name in _STATS_CLONE_EXCLUDED_COLUMNS:
                 continue
-            # Float subclasses Numeric.
-            assert isinstance(col.type, (Integer, Numeric)), (
+            # Float no longer subclasses Numeric as of SQLAlchemy 2.1.
+            assert isinstance(col.type, (Integer, Numeric, Float)), (
                 f"Statistics.{col.name} has non-numeric type {col.type!r}; "
                 "review for PII/dates before letting the demo scrub clone it"
             )
@@ -946,15 +946,15 @@ class TestScrubDemo:
         column on Day must fail here instead of being cloned verbatim
         (and, for dates, unshifted) into the demo profile.
         """
-        from sqlalchemy import Integer, Numeric  # noqa: PLC0415
+        from sqlalchemy import Float, Integer, Numeric  # noqa: PLC0415
 
         from snore.cli.groups.db import _DAY_CLONE_EXCLUDED_COLUMNS  # noqa: PLC0415
 
         for col in models.Day.__table__.columns:
             if col.name in _DAY_CLONE_EXCLUDED_COLUMNS:
                 continue
-            # Float subclasses Numeric.
-            assert isinstance(col.type, (Integer, Numeric)), (
+            # Float no longer subclasses Numeric as of SQLAlchemy 2.1.
+            assert isinstance(col.type, (Integer, Numeric, Float)), (
                 f"Day.{col.name} has non-numeric type {col.type!r}; "
                 "review for PII/dates before letting the demo scrub clone it"
             )

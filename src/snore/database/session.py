@@ -149,7 +149,10 @@ def _build_alembic_config(database_url: str) -> AlembicConfig:
     migrations_dir = str(Path(__file__).parent / "migrations")
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", migrations_dir)
-    cfg.set_main_option("sqlalchemy.url", database_url)
+    # Alembic's configparser treats "%" as interpolation; URL-escaped
+    # characters (e.g. SQLAlchemy 2.1 renders ":memory:" as "%3Amemory%3A")
+    # must be doubled.
+    cfg.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     return cfg
 
 
