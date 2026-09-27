@@ -3,7 +3,7 @@ FROM node:24-slim AS ui-builder
 
 WORKDIR /app/ui
 
-RUN corepack enable && corepack prepare pnpm@11.17.0 --activate
+RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
 
 COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
