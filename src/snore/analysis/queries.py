@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-def latest_analysis_stmt(session_id: int) -> Select[tuple[models.AnalysisResult]]:
+def latest_analysis_stmt(session_id: int) -> Select[models.AnalysisResult]:
     """SELECT for one session's AnalysisResult rows, most recent first.
 
     Ordered by ``created_at DESC, id DESC`` — callers take the first row as
@@ -51,7 +51,7 @@ async def latest_analysis_row(
 
 
 def latest_analysis_ranked_subquery(
-    session_ids: Iterable[int] | Select[tuple[int]],
+    session_ids: Iterable[int] | Select[int],
 ) -> Subquery:
     """Window-function subquery ranking AnalysisResult rows per session.
 

@@ -590,6 +590,8 @@ async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, s
                 )
             ).all()
             for spool_path_str, profile_id, owner_user_id, job_type_str in rows:
+                if spool_path_str is None:  # excluded by the is_not(None) filter
+                    continue
                 spool_path = Path(spool_path_str)
                 if profile_id is not None and spool_path.exists():
                     resume_candidates.append(

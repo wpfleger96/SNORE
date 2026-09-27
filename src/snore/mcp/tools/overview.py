@@ -99,7 +99,8 @@ async def get_data_overview(
     ).all()
     modes_by_device: dict[int, list[str]] = {}
     for dev_id, mode in modes_rows:
-        modes_by_device.setdefault(int(dev_id), []).append(mode)
+        if mode is not None:  # excluded by the is_not(None) filter
+            modes_by_device.setdefault(int(dev_id), []).append(mode)
 
     device_infos: list[DeviceInfo] = []
     total_sessions = 0

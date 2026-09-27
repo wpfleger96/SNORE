@@ -22,19 +22,19 @@ __all__ = [
 ]
 
 
-def session_device_join[SelectT: Select[Any]](stmt: SelectT) -> SelectT:
+def session_device_join[SelectT: Select[*tuple[Any, ...]]](stmt: SelectT) -> SelectT:
     """Join Session → Device: the ownership edge used by profile filtering."""
     return stmt.join(models.Device, models.Session.device_id == models.Device.id)
 
 
-async def paginate(
+async def paginate[*Ts](
     db: AsyncSession,
-    stmt: Select[Any],
+    stmt: Select[*Ts],
     *,
     order_by: ColumnElement[Any],
     limit: int,
     offset: int,
-) -> tuple[Result[Any], int]:
+) -> tuple[Result[*Ts], int]:
     """Count rows matching *stmt*, then execute one ordered page of it.
 
     The total is ``COUNT(*)`` over the filtered statement (before ordering and

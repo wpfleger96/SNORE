@@ -164,10 +164,10 @@ async def get_nightly_summary(
     ).all()
 
     day_to_session: dict[int, int] = {}
-    for session_id, s_day_id in session_rows:
-        s_day_id_int = int(s_day_id)
-        if s_day_id_int not in day_to_session:
-            day_to_session[s_day_id_int] = int(session_id)
+    for row_session_id, s_day_id in session_rows:
+        if s_day_id is None:  # excluded by the day_id IN filter
+            continue
+        day_to_session.setdefault(int(s_day_id), int(row_session_id))
 
     session_ids = list(day_to_session.values())
 

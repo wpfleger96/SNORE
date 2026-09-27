@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from sqlalchemy.engine import make_url
+
 from snore.database.target import DatabaseTarget
 
 
@@ -204,7 +206,8 @@ class TestDatabaseTargetExactURLAssertions:
         """sqlite:///:memory: resolves to sqlite+pysqlite:///:memory:."""
         target = DatabaseTarget.from_url("sqlite:///:memory:")
         url = target.resolve_sync_url()
-        assert url == "sqlite+pysqlite:///:memory:"
+        # Compare parsed URLs: SQLAlchemy 2.1 renders ":" as "%3A" in the path.
+        assert make_url(url) == make_url("sqlite+pysqlite:///:memory:")
 
     # --- Query parameters preserved ---
 

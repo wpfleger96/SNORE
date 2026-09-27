@@ -341,7 +341,7 @@ class StatsService(ProfileScopedService):
         }
 
         day_ids = [d.id for d in day_records]
-        rows: list[Row[tuple[models.Statistics, date]]] = []
+        rows: list[Row[models.Statistics, date]] = []
         for chunk in iter_id_chunks(day_ids):
             rows.extend(
                 (
