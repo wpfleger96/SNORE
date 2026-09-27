@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy import ColumnElement, Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.queries import (
@@ -98,7 +98,7 @@ class AnalysisFacade:
         start: datetime | None,
         end: datetime | None,
         analyzed_only: bool,
-    ) -> Any:
+    ) -> Select[models.Session]:
         """Build the shared 2.0-style select for list/count of analysis status."""
         stmt = (
             select(models.Session)
@@ -528,7 +528,7 @@ class AnalysisFacade:
                 ranked = latest_analysis_ranked_subquery(
                     select(owned_sessions_subq.c.id)
                 )
-                latest_ids = (
+                latest_ids: Sequence[int] = (
                     (
                         await self._db.execute(
                             select(ranked.c.id).where(ranked.c.recency_rank == 1)
