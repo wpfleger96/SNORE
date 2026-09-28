@@ -11,7 +11,9 @@ Coverage:
 - get_nightly_range_summary: empty range returns n_nights=0
 - get_device_capabilities: no sessions → null_reason; with sessions → date range
 - get_contextual_events: no events → empty; with events → ContextualEvent list
-- get_ca_analysis: no CA events → empty; with CA events → CaAnalysisResult
+- get_contextual_events ventilatory context: MV slope/stability, delivered PS,
+  flow-derived MV fallback
+- get_nightly_summary periodic_breathing_pct from persisted PB episodes
 - get_waveform_window: no waveform data → empty channels
 - fetch_waveform_window_raw (module-level): missing session raises ValueError
 - compute_waveform_window (module-level): empty raw data round-trip
@@ -55,6 +57,7 @@ from snore.services.breath_service import (
     WaveformChannelName,
     WaveformWindowRequest,
     WindowCriterion,
+    compute_ventilatory_context,
     compute_waveform_window,
     derive_mv_from_flow,
     fetch_waveform_window_raw,
@@ -1065,55 +1068,6 @@ class TestGetContextualEvents:
 
 
 # ---------------------------------------------------------------------------
-# get_ca_analysis
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetCaAnalysis:
-    async def test_empty_when_no_ca_events(self, async_db_session):
-        """get_ca_analysis returns empty ca_events when no CA events exist."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 6, 1)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        await _store_analysis_with_breaths(async_db_session, session, profile_id)
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert result.ca_events == []
-
-    async def test_returns_ca_events_when_ca_present(self, async_db_session):
-        """get_ca_analysis populates ca_events list when CA events are present."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 6, 1)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        await _store_analysis_with_breaths(async_db_session, session, profile_id)
-
-        ca_event = models.Event(
-            session_id=session.id,
-            event_type="CA",
-            start_time=session.start_time + timedelta(minutes=10),
-            duration_seconds=20.0,
-        )
-        async_db_session.add(ca_event)
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert len(result.ca_events) == 1
-        assert result.ca_events[0].duration_seconds == pytest.approx(20.0)
-        assert result.ca_events[0].session_id == session.id
-        # periodic_breathing_pct is a float or None
-        assert result.periodic_breathing_pct is None or isinstance(
-            result.periodic_breathing_pct, float
-        )
-
-
-# ---------------------------------------------------------------------------
 # get_waveform_window
 # ---------------------------------------------------------------------------
 
@@ -1326,129 +1280,6 @@ class TestComputeWaveformWindow:
         window = compute_waveform_window(raw)
         assert window.channels == []
         assert window.missing_channel_reason is None
-
-
-# ---------------------------------------------------------------------------
-# fetch_ca_analysis / compute_ca_analysis seam (module-level)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestFetchCaAnalysis:
-    async def test_fetch_returns_dto_free_of_orm_handles(self, async_db_session):
-        """fetch_ca_analysis returns a RawCaAnalysis carrying no ORM/DB objects.
-
-        Verifies that RawCaAnalysis, its session_data, pre_waveform, and
-        ca_events fields all contain only plain Python/Pydantic values so that
-        compute_ca_analysis can run outside the DB scope safely.
-        """
-        from snore.services.breath_service import (  # noqa: PLC0415
-            BreathService,
-            RawCaAnalysis,
-            RawCaSessionData,
-        )
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 6, 20)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        await _store_analysis_with_breaths(async_db_session, session, profile_id)
-        # Add a CA event so session_data is populated
-        ca_event = models.Event(
-            session_id=session.id,
-            event_type="CA",
-            start_time=session.start_time + timedelta(minutes=5),
-            duration_seconds=10.0,
-        )
-        async_db_session.add(ca_event)
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        raw = await svc.fetch_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert isinstance(raw, RawCaAnalysis)
-        assert len(raw.session_data) == 1
-
-        sd = raw.session_data[0]
-        assert isinstance(sd, RawCaSessionData)
-        # No ORM model types anywhere in the DTO
-        assert isinstance(sd.session_id, int)
-        assert isinstance(sd.session_start, datetime)
-        assert len(sd.ca_events) == 1
-        assert sd.ca_events[0].duration_seconds == pytest.approx(10.0)
-        # pre_waveform carries bytes, not SQLAlchemy rows
-        from snore.services.breath_service import RawWaveformWindow  # noqa: PLC0415
-
-        assert isinstance(sd.pre_waveform, RawWaveformWindow)
-        for ch in sd.pre_waveform.channels:
-            assert isinstance(ch.raw_bytes, bytes)
-
-    async def test_compute_is_deterministic_on_fixed_raw(self, async_db_session):
-        """compute_ca_analysis produces identical output when called twice with the same raw.
-
-        Verifies that the pure function has no mutable state — identical inputs
-        always yield identical CaAnalysisResult values.
-        """
-        from snore.services.breath_service import (  # noqa: PLC0415
-            BreathService,
-            compute_ca_analysis,
-        )
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 6, 21)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        await _store_analysis_with_breaths(async_db_session, session, profile_id)
-        ca_event = models.Event(
-            session_id=session.id,
-            event_type="CA",
-            start_time=session.start_time + timedelta(minutes=15),
-            duration_seconds=8.0,
-        )
-        async_db_session.add(ca_event)
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        raw = await svc.fetch_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        result1 = compute_ca_analysis(raw)
-        result2 = compute_ca_analysis(raw)
-
-        assert result1.model_dump() == result2.model_dump()
-
-    async def test_orchestrator_equals_fetch_plus_compute(self, async_db_session):
-        """get_ca_analysis(date) == compute_ca_analysis(fetch_ca_analysis(date)).
-
-        Verifies that the convenience orchestrator produces bit-identical output
-        to the explicit fetch+compute composition.
-        """
-        from snore.services.breath_service import (  # noqa: PLC0415
-            BreathService,
-            compute_ca_analysis,
-        )
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 6, 22)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        await _store_analysis_with_breaths(async_db_session, session, profile_id)
-        ca_event = models.Event(
-            session_id=session.id,
-            event_type="CA",
-            start_time=session.start_time + timedelta(minutes=15),
-            duration_seconds=8.0,
-        )
-        async_db_session.add(ca_event)
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        raw = await svc.fetch_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-        composed = compute_ca_analysis(raw)
-        orchestrated = await svc.get_ca_analysis(
-            therapy_date=therapy_date, device_id=dev.id
-        )
-
-        assert composed.model_dump() == orchestrated.model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -2372,42 +2203,6 @@ class TestTwoProfileIsolation:
         assert len(events) == 1
         assert events[0].event_type == "OA"
 
-    async def test_get_ca_analysis_foreign_session_ca_events_not_returned(
-        self, async_db_session
-    ):
-        """get_ca_analysis for profile A's session returns A's CA events, not B's."""
-        therapy_date = date(2025, 6, 15)
-        (
-            profile_a_id,
-            dev_a_id,
-            session_a,
-            _profile_b_id,
-            _dev_b_id,
-            session_b,
-        ) = await self._setup_two_profiles(async_db_session)
-
-        # Profile A: no CA events
-        # Profile B: two CA events
-        for i in range(2):
-            async_db_session.add(
-                models.Event(
-                    session_id=session_b.id,
-                    event_type="CA",
-                    start_time=session_b.start_time + timedelta(minutes=10 + i * 15),
-                    duration_seconds=10.0,
-                )
-            )
-        await async_db_session.flush()
-
-        svc_a = BreathService(async_db_session, profile_id=profile_a_id)
-        result = await svc_a.get_ca_analysis(
-            therapy_date=therapy_date, device_id=dev_a_id
-        )
-
-        assert result.ca_events == [], (
-            "profile B's CA events must not appear in profile A's get_ca_analysis"
-        )
-
 
 # ---------------------------------------------------------------------------
 # Stale-session coverage / status-precedence tests (Thufir pass-1 finding #3)
@@ -2543,37 +2338,6 @@ class TestStaleCoverageStateMachine:
         # plan §1 line 864 rule 5: stale + not-run → PARTIAL (not STALE)
         assert result.day_status == DayAnalysisStatus.PARTIAL
 
-    async def test_ca_events_returned_when_analysis_stale(self, async_db_session):
-        """get_ca_analysis returns CA events even when analysis is stale.
-
-        CA events are stored at import time (event-anchored) and must be available
-        regardless of analysis version.  day_status must be STALE, not NOT_RUN.
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 3, 4)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-
-        # Stale analysis
-        await _store_stale_analysis_with_breaths(async_db_session, session, n_breaths=2)
-
-        # CA event stored at import time (independent of analysis)
-        ca_event = models.Event(
-            session_id=session.id,
-            event_type="CA",
-            start_time=session.start_time + timedelta(seconds=120),
-            duration_seconds=15.0,
-        )
-        async_db_session.add(ca_event)
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date, device_id=dev.id)
-
-        # plan §1 line 864 rule 4: all-stale → STALE
-        assert result.day_status == DayAnalysisStatus.STALE
-        assert len(result.ca_events) == 1, "CA events must be returned on stale days"
-
 
 # ---------------------------------------------------------------------------
 # Same-profile, two-device adversarial tests (Thufir pass-2 finding CRITICAL)
@@ -2706,21 +2470,6 @@ class TestSameProfileTwoDevice:
         with pytest.raises(DeviceAmbiguityError):
             await svc.get_contextual_events(therapy_date=therapy_date)
 
-    async def test_two_device_get_ca_analysis_raises_without_device_id(
-        self, async_db_session
-    ):
-        """get_ca_analysis without device_id raises DeviceAmbiguityError."""
-        from snore.services.breath_service import DeviceAmbiguityError  # noqa: PLC0415
-
-        therapy_date = date(2025, 11, 6)
-        profile_id, _, _, _, _ = await self._setup_two_devices(
-            async_db_session, therapy_date
-        )
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        with pytest.raises(DeviceAmbiguityError):
-            await svc.get_ca_analysis(therapy_date=therapy_date)
-
     async def test_two_device_waveform_window_raises_device_ambiguity(
         self, async_db_session
     ):
@@ -2836,43 +2585,6 @@ class TestSplitNight:
         assert session_a.id in session_ids_seen
         assert session_b.id in session_ids_seen
 
-    async def test_split_night_ca_analysis_returns_ca_events_from_both_sessions(
-        self, async_db_session
-    ):
-        """get_ca_analysis returns CA events from both split-night sessions."""
-        therapy_date = date(2025, 12, 2)
-        profile_id, dev, session_a, session_b = await self._setup_split_night(
-            async_db_session, therapy_date
-        )
-
-        # Add one CA event to each session
-        async_db_session.add_all(
-            [
-                models.Event(
-                    session_id=session_a.id,
-                    event_type="CA",
-                    start_time=session_a.start_time + timedelta(minutes=15),
-                    duration_seconds=20.0,
-                ),
-                models.Event(
-                    session_id=session_b.id,
-                    event_type="CA",
-                    start_time=session_b.start_time + timedelta(minutes=20),
-                    duration_seconds=15.0,
-                ),
-            ]
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        # Both sessions' CA events must be returned
-        assert len(result.ca_events) == 2
-        session_ids_seen = {e.session_id for e in result.ca_events}
-        assert session_a.id in session_ids_seen
-        assert session_b.id in session_ids_seen
-
 
 # ---------------------------------------------------------------------------
 # Input validation tests (Thufir pass-2 finding IMPORTANT-9)
@@ -2978,7 +2690,7 @@ def _make_corrupt_waveform_blob() -> bytes:
 @pytest.mark.unit
 class TestCorruptBlobThroughPublicSeams:
     """Corrupt waveform blobs must propagate as ValueError, not silently become
-    NOT_AVAILABLE, through the get_contextual_events and get_ca_analysis seams."""
+    NOT_AVAILABLE, through the get_contextual_events seam."""
 
     async def test_corrupt_pressure_blob_raises_in_contextual_events(
         self, async_db_session
@@ -3019,11 +2731,11 @@ class TestCorruptBlobThroughPublicSeams:
         with pytest.raises(ValueError):
             await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
 
-    async def test_corrupt_mv_blob_raises_in_ca_analysis(self, async_db_session):
-        """get_ca_analysis re-raises ValueError when MV blob is corrupt.
+    async def test_corrupt_mv_blob_raises_in_contextual_events(self, async_db_session):
+        """get_contextual_events re-raises ValueError when the MV blob is corrupt.
 
-        plan IMPORTANT-8: same propagation requirement for CA analysis.
-        CA event at offset > 0 triggers the per-event MV slope fetch.
+        plan IMPORTANT-8: MV now feeds the per-event ventilatory context, so the
+        same propagation requirement applies.
         """
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -3041,7 +2753,6 @@ class TestCorruptBlobThroughPublicSeams:
                 data_blob=_make_corrupt_waveform_blob(),
             )
         )
-        # CA at 300s offset → code enters `if offset_s > 0` and fetches MV
         async_db_session.add(
             models.Event(
                 session_id=session.id,
@@ -3054,235 +2765,505 @@ class TestCorruptBlobThroughPublicSeams:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with pytest.raises(ValueError):
-            await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
+            await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
 
 
 # ---------------------------------------------------------------------------
-# Numeric provenance: CA fields must be nonzero when real data is present
-# (Thufir pass-2 IMPORTANT-2: "test numeric fixtures whose expected values are nonzero")
+# Per-event ventilatory context (get_contextual_events)
 # ---------------------------------------------------------------------------
+
+
+async def _add_waveform(
+    db: AsyncSession,
+    session: models.Session,
+    waveform_type: str,
+    values: np.ndarray,
+) -> None:
+    """Seed a 1 Hz waveform whose i-th sample sits at offset i seconds."""
+    ts = np.arange(values.size, dtype=np.float32)
+    db.add(
+        models.Waveform(
+            session_id=session.id,
+            waveform_type=waveform_type,
+            sample_rate=1.0,
+            sample_count=int(values.size),
+            data_blob=_make_waveform_blob_from_arrays(ts, values.astype(np.float32)),
+        )
+    )
+    await db.flush()
+
+
+async def _add_event(
+    db: AsyncSession,
+    session: models.Session,
+    offset_seconds: float,
+    event_type: str = "CA",
+) -> None:
+    db.add(
+        models.Event(
+            session_id=session.id,
+            event_type=event_type,
+            start_time=session.start_time + timedelta(seconds=offset_seconds),
+            duration_seconds=10.0,
+        )
+    )
+    await db.flush()
+
+
+async def _single_contextual_event(
+    db: AsyncSession, profile_id: int, therapy_date: date, device_id: int
+) -> Any:
+    events = await BreathService(db, profile_id=profile_id).get_contextual_events(
+        therapy_date=therapy_date, device_id=device_id
+    )
+    assert len(events) == 1
+    return events[0]
 
 
 @pytest.mark.unit
-class TestCaNumericProvenance:
-    """CA per-event and night-level fields must be numerically correct, not just
-    structurally non-null, when real waveform/analysis data is present."""
+class TestEventVentilatoryContext:
+    """Per-event MV slope / stability / delivered PS, numerically checked."""
 
-    async def test_ca_pb_pct_nonzero_from_known_episodes(self, async_db_session):
-        """periodic_breathing_pct is nonzero when analysis has persisted PB episodes.
-
-        Session = 3600 s.  One episode: start_time=600 s, end_time=960 s (360 s).
-        Expected: pb_pct = 360 / 3600 * 100 = 10.0 %.
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 7, 10)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-
-        episodes = [
-            {
-                "start_time": 600.0,
-                "end_time": 960.0,
-                "cycle_length": 30.0,
-                "regularity_score": 0.9,
-                "confidence": 0.95,
-                "has_apneas": False,
-            }
-        ]
-        result_dto = AnalysisResultDTO(
-            session_id=session.id,
-            session_duration_hours=1.0,
-            total_breaths=0,
-            machine_events=[],
-            mode_results={
-                "aasm": ModeResult(
-                    mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
-                )
-            },
-            timestamp_start=session.start_time.timestamp(),
-            timestamp_end=(session.start_time + timedelta(hours=1)).timestamp(),
-            periodic_breathing_episodes=episodes,
-        )
-        from snore.analysis.service import AnalysisService as _AS  # noqa: PLC0415
-
-        await _AS(async_db_session, profile_id=profile_id).store_result(
-            AnalysisComputation(summary=result_dto, breaths=[], primary_mode="aasm"),
-            processing_time_ms=10,
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=100),
-                duration_seconds=8.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert result.periodic_breathing_pct is not None
-        assert result.periodic_breathing_pct > 0.0
-        # 360 / 3600 * 100 = 10.0 %  (±0.1 for float rounding)
-        assert abs(result.periodic_breathing_pct - 10.0) < 0.1
-
-    async def test_ca_mv_slope_nonzero_from_linear_ramp(self, async_db_session):
-        """preceding_mv_slope ≈ 60.0 (L/min per minute) when MV = t (unit ramp).
-
-        CA at offset 300 s.  MV window = [240, 300] s (60 s; plan §12 line 976).
-        Linear regression of y=t on x=t → per-second slope = 1.0 L/min per s.
-        After unit conversion (×60 s/min): preceding_mv_slope = 60.0 L/min per minute.
-        """
+    async def test_mv_slope_from_linear_ramp_is_60_lpm_per_min(self, async_db_session):
+        """MV = t (unit ramp), event at 300 s → per-second slope 1.0 over the
+        60 s window [240, 300] → 60.0 L/min per minute."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 7, 11)
         _, session = await _make_day_and_session(
             async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
+        await _add_waveform(async_db_session, session, "mv", np.arange(3600.0))
+        await _add_event(async_db_session, session, 300.0)
 
-        n = 3600
-        ts = np.arange(n, dtype=np.float32)
-        vals = np.arange(n, dtype=np.float32)  # y = x → slope = 1.0
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(ts, vals),
-            )
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
         )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=12.0,
-            )
+
+        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, abs=1.0)
+        assert ev.preceding_mv_slope_reason is None
+        assert ev.mv_source == "device"
+
+    async def test_stability_index_uses_only_preceding_60s(self, async_db_session):
+        """Event at 90 s; [30, 90] alternates 8/12 (CV ≈ 0.2) while [0, 30) is
+        zero — a wider window would drag the mean toward 0 and inflate CV."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 6, 1)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
-        await async_db_session.flush()
+        ts = np.arange(3600.0)
+        vals = np.where((ts >= 30) & (ts <= 90), np.where(ts % 2 == 0, 8.0, 12.0), 0.0)
+        await _add_waveform(async_db_session, session, "mv", vals)
+        await _add_event(async_db_session, session, 90.0)
 
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
 
-        assert len(result.ca_events) == 1
-        ev = result.ca_events[0]
-        assert ev.preceding_mv_slope is not None
-        assert ev.preceding_mv_slope > 0.0
-        # plan §12 line 976: slope in L/min per minute; unit ramp → 60.0 (tolerance ±1.0)
-        assert abs(ev.preceding_mv_slope - 60.0) < 1.0
+        assert ev.stability_index == pytest.approx(0.2, abs=0.05)
+        assert ev.stability_reason is None
 
-    async def test_ca_ps_nonzero_from_known_pressures(self, async_db_session):
-        """ps_delivered_cmh2o ≈ 12.0 when THERAPY_PRESSURE=20.0, EPAP=8.0.
-
-        PS = mean(THERAPY_PRESSURE − EPAP) over ±5 s window = 20.0 − 8.0 = 12.0.
-        """
+    async def test_ps_delivered_is_therapy_pressure_minus_epap(self, async_db_session):
+        """THERAPY_PRESSURE 20.0, EPAP 8.0 → PS 12.0 over ±5 s."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 7, 12)
         _, session = await _make_day_and_session(
             async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
-
-        n = 3600
-        ts = np.arange(n, dtype=np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="therapy_pressure",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(
-                    ts, np.full(n, 20.0, dtype=np.float32)
-                ),
-            )
+        await _add_waveform(
+            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
         )
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="epap",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(
-                    ts, np.full(n, 8.0, dtype=np.float32)
-                ),
-            )
+        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0, event_type="OA")
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
         )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=12.0,
-            )
-        )
-        await async_db_session.flush()
 
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
+        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, abs=0.5)
+        assert ev.ps_reason is None
 
-        assert len(result.ca_events) == 1
-        ev = result.ca_events[0]
-        assert ev.ps_delivered_cmh2o is not None
-        assert abs(ev.ps_delivered_cmh2o - 12.0) < 0.5
-
-    async def test_ca_mv_variance_nonzero_from_two_distinct_bins(
+    async def test_absent_channels_yield_null_with_not_available(
         self, async_db_session
     ):
-        """mv_rolling_variance is nonzero when MV bins have different means.
-
-        Session = 1200 s (exactly two 600-s bins, no tail bin).
-        Bin 1 [0-600 s]: MV = 5.0.  Bin 2 [600-1200 s): MV = 15.0.
-        variance([5.0, 15.0]) = 50.0.
-
-        Session must have an OK AnalysisResult — eligibility gate skips NOT_RUN sessions.
-        """
+        """No MV, flow, pressure or EPAP waveforms → every ventilatory field is
+        null + NOT_AVAILABLE and mv_source is null."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 7, 13)
         _, session = await _make_day_and_session(
-            async_db_session,
-            dev.id,
-            therapy_date,
-            duration_hours=1200.0 / 3600.0,
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
-        # Store an OK analysis result so this session passes the eligibility gate
+        await _add_event(async_db_session, session, 300.0, event_type="H")
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
+        assert ev.stability_index is None
+        assert ev.stability_reason == NullReason.NOT_AVAILABLE
+        assert ev.ps_delivered_cmh2o is None
+        assert ev.ps_reason == NullReason.NOT_AVAILABLE
+        assert ev.mv_source is None
+
+    async def test_event_before_session_start_nulls_mv_and_ps_metrics(
+        self, async_db_session
+    ):
+        """offset_s = -10 (clock skew): no preceding MV window and the ±5 s PS
+        window ends before 0 → null + NOT_AVAILABLE, no crash."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 9, 2)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        await _add_waveform(
+            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
+        )
+        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, -10.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
+        assert ev.stability_reason == NullReason.NOT_AVAILABLE
+        assert ev.ps_delivered_cmh2o is None
+        assert ev.ps_reason == NullReason.NOT_AVAILABLE
+
+    async def test_flow_only_session_derives_mv_metrics(self, async_db_session):
+        """No mv waveform, flow seeded → MV derived from flow: mv_source is
+        'flow_derived' and slope/stability/mv_prior_120s are populated.
+        Derived MV over [240, 300] is constant 5.0 → slope 0.0, CV 0.0."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 1)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1200.0 / 3600.0
+        )
+        ts = np.arange(1200.0)
+        await _add_waveform(
+            async_db_session, session, "flow", np.where(ts < 600.0, 5.0, 15.0)
+        )
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.mv_source == "flow_derived"
+        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(0.0, abs=1e-6)
+        assert ev.preceding_mv_slope_reason is None
+        assert ev.stability_index == pytest.approx(0.0, abs=1e-6)
+        assert ev.stability_reason is None
+        assert ev.mv_prior_120s_lpm == pytest.approx(5.0)
+        assert ev.mv_reason is None
+
+    async def test_device_mv_session_never_fetches_flow(self, async_db_session):
+        """Device MV present → mv_source 'device' and FLOW is never requested
+        (full-session flow blobs are large)."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        import snore.services.breath_service as bs_mod  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 2)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        await _add_waveform(async_db_session, session, "flow", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        requested: list[WaveformChannelName] = []
+        original_fetch = bs_mod._fetch_waveform_blobs  # noqa: SLF001
+
+        async def recording_fetch(db, request, *args, **kwargs):
+            requested.extend(request.channels)
+            return await original_fetch(db, request, *args, **kwargs)
+
+        with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
+            ev = await _single_contextual_event(
+                async_db_session, profile_id, therapy_date, dev.id
+            )
+
+        assert ev.mv_source == "device"
+        assert WaveformChannelName.FLOW not in requested
+
+    async def test_mv_source_is_per_session(self, async_db_session):
+        """Split night: session A has device MV, session B only flow → each
+        event reports its own session's MV provenance."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 4)
+        start_a = datetime(
+            therapy_date.year, therapy_date.month, therapy_date.day, 21, 0
+        )
+        day = models.Day(device_id=dev.id, date=therapy_date, session_count=2)
+        async_db_session.add(day)
+        await async_db_session.flush()
+        session_a, session_b = (
+            models.Session(
+                device_id=dev.id,
+                day_id=day.id,
+                device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
+                start_time=start,
+                end_time=start + timedelta(seconds=1200),
+                duration_seconds=1200.0,
+            )
+            for start in (start_a, start_a + timedelta(hours=2))
+        )
+        async_db_session.add_all([session_a, session_b])
+        await async_db_session.flush()
+        await _add_waveform(async_db_session, session_a, "mv", np.full(1200, 8.0))
+        await _add_waveform(async_db_session, session_b, "flow", np.full(1200, 12.0))
+        await _add_event(async_db_session, session_a, 300.0)
+        await _add_event(async_db_session, session_b, 300.0)
+
+        events = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+
+        source_by_session = {ev.session_id: ev.mv_source for ev in events}
+        assert source_by_session == {
+            session_a.id: "device",
+            session_b.id: "flow_derived",
+        }
+
+
+# ---------------------------------------------------------------------------
+# Nightly periodic_breathing_pct (persisted PB episodes; no waveform I/O)
+# ---------------------------------------------------------------------------
+
+
+async def _store_analysis_with_pb_episodes(
+    db: AsyncSession,
+    session: models.Session,
+    profile_id: int,
+    episodes: list[dict[str, Any]],
+) -> None:
+    """Persist an OK analysis whose result JSON carries ``episodes``."""
+    duration_s = session.duration_seconds or 7 * 3600.0
+    result_dto = AnalysisResultDTO(
+        session_id=session.id,
+        session_duration_hours=duration_s / 3600.0,
+        total_breaths=0,
+        machine_events=[],
+        mode_results={
+            "aasm": ModeResult(
+                mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
+            )
+        },
+        timestamp_start=session.start_time.timestamp(),
+        timestamp_end=session.start_time.timestamp() + duration_s,
+        periodic_breathing_episodes=episodes,
+    )
+    await AnalysisService(db, profile_id=profile_id).store_result(
+        AnalysisComputation(summary=result_dto, breaths=[], primary_mode="aasm"),
+        processing_time_ms=5,
+    )
+    await db.flush()
+
+
+def _pb_episode(start: float, end: float) -> dict[str, Any]:
+    return {
+        "start_time": start,
+        "end_time": end,
+        "cycle_length": 30.0,
+        "regularity_score": 0.9,
+        "confidence": 0.95,
+        "has_apneas": False,
+    }
+
+
+async def _two_session_night(
+    db: AsyncSession, device_id: int, therapy_date: date, duration_s: float
+) -> tuple[models.Session, models.Session]:
+    start_a = datetime(therapy_date.year, therapy_date.month, therapy_date.day, 21, 0)
+    day = models.Day(device_id=device_id, date=therapy_date, session_count=2)
+    db.add(day)
+    await db.flush()
+    sessions = [
+        models.Session(
+            device_id=device_id,
+            day_id=day.id,
+            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
+            start_time=start,
+            end_time=start + timedelta(seconds=duration_s),
+            duration_seconds=duration_s,
+        )
+        for start in (start_a, start_a + timedelta(hours=3))
+    ]
+    db.add_all(sessions)
+    await db.flush()
+    return sessions[0], sessions[1]
+
+
+@pytest.mark.unit
+class TestNightlyPeriodicBreathing:
+    async def test_pb_pct_from_known_episodes(self, async_db_session):
+        """3600 s session, one 360 s episode → 10.0 %."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2025, 7, 10)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _store_analysis_with_pb_episodes(
+            async_db_session, session, profile_id, [_pb_episode(600.0, 960.0)]
+        )
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct == pytest.approx(10.0)
+        assert night.pb_reason is None
+
+    async def test_pb_pct_accepts_start_end_duration_episode_keys(
+        self, async_db_session
+    ):
+        """Episodes keyed start/end, or start/duration, count the same as
+        start_time/end_time: 180 s + 180 s over 3600 s → 10.0 %."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2025, 7, 14)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _store_analysis_with_pb_episodes(
+            async_db_session,
+            session,
+            profile_id,
+            [{"start": 100.0, "end": 280.0}, {"start": 1000.0, "duration": 180.0}],
+        )
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct == pytest.approx(10.0)
+
+    async def test_pb_pct_denominator_excludes_unanalyzed_sessions(
+        self, async_db_session
+    ):
+        """1 OK session (1800 s, 360 s PB) + 1 NOT_RUN session (1800 s) →
+        20.0 %, not the 10.0 % a whole-night denominator would give."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 6, 2)
+        session_a, _ = await _two_session_night(
+            async_db_session, dev.id, therapy_date, 1800.0
+        )
+        await _store_analysis_with_pb_episodes(
+            async_db_session, session_a, profile_id, [_pb_episode(100.0, 460.0)]
+        )
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct == pytest.approx(20.0)
+
+    async def test_pb_zero_episodes_yields_zero_pct(self, async_db_session):
+        """PB detection ran (result JSON persisted) with no episodes → 0.0,
+        not null."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 3)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
         await _store_analysis_with_breaths(
             async_db_session, session, profile_id, n_breaths=1
         )
 
-        n = 1200
-        ts = np.arange(n, dtype=np.float32)
-        vals = np.where(ts < 600.0, 5.0, 15.0).astype(np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(ts, vals),
-            )
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=100),
-                duration_seconds=8.0,
-            )
-        )
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct == 0.0
+        assert night.pb_reason is None
+
+    async def test_pb_null_when_analysis_not_run(self, async_db_session):
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 5)
+        await _make_day_and_session(async_db_session, dev.id, therapy_date)
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == NullReason.NOT_AVAILABLE
+
+    async def test_pb_null_when_session_duration_is_null(self, async_db_session):
+        """NULL session duration → no denominator → null + NOT_AVAILABLE, not 0.0."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 9, 4)
+        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
+        session.duration_seconds = None
         await async_db_session.flush()
+        await _store_analysis_with_pb_episodes(
+            async_db_session, session, profile_id, [_pb_episode(100.0, 400.0)]
+        )
 
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
 
-        assert result.mv_rolling_variance is not None
-        assert result.mv_rolling_variance > 0.0
-        # variance([5.0, 15.0]) = 50.0  (±1.0 tolerance for bin boundary effects)
-        assert abs(result.mv_rolling_variance - 50.0) < 1.0
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == NullReason.NOT_AVAILABLE
+
+    async def test_pb_null_on_mixed_algorithm_versions(self, async_db_session):
+        """Two OK sessions analyzed under different algorithm identities →
+        MIXED_VERSION → null + ALGO_VERSION_MISMATCH."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 20)
+        session_a, session_b = await _two_session_night(
+            async_db_session, dev.id, therapy_date, 3600.0
+        )
+        for sess in (session_a, session_b):
+            await _store_analysis_with_pb_episodes(
+                async_db_session, sess, profile_id, [_pb_episode(100.0, 400.0)]
+            )
+
+        run_meta = AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"])
+        algo_a = AlgoVersions(identity=AlgorithmIdentity.current(), run=run_meta)
+        alt_identity = AlgorithmIdentity.current().model_dump()
+        alt_identity["segmenter"] = "v999.0.0"
+        algo_b = AlgoVersions(
+            identity=AlgorithmIdentity.model_validate(alt_identity), run=run_meta
+        )
+
+        def _classify(row: Any) -> tuple[AnalysisStatus, AlgoVersions]:
+            return AnalysisStatus.OK, (
+                algo_a if row.session_id == session_a.id else algo_b
+            )
+
+        with patch.object(
+            BreathService, "_classify_analysis_row", staticmethod(_classify)
+        ):
+            night = await BreathService(
+                async_db_session, profile_id=profile_id
+            ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.day_status == DayAnalysisStatus.MIXED_VERSION
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == NullReason.ALGO_VERSION_MISMATCH
 
 
 # ---------------------------------------------------------------------------
@@ -3987,257 +3968,6 @@ class TestCompareEpochsRefusal:
 
 
 # ---------------------------------------------------------------------------
-# Additional CA numeric provenance tests (eligibility gate + variance)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCaNumericProvenanceExtended:
-    """Additional CA numeric tests exercising the eligibility gate and cross-session variance."""
-
-    async def test_ca_stability_index_over_60s_window(self, async_db_session):
-        """stability_index uses a 60-second window (plan §12 line 980).
-
-        CA at 90 s.  The 60-second window covers [30, 90] s.
-        Signal design: [0, 30) s = 0.0 (constant-zero region);
-                       [30, 90] s = alternating 8.0/12.0 → mean≈10, stdev≈2, CV≈0.2.
-        The old 120-second window [−30→0, 30, 90] includes the zero region, producing
-        a very different CV (the zero values drag the mean down toward 0, causing
-        stdev/mean → large or undefined).  This fixture falsifies the 120-second path.
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 6, 1)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-
-        # [0, 30) = 0.0; [30, 90] = alternating 8/12; rest = 0.0
-        n = 3600
-        ts = np.arange(n, dtype=np.float32)
-        vals = np.where(
-            (ts >= 30) & (ts <= 90),
-            np.where(ts % 2 == 0, 8.0, 12.0),
-            0.0,
-        ).astype(np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(ts, vals),
-            )
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=90),
-                duration_seconds=8.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert len(result.ca_events) == 1
-        ev = result.ca_events[0]
-        # plan §12 line 980: stability_index = stdev / mean (CV) over 60-s window
-        assert ev.stability_index is not None
-        assert ev.stability_reason is None
-        # alternating 8/12 in [30,90]: mean≈10, stdev≈2, CV≈0.2
-        assert abs(ev.stability_index - 0.2) < 0.05
-
-    async def test_ca_pb_pct_over_eligible_sessions_only(self, async_db_session):
-        """PB% uses only OK-session durations in denominator (eligibility gate).
-
-        Split night: 1 OK session (1800 s, 360 s of PB) + 1 NOT_RUN session (1800 s).
-        pb_pct = 360 / 1800 * 100 = 20.0 % (NOT 10%, which would dilute with NOT_RUN).
-        """
-        from snore.database import models as _models  # noqa: PLC0415
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 6, 2)
-
-        start_a = datetime(
-            therapy_date.year, therapy_date.month, therapy_date.day, 21, 0
-        )
-        day = _models.Day(device_id=dev.id, date=therapy_date, session_count=2)
-        async_db_session.add(day)
-        await async_db_session.flush()
-
-        # session_a: 1800 s, gets an OK analysis with PB episodes (360 s total)
-        session_a = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a,
-            end_time=start_a + timedelta(seconds=1800),
-            duration_seconds=1800.0,
-        )
-        # session_b: 1800 s, NOT_RUN (no AnalysisResult)
-        session_b = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a + timedelta(hours=3),
-            end_time=start_a + timedelta(hours=3) + timedelta(seconds=1800),
-            duration_seconds=1800.0,
-        )
-        async_db_session.add_all([session_a, session_b])
-        await async_db_session.flush()
-
-        # Store OK analysis with PB episode for session_a
-        from snore.analysis.modes.types import ModeResult  # noqa: PLC0415
-        from snore.analysis.service import AnalysisService as _AS  # noqa: PLC0415
-        from snore.analysis.types import AnalysisComputation  # noqa: PLC0415
-        from snore.analysis.types import (
-            AnalysisResult as AnalysisResultDTO,  # noqa: PLC0415
-        )
-
-        episodes = [
-            {
-                "start_time": 100.0,
-                "end_time": 460.0,  # 360 s of PB
-                "cycle_length": 30.0,
-                "regularity_score": 0.9,
-                "confidence": 0.95,
-                "has_apneas": False,
-            }
-        ]
-        result_dto = AnalysisResultDTO(
-            session_id=session_a.id,
-            session_duration_hours=1800.0 / 3600.0,
-            total_breaths=0,
-            machine_events=[],
-            mode_results={
-                "aasm": ModeResult(
-                    mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
-                )
-            },
-            timestamp_start=session_a.start_time.timestamp(),
-            timestamp_end=(session_a.start_time + timedelta(seconds=1800)).timestamp(),
-            periodic_breathing_episodes=episodes,
-        )
-        await _AS(async_db_session, profile_id=profile_id).store_result(
-            AnalysisComputation(summary=result_dto, breaths=[], primary_mode="aasm"),
-            processing_time_ms=5,
-        )
-
-        # Add a CA event so we can call get_ca_analysis
-        async_db_session.add(
-            _models.Event(
-                session_id=session_a.id,
-                event_type="CA",
-                start_time=session_a.start_time + timedelta(seconds=50),
-                duration_seconds=10.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert result.periodic_breathing_pct is not None
-        # plan §12: pb_pct = 360 / 1800 * 100 = 20.0 % (NOT_RUN session excluded from denominator)
-        assert abs(result.periodic_breathing_pct - 20.0) < 0.1
-
-    async def test_ca_mv_variance_over_all_eligible_sessions(self, async_db_session):
-        """Cross-session MV variance combines bin means from ALL OK sessions.
-
-        Two OK sessions: session_a MV=5.0 (one 600-s bin), session_b MV=15.0 (one 600-s bin).
-        Combined bin_means = [5.0, 15.0]; variance = 50.0.
-        """
-        from snore.database import models as _models  # noqa: PLC0415
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 6, 3)
-
-        start_a = datetime(
-            therapy_date.year, therapy_date.month, therapy_date.day, 21, 0
-        )
-        day = _models.Day(device_id=dev.id, date=therapy_date, session_count=2)
-        async_db_session.add(day)
-        await async_db_session.flush()
-
-        session_a = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a,
-            end_time=start_a + timedelta(seconds=600),
-            duration_seconds=600.0,
-        )
-        session_b = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a + timedelta(hours=2),
-            end_time=start_a + timedelta(hours=2) + timedelta(seconds=600),
-            duration_seconds=600.0,
-        )
-        async_db_session.add_all([session_a, session_b])
-        await async_db_session.flush()
-
-        # Both sessions get OK analysis
-        await _store_analysis_with_breaths(
-            async_db_session, session_a, profile_id, n_breaths=1
-        )
-        await _store_analysis_with_breaths(
-            async_db_session, session_b, profile_id, n_breaths=1
-        )
-
-        # session_a MV = constant 5.0 for 600 s
-        n = 600
-        ts_a = np.arange(n, dtype=np.float32)
-        async_db_session.add(
-            _models.Waveform(
-                session_id=session_a.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(
-                    ts_a, np.full(n, 5.0, dtype=np.float32)
-                ),
-            )
-        )
-        # session_b MV = constant 15.0 for 600 s
-        ts_b = np.arange(n, dtype=np.float32)
-        async_db_session.add(
-            _models.Waveform(
-                session_id=session_b.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(
-                    ts_b, np.full(n, 15.0, dtype=np.float32)
-                ),
-            )
-        )
-        # CA event in session_a for get_ca_analysis to find
-        async_db_session.add(
-            _models.Event(
-                session_id=session_a.id,
-                event_type="CA",
-                start_time=session_a.start_time + timedelta(seconds=100),
-                duration_seconds=8.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert result.mv_rolling_variance is not None
-        # Combined bin_means = [5.0, 15.0] from both OK sessions → variance = 50.0
-        assert abs(result.mv_rolling_variance - 50.0) < 1.0
-
-
-# ---------------------------------------------------------------------------
 # event_types cap tests
 # ---------------------------------------------------------------------------
 
@@ -4333,174 +4063,6 @@ class TestUnexpectedErrorPropagation:
                     therapy_date=therapy_date, device_id=dev.id
                 )
 
-    async def test_unexpected_runtime_error_propagates_through_ca_analysis(
-        self, async_db_session
-    ):
-        """A RuntimeError from compute_waveform_window propagates out of get_ca_analysis."""
-        from unittest.mock import patch  # noqa: PLC0415
-
-        from snore.services import breath_service as bs_mod  # noqa: PLC0415
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 8, 2)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=10.0,
-            )
-        )
-        await async_db_session.flush()
-
-        def _raise_runtime(*args: object, **kwargs: object) -> None:
-            raise RuntimeError("injected CA compute failure")
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        with patch.object(
-            bs_mod, "compute_waveform_window", side_effect=_raise_runtime
-        ):
-            with pytest.raises(RuntimeError, match="injected CA compute failure"):
-                await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-
-# ---------------------------------------------------------------------------
-# CA MIXED_VERSION refusal test (Thufir pass-4 acceptance item)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCaMixedVersionRefusal:
-    """get_ca_analysis refuses night-level fields on MIXED_VERSION day coverage."""
-
-    async def test_mixed_version_refuses_ca_night_level_fields(self, async_db_session):
-        """MIXED_VERSION day_status nulls pb_pct and mv_rolling_variance.
-
-        Two sessions on the same night with different algorithm identities
-        → day_status=MIXED_VERSION → periodic_breathing_pct is None
-        with pb_reason=ALGO_VERSION_MISMATCH.
-
-        plan §1 line 185: MIXED_VERSION is the first-wins state.
-        """
-        import copy  # noqa: PLC0415
-
-        from unittest.mock import patch  # noqa: PLC0415
-
-        from snore.analysis.shared.versioning import (  # noqa: PLC0415
-            AlgorithmIdentity,
-            AnalysisRunMetadata,
-        )
-        from snore.database import models as _models  # noqa: PLC0415
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 7, 20)
-
-        day = _models.Day(device_id=dev.id, date=therapy_date, session_count=2)
-        async_db_session.add(day)
-        await async_db_session.flush()
-
-        session_a = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day, 21, 0
-            ),
-            end_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day, 23, 0
-            ),
-            duration_seconds=7200.0,
-        )
-        session_b = _models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day, 23, 30
-            ),
-            end_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day + 1, 1, 30
-            ),
-            duration_seconds=7200.0,
-        )
-        async_db_session.add_all([session_a, session_b])
-        await async_db_session.flush()
-
-        # Build two distinct algorithm identities
-        current_id = AlgorithmIdentity.current()
-        run_meta = AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"])
-        algo_a = AlgoVersions(identity=current_id, run=run_meta)
-
-        alt_id_dict = copy.deepcopy(current_id.model_dump())
-        old_seg = alt_id_dict.get("segmenter", "v0")
-        alt_id_dict["segmenter"] = "v999.0.0" if old_seg != "v999.0.0" else "v998.0.0"
-        algo_b = AlgoVersions(
-            identity=AlgorithmIdentity.model_validate(alt_id_dict), run=run_meta
-        )
-
-        for sess, algo in ((session_a, algo_a), (session_b, algo_b)):
-            async_db_session.add(
-                _models.AnalysisResult(
-                    session_id=sess.id,
-                    timestamp_start=sess.start_time,
-                    timestamp_end=sess.end_time,
-                    programmatic_result_json={},
-                    processing_time_ms=5,
-                    engine_versions_json=algo.model_dump(),
-                )
-            )
-        await async_db_session.flush()
-
-        from sqlalchemy import select as _select  # noqa: PLC0415
-
-        ar_a_id = (
-            await async_db_session.execute(
-                _select(_models.AnalysisResult.id)
-                .where(_models.AnalysisResult.session_id == session_a.id)
-                .limit(1)
-            )
-        ).scalar()
-        ar_b_id = (
-            await async_db_session.execute(
-                _select(_models.AnalysisResult.id)
-                .where(_models.AnalysisResult.session_id == session_b.id)
-                .limit(1)
-            )
-        ).scalar()
-
-        async def _mocked_latest(
-            session_id: int,
-        ) -> tuple[AnalysisStatus, AlgoVersions | None, int | None]:
-            if session_id == session_a.id:
-                return (AnalysisStatus.OK, algo_a, ar_a_id)
-            if session_id == session_b.id:
-                return (AnalysisStatus.OK, algo_b, ar_b_id)
-            return (AnalysisStatus.NOT_RUN, None, None)
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        with patch.object(
-            svc, "_latest_analysis_for_session", side_effect=_mocked_latest
-        ):
-            result = await svc.get_ca_analysis(
-                therapy_date=therapy_date, device_id=dev.id
-            )
-
-        # plan §1 line 185: MIXED_VERSION when sessions have distinct identities
-        assert result.day_status == DayAnalysisStatus.MIXED_VERSION
-        # plan §12 lines 984-993: MIXED_VERSION requires algorithm_identity=None
-        assert result.algorithm_identity is None
-        # plan §12 lines 984-993: top-level provenance is ALGO_VERSION_MISMATCH, not STALE
-        assert result.null_reason == NullReason.ALGO_VERSION_MISMATCH
-        # Night-level fields refused on MIXED_VERSION (plan §12 line 980)
-        assert result.periodic_breathing_pct is None
-        assert result.pb_reason == NullReason.ALGO_VERSION_MISMATCH
-        assert result.mv_rolling_variance is None
-
 
 # ---------------------------------------------------------------------------
 # Code-review follow-up fixes (5 findings from parallel /code-review pass)
@@ -4553,54 +4115,22 @@ class TestCodeReviewFixes:
         assert ev.pressure_reason == NullReason.NOT_AVAILABLE
         assert ev.leak_reason == NullReason.NOT_AVAILABLE
 
-    # --- Fix 2: unguarded ps_win_end in get_ca_analysis ---
-
-    async def test_ca_event_before_session_start_does_not_crash_ca_analysis(
-        self, async_db_session
-    ):
-        """get_ca_analysis succeeds for CA events with offset_s < 0 (clock skew).
-
-        Before the fix, ps_win_end = offset_s + 5.0 with no guard caused the
-        same Pydantic crash when offset_s = -10.0.  The fix guards ps_win_end > 0
-        and returns ps_delivered=None, ps_reason=NOT_AVAILABLE for that CA.
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 9, 2)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-
-        # CA event 10 s BEFORE session start
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time - timedelta(seconds=10),
-                duration_seconds=8.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert len(result.ca_events) == 1
-        ca = result.ca_events[0]
-        # PS window guard: ps_win_end <= 0 → null with NOT_AVAILABLE
-        assert ca.ps_delivered_cmh2o is None
-        assert ca.ps_reason == NullReason.NOT_AVAILABLE
-
     # --- Fix 3: pre-loaded waveform blobs (single DB fetch per session) ---
 
-    async def test_contextual_events_single_waveform_fetch_per_session(
-        self, async_db_session
+    @pytest.mark.parametrize(
+        ("has_device_mv", "expected_calls"),
+        [(True, 1), (False, 2)],
+        ids=["device_mv", "flow_fallback"],
+    )
+    async def test_contextual_events_waveform_fetches_independent_of_event_count(
+        self, async_db_session, has_device_mv, expected_calls
     ):
-        """get_contextual_events calls _fetch_waveform_blobs exactly once per session.
+        """get_contextual_events fetches waveform blobs once per session, not per event.
 
         Before the fix, the function called _fetch_waveform_blobs twice per event
         (pressure/leak + MV), so N events = 2N blob reads.  The fix pre-loads
-        once before the loop and slices in Python.
+        once before the loop and slices in Python; a session without a device
+        MV channel adds exactly one FLOW fetch for the flow-derived MV fallback.
         """
         from unittest.mock import patch  # noqa: PLC0415
 
@@ -4612,6 +4142,20 @@ class TestCodeReviewFixes:
         _, session = await _make_day_and_session(
             async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
+
+        if has_device_mv:
+            async_db_session.add(
+                models.Waveform(
+                    session_id=session.id,
+                    waveform_type="mv",
+                    sample_rate=1.0,
+                    sample_count=3600,
+                    data_blob=_make_waveform_blob_from_arrays(
+                        np.arange(3600, dtype=np.float32),
+                        np.full(3600, 8.0, dtype=np.float32),
+                    ),
+                )
+            )
 
         # Two events in the session
         for i in range(2):
@@ -4637,11 +4181,8 @@ class TestCodeReviewFixes:
         with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=counting_fetch):
             await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
 
-        # 1 pre-load per session (not 2 × N_events)
-        assert call_count == 1, (
-            f"Expected 1 _fetch_waveform_blobs call (pre-load) but got {call_count}; "
-            "old code would call 2 × N_events"
-        )
+        # Pre-load (+ FLOW fallback) per session, not 2 × N_events
+        assert call_count == expected_calls
 
     # --- Fix 4: 90-night cap on get_nightly_range_summary ---
 
@@ -4671,87 +4212,6 @@ class TestCodeReviewFixes:
         assert result.n_calendar_nights == 90
 
     # --- Fix 5: pb_pct=0.0 false-positive when duration_seconds is NULL ---
-
-    async def test_pb_pct_is_null_when_session_duration_is_null(self, async_db_session):
-        """periodic_breathing_pct is null (not 0.0) when session.duration_seconds is NULL.
-
-        Before the fix: total_eligible_s=0 but pb_seen_any=True → pb_pct=0.0, reason=None.
-        After the fix: pb_pct=None, pb_reason=NOT_AVAILABLE.
-        """
-        from snore.analysis.service import AnalysisService as _AS  # noqa: PLC0415
-        from snore.analysis.types import AnalysisComputation  # noqa: PLC0415
-
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 9, 4)
-
-        # Session with NULL duration_seconds
-        day = models.Day(device_id=dev.id, date=therapy_date, session_count=1)
-        async_db_session.add(day)
-        await async_db_session.flush()
-        session = models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day, 22, 0
-            ),
-            end_time=datetime(
-                therapy_date.year, therapy_date.month, therapy_date.day + 1, 5, 0
-            ),
-            duration_seconds=None,  # NULL — the bug trigger
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
-
-        # Analysis result with known PB episodes
-        episodes = [
-            {
-                "start_time": 100.0,
-                "end_time": 400.0,
-                "cycle_length": 30.0,
-                "regularity_score": 0.9,
-                "confidence": 0.95,
-                "has_apneas": False,
-            }
-        ]
-        result_dto = AnalysisResultDTO(
-            session_id=session.id,
-            session_duration_hours=7.0,
-            total_breaths=0,
-            machine_events=[],
-            mode_results={
-                "aasm": ModeResult(
-                    mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
-                )
-            },
-            timestamp_start=session.start_time.timestamp(),
-            timestamp_end=(session.start_time + timedelta(hours=7)).timestamp(),
-            periodic_breathing_episodes=episodes,
-        )
-        await _AS(async_db_session, profile_id=profile_id).store_result(
-            AnalysisComputation(summary=result_dto, breaths=[], primary_mode="aasm"),
-            processing_time_ms=10,
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=200),
-                duration_seconds=8.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        # NULL duration → cannot compute %; must be null not 0.0
-        assert result.periodic_breathing_pct is None, (
-            "pb_pct=0.0 (old bug) when session.duration_seconds is NULL; "
-            "must be None with NOT_AVAILABLE reason"
-        )
-        assert result.pb_reason == NullReason.NOT_AVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -5633,6 +5093,46 @@ class TestReraProxyV2Scanner:
 
 
 @pytest.mark.unit
+class TestComputeVentilatoryContext:
+    """Pure-function sample-count and zero-mean gates."""
+
+    def test_two_mv_samples_give_slope_but_no_stability(self):
+        """Slope needs >= 2 samples in the 60 s window; stability needs >= 3."""
+        mv = (np.array([250.0, 290.0]), np.array([6.0, 8.0]))
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=mv, therapy_pressure=None, epap=None
+        )
+
+        assert ctx.preceding_mv_slope_lpm_per_min == pytest.approx(3.0)
+        assert ctx.preceding_mv_slope_reason is None
+        assert ctx.stability_index is None
+        assert ctx.stability_reason == NullReason.NOT_AVAILABLE
+
+    def test_zero_mean_mv_gives_null_stability(self):
+        mv = (np.array([250.0, 270.0, 290.0]), np.zeros(3))
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=mv, therapy_pressure=None, epap=None
+        )
+
+        assert ctx.preceding_mv_slope_lpm_per_min == pytest.approx(0.0)
+        assert ctx.stability_index is None
+        assert ctx.stability_reason == NullReason.NOT_AVAILABLE
+
+    def test_mv_samples_outside_preceding_window_are_ignored(self):
+        """Samples before offset − 60 s or after the event never count."""
+        mv = (np.array([100.0, 200.0, 310.0]), np.array([1.0, 2.0, 3.0]))
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=mv, therapy_pressure=None, epap=None
+        )
+
+        assert ctx.preceding_mv_slope_lpm_per_min is None
+        assert ctx.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
+
+
+@pytest.mark.unit
 class TestDeriveMvFromFlow:
     """Pure-function tests for the flow-derived MV fallback."""
 
@@ -5716,226 +5216,6 @@ class TestDeriveMvFromFlow:
         assert np.allclose(out_v, 5.0, atol=0.5)
 
 
-@pytest.mark.unit
-class TestCaMvFlowFallback:
-    """CA analysis derives MV from flow when no device MV channel exists."""
-
-    async def test_flow_only_session_derives_mv_metrics(self, async_db_session):
-        """No mv waveform, flow seeded → slope/stability/variance non-null and
-        mv_source == 'flow_derived' at both event and night level.
-
-        Flow: 5 L/min for [0, 600) s, 15 L/min for [600, 1200) s (all positive,
-        so derived MV mirrors the flow levels) → two 600-s bins with distinct
-        means → mv_rolling_variance > 0.  CA at 300 s: derived MV in the
-        window [240, 300] is constant 5.0 → slope 0.0, CV 0.0 (non-null).
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 7, 1)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1200.0 / 3600.0
-        )
-        # OK analysis → session passes the night-level eligibility gate
-        await _store_analysis_with_breaths(
-            async_db_session, session, profile_id, n_breaths=1
-        )
-
-        n = 1200
-        ts = np.arange(n, dtype=np.float32)
-        vals = np.where(ts < 600.0, 5.0, 15.0).astype(np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="flow",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(ts, vals),
-            )
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=10.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        raw = await svc.fetch_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        # Fetch side: MV absent → FLOW blobs fetched for the fallback
-        assert raw.session_data[0].flow_waveform is not None
-
-        from snore.services.breath_service import compute_ca_analysis  # noqa: PLC0415
-
-        result = compute_ca_analysis(raw)
-
-        assert len(result.ca_events) == 1
-        ev = result.ca_events[0]
-        assert ev.mv_source == "flow_derived"
-        assert ev.preceding_mv_slope is not None
-        assert ev.preceding_mv_reason is None
-        assert ev.stability_index is not None
-        assert ev.stability_reason is None
-
-        assert result.mv_source == "flow_derived"
-        assert result.mv_fallback_version == "v1"
-        assert result.mv_rolling_variance is not None
-        assert result.mv_rolling_variance > 0.0
-        assert result.mv_variance_reason is None
-
-    async def test_device_mv_session_skips_flow_fetch(self, async_db_session):
-        """Device mv waveform present → mv_source == 'device' and the FLOW
-        blob is never fetched (flow_waveform is None on the raw data)."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 7, 2)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-
-        n = 3600
-        ts = np.arange(n, dtype=np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=n,
-                data_blob=_make_waveform_blob_from_arrays(
-                    ts, np.full(n, 8.0, dtype=np.float32)
-                ),
-            )
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=10.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        raw = await svc.fetch_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        # Device MV present → no needless FLOW fetch
-        assert raw.session_data[0].flow_waveform is None
-
-        from snore.services.breath_service import compute_ca_analysis  # noqa: PLC0415
-
-        result = compute_ca_analysis(raw)
-
-        assert len(result.ca_events) == 1
-        assert result.ca_events[0].mv_source == "device"
-        assert result.mv_source == "device"
-
-    async def test_mixed_mv_sources_yield_mixed_night_source(self, async_db_session):
-        """Two sessions on one night — one with a device mv waveform, one with
-        only flow → per-event mv_source is 'device' / 'flow_derived' per
-        session and the night-level mv_source is 'mixed'."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 7, 4)
-
-        start_a = datetime(
-            therapy_date.year, therapy_date.month, therapy_date.day, 21, 0
-        )
-        day = models.Day(device_id=dev.id, date=therapy_date, session_count=2)
-        async_db_session.add(day)
-        await async_db_session.flush()
-        session_a = models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a,
-            end_time=start_a + timedelta(seconds=1200),
-            duration_seconds=1200.0,
-        )
-        session_b = models.Session(
-            device_id=dev.id,
-            day_id=day.id,
-            device_session_id=f"SESS_{uuid.uuid4().hex[:8]}",
-            start_time=start_a + timedelta(hours=2),
-            end_time=start_a + timedelta(hours=2, seconds=1200),
-            duration_seconds=1200.0,
-        )
-        async_db_session.add_all([session_a, session_b])
-        await async_db_session.flush()
-
-        n = 1200
-        ts = np.arange(n, dtype=np.float32)
-        # Session A: device mv channel; session B: flow only (fallback path)
-        async_db_session.add_all(
-            [
-                models.Waveform(
-                    session_id=session_a.id,
-                    waveform_type="mv",
-                    sample_rate=1.0,
-                    sample_count=n,
-                    data_blob=_make_waveform_blob_from_arrays(
-                        ts, np.full(n, 8.0, dtype=np.float32)
-                    ),
-                ),
-                models.Waveform(
-                    session_id=session_b.id,
-                    waveform_type="flow",
-                    sample_rate=1.0,
-                    sample_count=n,
-                    data_blob=_make_waveform_blob_from_arrays(
-                        ts, np.full(n, 12.0, dtype=np.float32)
-                    ),
-                ),
-                models.Event(
-                    session_id=session_a.id,
-                    event_type="CA",
-                    start_time=session_a.start_time + timedelta(seconds=300),
-                    duration_seconds=10.0,
-                ),
-                models.Event(
-                    session_id=session_b.id,
-                    event_type="CA",
-                    start_time=session_b.start_time + timedelta(seconds=300),
-                    duration_seconds=10.0,
-                ),
-            ]
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert len(result.ca_events) == 2
-        source_by_session = {ev.session_id: ev.mv_source for ev in result.ca_events}
-        assert source_by_session[session_a.id] == "device"
-        assert source_by_session[session_b.id] == "flow_derived"
-        assert result.mv_source == "mixed"
-
-    async def test_pb_zero_episodes_yields_zero_pct(self, async_db_session):
-        """Analyzed-OK session with pb_json present but zero PB episodes →
-        periodic_breathing_pct == 0.0 with reason None (not null+not_available)."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2026, 7, 3)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-        # store_result persists programmatic_result_json (no PB episodes)
-        await _store_analysis_with_breaths(
-            async_db_session, session, profile_id, n_breaths=1
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_ca_analysis(therapy_date=therapy_date, device_id=dev.id)
-
-        assert result.periodic_breathing_pct == 0.0
-        assert result.pb_reason is None
-
-
 # ---------------------------------------------------------------------------
 # _fetch_waveform_channel_vals — chunked ID binding (#280)
 # ---------------------------------------------------------------------------
@@ -6015,7 +5295,7 @@ class TestNightlyRangeSummaryChunked:
         """Chunking the nightly range binds does not change the summary.
 
         Seeds five analysed nights so the date IN-list (Day query), the
-        AnalysisResult-id IN-list (_classify_sessions_bulk), and the ok_ar_id
+        AnalysisResult-id IN-list (_latest_analysis_rows_bulk), and the ok_ar_id
         IN-list (Breath query) each span three chunks at ID_CHUNK_SIZE=2.  The
         summary produced at size 2 must equal the single-chunk (default) run —
         proving the chunk boundary drops no night, metric, or Day linkage.

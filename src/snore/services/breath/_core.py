@@ -101,23 +101,19 @@ class _BreathServiceCore:
             return AnalysisStatus.STALE_VERSION, algo
         return AnalysisStatus.OK, algo
 
-    async def _classify_sessions_bulk(
+    async def _latest_analysis_rows_bulk(
         self, session_ids: list[int]
-    ) -> dict[int, tuple[AnalysisStatus, AlgoVersions | None, int | None]]:
-        """Bulk variant of ``_latest_analysis_for_session`` for many sessions.
+    ) -> dict[int, models.AnalysisResult]:
+        """Bulk variant of ``latest_analysis_row``: session_id → latest row.
 
         One window-function query resolves each session's latest
-        AnalysisResult ID, one more loads those rows; classification is
-        identical to the per-session path.  Sessions without a run map to
-        ``(NOT_RUN, None, None)``.  Ownership is assumed, exactly as in
+        AnalysisResult ID, one more (chunked) loads those rows.  Sessions
+        without a run are omitted.  Ownership is assumed, exactly as in
         ``_latest_analysis_for_session``.
         """
-        classification: dict[
-            int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
-        ] = {sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids}
         ar_id_by_session = await latest_analysis_ids(self._db, session_ids)
         if not ar_id_by_session:
-            return classification
+            return {}
         # Chunk the unbounded AnalysisResult-id IN-list (SQLite bound-param cap).
         # Ids are disjoint across chunks, so the merged dict never collides.
         ar_ids = list(ar_id_by_session.values())
@@ -135,11 +131,27 @@ class _BreathServiceCore:
                 .all()
             )
             row_by_id.update({row.id: row for row in chunk_rows})
-        for sid, ar_id in ar_id_by_session.items():
-            row = row_by_id.get(ar_id)
-            if row is not None:
-                status, algo = self._classify_analysis_row(row)
-                classification[sid] = (status, algo, row.id)
+        return {
+            sid: row_by_id[ar_id]
+            for sid, ar_id in ar_id_by_session.items()
+            if ar_id in row_by_id
+        }
+
+    @classmethod
+    def _classify_latest_rows(
+        cls,
+        session_ids: list[int],
+        latest_rows: dict[int, models.AnalysisResult],
+    ) -> dict[int, tuple[AnalysisStatus, AlgoVersions | None, int | None]]:
+        """Classify ``_latest_analysis_rows_bulk`` output per session, exactly
+        as ``_latest_analysis_for_session`` does; sessions without a run map
+        to ``(NOT_RUN, None, None)``."""
+        classification: dict[
+            int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
+        ] = {sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids}
+        for sid, row in latest_rows.items():
+            status, algo = cls._classify_analysis_row(row)
+            classification[sid] = (status, algo, row.id)
         return classification
 
     async def latest_analysis_for_session(

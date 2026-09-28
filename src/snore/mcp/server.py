@@ -195,14 +195,13 @@ Clinical context:
 
 WORKFLOW:
 1. get_data_overview  → discover devices, date ranges, channels
-2. get_nightly_summary → identify nights of interest (30 nights/page)
+2. get_nightly_summary → identify nights of interest (30 nights/page; incl. periodic-breathing %)
 3. get_settings_timeline → understand settings epochs
 4. get_settings_changes → full audit log of device settings changes + user-logged mask equipment changes
-5. get_events (date) → event-level detail for a night
+5. get_events (date) → event-level detail for a night (incl. MV slope/stability, delivered PS)
 6. get_breath_table, find_windows, compare_epochs for breath morphology tuning
-7. get_ca_analysis → central-apnea context and periodic-breathing stats
-8. render_window → PNG chart for visual inspection (≤15 min window)
-9. get_waveform → raw per-sample arrays for deep inspection (≤2 min window)
+7. render_window → PNG chart for visual inspection (≤15 min window)
+8. get_waveform → raw per-sample arrays for deep inspection (≤2 min window)
 
 DATA TIERS (progressive disclosure):
   Tier 1 (primary):  computed metrics — indices, percentiles, aggregates
@@ -442,7 +441,7 @@ def _register_resources(mcp: FastMCP) -> None:
         breath_table_query, breath_table_row, breath_table_bin, breath_table_response,
         window_row, session_coverage_entry, find_windows_response, epoch_spec,
         epoch_distribution, epoch_stats, epoch_rx_violation, compare_epochs_response,
-        waveform_channel, waveform_window, ca_detail, ca_analysis.
+        waveform_channel, waveform_window.
         """
         model = SCHEMA_MODEL_MAP.get(schema_type)
         if model is None:
@@ -528,7 +527,6 @@ def _register_resources(mcp: FastMCP) -> None:
 def _register_tools(mcp: FastMCP) -> None:
     from snore.mcp.tools import (  # noqa: PLC0415
         breath_table,
-        ca_analysis,
         changes,
         epochs,
         events,
@@ -547,5 +545,4 @@ def _register_tools(mcp: FastMCP) -> None:
     breath_table.register(mcp)
     windows.register(mcp)
     epochs.register(mcp)
-    ca_analysis.register(mcp)
     waveform.register(mcp)

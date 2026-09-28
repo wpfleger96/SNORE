@@ -568,7 +568,7 @@ StaticRuntime     — stdio path; profile_id resolved at startup
 ActorRuntime      — OAuth HTTP path; profile_id from per-request context var
 ```
 
-`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `server.py` captures the common scaffold shared by eight of the eleven tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`.
+`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by eight of the ten tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`.
 
 ### Tool Modules
 
@@ -584,7 +584,6 @@ Each tool is defined in `src/snore/mcp/tools/<name>.py` and owns a `register(mcp
 | `breath_table.py` | `get_breath_table` | `_scope_and_run` |
 | `windows.py` | `find_windows` | `_scope_and_run` |
 | `epochs.py` | `compare_epochs` | `_scope_and_run` |
-| `ca_analysis.py` | `get_ca_analysis` | fetch inside scope, compute outside |
 | `waveform.py` | `get_waveform` | `_fetch_waveform_for_tool` helper |
 | `waveform.py` | `render_window` | `_fetch_waveform_for_tool` helper |
 
@@ -594,7 +593,7 @@ Tools implement progressive disclosure across three tiers:
 
 | Tier | Tools | Description |
 |------|-------|-------------|
-| 1 (primary) | overview, summary, settings, changes, events, epochs, ca_analysis | Computed metrics — indices, percentiles, aggregates |
+| 1 (primary) | overview, summary, settings, changes, events, epochs | Computed metrics — indices, percentiles, aggregates |
 | 2 (secondary) | render_window | PNG charts — visual inspection of waveform windows ≤15 min |
 | 3 (escape hatch) | get_waveform, breath_table | Raw arrays and per-breath rows for deep inspection |
 

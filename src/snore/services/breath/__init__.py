@@ -23,10 +23,7 @@ from .algorithms import (
     _count_fl_run_reras as _count_fl_run_reras,
 )
 from .algorithms import (
-    _extract_window_mean as _extract_window_mean,
-)
-from .algorithms import (
-    compute_ca_analysis,
+    compute_ventilatory_context,
     compute_waveform_window,
     derive_mv_from_flow,
 )
@@ -39,8 +36,6 @@ from .dtos import (
     BreathPage,
     BreathQueryRange,
     BreathRow,
-    CaAnalysisResult,
-    CaDetail,
     CompareEpochsResult,
     ContextualEvent,
     CycleType,
@@ -58,15 +53,13 @@ from .dtos import (
     NightlyAnalysisSummary,
     NightlyRangeSummary,
     NoSessionsInRangeError,
-    RawCaAnalysis,
-    RawCaEvent,
-    RawCaSessionData,
     RawWaveformChannel,
     RawWaveformWindow,
     SessionCoverage,
     SessionSummary,
     TriggerCycleApplicability,
     TriggerType,
+    VentilatoryContext,
     WaveformChannel,
     WaveformChannelName,
     WaveformWindow,
@@ -132,15 +125,11 @@ __all__ = [
     "NightlyRangeSummary",
     "DeviceCapabilities",
     "MvSource",
-    "CaDetail",
-    "CaAnalysisResult",
-    "RawCaEvent",
-    "RawCaSessionData",
-    "RawCaAnalysis",
+    "VentilatoryContext",
     # Functions
     "fetch_waveform_window_raw",
     "compute_waveform_window",
-    "compute_ca_analysis",
+    "compute_ventilatory_context",
     "derive_mv_from_flow",
     # Service
     "BreathService",

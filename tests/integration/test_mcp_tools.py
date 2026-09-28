@@ -16,7 +16,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Event
-from tests.integration.conftest import _make_day_session, _make_device
+from tests.integration.conftest import (
+    _make_analysis_result,
+    _make_day_session,
+    _make_device,
+    _make_event,
+)
+from tests.integration.test_mcp_waveform import _make_waveform
 
 # ---------------------------------------------------------------------------
 # get_data_overview
@@ -439,6 +445,42 @@ class TestGetNightlySummary:
         assert night.fl_class_ge4_pct_reason == "not_available"
         assert night.leak_above_24_pct is None
         assert night.leak_above_24_pct_reason == "not_available"
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == "not_available"
+
+    async def test_periodic_breathing_pct_from_persisted_episodes(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """8 h analyzed night with 2880 s of persisted PB episodes → 10.0 %."""
+        from snore.analysis.types import AnalysisResult as AnalysisResultDTO
+        from snore.mcp.tools.summary import get_nightly_summary
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 2))
+        ar = await _make_analysis_result(async_db_session, sess)
+        ar.programmatic_result_json = AnalysisResultDTO(
+            session_id=sess.id,
+            session_duration_hours=8.0,
+            total_breaths=0,
+            machine_events=[],
+            mode_results={},
+            periodic_breathing_episodes=[
+                {"start_time": 600.0, "end_time": 2040.0},
+                {"start_time": 5000.0, "end_time": 6440.0},
+            ],
+        ).model_dump()
+        await async_db_session.flush()
+
+        result = await get_nightly_summary(
+            async_db_session,
+            date(2024, 8, 2),
+            date(2024, 8, 2),
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        assert night.periodic_breathing_pct == pytest.approx(10.0)
+        assert night.pb_reason is None
 
     async def test_ahi_populated_from_day_row(
         self, async_db_session: AsyncSession, async_test_profile: Any
@@ -700,6 +742,47 @@ class TestGetEvents:
         ctx = result.events[0].context
         assert ctx is not None
         assert ctx.minutes_since_session_start == pytest.approx(45.0, abs=0.1)
+
+    async def test_event_context_includes_ventilatory_metrics(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """Device MV + therapy pressure + EPAP seeded → an OA event carries
+        MV slope/stability (constant MV → 0.0) and PS = 15 − 10 = 5 cmH2O."""
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 20)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        for waveform_type, unit, value in (
+            ("mv", "L/min", 6.0),
+            ("therapy_pressure", "cmH2O", 15.0),
+            ("epap", "cmH2O", 10.0),
+        ):
+            await _make_waveform(
+                async_db_session,
+                sess,
+                waveform_type,
+                1.0,
+                unit,
+                900,
+                constant_value=value,
+            )
+        await _make_event(async_db_session, sess, event_type="OA", offset_seconds=600.0)
+
+        result = await get_events(
+            async_db_session, target_date, profile_id=async_test_profile.id
+        )
+
+        ev = result.events[0]
+        assert ev.context is not None
+        assert ev.context.preceding_mv_slope_lpm_per_min == pytest.approx(0.0)
+        assert ev.context.stability_index == pytest.approx(0.0)
+        assert ev.context.ps_delivered_cmh2o == pytest.approx(5.0)
+        assert ev.context.mv_prior_120s_lpm == pytest.approx(6.0)
+        assert ev.context.mv_source == "device"
+        assert ev.preceding_mv_slope_reason is None
+        assert ev.stability_reason is None
+        assert ev.ps_reason is None
 
     async def test_event_row_a6_timestamp_contract(
         self, async_db_session: AsyncSession, async_test_profile: Any

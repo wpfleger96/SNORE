@@ -16,6 +16,7 @@ from snore.analysis.shared.versioning import (
     AlgorithmIdentity,
     AlgoVersions,
     AnalysisStatus,
+    DayAnalysisStatus,
     NullReason,
 )
 from snore.constants import FlowLimitationConstants as FLC
@@ -24,7 +25,7 @@ from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import percentile_nearest_rank
 
 from ._core import _BreathServiceCore
-from .algorithms import _count_fl_run_reras
+from .algorithms import _count_fl_run_reras, periodic_breathing_seconds
 from .dtos import (
     DeviceAmbiguityError,
     DeviceNotOwnedError,
@@ -59,6 +60,43 @@ def _sorted_distribution(
         sorted_v[-1],
         None,
     )
+
+
+def _periodic_breathing_pct(
+    day_sessions: list[Any],
+    ar_classification: dict[
+        int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
+    ],
+    pb_seconds_by_ar_id: dict[int, float | None],
+    *,
+    mixed_version: bool,
+) -> tuple[float | None, NullReason | None]:
+    """Percent of analyzed (OK-session) time spent in periodic breathing.
+
+    Numerator: persisted PB episode seconds; denominator: those OK sessions'
+    durations.  PB detection having run on >= 1 OK session with zero episodes
+    is a genuine 0.0 %.  Mixed algorithm versions → ``ALGO_VERSION_MISMATCH``;
+    no PB result or zero eligible duration → ``NOT_AVAILABLE``.
+    """
+    if mixed_version:
+        return None, NullReason.ALGO_VERSION_MISMATCH
+    pb_seconds = 0.0
+    eligible_seconds = 0.0
+    pb_ran = False
+    for s in day_sessions:
+        status, _algo, ar_id = ar_classification.get(
+            s.id, (AnalysisStatus.NOT_RUN, None, None)
+        )
+        if status != AnalysisStatus.OK or ar_id is None:
+            continue
+        eligible_seconds += s.duration_seconds or 0.0
+        session_pb = pb_seconds_by_ar_id.get(ar_id)
+        if session_pb is not None:
+            pb_ran = True
+            pb_seconds += session_pb
+    if not pb_ran or eligible_seconds <= 0:
+        return None, NullReason.NOT_AVAILABLE
+    return pb_seconds / eligible_seconds * 100.0, None
 
 
 class NightlyMixin(_BreathServiceCore):
@@ -105,8 +143,13 @@ class NightlyMixin(_BreathServiceCore):
         compliance_threshold_hours: float,
         fl_vals_by_session: dict[int, list[float]] | None = None,
         snore_vals_by_session: dict[int, list[float]] | None = None,
+        pb_seconds_by_ar_id: dict[int, float | None] | None = None,
     ) -> NightlyAnalysisSummary:
-        """Build a NightlyAnalysisSummary from pre-fetched data. No I/O."""
+        """Build a NightlyAnalysisSummary from pre-fetched data. No I/O.
+
+        ``pb_seconds_by_ar_id`` maps an OK AnalysisResult id to its persisted
+        periodic-breathing seconds (None when PB detection never ran).
+        """
         from snore.services.breath_service import BreathService  # noqa: PLC0415
 
         if day_row is not None and day_row.total_therapy_hours is not None:
@@ -146,6 +189,13 @@ class NightlyMixin(_BreathServiceCore):
             session_coverages, identities_for_reduce
         )
         day_ahi = day_row.ahi if day_row is not None else None
+
+        periodic_breathing_pct, pb_reason = _periodic_breathing_pct(
+            day_sessions,
+            ar_classification,
+            pb_seconds_by_ar_id or {},
+            mixed_version=day_status == DayAnalysisStatus.MIXED_VERSION,
+        )
 
         # Device waveform aggregates — independent of analysis, aggregated over all
         # sessions of the night (not just OK sessions).
@@ -215,6 +265,8 @@ class NightlyMixin(_BreathServiceCore):
                 snore_95th=snore_95th,
                 snore_pct_time=snore_pct_time,
                 snore_reason=snore_reason,
+                periodic_breathing_pct=periodic_breathing_pct,
+                pb_reason=pb_reason,
             )
 
         # MIXED_VERSION within a day is handled by _reduce_day_status; under current
@@ -368,6 +420,8 @@ class NightlyMixin(_BreathServiceCore):
             snore_95th=snore_95th,
             snore_pct_time=snore_pct_time,
             snore_reason=snore_reason,
+            periodic_breathing_pct=periodic_breathing_pct,
+            pb_reason=pb_reason,
         )
 
     async def get_nightly_summary(
@@ -484,8 +538,16 @@ class NightlyMixin(_BreathServiceCore):
             all_sessions.extend(sessions)
         all_session_ids = [s.id for s in all_sessions]
 
-        # Bulk latest-AnalysisResult classification (shared helper, no N+1)
-        ar_classification = await self._classify_sessions_bulk(all_session_ids)
+        # Bulk latest-AnalysisResult load + classification (no N+1)
+        latest_rows = await self._latest_analysis_rows_bulk(all_session_ids)
+        ar_classification = self._classify_latest_rows(all_session_ids, latest_rows)
+        # Periodic-breathing seconds from the already-loaded result JSON of
+        # OK rows only — no extra query, no waveform I/O.
+        pb_seconds_by_ar_id = {
+            row.id: periodic_breathing_seconds(row.programmatic_result_json)
+            for sid, row in latest_rows.items()
+            if ar_classification[sid][0] == AnalysisStatus.OK
+        }
 
         # Bulk Breath query for all OK ar_ids (10 columns only)
         ok_ar_ids = [
@@ -553,6 +615,7 @@ class NightlyMixin(_BreathServiceCore):
                     compliance_threshold_hours=compliance_threshold_hours,
                     fl_vals_by_session=fl_vals_by_session,
                     snore_vals_by_session=snore_vals_by_session,
+                    pb_seconds_by_ar_id=pb_seconds_by_ar_id,
                 )
                 nights.append(summary)
                 if summary.is_compliant:

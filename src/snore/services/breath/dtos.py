@@ -6,12 +6,11 @@ import math
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from snore.analysis.shared.versioning import (
-    MV_FALLBACK_ALGO_VERSION,
     AlgorithmIdentity,
     AlgoVersions,
     AnalysisStatus,
@@ -418,7 +417,30 @@ class CompareEpochsResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ContextualEvent(BaseModel):
+class MvSource(StrEnum):
+    """Provenance of the MV series behind per-event ventilatory metrics."""
+
+    DEVICE = "device"
+    FLOW_DERIVED = "flow_derived"
+
+
+class VentilatoryContext(BaseModel):
+    """Ventilatory-control metrics around one event (see
+    ``compute_ventilatory_context``).  Each value is null + ``NOT_AVAILABLE``
+    when its input channel or window data is missing."""
+
+    # Linear-regression MV slope over the 60 s preceding the event.
+    preceding_mv_slope_lpm_per_min: float | None = None
+    preceding_mv_slope_reason: NullReason | None = NullReason.NOT_AVAILABLE
+    # Coefficient of variation (stdev / mean) of MV over the same 60 s window.
+    stability_index: float | None = None
+    stability_reason: NullReason | None = NullReason.NOT_AVAILABLE
+    # Mean(THERAPY_PRESSURE − EPAP) over ±5 s around the event start.
+    ps_delivered_cmh2o: float | None = None
+    ps_reason: NullReason | None = NullReason.NOT_AVAILABLE
+
+
+class ContextualEvent(VentilatoryContext):
     """One machine-flagged event with surrounding context."""
 
     session_id: int
@@ -437,6 +459,9 @@ class ContextualEvent(BaseModel):
     mv_prior_120s_lpm: float | None
     mv_reason: NullReason | None
     minutes_since_session_start: float
+    # Provenance of the MV series behind mv_prior_120s_lpm and the MV-derived
+    # ventilatory metrics; None when neither device MV nor flow was usable.
+    mv_source: MvSource | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -624,6 +649,12 @@ class NightlyAnalysisSummary(BaseModel):
     snore_pct_time: float | None = None
     snore_reason: NullReason | None = None
 
+    # Percent of OK-session time in persisted periodic-breathing episodes.
+    # 0.0 when PB detection ran and found none; null + reason otherwise
+    # (ALGO_VERSION_MISMATCH on mixed-version nights).
+    periodic_breathing_pct: float | None = None
+    pb_reason: NullReason | None = None
+
 
 class NightlyRangeSummary(BaseModel):
     """Compliance + analysis summary over a date range."""
@@ -664,112 +695,3 @@ class DeviceCapabilities(BaseModel):
     manufacturer: str | None = None
     model: str | None = None
     serial_number: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# §12 — CA-analysis DTOs
-# ---------------------------------------------------------------------------
-
-
-class MvSource(StrEnum):
-    """Provenance of the MV channel used in CA analysis."""
-
-    DEVICE = "device"
-    FLOW_DERIVED = "flow_derived"
-    # Night-level only: sessions on the night used different MV sources.
-    MIXED = "mixed"
-
-
-class CaDetail(BaseModel):
-    """Per-CA event analysis."""
-
-    session_id: int
-    session_start_wall_clock: datetime  # naive — tier-2 anchor
-    timezone_status: TimezoneStatus = TimezoneStatus.UNKNOWN
-    timezone_name: str | None = None  # IANA name when USER_DECLARED
-    offset_seconds: float
-    duration_seconds: float | None
-    preceding_mv_slope: float | None
-    preceding_mv_reason: NullReason | None
-    ps_delivered_cmh2o: float | None
-    ps_reason: NullReason | None
-    stability_index: float | None
-    stability_reason: NullReason | None
-    # MV provenance: DEVICE | FLOW_DERIVED | None (no MV channel available)
-    mv_source: MvSource | None = None
-
-
-class CaAnalysisResult(BaseModel):
-    """Result of get_ca_analysis()."""
-
-    query_date: date
-    device_id: int
-    day_status: DayAnalysisStatus
-    session_coverage: list[SessionCoverage] = Field(default_factory=list)
-    algorithm_identity: AlgorithmIdentity | None
-    null_reason: NullReason | None
-    ca_events: list[CaDetail]
-    periodic_breathing_pct: float | None
-    pb_reason: NullReason | None
-    mv_rolling_variance: float | None
-    mv_variance_reason: NullReason | None
-    # Night-level MV provenance: DEVICE | FLOW_DERIVED | MIXED | None,
-    # aggregated across sessions that contributed an MV channel.
-    mv_source: MvSource | None = None
-    mv_fallback_version: str = MV_FALLBACK_ALGO_VERSION
-
-
-# ---------------------------------------------------------------------------
-# §12 — CA-analysis fetch/compute seam (DB fetch in-scope; compute pure)
-# ---------------------------------------------------------------------------
-
-
-class RawCaEvent(BaseModel):
-    """One CA event row (ORM-free). Input to compute_ca_analysis."""
-
-    start_time: datetime  # naive — matches models.Event.start_time
-    duration_seconds: float | None
-
-
-class RawCaSessionData(BaseModel):
-    """Per-session raw data for CA analysis (ORM-free).
-
-    pre_waveform carries MV, THERAPY_PRESSURE, and EPAP blobs as raw bytes;
-    compute_ca_analysis calls compute_waveform_window on each entry, preserving
-    the single pre-fetch optimisation from the original get_ca_analysis.
-    """
-
-    session_id: int
-    session_start: datetime  # naive — tier-2 anchor
-    duration_seconds: float
-    coverage: SessionCoverage
-    is_ok: bool  # analysis_status == OK and algo_versions is not None and ar_id is not None
-    pre_waveform: RawWaveformWindow  # MV, THERAPY_PRESSURE, EPAP channels
-    # FLOW blobs, fetched only when the device MV channel is absent; input to
-    # the derive_mv_from_flow fallback in compute_ca_analysis.
-    flow_waveform: RawWaveformWindow | None = None
-    ca_events: list[RawCaEvent]
-    pb_json: (
-        dict[str, Any] | None
-    )  # programmatic_result_json for OK sessions; None otherwise
-
-
-class RawCaAnalysis(BaseModel):
-    """Raw fetch result for CA analysis. Pass to compute_ca_analysis (ORM-free).
-
-    session_data being empty signals an empty day; compute_ca_analysis maps it
-    to a CaAnalysisResult using the pre-reduced day-level fields below.
-    Day-level state (day_status, algorithm_identity, null_reason) is pre-reduced
-    during fetch so compute_ca_analysis performs only numpy/statistics work.
-    """
-
-    therapy_date: date
-    device_id: int
-    session_data: list[RawCaSessionData]
-    # Set at fetch time; compute_ca_analysis copies these into CaDetail outputs.
-    timezone_status: TimezoneStatus = TimezoneStatus.UNKNOWN
-    timezone_name: str | None = None  # IANA name when USER_DECLARED
-    # Pre-reduced day-level state (computed from coverage during fetch; no DB access)
-    day_status: DayAnalysisStatus
-    algorithm_identity: AlgorithmIdentity | None
-    null_reason: NullReason | None

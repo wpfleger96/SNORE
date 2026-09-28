@@ -1,7 +1,7 @@
 """Shared fixtures and seed helpers for integration tests.
 
-Seed helpers (_make_profile, _make_device, _make_day_session, _make_analysis_result)
-are plain functions — not fixtures — so test modules can import and call them directly:
+Seed helpers (_make_profile, _make_device, _make_day_session, _make_analysis_result,
+_make_event) are plain functions — not fixtures — so test modules can import and call them directly:
 
     from tests.integration.conftest import _make_profile, _make_device, ...
 """
@@ -17,7 +17,15 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import AnalysisResult, Day, Device, Profile, Session, User
+from snore.database.models import (
+    AnalysisResult,
+    Day,
+    Device,
+    Event,
+    Profile,
+    Session,
+    User,
+)
 from snore.database.session import cleanup_database
 
 
@@ -128,3 +136,23 @@ async def _make_analysis_result(
     db.add(ar)
     await db.flush()
     return ar
+
+
+async def _make_event(
+    db: AsyncSession,
+    session: Session,
+    *,
+    event_type: str = "CA",
+    offset_seconds: float = 120.0,
+    duration_seconds: float = 15.0,
+) -> Event:
+    """Create a machine Event at ``offset_seconds`` from session start."""
+    event = Event(
+        session_id=session.id,
+        event_type=event_type,
+        start_time=session.start_time + timedelta(seconds=offset_seconds),
+        duration_seconds=duration_seconds,
+    )
+    db.add(event)
+    await db.flush()
+    return event

@@ -443,6 +443,64 @@ class TestGetEventsRoundtrip:
         assert ctx["pressure_at_event_cmh2o"] == pytest.approx(8.2)
         assert ctx["mv_prior_120s_lpm"] == pytest.approx(5.8)
 
+    async def test_ventilatory_context_serialized_on_wire(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        """Ventilatory values land in ``context``; their null reasons and the
+        flow-derived MV provenance serialize as strings."""
+        from snore.services.breath_service import (  # noqa: PLC0415
+            ContextualEvent,
+            MvSource,
+            NullReason,
+        )
+
+        ev = ContextualEvent(
+            session_id=42,
+            session_start_wall_clock=datetime(2024, 1, 1, 22, 0, 0),
+            event_type="OA",
+            event_start_wall_clock=datetime(2024, 1, 1, 22, 30, 0),
+            offset_seconds=1800.0,
+            duration_seconds=12.0,
+            pressure_at_event_cmh2o=None,
+            pressure_reason=NullReason.NOT_AVAILABLE,
+            leak_at_event_lpm=None,
+            leak_reason=NullReason.NOT_AVAILABLE,
+            mv_prior_120s_lpm=6.1,
+            mv_reason=None,
+            minutes_since_session_start=30.0,
+            preceding_mv_slope_lpm_per_min=-1.5,
+            preceding_mv_slope_reason=None,
+            stability_index=0.12,
+            stability_reason=None,
+            ps_delivered_cmh2o=None,
+            ps_reason=NullReason.NOT_AVAILABLE,
+            mv_source=MvSource.FLOW_DERIVED,
+        )
+
+        with (
+            patch(
+                "snore.services.breath_service.BreathService.get_contextual_events",
+                new_callable=AsyncMock,
+                return_value=[ev],
+            ),
+            patch(
+                "snore.mcp.tools._capabilities.build_device_capabilities",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            async with mcp_client_factory(mock_db_session) as client:
+                result = await client.call_tool("get_events", {"date": "2024-01-01"})
+
+        row = json.loads(result.content[0].text)["events"][0]
+        assert row["context"]["preceding_mv_slope_lpm_per_min"] == pytest.approx(-1.5)
+        assert row["context"]["stability_index"] == pytest.approx(0.12)
+        assert row["context"]["ps_delivered_cmh2o"] is None
+        assert row["context"]["mv_source"] == "flow_derived"
+        assert row["preceding_mv_slope_reason"] is None
+        assert row["stability_reason"] is None
+        assert row["ps_reason"] == "not_available"
+
     async def test_invalid_date_format_raises_tool_error(
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:

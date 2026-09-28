@@ -51,7 +51,8 @@ async def get_events(
     """Return respiratory events for a session date with inline waveform context.
 
     Uses BreathService.get_contextual_events() to fetch events enriched with
-    pressure/leak at event time and MV in the prior 120 s.
+    pressure/leak at event time, MV in the prior 120 s, and ventilatory-control
+    context (preceding MV slope, MV stability index, delivered PS).
 
     Args:
         db_session: Async database session.
@@ -113,6 +114,10 @@ async def get_events(
                 leak_at_event_lpm=ev.leak_at_event_lpm,
                 mv_prior_120s_lpm=ev.mv_prior_120s_lpm,
                 minutes_since_session_start=round(ev.minutes_since_session_start, 2),
+                preceding_mv_slope_lpm_per_min=ev.preceding_mv_slope_lpm_per_min,
+                stability_index=ev.stability_index,
+                ps_delivered_cmh2o=ev.ps_delivered_cmh2o,
+                mv_source=str_or_none(ev.mv_source),
             )
 
         rows.append(
@@ -135,6 +140,9 @@ async def get_events(
                 pressure_reason=str_or_none(ev.pressure_reason),
                 leak_reason=str_or_none(ev.leak_reason),
                 mv_reason=str_or_none(ev.mv_reason),
+                preceding_mv_slope_reason=str_or_none(ev.preceding_mv_slope_reason),
+                stability_reason=str_or_none(ev.stability_reason),
+                ps_reason=str_or_none(ev.ps_reason),
                 context=context,
             )
         )
@@ -206,6 +214,16 @@ def register(mcp: FastMCP) -> None:
 
         Each event includes pressure/leak at the event time and MV in the prior
         120 s (when waveform data is available), plus minutes since session start.
+
+        Every event type also carries ventilatory-control context in ``context``:
+        ``preceding_mv_slope_lpm_per_min`` (MV trend over the 60 s before the
+        event, L/min per minute; negative = falling ventilation),
+        ``stability_index`` (MV stdev/mean over the same 60 s), and
+        ``ps_delivered_cmh2o`` (therapy pressure − EPAP over ±5 s).
+        ``mv_source`` is ``"device"`` (device MV channel), ``"flow_derived"``
+        (MV computed from the flow waveform when the device recorded no MV),
+        or null. Null values carry a ``*_reason`` on the event row
+        (``preceding_mv_slope_reason``, ``stability_reason``, ``ps_reason``).
 
         Args:
             date: Session date in YYYY-MM-DD format.

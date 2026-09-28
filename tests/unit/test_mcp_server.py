@@ -455,8 +455,8 @@ class TestStage2ToolsRegistered:
         # Stage-3 tools
         assert "get_waveform" in tool_names
         assert "render_window" in tool_names
-        assert "get_ca_analysis" in tool_names
-        assert len(tool_names) == 11
+        assert "get_ca_analysis" not in tool_names
+        assert len(tool_names) == 10
 
     async def test_compare_epochs_schema_has_epochs_parameter(self) -> None:
         """compare_epochs tool schema includes an 'epochs' parameter."""
