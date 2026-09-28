@@ -426,18 +426,19 @@ class MvSource(StrEnum):
 
 class VentilatoryContext(BaseModel):
     """Ventilatory-control metrics around one event (see
-    ``compute_ventilatory_context``).  Each value is null + ``NOT_AVAILABLE``
-    when its input channel or window data is missing."""
+    ``compute_ventilatory_context``, which pairs every null value with
+    ``NOT_AVAILABLE``).  The all-null default (reasons included) is the
+    "context not requested" value."""
 
     # Linear-regression MV slope over the 60 s preceding the event.
     preceding_mv_slope_lpm_per_min: float | None = None
-    preceding_mv_slope_reason: NullReason | None = NullReason.NOT_AVAILABLE
+    preceding_mv_slope_reason: NullReason | None = None
     # Coefficient of variation (stdev / mean) of MV over the same 60 s window.
     stability_index: float | None = None
-    stability_reason: NullReason | None = NullReason.NOT_AVAILABLE
-    # Mean(THERAPY_PRESSURE − EPAP) over ±5 s around the event start.
+    stability_reason: NullReason | None = None
+    # mean(THERAPY_PRESSURE) − mean(EPAP) over ±5 s around the event start.
     ps_delivered_cmh2o: float | None = None
-    ps_reason: NullReason | None = NullReason.NOT_AVAILABLE
+    ps_reason: NullReason | None = None
 
 
 class ContextualEvent(VentilatoryContext):

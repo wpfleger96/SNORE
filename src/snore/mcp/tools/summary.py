@@ -435,8 +435,10 @@ def register(mcp: FastMCP) -> None:
         """Return per-night therapy summary for a date range.
 
         Paginated at 30 nights/call (adjustable). Analysis-derived fields (RERA
-        index, RDI) are null + reason "analysis_not_run" when analysis has not
-        been run. RDI here adds the experimental RERA-proxy index to the
+        index, RDI, FL, Ti, I:E, PB) are null + a reason when unavailable:
+        ``"not_available"`` when the night has sessions but no current (OK)
+        analysis to draw from, ``"analysis_not_run"`` when the night has no
+        analyzable session summary at all. RDI here adds the experimental RERA-proxy index to the
         device-reported AHI. ``fl_class_ge4_pct`` is the percent of leak-valid,
         rule-matched classified breaths with ``flow_class >= 4``; the confidence
         gate excludes fallback guesses. Compliance fields are included in the
@@ -453,9 +455,12 @@ def register(mcp: FastMCP) -> None:
 
         ``periodic_breathing_pct`` is the percent of analyzed-session time
         spent in periodic-breathing episodes found by analysis (0.0 when
-        detection ran and found none). ``pb_reason`` is
-        ``"algo_version_mismatch"`` when the night's sessions were analyzed
-        with different algorithm versions.
+        detection ran and found none). When null, ``pb_reason`` is one of:
+        ``"not_available"`` (no OK session with a PB result, the persisted
+        episodes were malformed, or the OK sessions have zero duration);
+        ``"algo_version_mismatch"`` (the night's sessions were analyzed with
+        different algorithm versions); ``"analysis_not_run"`` (no analysis
+        summary exists for the night).
 
         Args:
             start: Start date in YYYY-MM-DD format.

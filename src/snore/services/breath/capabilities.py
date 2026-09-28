@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
+import asyncio
 
-import numpy as np
+from datetime import date, datetime
 
+from pydantic import BaseModel
 from sqlalchemy import exists, select
 from sqlalchemy import func as sqlfunc
 
 from snore.analysis.rx_tracker import RX_KEYS as _RX_KEYS
-from snore.analysis.shared.versioning import NullReason
+from snore.analysis.shared.versioning import NullReason, TimezoneStatus
 from snore.database import models
 from snore.parsers.register_all import ensure_registered_parsers
 from snore.parsers.registry import parser_registry
@@ -19,14 +20,18 @@ from snore.utils.db_chunk import iter_id_chunks
 from ._core import _BreathServiceCore
 from .algorithms import (
     WaveformSeries,
+    _reason_if_null,
     compute_ventilatory_context,
-    derive_mv_from_flow_window,
+    derive_mv_from_flow,
+    raw_window_series,
     window_mean,
 )
 from .dtos import (
     ContextualEvent,
     DeviceCapabilities,
     MvSource,
+    RawWaveformWindow,
+    VentilatoryContext,
     WaveformChannelName,
     WaveformWindowRequest,
 )
@@ -40,6 +45,17 @@ _CONTEXT_CHANNELS = [
     WaveformChannelName.THERAPY_PRESSURE,
     WaveformChannelName.EPAP,
 ]
+
+# Auxiliary channels whose corrupt blobs degrade to "absent" (affected fields
+# null + NOT_AVAILABLE) instead of failing the whole call.  PRESSURE, LEAK and
+# MV corruption still raises.
+_TOLERATED_CORRUPT = frozenset(
+    {
+        WaveformChannelName.THERAPY_PRESSURE,
+        WaveformChannelName.EPAP,
+        WaveformChannelName.FLOW,
+    }
+)
 
 
 class CapabilitiesMixin(_BreathServiceCore):
@@ -246,6 +262,8 @@ class CapabilitiesMixin(_BreathServiceCore):
         event_types: list[str] | None = None,
         min_duration: float | None = None,
         device_id: int | None = None,
+        *,
+        include_context: bool = True,
     ) -> list[ContextualEvent]:
         """Machine events enriched with waveform context.
 
@@ -256,11 +274,19 @@ class CapabilitiesMixin(_BreathServiceCore):
         window (see ``compute_ventilatory_context``).  MV comes from the device
         MV channel, or is derived from the flow waveform when that channel is
         absent (``mv_source`` records which).
-        All values are ``null`` + ``NOT_AVAILABLE`` when the relevant channel is absent.
+        Values are ``null`` + ``NOT_AVAILABLE`` when the relevant channel is
+        absent or unusable.  Corrupt PRESSURE/LEAK/MV blobs raise
+        ``ValueError``; corrupt THERAPY_PRESSURE/EPAP/FLOW blobs degrade to an
+        absent channel.
+
+        ``include_context=False`` fetches no waveforms: every context value,
+        its reason, and ``mv_source`` are null.
+
+        Blobs are fetched inside the DB scope; deserialization and per-event
+        computation run in a worker thread (``asyncio.to_thread``).
         """
         from snore.services.breath_service import (  # noqa: PLC0415
             _fetch_waveform_blobs,
-            compute_waveform_window,
         )
 
         # Input validation
@@ -286,11 +312,10 @@ class CapabilitiesMixin(_BreathServiceCore):
         day_sessions = sessions_by_date.get(therapy_date, [])
 
         tz_status, tz_name = await self.resolve_timezone()
-        results: list[ContextualEvent] = []
+        fetched: list[_SessionEventsRaw] = []
         for session_row in day_sessions:
             session_id = session_row.id
             session_start = session_row.start_time
-            session_start_f = session_start.timestamp()
 
             # Fetch machine events for this session
             ev_stmt = select(models.Event).where(models.Event.session_id == session_id)
@@ -303,59 +328,122 @@ class CapabilitiesMixin(_BreathServiceCore):
             if not events:
                 continue
 
-            # Pre-load all needed channels for this session ONCE — one DB fetch for
-            # all events rather than per-event blob reads (N+1).
-            # Corrupt blobs still raise ValueError — never silently skipped.
-            session_duration_s = session_row.duration_seconds or 32400.0
-            pre_request = WaveformWindowRequest(
-                therapy_date=therapy_date,
-                session_id=session_id,
-                device_id=resolved_device_id,
-                channels=_CONTEXT_CHANNELS,
-                offset_start=0.0,
-                offset_end=session_duration_s,
-                window_cap_seconds=session_duration_s,
-            )
-            pre_raw = await _fetch_waveform_blobs(
-                self._db, pre_request, session_id, session_start
-            )
-            pre_window = compute_waveform_window(pre_raw)
-            # channel → (offsets, values) arrays for O(log n) per-event slicing
-            series: dict[WaveformChannelName, WaveformSeries] = {
-                ch.channel_type: (np.array(ch.offset_seconds), np.array(ch.values))
-                for ch in pre_window.channels
-            }
-
-            # MV fallback: no device MV channel → derive MV from the flow
-            # waveform.  FLOW is fetched only here — full-session flow is large.
-            mv_series = series.get(WaveformChannelName.MV)
-            mv_source: MvSource | None = (
-                MvSource.DEVICE if mv_series is not None else None
-            )
-            if mv_series is None:
-                flow_raw = await _fetch_waveform_blobs(
-                    self._db,
-                    pre_request.model_copy(
-                        update={"channels": [WaveformChannelName.FLOW]}
-                    ),
-                    session_id,
-                    session_start,
+            context_raw: RawWaveformWindow | None = None
+            flow_raw: RawWaveformWindow | None = None
+            if include_context:
+                # Pre-load all needed channels for this session ONCE — one DB
+                # fetch for all events rather than per-event blob reads (N+1).
+                session_duration_s = session_row.duration_seconds or 32400.0
+                pre_request = WaveformWindowRequest(
+                    therapy_date=therapy_date,
+                    session_id=session_id,
+                    device_id=resolved_device_id,
+                    channels=_CONTEXT_CHANNELS,
+                    offset_start=0.0,
+                    offset_end=session_duration_s,
+                    window_cap_seconds=session_duration_s,
                 )
-                mv_series = derive_mv_from_flow_window(flow_raw)
-                if mv_series is not None:
-                    mv_source = MvSource.FLOW_DERIVED
+                context_raw = await _fetch_waveform_blobs(
+                    self._db, pre_request, session_id, session_start
+                )
+                # MV fallback: no device MV samples → derive MV from the flow
+                # waveform.  FLOW is fetched only here — full-session flow is large.
+                if not _has_samples(context_raw, WaveformChannelName.MV):
+                    flow_raw = await _fetch_waveform_blobs(
+                        self._db,
+                        pre_request.model_copy(
+                            update={"channels": [WaveformChannelName.FLOW]}
+                        ),
+                        session_id,
+                        session_start,
+                    )
 
-            pressure = series.get(WaveformChannelName.PRESSURE)
-            leak = series.get(WaveformChannelName.LEAK)
+            fetched.append(
+                _SessionEventsRaw(
+                    session_id=session_id,
+                    session_start_wall_clock=session_start,
+                    events=[
+                        _RawEvent(
+                            event_type=ev.event_type,
+                            start_wall_clock=ev.start_time,
+                            duration_seconds=ev.duration_seconds,
+                        )
+                        for ev in events
+                    ],
+                    context_raw=context_raw,
+                    flow_raw=flow_raw,
+                )
+            )
 
-            for ev in events:
-                offset_s = ev.start_time.timestamp() - session_start_f
+        return await asyncio.to_thread(
+            _compute_contextual_events, fetched, tz_status, tz_name
+        )
 
-                pressure_at: float | None = None
-                leak_at: float | None = None
-                mv_prior: float | None = None
 
-                # Guard window_end > 0 (fix: event before session start crash).
+class _RawEvent(BaseModel):
+    event_type: str
+    start_wall_clock: datetime
+    duration_seconds: float | None
+
+
+class _SessionEventsRaw(BaseModel):
+    """One session's events + pre-fetched context blobs (no ORM handles)."""
+
+    session_id: int
+    session_start_wall_clock: datetime
+    events: list[_RawEvent]
+    # None when context was not requested.
+    context_raw: RawWaveformWindow | None
+    # Fetched only when the context blobs carry no MV samples.
+    flow_raw: RawWaveformWindow | None
+
+
+def _has_samples(raw: RawWaveformWindow, channel: WaveformChannelName) -> bool:
+    """Whether ``raw`` carries a non-empty blob for ``channel`` (no decoding)."""
+    return any(
+        ch.waveform_type == channel and ch.sample_count > 0 and bool(ch.raw_bytes)
+        for ch in raw.channels
+    )
+
+
+def _compute_contextual_events(
+    sessions: list[_SessionEventsRaw],
+    tz_status: TimezoneStatus,
+    tz_name: str | None,
+) -> list[ContextualEvent]:
+    """Pure, CPU-bound — deserialize pre-fetched blobs and build every event's
+    context.  Runs off the event loop."""
+    results: list[ContextualEvent] = []
+    for sess in sessions:
+        series: dict[WaveformChannelName, WaveformSeries] = {}
+        if sess.context_raw is not None:
+            series = raw_window_series(
+                sess.context_raw, tolerate_corrupt=_TOLERATED_CORRUPT
+            )
+        mv_series = series.get(WaveformChannelName.MV)
+        mv_source: MvSource | None = MvSource.DEVICE if mv_series is not None else None
+        if mv_series is None and sess.flow_raw is not None:
+            flow = raw_window_series(
+                sess.flow_raw, tolerate_corrupt=_TOLERATED_CORRUPT
+            ).get(WaveformChannelName.FLOW)
+            if flow is not None:
+                derived = derive_mv_from_flow(*flow)
+                if derived[0].size > 0:
+                    mv_series, mv_source = derived, MvSource.FLOW_DERIVED
+
+        pressure = series.get(WaveformChannelName.PRESSURE)
+        leak = series.get(WaveformChannelName.LEAK)
+        session_start_f = sess.session_start_wall_clock.timestamp()
+        requested = sess.context_raw is not None
+
+        for ev in sess.events:
+            offset_s = ev.start_wall_clock.timestamp() - session_start_f
+            pressure_at: float | None = None
+            leak_at: float | None = None
+            mv_prior: float | None = None
+            ventilatory = VentilatoryContext()
+            if requested:
+                # Guard window_end > 0 (event before session start).
                 window_start = max(0.0, offset_s - 5.0)
                 window_end = offset_s + 5.0
                 if window_end > 0.0:
@@ -363,13 +451,11 @@ class CapabilitiesMixin(_BreathServiceCore):
                         pressure_at = window_mean(pressure, window_start, window_end)
                     if leak is not None:
                         leak_at = window_mean(leak, window_start, window_end)
-
                 # MV window (prior 120 s)
                 if offset_s > 0.0 and mv_series is not None:
                     mv_prior = window_mean(
                         mv_series, max(0.0, offset_s - 120.0), offset_s
                     )
-
                 ventilatory = compute_ventilatory_context(
                     offset_s,
                     mv=mv_series,
@@ -377,30 +463,25 @@ class CapabilitiesMixin(_BreathServiceCore):
                     epap=series.get(WaveformChannelName.EPAP),
                 )
 
-                results.append(
-                    ContextualEvent(
-                        **ventilatory.model_dump(),
-                        session_id=session_id,
-                        session_start_wall_clock=session_start,
-                        event_type=ev.event_type,
-                        event_start_wall_clock=ev.start_time,
-                        timezone_status=tz_status,
-                        timezone_name=tz_name,
-                        offset_seconds=offset_s,
-                        duration_seconds=ev.duration_seconds,
-                        pressure_at_event_cmh2o=pressure_at,
-                        pressure_reason=_reason_if_null(pressure_at),
-                        leak_at_event_lpm=leak_at,
-                        leak_reason=_reason_if_null(leak_at),
-                        mv_prior_120s_lpm=mv_prior,
-                        mv_reason=_reason_if_null(mv_prior),
-                        minutes_since_session_start=offset_s / 60.0,
-                        mv_source=mv_source,
-                    )
+            results.append(
+                ContextualEvent(
+                    **ventilatory.model_dump(),
+                    session_id=sess.session_id,
+                    session_start_wall_clock=sess.session_start_wall_clock,
+                    event_type=ev.event_type,
+                    event_start_wall_clock=ev.start_wall_clock,
+                    timezone_status=tz_status,
+                    timezone_name=tz_name,
+                    offset_seconds=offset_s,
+                    duration_seconds=ev.duration_seconds,
+                    pressure_at_event_cmh2o=pressure_at,
+                    pressure_reason=_reason_if_null(pressure_at) if requested else None,
+                    leak_at_event_lpm=leak_at,
+                    leak_reason=_reason_if_null(leak_at) if requested else None,
+                    mv_prior_120s_lpm=mv_prior,
+                    mv_reason=_reason_if_null(mv_prior) if requested else None,
+                    minutes_since_session_start=offset_s / 60.0,
+                    mv_source=mv_source,
                 )
-        return results
-
-
-def _reason_if_null(value: float | None) -> NullReason | None:
-    """``NOT_AVAILABLE`` for a value that could not be computed, else None."""
-    return NullReason.NOT_AVAILABLE if value is None else None
+            )
+    return results

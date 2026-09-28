@@ -482,6 +482,36 @@ class TestGetNightlySummary:
         assert night.periodic_breathing_pct == pytest.approx(10.0)
         assert night.pb_reason is None
 
+    async def test_periodic_breathing_pct_read_without_parsing_result_payload(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """PB % comes straight from the persisted episode list via SQLite
+        ``json_extract``: a large ``flow_analysis`` payload and fields that are
+        not a valid AnalysisResult (so a full-JSON parse would fail) do not
+        affect it.  8 h night, 1440 s of PB → 5.0 %."""
+        from snore.mcp.tools.summary import get_nightly_summary
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 3))
+        ar = await _make_analysis_result(async_db_session, sess)
+        ar.programmatic_result_json = {
+            "mode_results": "not-a-mapping",
+            "flow_analysis": {"breaths": [[float(i)] * 8 for i in range(20_000)]},
+            "periodic_breathing_episodes": [{"start_time": 600.0, "end_time": 2040.0}],
+        }
+        await async_db_session.flush()
+
+        result = await get_nightly_summary(
+            async_db_session,
+            date(2024, 8, 3),
+            date(2024, 8, 3),
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        assert night.periodic_breathing_pct == pytest.approx(5.0)
+        assert night.pb_reason is None
+
     async def test_ahi_populated_from_day_row(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
@@ -783,6 +813,71 @@ class TestGetEvents:
         assert ev.preceding_mv_slope_reason is None
         assert ev.stability_reason is None
         assert ev.ps_reason is None
+
+    @pytest.mark.parametrize(
+        ("mv_channel", "expected_version"),
+        [("mv", None), ("flow", "v1")],
+        ids=["device_mv", "flow_derived"],
+    )
+    async def test_mv_fallback_version_only_with_flow_derived_events(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        mv_channel: str,
+        expected_version: str | None,
+    ) -> None:
+        """``mv_fallback_version`` labels the response only when a returned
+        event's MV was derived from flow."""
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 21)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        await _make_waveform(
+            async_db_session, sess, mv_channel, 1.0, "L/min", 900, constant_value=6.0
+        )
+        await _make_event(async_db_session, sess, event_type="CA", offset_seconds=600.0)
+
+        result = await get_events(
+            async_db_session, target_date, profile_id=async_test_profile.id
+        )
+
+        assert result.mv_fallback_version == expected_version
+        assert result.events[0].context is not None
+        assert result.events[0].context.mv_source == (
+            "device" if mv_channel == "mv" else "flow_derived"
+        )
+
+    async def test_include_context_false_omits_context_and_reasons(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """include_context=False → events listed, context and its reasons null,
+        no flow-derived label."""
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 22)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        await _make_waveform(
+            async_db_session, sess, "flow", 1.0, "L/min", 900, constant_value=6.0
+        )
+        await _make_event(async_db_session, sess, event_type="OA", offset_seconds=600.0)
+
+        result = await get_events(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            include_context=False,
+        )
+
+        assert result.total_events == 1
+        row = result.events[0]
+        assert row.context is None
+        assert row.event_type == "OA"
+        assert row.pressure_reason is None
+        assert row.mv_reason is None
+        assert row.ps_reason is None
+        assert result.mv_fallback_version is None
 
     async def test_event_row_a6_timestamp_contract(
         self, async_db_session: AsyncSession, async_test_profile: Any

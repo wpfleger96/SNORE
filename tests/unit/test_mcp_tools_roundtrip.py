@@ -492,7 +492,9 @@ class TestGetEventsRoundtrip:
             async with mcp_client_factory(mock_db_session) as client:
                 result = await client.call_tool("get_events", {"date": "2024-01-01"})
 
-        row = json.loads(result.content[0].text)["events"][0]
+        payload = json.loads(result.content[0].text)
+        assert payload["mv_fallback_version"] == "v1"
+        row = payload["events"][0]
         assert row["context"]["preceding_mv_slope_lpm_per_min"] == pytest.approx(-1.5)
         assert row["context"]["stability_index"] == pytest.approx(0.12)
         assert row["context"]["ps_delivered_cmh2o"] is None

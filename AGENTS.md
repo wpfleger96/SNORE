@@ -470,7 +470,7 @@ Any tool that calls `BreathService` should use `except MAPPED_SERVICE_ERRORS as 
 
 ### `tool_error_boundary` contract
 
-`tool_error_boundary` in `server.py` wraps every registered tool closure. It converts:
+`tool_error_boundary` in `tools/_scaffold.py` (re-exported from `server.py`) wraps every registered tool closure. It converts:
 - `ToolError` → passes through unchanged
 - `PydanticValidationError` → `ToolError` with cleaned field-path messages
 - `ValidationError` or `ValueError` → `ToolError(str(exc))`

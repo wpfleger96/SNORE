@@ -16,7 +16,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 ├──────────────┬──────────────┬──────────────┤
 │ FastAPI REST │   CLI (cli/) │  MCP Server  │
 │ API (api/)   │  Click cmds  │  (mcp/)      │
-│ 18 routers   │  snore cmds  │  11 tools    │
+│ 18 routers   │  snore cmds  │  10 tools    │
 ├──────────────┴──────────────┴──────────────┤
 │        Service Layer (services/)            │
 │  19 services: business logic between        │

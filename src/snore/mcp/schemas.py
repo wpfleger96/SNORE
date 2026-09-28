@@ -369,6 +369,9 @@ class EventsResponse(BaseModel):
     events: list[EventRow]
     total_events: int
     truncated: bool = False
+    # Version of the query-time flow-derived MV fallback (MV_FALLBACK_ALGO_VERSION);
+    # non-null only when at least one returned event has mv_source "flow_derived".
+    mv_fallback_version: str | None = None
     device_capabilities: DeviceCapabilities | None = None
 
 

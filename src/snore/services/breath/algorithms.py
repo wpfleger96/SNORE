@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import math
+
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -9,7 +12,6 @@ import numpy as np
 
 from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.shared.versioning import NullReason
-from snore.analysis.types import AnalysisResult as AnalysisResultDTO
 from snore.constants import RERAProxyConstants
 from snore.services.lttb import lttb_downsample
 
@@ -20,6 +22,8 @@ from .dtos import (
     WaveformChannelName,
     WaveformWindow,
 )
+
+logger = logging.getLogger(__name__)
 
 # (offsets_seconds, values) for one waveform channel; offsets non-decreasing.
 WaveformSeries = tuple[np.ndarray, np.ndarray]
@@ -177,41 +181,120 @@ def _count_fl_run_reras(
 # ---------------------------------------------------------------------------
 
 
+def _reason_if_null(value: float | None) -> NullReason | None:
+    """``NOT_AVAILABLE`` for a value that could not be computed, else None."""
+    return NullReason.NOT_AVAILABLE if value is None else None
+
+
+def _finite_or_none(value: float | None) -> float | None:
+    """``value`` when it is a finite number, else None (never emit NaN/inf)."""
+    return value if value is not None and math.isfinite(value) else None
+
+
+def raw_window_series(
+    raw: RawWaveformWindow,
+    *,
+    tolerate_corrupt: frozenset[WaveformChannelName] = frozenset(),
+) -> dict[WaveformChannelName, WaveformSeries]:
+    """Pure — deserialize each raw channel straight to float64 numpy arrays,
+    masked to the request window.
+
+    Channels that are empty, or whose offsets are non-finite or not
+    non-decreasing (window slicing relies on sorted offsets), are omitted —
+    callers treat an omitted channel as absent.  A corrupt blob raises
+    ``ValueError("Invalid waveform data for channel '<name>'")`` unless the
+    channel is in ``tolerate_corrupt``, in which case it is omitted with a
+    warning.
+    """
+    request = raw.request
+    series: dict[WaveformChannelName, WaveformSeries] = {}
+    for raw_ch in raw.channels:
+        name = raw_ch.waveform_type
+        if raw_ch.sample_count <= 0 or not raw_ch.raw_bytes:
+            continue
+        try:
+            offsets, values = deserialize_waveform_blob(
+                raw_ch.raw_bytes, raw_ch.sample_count
+            )
+        except ValueError as exc:
+            if name in tolerate_corrupt:
+                logger.warning(
+                    "Corrupt '%s' waveform for session %d; treating channel as absent",
+                    name.value,
+                    raw.session_id,
+                )
+                continue
+            raise ValueError(
+                f"Invalid waveform data for channel '{name.value}'"
+            ) from exc
+        if not np.isfinite(offsets).all() or np.any(np.diff(offsets) < 0):
+            continue
+        in_window = (offsets >= request.offset_start) & (offsets <= request.offset_end)
+        series[name] = (
+            offsets[in_window].astype(np.float64),
+            values[in_window].astype(np.float64),
+        )
+    return series
+
+
 def window_slice(series: WaveformSeries, start: float, end: float) -> WaveformSeries:
-    """Samples whose offset falls in ``[start, end]`` (inclusive both ends).
+    """Finite-valued samples whose offset falls in ``[start, end]`` (inclusive).
 
     O(log n) via searchsorted — ``series`` offsets must be non-decreasing.
+    Non-finite values are dropped so they cannot poison downstream metrics.
     """
     offsets, values = series
     lo = int(np.searchsorted(offsets, start, side="left"))
     hi = int(np.searchsorted(offsets, end, side="right"))
-    return offsets[lo:hi], values[lo:hi]
+    ts, vs = offsets[lo:hi], values[lo:hi]
+    finite = np.isfinite(vs)
+    return ts[finite], vs[finite]
 
 
 def window_mean(series: WaveformSeries, start: float, end: float) -> float | None:
-    """Mean of the samples in ``[start, end]``; None when the window is empty."""
+    """Mean of the finite samples in ``[start, end]``; None when there are none."""
     _, values = window_slice(series, start, end)
-    return float(values.mean()) if values.size > 0 else None
+    return _finite_or_none(float(values.mean())) if values.size > 0 else None
 
 
-def periodic_breathing_seconds(result_json: dict[str, Any] | None) -> float | None:
-    """Total periodic-breathing episode duration from a persisted
-    ``AnalysisResult.programmatic_result_json``.
+def _episode_seconds(episode: object) -> float:
+    """Duration of one persisted PB episode; raises TypeError/ValueError when
+    malformed.  The ``duration`` fallback is read only when no end key exists."""
+    if not isinstance(episode, dict):
+        raise TypeError("episode is not an object")
+    # float(None) raises TypeError → a null bound marks the episode malformed.
+    start_raw: Any = episode.get("start_time", episode.get("start", 0))
+    start_t = float(start_raw)
+    if "end_time" in episode:
+        end_t = float(episode["end_time"])
+    elif "end" in episode:
+        end_t = float(episode["end"])
+    else:
+        end_t = start_t + float(episode.get("duration", 0))
+    if not (math.isfinite(start_t) and math.isfinite(end_t)):
+        raise ValueError("non-finite episode bounds")
+    return max(0.0, end_t - start_t)
 
-    None when no result JSON was persisted (PB detection never ran); 0.0 when
-    it ran and found no episodes.  Episodes use ``start_time``/``end_time``
-    keys, with ``start``/``end``/``duration`` accepted as fallbacks.
+
+def periodic_breathing_seconds(episodes: object) -> float | None:
+    """Total duration of persisted ``periodic_breathing_episodes``.
+
+    None when no episode list was persisted (PB detection never ran); 0.0
+    when it ran and found no episodes.  Episodes use ``start_time``/
+    ``end_time`` keys, with ``start``/``end``/``duration`` accepted as
+    fallbacks.  Raises ``ValueError`` when the list or any episode is
+    malformed, so callers can degrade that one session.
     """
-    if not result_json:
+    if episodes is None:
         return None
-    dto = AnalysisResultDTO.model_validate(result_json)
+    if not isinstance(episodes, list):
+        raise ValueError("periodic_breathing_episodes is not a list")
     total = 0.0
-    for ep in dto.periodic_breathing_episodes or []:
-        start_t = float(ep.get("start_time", ep.get("start", 0)))
-        end_t = float(
-            ep.get("end_time", ep.get("end", start_t + ep.get("duration", 0)))
-        )
-        total += max(0.0, end_t - start_t)
+    for episode in episodes:
+        try:
+            total += _episode_seconds(episode)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("malformed periodic-breathing episode") from exc
     return total
 
 
@@ -221,7 +304,7 @@ def derive_mv_from_flow(
     *,
     window_s: float = 60.0,
     out_dt_s: float = 2.0,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> WaveformSeries:
     """Pure — derive minute ventilation (L/min) from a flow waveform (L/min).
 
     MV(t) = mean of positive-clipped flow over the trailing window
@@ -231,16 +314,20 @@ def derive_mv_from_flow(
     have timestamp gaps, so uniform sampling is never assumed.
 
     Returns ``(out_offsets, out_values)``; empty arrays when the input is too
-    short to cover a single window or when ``offsets`` is not non-decreasing
-    (searchsorted requires sorted input — unsorted offsets would silently
-    produce garbage windows, so downstream metrics go null instead).  NaN
-    samples in ``values`` are treated as 0.0 flow so they cannot poison the
-    cumulative sum.  O(n log n): cumsum + searchsorted, no per-window scans.
+    short to cover a single window, when its end offsets are non-finite, or
+    when ``offsets`` is not non-decreasing (searchsorted requires sorted
+    input — unsorted offsets would silently produce garbage windows, so
+    downstream metrics go null instead).  NaN samples in ``values`` are
+    treated as 0.0 flow so they cannot poison the cumulative sum.
+    O(n log n): cumsum + searchsorted, no per-window scans.
     """
-    if offsets.size == 0 or float(offsets[-1]) - float(offsets[0]) < window_s:
-        return np.array([]), np.array([])
+    empty = (np.array([]), np.array([]))
+    if offsets.size == 0 or not np.isfinite(offsets[[0, -1]]).all():
+        return empty
+    if float(offsets[-1]) - float(offsets[0]) < window_s:
+        return empty
     if np.any(np.diff(offsets) < 0):
-        return np.array([]), np.array([])
+        return empty
 
     clipped = np.clip(np.where(np.isnan(values), 0.0, values), 0.0, None)
     csum = np.concatenate(([0.0], np.cumsum(clipped, dtype=np.float64)))
@@ -255,37 +342,6 @@ def derive_mv_from_flow(
     mask = counts > 0
     mv = (csum[hi[mask]] - csum[lo[mask]]) / counts[mask]
     return out_times[mask], mv
-
-
-def derive_mv_from_flow_window(raw: RawWaveformWindow) -> WaveformSeries | None:
-    """Pure — flow-derived MV series from a pre-fetched FLOW blob window.
-
-    Deserializes the raw FLOW blob straight to numpy (bypassing the
-    render-oriented ``compute_waveform_window`` avoids a numpy → list → numpy
-    round trip over the full-session flow signal), slices it to the request
-    window, and runs ``derive_mv_from_flow``.  Returns ``None`` when FLOW is
-    absent/empty or too short to derive a single MV sample.  A corrupt blob
-    raises ``ValueError``, mirroring ``compute_waveform_window``.
-    """
-    for flow_ch in raw.channels:
-        if flow_ch.waveform_type != WaveformChannelName.FLOW:
-            continue
-        if flow_ch.sample_count <= 0 or not flow_ch.raw_bytes:
-            return None
-        try:
-            flow_off, flow_val = deserialize_waveform_blob(
-                flow_ch.raw_bytes, flow_ch.sample_count
-            )
-        except ValueError as exc:
-            raise ValueError(
-                f"Invalid waveform data for channel '{flow_ch.waveform_type.value}'"
-            ) from exc
-        in_window = (flow_off >= raw.request.offset_start) & (
-            flow_off <= raw.request.offset_end
-        )
-        mv_off, mv_val = derive_mv_from_flow(flow_off[in_window], flow_val[in_window])
-        return (mv_off, mv_val) if mv_off.size > 0 else None
-    return None
 
 
 def _linear_slope(xs: np.ndarray, ys: np.ndarray) -> float | None:
@@ -305,41 +361,48 @@ def compute_ventilatory_context(
     """Pure — MV slope, MV stability, and delivered PS around one event.
 
     - ``preceding_mv_slope_lpm_per_min``: least-squares slope of MV over the
-      60 s preceding the event (``[max(0, offset_s - 60), offset_s]``), in
-      L/min per minute; needs >= 2 samples.
-    - ``stability_index``: stdev / mean of MV over the same window; needs
-      >= 3 samples and a non-zero mean.
-    - ``ps_delivered_cmh2o``: mean(THERAPY_PRESSURE − EPAP) over ±5 s around
-      the event start (the two slices are truncated to equal length).
+      60 s preceding the event (``[max(0, offset_s - 60), offset_s]``,
+      inclusive), in L/min per minute; needs >= 2 samples.
+    - ``stability_index``: sample stdev (ddof=1) / mean of MV over the same
+      window; needs >= 3 samples and a non-zero mean.
+    - ``ps_delivered_cmh2o``: mean(THERAPY_PRESSURE) − mean(EPAP), each
+      averaged over ±5 s around the event start (the channels need not share
+      a sample rate or alignment).
 
     MV metrics require ``offset_s > 0`` (an event before the session start
     has no preceding window); PS requires the ±5 s window to end after 0.
+    Non-finite samples are ignored; every null value carries
+    ``NOT_AVAILABLE``.
     """
-    ctx = VentilatoryContext()
+    slope: float | None = None
+    stability: float | None = None
+    ps: float | None = None
 
     if offset_s > 0.0 and mv is not None:
-        mv_start = max(0.0, offset_s - 60.0)
-        mv_ts, mv_vals = window_slice(mv, mv_start, offset_s)
+        mv_ts, mv_vals = window_slice(mv, max(0.0, offset_s - 60.0), offset_s)
         if mv_vals.size >= 2:
             # Offsets are seconds → per-second slope; ×60 → L/min per minute.
             slope_per_s = _linear_slope(mv_ts, mv_vals)
-            if slope_per_s is not None:
-                ctx.preceding_mv_slope_lpm_per_min = slope_per_s * 60.0
-                ctx.preceding_mv_slope_reason = None
+            slope = slope_per_s * 60.0 if slope_per_s is not None else None
         if mv_vals.size >= 3:
             mean_mv = float(mv_vals.mean())
             if mean_mv != 0.0:
-                ctx.stability_index = float(np.std(mv_vals, ddof=1)) / mean_mv
-                ctx.stability_reason = None
+                stability = float(np.std(mv_vals, ddof=1)) / mean_mv
 
     ps_start = max(0.0, offset_s - 5.0)
     ps_end = offset_s + 5.0
     if ps_end > 0.0 and therapy_pressure is not None and epap is not None:
-        _, tp_vals = window_slice(therapy_pressure, ps_start, ps_end)
-        _, ep_vals = window_slice(epap, ps_start, ps_end)
-        n = min(tp_vals.size, ep_vals.size)
-        if n > 0:
-            ctx.ps_delivered_cmh2o = float(np.mean(tp_vals[:n] - ep_vals[:n]))
-            ctx.ps_reason = None
+        tp_mean = window_mean(therapy_pressure, ps_start, ps_end)
+        ep_mean = window_mean(epap, ps_start, ps_end)
+        if tp_mean is not None and ep_mean is not None:
+            ps = tp_mean - ep_mean
 
-    return ctx
+    slope, stability, ps = (_finite_or_none(v) for v in (slope, stability, ps))
+    return VentilatoryContext(
+        preceding_mv_slope_lpm_per_min=slope,
+        preceding_mv_slope_reason=_reason_if_null(slope),
+        stability_index=stability,
+        stability_reason=_reason_if_null(stability),
+        ps_delivered_cmh2o=ps,
+        ps_reason=_reason_if_null(ps),
+    )

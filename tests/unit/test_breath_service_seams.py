@@ -49,11 +49,17 @@ from snore.analysis.types import AnalysisComputation
 from snore.analysis.types import AnalysisResult as AnalysisResultDTO
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.services.breath.algorithms import (
+    periodic_breathing_seconds,
+    raw_window_series,
+)
 from snore.services.breath_service import (
     BreathQueryRange,
     BreathService,
     DayAnalysisStatus,
     EpochRequest,
+    RawWaveformChannel,
+    RawWaveformWindow,
     WaveformChannelName,
     WaveformWindowRequest,
     WindowCriterion,
@@ -2767,6 +2773,85 @@ class TestCorruptBlobThroughPublicSeams:
         with pytest.raises(ValueError):
             await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
 
+    async def test_corrupt_flow_blob_nulls_mv_fields_without_failing(
+        self, async_db_session
+    ):
+        """No device MV + corrupt FLOW → the flow-derived MV fallback degrades:
+        MV-based fields null + NOT_AVAILABLE, pressure context intact."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2025, 7, 3)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "pressure", np.full(3600, 9.0))
+        async_db_session.add(
+            models.Waveform(
+                session_id=session.id,
+                waveform_type="flow",
+                sample_rate=25.0,
+                sample_count=100,
+                data_blob=_make_corrupt_waveform_blob(),
+            )
+        )
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.mv_source is None
+        assert ev.mv_prior_120s_lpm is None
+        assert ev.mv_reason == NullReason.NOT_AVAILABLE
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
+        assert ev.stability_index is None
+        assert ev.stability_reason == NullReason.NOT_AVAILABLE
+        assert ev.pressure_at_event_cmh2o == pytest.approx(9.0)
+        assert ev.pressure_reason is None
+
+    @pytest.mark.parametrize("corrupt_channel", ["therapy_pressure", "epap"])
+    async def test_corrupt_ps_channel_nulls_only_ps(
+        self, async_db_session, corrupt_channel
+    ):
+        """A corrupt THERAPY_PRESSURE or EPAP blob nulls PS (+ NOT_AVAILABLE);
+        MV metrics and pressure context are unaffected."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2025, 7, 4)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "pressure", np.full(3600, 9.0))
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        intact_channel = (
+            "epap" if corrupt_channel == "therapy_pressure" else ("therapy_pressure")
+        )
+        await _add_waveform(
+            async_db_session, session, intact_channel, np.full(3600, 10.0)
+        )
+        async_db_session.add(
+            models.Waveform(
+                session_id=session.id,
+                waveform_type=corrupt_channel,
+                sample_rate=1.0,
+                sample_count=100,
+                data_blob=_make_corrupt_waveform_blob(),
+            )
+        )
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.ps_delivered_cmh2o is None
+        assert ev.ps_reason == NullReason.NOT_AVAILABLE
+        assert ev.pressure_at_event_cmh2o == pytest.approx(9.0)
+        assert ev.mv_prior_120s_lpm == pytest.approx(8.0)
+        assert ev.stability_index == pytest.approx(0.0)
+        assert ev.mv_source == "device"
+
 
 # ---------------------------------------------------------------------------
 # Per-event ventilatory context (get_contextual_events)
@@ -2840,13 +2925,14 @@ class TestEventVentilatoryContext:
             async_db_session, profile_id, therapy_date, dev.id
         )
 
-        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, abs=1.0)
+        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, rel=1e-9)
         assert ev.preceding_mv_slope_reason is None
         assert ev.mv_source == "device"
 
     async def test_stability_index_uses_only_preceding_60s(self, async_db_session):
-        """Event at 90 s; [30, 90] alternates 8/12 (CV ≈ 0.2) while [0, 30) is
-        zero — a wider window would drag the mean toward 0 and inflate CV."""
+        """Event at 90 s; [30, 90] alternates 8/12 while [0, 30) is zero — a
+        wider window would drag the mean toward 0 and inflate CV.  Pinned
+        exactly: both bounds inclusive (61 samples) and sample stdev (ddof=1)."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2026, 6, 1)
@@ -2862,7 +2948,9 @@ class TestEventVentilatoryContext:
             async_db_session, profile_id, therapy_date, dev.id
         )
 
-        assert ev.stability_index == pytest.approx(0.2, abs=0.05)
+        window = vals[30:91]  # offsets 30..90 inclusive
+        expected = float(np.std(window, ddof=1)) / float(window.mean())
+        assert ev.stability_index == pytest.approx(expected, rel=1e-9)
         assert ev.stability_reason is None
 
     async def test_ps_delivered_is_therapy_pressure_minus_epap(self, async_db_session):
@@ -2883,7 +2971,7 @@ class TestEventVentilatoryContext:
             async_db_session, profile_id, therapy_date, dev.id
         )
 
-        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, abs=0.5)
+        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, rel=1e-9)
         assert ev.ps_reason is None
 
     async def test_absent_channels_yield_null_with_not_available(
@@ -3037,6 +3125,82 @@ class TestEventVentilatoryContext:
             session_a.id: "device",
             session_b.id: "flow_derived",
         }
+
+    async def test_include_context_false_fetches_no_waveforms(self, async_db_session):
+        """include_context=False → zero blob fetches; events still returned with
+        every context value, reason, and mv_source null."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        import snore.services.breath_service as bs_mod  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 6)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        await _add_waveform(async_db_session, session, "pressure", np.full(3600, 9.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        call_count = 0
+        original_fetch = bs_mod._fetch_waveform_blobs  # noqa: SLF001
+
+        async def counting_fetch(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return await original_fetch(*args, **kwargs)
+
+        with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=counting_fetch):
+            events = await BreathService(
+                async_db_session, profile_id=profile_id
+            ).get_contextual_events(
+                therapy_date=therapy_date, device_id=dev.id, include_context=False
+            )
+
+        assert call_count == 0
+        assert len(events) == 1
+        ev = events[0]
+        assert ev.offset_seconds == pytest.approx(300.0)
+        assert ev.pressure_at_event_cmh2o is None
+        assert ev.mv_prior_120s_lpm is None
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.ps_delivered_cmh2o is None
+        assert ev.mv_source is None
+        assert (
+            ev.pressure_reason,
+            ev.leak_reason,
+            ev.mv_reason,
+            ev.preceding_mv_slope_reason,
+            ev.stability_reason,
+            ev.ps_reason,
+        ) == (None, None, None, None, None, None)
+
+    async def test_all_nan_mv_values_yield_null_metrics_with_reason(
+        self, async_db_session
+    ):
+        """Device MV present but every value NaN → MV-derived fields null +
+        NOT_AVAILABLE (never NaN in the output)."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 7)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, np.nan))
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.mv_source == "device"
+        assert ev.mv_prior_120s_lpm is None
+        assert ev.mv_reason == NullReason.NOT_AVAILABLE
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
+        assert ev.stability_index is None
+        assert ev.stability_reason == NullReason.NOT_AVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -3242,20 +3406,30 @@ class TestNightlyPeriodicBreathing:
             )
 
         run_meta = AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"])
-        algo_a = AlgoVersions(identity=AlgorithmIdentity.current(), run=run_meta)
         alt_identity = AlgorithmIdentity.current().model_dump()
         alt_identity["segmenter"] = "v999.0.0"
         algo_b = AlgoVersions(
             identity=AlgorithmIdentity.model_validate(alt_identity), run=run_meta
         )
-
-        def _classify(row: Any) -> tuple[AnalysisStatus, AlgoVersions]:
-            return AnalysisStatus.OK, (
-                algo_a if row.session_id == session_a.id else algo_b
+        ar_b = (
+            await async_db_session.execute(
+                select(models.AnalysisResult).where(
+                    models.AnalysisResult.session_id == session_b.id
+                )
             )
+        ).scalar_one()
+        ar_b.engine_versions_json = algo_b.model_dump(mode="json")
+        await async_db_session.flush()
+
+        def _classify_all_ok(
+            engine_versions_json: dict[str, Any],
+        ) -> tuple[AnalysisStatus, AlgoVersions | None]:
+            return AnalysisStatus.OK, AlgoVersions.from_stored(engine_versions_json)
 
         with patch.object(
-            BreathService, "_classify_analysis_row", staticmethod(_classify)
+            BreathService,
+            "_classify_engine_versions",
+            staticmethod(_classify_all_ok),
         ):
             night = await BreathService(
                 async_db_session, profile_id=profile_id
@@ -3264,6 +3438,159 @@ class TestNightlyPeriodicBreathing:
         assert night.day_status == DayAnalysisStatus.MIXED_VERSION
         assert night.periodic_breathing_pct is None
         assert night.pb_reason == NullReason.ALGO_VERSION_MISMATCH
+
+    async def test_pb_pct_excludes_stale_latest_row_with_episodes(
+        self, async_db_session
+    ):
+        """1 OK session (1800 s, 360 s PB) + 1 session whose latest row is STALE
+        but carries 900 s of episodes → the stale row counts in neither
+        numerator nor denominator: 20.0 %."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 21)
+        session_a, session_b = await _two_session_night(
+            async_db_session, dev.id, therapy_date, 1800.0
+        )
+        await _store_analysis_with_pb_episodes(
+            async_db_session, session_a, profile_id, [_pb_episode(100.0, 460.0)]
+        )
+        await _store_analysis_with_pb_episodes(
+            async_db_session, session_b, profile_id, [_pb_episode(0.0, 900.0)]
+        )
+        stale_row = (
+            await async_db_session.execute(
+                select(models.AnalysisResult).where(
+                    models.AnalysisResult.session_id == session_b.id
+                )
+            )
+        ).scalar_one()
+        stale_row.engine_versions_json = {"version": "0.0.1"}  # legacy → STALE
+        await async_db_session.flush()
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct == pytest.approx(20.0)
+        assert night.pb_reason is None
+
+    @pytest.mark.parametrize(
+        "episodes",
+        [
+            ["not-an-episode"],
+            [{"start_time": None, "end_time": 400.0}],
+            [{"start_time": 100.0, "end_time": "late"}],
+            {"start_time": 100.0, "end_time": 400.0},
+        ],
+        ids=["non_dict_episode", "null_start", "bad_end", "not_a_list"],
+    )
+    async def test_malformed_pb_episodes_null_pb_and_keep_night(
+        self, async_db_session, episodes
+    ):
+        """Malformed persisted episodes → that session's PB is null +
+        NOT_AVAILABLE; the rest of the night (FL/RERA from breaths) still
+        computes and nothing raises."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 22)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        ar = await _store_analysis_with_breaths(
+            async_db_session, session, profile_id, n_breaths=4, flow_class=4
+        )
+        ar.programmatic_result_json = {
+            **ar.programmatic_result_json,
+            "periodic_breathing_episodes": episodes,
+        }
+        await async_db_session.flush()
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == NullReason.NOT_AVAILABLE
+        assert night.fl_class_ge4_pct == pytest.approx(100.0)
+        assert night.fl_class_ge4_pct_reason is None
+
+    async def test_malformed_pb_episodes_leave_day_detail_fl_rera_intact(
+        self, async_db_session
+    ):
+        """DayService day detail reads the same nightly summary: malformed PB
+        episodes must not null its FL/RERA metrics."""
+        from snore.services.day_service import DayService  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 23)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        ar = await _store_analysis_with_breaths(
+            async_db_session, session, profile_id, n_breaths=4, flow_class=4
+        )
+        ar.programmatic_result_json = {
+            **ar.programmatic_result_json,
+            "periodic_breathing_episodes": [{"start_time": None}],
+        }
+        await async_db_session.flush()
+
+        detail = await DayService(async_db_session, profile_id=profile_id).get_day(
+            therapy_date, device_id=dev.id
+        )
+
+        assert detail.fl_class_ge4_pct == pytest.approx(100.0)
+        assert detail.fl_class_ge4_pct_reason is None
+        assert detail.rera_count is not None
+        assert detail.rera_count_reason is None
+
+
+@pytest.mark.unit
+class TestPeriodicBreathingSeconds:
+    """Pure parsing of persisted periodic-breathing episodes."""
+
+    def test_none_means_pb_never_ran(self):
+        assert periodic_breathing_seconds(None) is None
+
+    def test_empty_list_is_zero_seconds(self):
+        assert periodic_breathing_seconds([]) == 0.0
+
+    def test_key_fallbacks_sum_durations(self):
+        episodes = [
+            {"start_time": 0.0, "end_time": 60.0},
+            {"start": 100.0, "end": 130.0},
+            {"start": 200.0, "duration": 15.0},
+        ]
+        assert periodic_breathing_seconds(episodes) == pytest.approx(105.0)
+
+    def test_bad_duration_ignored_when_end_time_present(self):
+        """The duration fallback is only read when no end key exists."""
+        episodes = [{"start_time": 10.0, "end_time": 70.0, "duration": "bogus"}]
+        assert periodic_breathing_seconds(episodes) == pytest.approx(60.0)
+
+    @pytest.mark.parametrize(
+        "episodes",
+        [
+            "not-a-list",
+            [42],
+            [{"start_time": None, "end_time": 10.0}],
+            [{"start_time": "x", "end_time": 10.0}],
+            [{"start": 0.0, "duration": None}],
+            [{"start_time": 0.0, "end_time": float("inf")}],
+        ],
+        ids=[
+            "not_list",
+            "non_dict",
+            "null_start",
+            "text_start",
+            "null_duration",
+            "infinite_end",
+        ],
+    )
+    def test_malformed_input_raises_value_error(self, episodes):
+        with pytest.raises(ValueError):
+            periodic_breathing_seconds(episodes)
 
 
 # ---------------------------------------------------------------------------
@@ -4025,7 +4352,7 @@ class TestUnexpectedErrorPropagation:
     async def test_unexpected_runtime_error_propagates_through_contextual_events(
         self, async_db_session
     ):
-        """A RuntimeError from compute_waveform_window propagates out of get_contextual_events.
+        """A RuntimeError from raw_window_series propagates out of get_contextual_events.
 
         Absent channels use missing_channels (no exception).  Corrupt blobs raise
         ValueError.  Any other unexpected exception must propagate rather than being
@@ -4033,7 +4360,7 @@ class TestUnexpectedErrorPropagation:
         """
         from unittest.mock import patch  # noqa: PLC0415
 
-        from snore.services import breath_service as bs_mod  # noqa: PLC0415
+        from snore.services.breath import capabilities as cap_mod  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -4055,9 +4382,7 @@ class TestUnexpectedErrorPropagation:
             raise RuntimeError("injected compute failure")
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        with patch.object(
-            bs_mod, "compute_waveform_window", side_effect=_raise_runtime
-        ):
+        with patch.object(cap_mod, "raw_window_series", side_effect=_raise_runtime):
             with pytest.raises(RuntimeError, match="injected compute failure"):
                 await svc.get_contextual_events(
                     therapy_date=therapy_date, device_id=dev.id
@@ -5131,6 +5456,161 @@ class TestComputeVentilatoryContext:
         assert ctx.preceding_mv_slope_lpm_per_min is None
         assert ctx.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
 
+    def test_samples_at_inclusive_window_bounds_give_exact_metrics(self):
+        """MV samples exactly at offset−60 and offset are both in the window:
+        [6, 8, 10] → stability = stdev(ddof=1) 2 / mean 8 = 0.25 and slope
+        (4 L/min over 60 s) = 4.0 L/min per minute."""
+        mv = (np.array([240.0, 270.0, 300.0]), np.array([6.0, 8.0, 10.0]))
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=mv, therapy_pressure=None, epap=None
+        )
+
+        assert ctx.stability_index == pytest.approx(0.25, rel=1e-12)
+        assert ctx.stability_reason is None
+        assert ctx.preceding_mv_slope_lpm_per_min == pytest.approx(4.0, rel=1e-12)
+        assert ctx.preceding_mv_slope_reason is None
+
+    def test_ps_is_difference_of_means_for_unequal_sample_counts(self):
+        """0.5 Hz therapy pressure vs 1 Hz EPAP over ±5 s → PS is
+        mean(TP) − mean(EPAP), not a truncated element-wise difference."""
+        tp_t = np.arange(296.0, 306.0, 2.0)  # 296..304 → 5 samples
+        tp = (tp_t, np.array([20.0, 22.0, 20.0, 22.0, 20.0]))  # mean 20.8
+        ep_t = np.arange(295.0, 306.0, 1.0)  # 295..305 → 11 samples
+        ep = (ep_t, np.linspace(8.0, 10.0, ep_t.size))  # mean 9.0
+
+        ctx = compute_ventilatory_context(300.0, mv=None, therapy_pressure=tp, epap=ep)
+
+        assert ctx.ps_delivered_cmh2o == pytest.approx(20.8 - 9.0, rel=1e-12)
+        assert ctx.ps_reason is None
+
+    def test_nan_samples_are_ignored(self):
+        """NaN MV samples drop out of the window; remaining [6, 8, 10] give the
+        exact finite metrics."""
+        mv = (
+            np.array([240.0, 250.0, 270.0, 290.0, 300.0]),
+            np.array([6.0, np.nan, 8.0, np.nan, 10.0]),
+        )
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=mv, therapy_pressure=None, epap=None
+        )
+
+        assert ctx.stability_index == pytest.approx(0.25, rel=1e-12)
+        assert ctx.preceding_mv_slope_lpm_per_min == pytest.approx(4.0, rel=1e-12)
+
+    def test_all_nan_inputs_give_null_with_reason(self):
+        nan3 = np.full(3, np.nan)
+        t = np.array([280.0, 290.0, 300.0])
+
+        ctx = compute_ventilatory_context(
+            300.0, mv=(t, nan3), therapy_pressure=(t, nan3), epap=(t, nan3)
+        )
+
+        assert ctx.model_dump() == {
+            "preceding_mv_slope_lpm_per_min": None,
+            "preceding_mv_slope_reason": NullReason.NOT_AVAILABLE,
+            "stability_index": None,
+            "stability_reason": NullReason.NOT_AVAILABLE,
+            "ps_delivered_cmh2o": None,
+            "ps_reason": NullReason.NOT_AVAILABLE,
+        }
+
+
+def _raw_window(
+    channels: dict[WaveformChannelName, bytes],
+    *,
+    offset_end: float = 100.0,
+    sample_counts: dict[WaveformChannelName, int] | None = None,
+) -> RawWaveformWindow:
+    counts = sample_counts or {}
+    return RawWaveformWindow(
+        request=WaveformWindowRequest(
+            therapy_date=date(2026, 1, 1),
+            session_id=1,
+            channels=list(channels),
+            offset_start=0.0,
+            offset_end=offset_end,
+            window_cap_seconds=offset_end,
+        ),
+        session_id=1,
+        session_start_wall_clock=datetime(2026, 1, 1, 22, 0),
+        channels=[
+            RawWaveformChannel(
+                waveform_type=name,
+                unit=None,
+                sample_rate=1.0,
+                sample_count=counts.get(name, len(blob) // 8),
+                raw_bytes=blob,
+            )
+            for name, blob in channels.items()
+        ],
+        missing_channels=[],
+    )
+
+
+@pytest.mark.unit
+class TestRawWindowSeries:
+    """Pure raw-blob → numpy series helper used by per-event context."""
+
+    def test_masks_to_request_window_as_float64(self):
+        t = np.arange(0.0, 200.0)
+        raw = _raw_window(
+            {WaveformChannelName.MV: _make_waveform_blob_from_arrays(t, t * 2)},
+            offset_end=100.0,
+        )
+
+        offsets, values = raw_window_series(raw)[WaveformChannelName.MV]
+
+        assert offsets[0] == 0.0 and offsets[-1] == 100.0
+        assert offsets.size == 101
+        assert values.dtype == np.float64
+        assert np.array_equal(values, offsets * 2)
+
+    def test_non_monotonic_offsets_channel_is_absent(self):
+        t = np.concatenate([np.arange(0.0, 50.0), np.arange(20.0, 80.0)])
+        raw = _raw_window(
+            {WaveformChannelName.MV: _make_waveform_blob_from_arrays(t, t)}
+        )
+
+        assert WaveformChannelName.MV not in raw_window_series(raw)
+
+    def test_nan_offset_channel_is_absent(self):
+        t = np.arange(0.0, 50.0)
+        t[10] = np.nan
+        raw = _raw_window(
+            {WaveformChannelName.PRESSURE: _make_waveform_blob_from_arrays(t, t)}
+        )
+
+        assert WaveformChannelName.PRESSURE not in raw_window_series(raw)
+
+    def test_corrupt_blob_raises_naming_channel(self):
+        raw = _raw_window(
+            {WaveformChannelName.LEAK: _make_corrupt_waveform_blob()},
+            sample_counts={WaveformChannelName.LEAK: 100},
+        )
+
+        with pytest.raises(
+            ValueError, match="Invalid waveform data for channel 'leak'"
+        ):
+            raw_window_series(raw)
+
+    def test_tolerated_corrupt_blob_is_absent(self):
+        t = np.arange(0.0, 50.0)
+        raw = _raw_window(
+            {
+                WaveformChannelName.EPAP: _make_corrupt_waveform_blob(),
+                WaveformChannelName.PRESSURE: _make_waveform_blob_from_arrays(t, t),
+            },
+            sample_counts={WaveformChannelName.EPAP: 100},
+        )
+
+        series = raw_window_series(
+            raw, tolerate_corrupt=frozenset({WaveformChannelName.EPAP})
+        )
+
+        assert set(series) == {WaveformChannelName.PRESSURE}
+
 
 @pytest.mark.unit
 class TestDeriveMvFromFlow:
@@ -5214,6 +5694,17 @@ class TestDeriveMvFromFlow:
         assert out_t.size > 0
         assert np.all(np.isfinite(out_v))
         assert np.allclose(out_v, 5.0, atol=0.5)
+
+    def test_non_finite_end_offsets_return_empty(self):
+        """A NaN/inf first or last offset would crash np.arange → empty."""
+        offsets = np.arange(0.0, 200.0, 1.0)
+        offsets[-1] = np.nan
+        values = np.full_like(offsets, 10.0)
+
+        out_t, out_v = derive_mv_from_flow(offsets, values)
+
+        assert out_t.size == 0
+        assert out_v.size == 0
 
 
 # ---------------------------------------------------------------------------

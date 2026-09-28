@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import statistics
 
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any
 
@@ -24,7 +26,7 @@ from snore.database import models
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import percentile_nearest_rank
 
-from ._core import _BreathServiceCore
+from ._core import SessionClassification, _BreathServiceCore
 from .algorithms import _count_fl_run_reras, periodic_breathing_seconds
 from .dtos import (
     DeviceAmbiguityError,
@@ -34,6 +36,8 @@ from .dtos import (
     NoSessionsInRangeError,
     SessionCoverage,
 )
+
+logger = logging.getLogger(__name__)
 
 # Maximum calendar nights a single get_nightly_range_summary call may span.
 # Longer ranges must be paged by the caller (e.g. AppleCrossValidator).
@@ -63,20 +67,19 @@ def _sorted_distribution(
 
 
 def _periodic_breathing_pct(
-    day_sessions: list[Any],
-    ar_classification: dict[
-        int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
-    ],
-    pb_seconds_by_ar_id: dict[int, float | None],
+    day_sessions: Sequence[models.Session],
+    ok_session_ids: set[int],
+    pb_seconds_by_session: Mapping[int, float | None],
     *,
     mixed_version: bool,
 ) -> tuple[float | None, NullReason | None]:
     """Percent of analyzed (OK-session) time spent in periodic breathing.
 
-    Numerator: persisted PB episode seconds; denominator: those OK sessions'
-    durations.  PB detection having run on >= 1 OK session with zero episodes
-    is a genuine 0.0 %.  Mixed algorithm versions → ``ALGO_VERSION_MISMATCH``;
-    no PB result or zero eligible duration → ``NOT_AVAILABLE``.
+    Numerator: persisted PB episode seconds; denominator: the durations of
+    ``ok_session_ids`` sessions (the same OK gate the rest of the night uses).
+    PB detection having run on >= 1 OK session with zero episodes is a
+    genuine 0.0 %.  Mixed algorithm versions → ``ALGO_VERSION_MISMATCH``; no
+    parseable PB result or zero eligible duration → ``NOT_AVAILABLE``.
     """
     if mixed_version:
         return None, NullReason.ALGO_VERSION_MISMATCH
@@ -84,19 +87,30 @@ def _periodic_breathing_pct(
     eligible_seconds = 0.0
     pb_ran = False
     for s in day_sessions:
-        status, _algo, ar_id = ar_classification.get(
-            s.id, (AnalysisStatus.NOT_RUN, None, None)
-        )
-        if status != AnalysisStatus.OK or ar_id is None:
+        if s.id not in ok_session_ids:
             continue
         eligible_seconds += s.duration_seconds or 0.0
-        session_pb = pb_seconds_by_ar_id.get(ar_id)
+        session_pb = pb_seconds_by_session.get(s.id)
         if session_pb is not None:
             pb_ran = True
             pb_seconds += session_pb
     if not pb_ran or eligible_seconds <= 0:
         return None, NullReason.NOT_AVAILABLE
     return pb_seconds / eligible_seconds * 100.0, None
+
+
+def _session_pb_seconds(session_id: int, episodes: object) -> float | None:
+    """``periodic_breathing_seconds`` for one session; a malformed episode
+    list degrades to None (PB not available) instead of failing the night."""
+    try:
+        return periodic_breathing_seconds(episodes)
+    except ValueError:
+        logger.warning(
+            "Malformed periodic-breathing episodes for session %d; "
+            "treating PB as not available",
+            session_id,
+        )
+        return None
 
 
 class NightlyMixin(_BreathServiceCore):
@@ -134,21 +148,20 @@ class NightlyMixin(_BreathServiceCore):
         *,
         therapy_date: date,
         device_id: int,
-        day_sessions: list[Any],
+        day_sessions: Sequence[models.Session],
         day_row: Any | None,
-        ar_classification: dict[
-            int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
-        ],
+        ar_classification: Mapping[int, SessionClassification],
         breath_rows_by_ar_id: dict[int, list[Any]],
         compliance_threshold_hours: float,
         fl_vals_by_session: dict[int, list[float]] | None = None,
         snore_vals_by_session: dict[int, list[float]] | None = None,
-        pb_seconds_by_ar_id: dict[int, float | None] | None = None,
+        pb_seconds_by_session: Mapping[int, float | None] | None = None,
     ) -> NightlyAnalysisSummary:
         """Build a NightlyAnalysisSummary from pre-fetched data. No I/O.
 
-        ``pb_seconds_by_ar_id`` maps an OK AnalysisResult id to its persisted
-        periodic-breathing seconds (None when PB detection never ran).
+        ``pb_seconds_by_session`` maps a session id to its latest run's
+        persisted periodic-breathing seconds (None when PB detection never ran
+        or its episodes were malformed); only OK sessions are consulted.
         """
         from snore.services.breath_service import BreathService  # noqa: PLC0415
 
@@ -192,8 +205,8 @@ class NightlyMixin(_BreathServiceCore):
 
         periodic_breathing_pct, pb_reason = _periodic_breathing_pct(
             day_sessions,
-            ar_classification,
-            pb_seconds_by_ar_id or {},
+            {sid for sid, _algo in ok_sessions},
+            pb_seconds_by_session or {},
             mixed_version=day_status == DayAnalysisStatus.MIXED_VERSION,
         )
 
@@ -538,14 +551,15 @@ class NightlyMixin(_BreathServiceCore):
             all_sessions.extend(sessions)
         all_session_ids = [s.id for s in all_sessions]
 
-        # Bulk latest-AnalysisResult load + classification (no N+1)
-        latest_rows = await self._latest_analysis_rows_bulk(all_session_ids)
-        ar_classification = self._classify_latest_rows(all_session_ids, latest_rows)
-        # Periodic-breathing seconds from the already-loaded result JSON of
-        # OK rows only — no extra query, no waveform I/O.
-        pb_seconds_by_ar_id = {
-            row.id: periodic_breathing_seconds(row.programmatic_result_json)
-            for sid, row in latest_rows.items()
+        # Bulk latest-AnalysisResult classification + persisted PB episodes
+        # (column-limited; the result JSON is never loaded; no N+1).
+        ar_classification, pb_episodes_by_session = await self._latest_analysis_bulk(
+            all_session_ids
+        )
+        # PB seconds are only consumed for OK sessions — skip parsing the rest.
+        pb_seconds_by_session = {
+            sid: _session_pb_seconds(sid, episodes)
+            for sid, episodes in pb_episodes_by_session.items()
             if ar_classification[sid][0] == AnalysisStatus.OK
         }
 
@@ -615,7 +629,7 @@ class NightlyMixin(_BreathServiceCore):
                     compliance_threshold_hours=compliance_threshold_hours,
                     fl_vals_by_session=fl_vals_by_session,
                     snore_vals_by_session=snore_vals_by_session,
-                    pb_seconds_by_ar_id=pb_seconds_by_ar_id,
+                    pb_seconds_by_session=pb_seconds_by_session,
                 )
                 nights.append(summary)
                 if summary.is_compliant:

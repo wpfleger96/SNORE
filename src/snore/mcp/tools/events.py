@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.analysis.shared.versioning import MV_FALLBACK_ALGO_VERSION
 from snore.mcp.schemas import (
     EventContext,
     EventRow,
@@ -36,6 +37,7 @@ from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
 )
+from snore.services.breath_service import MvSource
 
 
 async def get_events(
@@ -61,7 +63,9 @@ async def get_events(
         device_id: Optional device filter; required when multiple devices share a date.
         types: Optional list of event types to filter (e.g. ["OA", "CA", "H"]).
         min_duration: Minimum event duration in seconds (optional filter).
-        include_context: Whether to attach per-event waveform context block.
+        include_context: Whether to compute and attach the per-event waveform
+            context block; False skips all waveform I/O (context and the
+            context ``*_reason`` fields are null).
         max_events: Maximum events to return (≥1, pre-validated by server wrapper).
             total_events reflects the untruncated count; truncated=True when cut.
     """
@@ -74,6 +78,7 @@ async def get_events(
             event_types=types,
             min_duration=min_duration,
             device_id=device_id,
+            include_context=include_context,
         )
     except MAPPED_SERVICE_ERRORS as exc:
         raise_mapped_service_error(exc)
@@ -188,6 +193,11 @@ async def get_events(
         events=rows,
         total_events=total_events,
         truncated=truncated,
+        mv_fallback_version=(
+            MV_FALLBACK_ALGO_VERSION
+            if any(ev.mv_source == MvSource.FLOW_DERIVED for ev in events_to_map)
+            else None
+        ),
         device_capabilities=caps,
     )
 
@@ -222,8 +232,17 @@ def register(mcp: FastMCP) -> None:
         ``ps_delivered_cmh2o`` (therapy pressure − EPAP over ±5 s).
         ``mv_source`` is ``"device"`` (device MV channel), ``"flow_derived"``
         (MV computed from the flow waveform when the device recorded no MV),
-        or null. Null values carry a ``*_reason`` on the event row
-        (``preceding_mv_slope_reason``, ``stability_reason``, ``ps_reason``).
+        or null. ``mv_prior_120s_lpm``, the slope, and the stability index all
+        use that MV series, so they may be flow-derived; the response-level
+        ``mv_fallback_version`` labels the derivation and is non-null only when
+        some returned event is ``"flow_derived"``.
+
+        Null values carry a ``*_reason`` on the event row (``pressure_reason``,
+        ``leak_reason``, ``mv_reason``, ``preceding_mv_slope_reason``,
+        ``stability_reason``, ``ps_reason``) — including when an auxiliary
+        channel (therapy pressure, EPAP, flow) is corrupt, which nulls only the
+        fields that depend on it.  ``include_context=false`` skips the waveform
+        work entirely: ``context`` and those reasons are null.
 
         Args:
             date: Session date in YYYY-MM-DD format.
@@ -234,7 +253,9 @@ def register(mcp: FastMCP) -> None:
                    apnea), ``H`` (hypopnea), ``RERA`` (respiratory effort-related
                    arousal), ``FL`` (flow limitation), ``VS`` (vibratory snore).
             min_duration: Minimum event duration in seconds (optional).
-            include_context: Attach per-event waveform context block (default true).
+            include_context: Compute and attach the per-event waveform context
+                block (default true); false is faster and leaves ``context``
+                and the context ``*_reason`` fields null.
             max_events: Maximum number of events to return after filtering (default 500,
                         minimum 1). When the result is truncated, ``total_events`` still
                         reports the full unfiltered count and ``truncated`` is set to true
