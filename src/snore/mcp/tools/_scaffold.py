@@ -155,8 +155,8 @@ async def _scope_and_run(
 ) -> dict[str, Any]:
     """Open a DB scope, call impl, model_dump the result, and size-check it.
 
-    Shared scaffold for the 8 standard-pattern tools (all except the waveform pair
-    and get_ca_analysis, which have non-standard return paths).  Each tool module's
+    Shared scaffold for the 8 standard-pattern tools (all except the waveform pair,
+    which has non-standard return paths).  Each tool module's
     ``register`` closure calls this with the resolved date/validation kwargs.
     """
     runtime = _runtime(ctx)

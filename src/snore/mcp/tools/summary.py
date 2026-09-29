@@ -228,6 +228,8 @@ async def get_nightly_summary(
         ie_ratio_reason: str | None = None
         leak_above_24_pct: float | None = None
         leak_above_24_pct_reason: str | None = None
+        periodic_breathing_pct: float | None = None
+        pb_reason: str | None = None
 
         # Device waveform aggregates — carried directly from bs_night (present when
         # the channel was recorded, regardless of analysis status).
@@ -282,6 +284,10 @@ async def get_nightly_summary(
             leak_above_24_pct = bs_night.leak_above_24_pct
             leak_above_24_pct_reason = str_or_none(bs_night.leak_above_24_pct_reason)
 
+            if bs_night.periodic_breathing_pct is not None:
+                periodic_breathing_pct = round(bs_night.periodic_breathing_pct, 1)
+            pb_reason = str_or_none(bs_night.pb_reason)
+
             # Device waveform aggregates
             if bs_night.device_flg_median is not None:
                 device_flg_median = round(bs_night.device_flg_median, 4)
@@ -309,6 +315,7 @@ async def get_nightly_summary(
             ti_median_reason = "analysis_not_run"
             ie_ratio_reason = "analysis_not_run"
             leak_above_24_pct_reason = "analysis_not_run"
+            pb_reason = "analysis_not_run"
             device_flg_reason = "no_sessions"
             snore_reason = "no_sessions"
 
@@ -349,6 +356,8 @@ async def get_nightly_summary(
                 leak_95th_lpm=day.leak_95th,
                 leak_above_24_pct=leak_above_24_pct,
                 leak_above_24_pct_reason=leak_above_24_pct_reason,
+                periodic_breathing_pct=periodic_breathing_pct,
+                pb_reason=pb_reason,
                 rr_mean_bpm=stats.respiratory_rate_mean if stats else None,
                 tv_mean_ml=(
                     round(stats.tidal_volume_mean * 1000, 1)
@@ -426,8 +435,10 @@ def register(mcp: FastMCP) -> None:
         """Return per-night therapy summary for a date range.
 
         Paginated at 30 nights/call (adjustable). Analysis-derived fields (RERA
-        index, RDI) are null + reason "analysis_not_run" when analysis has not
-        been run. RDI here adds the experimental RERA-proxy index to the
+        index, RDI, FL, Ti, I:E, PB) are null + a reason when unavailable:
+        ``"not_available"`` when the night has sessions but no current (OK)
+        analysis to draw from, ``"analysis_not_run"`` when the night has no
+        analyzable session summary at all. RDI here adds the experimental RERA-proxy index to the
         device-reported AHI. ``fl_class_ge4_pct`` is the percent of leak-valid,
         rule-matched classified breaths with ``flow_class >= 4``; the confidence
         gate excludes fallback guesses. Compliance fields are included in the
@@ -441,6 +452,15 @@ def register(mcp: FastMCP) -> None:
         ``rera_index_reason`` may be ``"duration_zero"`` when a RERA count
         exists but therapy hours for the night is zero, making the per-hour
         rate undefined.
+
+        ``periodic_breathing_pct`` is the percent of analyzed-session time
+        spent in periodic-breathing episodes found by analysis (0.0 when
+        detection ran and found none). When null, ``pb_reason`` is one of:
+        ``"not_available"`` (no OK session with a PB result, the persisted
+        episodes were malformed, or the OK sessions have zero duration);
+        ``"algo_version_mismatch"`` (the night's sessions were analyzed with
+        different algorithm versions); ``"analysis_not_run"`` (no analysis
+        summary exists for the night).
 
         Args:
             start: Start date in YYYY-MM-DD format.

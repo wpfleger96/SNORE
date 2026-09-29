@@ -22,9 +22,9 @@ from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
     _make_device,
+    _make_event,
 )
 from tests.integration.test_mcp_breath_table import _make_breath
-from tests.integration.test_mcp_ca_analysis import _make_ca_event
 from tests.integration.test_mcp_waveform import _make_waveform
 
 TZ = "America/New_York"
@@ -121,7 +121,7 @@ class TestUserDeclaredTimezone:
         target_date = date(2024, 2, 1)
         device = await _make_device(async_db_session, tz_profile.id)
         _, sess = await _make_day_session(async_db_session, device, target_date)
-        await _make_ca_event(async_db_session, sess, offset_seconds=300.0)
+        await _make_event(async_db_session, sess, offset_seconds=300.0)
 
         result = await find_windows(
             async_db_session,
@@ -163,29 +163,6 @@ class TestUserDeclaredTimezone:
         assert response.timezone_name == TZ
         assert response.session_start_wall_clock is not None
         _assert_offset_aware(response.session_start_wall_clock)
-
-    async def test_get_ca_analysis_carries_user_declared_timezone(
-        self, async_db_session: AsyncSession, tz_profile: Any
-    ) -> None:
-        from snore.mcp.tools.ca_analysis import (  # noqa: PLC0415
-            ca_response_from_raw,
-            fetch_ca_raw,
-        )
-
-        day_date = date(2025, 1, 15)
-        device = await _make_device(async_db_session, tz_profile.id)
-        _, sess = await _make_day_session(async_db_session, device, day_date)
-        await _make_analysis_result(async_db_session, sess)
-        await _make_ca_event(async_db_session, sess, offset_seconds=120.0)
-
-        raw, caps = await fetch_ca_raw(async_db_session, day_date, tz_profile.id)
-        result = ca_response_from_raw(raw, caps)
-
-        assert len(result.ca_events) == 1
-        ev = result.ca_events[0]
-        assert ev.timezone_status == "user_declared"
-        assert ev.timezone_name == TZ
-        _assert_offset_aware(ev.session_start_wall_clock)
 
     async def test_get_data_overview_carries_timezone_status(
         self, async_db_session: AsyncSession, tz_profile: Any

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.data.waveform_loader import deserialize_waveform_blob
@@ -26,6 +28,25 @@ from .dtos import (
     NoSessionsInRangeError,
     SessionCoverage,
 )
+
+# JSON path of the persisted PB episode list inside programmatic_result_json.
+_PB_PATH = "$.periodic_breathing_episodes"
+
+# (status, algo_versions, analysis_result_id) for a session's latest run.
+SessionClassification = tuple[AnalysisStatus, AlgoVersions | None, int | None]
+
+
+def _decode_json_extract(value: object) -> object:
+    """Decode a SQLite ``json_extract`` result: arrays/objects come back as JSON
+    text, scalars as native values, a missing key or JSON null as ``None``.
+    Undecodable text is returned unchanged (callers treat it as malformed)."""
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded: object = json.loads(value)
+    except ValueError:
+        return value
+    return decoded
 
 
 async def _resolve_timezone(
@@ -67,7 +88,7 @@ class _BreathServiceCore:
 
     async def _latest_analysis_for_session(
         self, session_id: int
-    ) -> tuple[AnalysisStatus, AlgoVersions | None, int | None]:
+    ) -> SessionClassification:
         """Return (status, algo_versions, analysis_result_id) for latest run.
 
         Ownership is assumed: callers are responsible for verifying the
@@ -85,15 +106,23 @@ class _BreathServiceCore:
 
     @staticmethod
     def _classify_analysis_row(
-        row: Any,
+        row: models.AnalysisResult,
     ) -> tuple[AnalysisStatus, AlgoVersions | None]:
-        """Classify an AnalysisResult ORM row: (status, algo|None).
+        """Classify an AnalysisResult ORM row: (status, algo|None)."""
+        return _BreathServiceCore._classify_engine_versions(row.engine_versions_json)
 
-        Precondition: row is not None (callers verify before calling).
+    @staticmethod
+    def _classify_engine_versions(
+        engine_versions_json: dict[str, Any],
+    ) -> tuple[AnalysisStatus, AlgoVersions | None]:
+        """Classify a stored ``engine_versions_json`` payload: (status, algo|None).
+
+        Shared by the single-row and bulk (column-limited) lookups so both
+        classify identically.
         """
         from snore.services.breath_service import BreathService  # noqa: PLC0415
 
-        algo = AlgoVersions.from_stored(row.engine_versions_json)
+        algo = AlgoVersions.from_stored(engine_versions_json)
         if algo is None:
             return AnalysisStatus.STALE_VERSION, None
         current = BreathService._current_algorithm_identity()
@@ -101,50 +130,64 @@ class _BreathServiceCore:
             return AnalysisStatus.STALE_VERSION, algo
         return AnalysisStatus.OK, algo
 
-    async def _classify_sessions_bulk(
+    async def _latest_analysis_bulk(
         self, session_ids: list[int]
-    ) -> dict[int, tuple[AnalysisStatus, AlgoVersions | None, int | None]]:
-        """Bulk variant of ``_latest_analysis_for_session`` for many sessions.
+    ) -> tuple[dict[int, SessionClassification], dict[int, object]]:
+        """Bulk variant of ``_latest_analysis_for_session``.
 
-        One window-function query resolves each session's latest
-        AnalysisResult ID, one more loads those rows; classification is
-        identical to the per-session path.  Sessions without a run map to
-        ``(NOT_RUN, None, None)``.  Ownership is assumed, exactly as in
+        Returns ``(classification, pb_episodes)``:
+
+        - ``classification``: session_id → ``SessionClassification`` for every
+          id in ``session_ids``; sessions without a run map to
+          ``(NOT_RUN, None, None)``.
+        - ``pb_episodes``: session_id → the latest run's persisted
+          ``periodic_breathing_episodes`` (decoded JSON; ``[]`` for an explicit
+          JSON null; ``None`` when the key is absent, i.e. PB never ran), for
+          sessions with a run.
+
+        Column-limited: the (large) result JSON is never loaded — SQLite's
+        ``json_extract`` pulls only the episode list.  One window-function
+        query resolves the latest AnalysisResult ids, then one chunked query
+        loads their columns.  Ownership is assumed, exactly as in
         ``_latest_analysis_for_session``.
         """
-        classification: dict[
-            int, tuple[AnalysisStatus, AlgoVersions | None, int | None]
-        ] = {sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids}
+        classification: dict[int, SessionClassification] = {
+            sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids
+        }
+        pb_episodes: dict[int, object] = {}
         ar_id_by_session = await latest_analysis_ids(self._db, session_ids)
-        if not ar_id_by_session:
-            return classification
+        ar = models.AnalysisResult
         # Chunk the unbounded AnalysisResult-id IN-list (SQLite bound-param cap).
-        # Ids are disjoint across chunks, so the merged dict never collides.
-        ar_ids = list(ar_id_by_session.values())
-        row_by_id: dict[int, models.AnalysisResult] = {}
-        for chunk in iter_id_chunks(ar_ids):
-            chunk_rows = (
-                (
-                    await self._db.execute(
-                        select(models.AnalysisResult).where(
-                            models.AnalysisResult.id.in_(chunk)
-                        )
-                    )
-                )
-                .scalars()
-                .all()
+        for chunk in iter_id_chunks(list(ar_id_by_session.values())):
+            rows = await self._db.execute(
+                select(
+                    ar.id,
+                    ar.session_id,
+                    ar.engine_versions_json,
+                    func.json_extract(ar.programmatic_result_json, _PB_PATH).label(
+                        "pb_episodes"
+                    ),
+                    func.json_type(ar.programmatic_result_json, _PB_PATH).label(
+                        "pb_type"
+                    ),
+                ).where(ar.id.in_(chunk))
             )
-            row_by_id.update({row.id: row for row in chunk_rows})
-        for sid, ar_id in ar_id_by_session.items():
-            row = row_by_id.get(ar_id)
-            if row is not None:
-                status, algo = self._classify_analysis_row(row)
-                classification[sid] = (status, algo, row.id)
-        return classification
+            for row in rows:
+                status, algo = self._classify_engine_versions(row.engine_versions_json)
+                classification[row.session_id] = (status, algo, row.id)
+                # A persisted result always carries the key; an explicit JSON
+                # null means PB ran with no episodes, a missing key (e.g. an
+                # empty result JSON) means it never ran.
+                pb_episodes[row.session_id] = (
+                    []
+                    if row.pb_type == "null"
+                    else _decode_json_extract(row.pb_episodes)
+                )
+        return classification, pb_episodes
 
     async def latest_analysis_for_session(
         self, session_id: int
-    ) -> tuple[AnalysisStatus, AlgoVersions | None, int | None]:
+    ) -> SessionClassification:
         """Supported public lookup for validation modules.
 
         Returns (status, algo_versions, analysis_result_id) for the latest run.

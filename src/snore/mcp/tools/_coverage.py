@@ -15,8 +15,7 @@ def map_session_coverage(
 ) -> list[SessionCoverageEntry]:
     """Map service SessionCoverage DTOs to MCP SessionCoverageEntry schema objects.
 
-    Shared by ca_analysis and windows tools to avoid duplicating the
-    algo_versions model_dump branch.
+    Keeps the algo_versions model_dump branch out of the tool adapters.
     """
     return [
         SessionCoverageEntry(

@@ -264,6 +264,11 @@ class NightlyRow(BaseModel):
     snore_pct_time: float | None = None
     snore_reason: str | None = None
 
+    # Percent of analyzed (OK-session) time in periodic-breathing episodes
+    # persisted by analysis; 0.0 when detection ran and found none.
+    periodic_breathing_pct: float | None = None
+    pb_reason: str | None = None
+
     device_id: int | None = None
 
 
@@ -301,6 +306,14 @@ class EventContext(BaseModel):
     leak_at_event_lpm: float | None = None
     mv_prior_120s_lpm: float | None = None
     minutes_since_session_start: float | None = None
+    # Ventilatory-control context (all event types).  Slope and stability use
+    # the 60 s of MV preceding the event; PS is mean(therapy pressure − EPAP)
+    # over ±5 s.  Null companions' reasons live on EventRow.
+    preceding_mv_slope_lpm_per_min: float | None = None
+    stability_index: float | None = None  # MV stdev / mean (CV)
+    ps_delivered_cmh2o: float | None = None
+    # MV provenance: "device" | "flow_derived" | null (no MV or flow channel)
+    mv_source: str | None = None
 
 
 class EventRow(BaseModel):
@@ -331,6 +344,9 @@ class EventRow(BaseModel):
     pressure_reason: str | None = None
     leak_reason: str | None = None
     mv_reason: str | None = None
+    preceding_mv_slope_reason: str | None = None
+    stability_reason: str | None = None
+    ps_reason: str | None = None
     context: EventContext | None = None
 
 
@@ -353,6 +369,9 @@ class EventsResponse(BaseModel):
     events: list[EventRow]
     total_events: int
     truncated: bool = False
+    # Version of the query-time flow-derived MV fallback (MV_FALLBACK_ALGO_VERSION);
+    # non-null only when at least one returned event has mv_source "flow_derived".
+    mv_fallback_version: str | None = None
     device_capabilities: DeviceCapabilities | None = None
 
 
@@ -629,7 +648,7 @@ class CompareEpochsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Stage-3 schemas: get_waveform, get_ca_analysis
+# Stage-3 schemas: get_waveform
 # ---------------------------------------------------------------------------
 
 
@@ -665,50 +684,6 @@ class WaveformWindowResponse(BaseModel):
     missing_channel_reason: str | None = None
 
 
-class CaDetailSchema(BaseModel):
-    """One central apnea event with context."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    session_id: int
-    session_start_wall_clock: str  # ISO 8601 wall-clock; offset-qualified when timezone_status == "user_declared", else naive (tier 2)
-    timezone_status: str = "unknown"
-    timezone_name: str | None = None  # IANA name when user_declared
-    offset_seconds: float  # tier-3 CA start from session start
-    duration_seconds: float | None = None
-    preceding_mv_slope_lpm_per_min: float | None = None
-    preceding_mv_slope_reason: str | None = None
-    ps_delivered_cmh2o: float | None = None
-    ps_reason: str | None = None
-    stability_index: float | None = None
-    stability_reason: str | None = None
-    # MV provenance: "device" | "flow_derived" | null (no MV channel available)
-    mv_source: str | None = None
-
-
-class CaAnalysisResponse(BaseModel):
-    """Response from get_ca_analysis."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    query_date: str
-    device_id: int
-    day_status: str
-    # SessionCoverageEntry reused from Stage-2 (session_id, analysis_status, algo_versions)
-    session_coverage: list[SessionCoverageEntry] = []
-    algorithm_identity: dict[str, Any] | None = None
-    null_reason: str | None = None
-    ca_events: list[CaDetailSchema] = []
-    periodic_breathing_pct: float | None = None
-    pb_reason: str | None = None
-    mv_rolling_variance: float | None = None
-    mv_variance_reason: str | None = None
-    # Night-level MV provenance: "device" | "flow_derived" | "mixed" | null
-    mv_source: str | None = None
-    mv_fallback_version: str | None = None
-    device_capabilities: DeviceCapabilities | None = None
-
-
 # Mapping used for docs://schemas/{type} — maps schema name to model class
 SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "device_capabilities": DeviceCapabilities,
@@ -741,8 +716,6 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     # Stage 3
     "waveform_channel": WaveformChannelSchema,
     "waveform_window": WaveformWindowResponse,
-    "ca_detail": CaDetailSchema,
-    "ca_analysis": CaAnalysisResponse,
 }
 
 

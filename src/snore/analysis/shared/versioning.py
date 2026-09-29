@@ -47,8 +47,9 @@ RECOVERY_DETECTOR_ALGO_VERSION: str = "v2"
 # heuristic + persisted mask-on-segment gap overlap.
 VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
 
-# Flow-derived MV fallback used by get_ca_analysis when no device MV channel
-# exists. NOT part of AlgorithmIdentity — it labels query-time derivation only.
+# Flow-derived MV fallback used by get_events' per-event ventilatory context
+# when a session has no device MV channel. NOT part of AlgorithmIdentity — it
+# labels query-time derivation only.
 MV_FALLBACK_ALGO_VERSION: str = "v1"
 
 # Query-time RERA-proxy criterion (FL runs ending in recovery). NOT part of

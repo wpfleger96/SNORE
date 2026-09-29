@@ -120,7 +120,7 @@ src/snore/
 │       ├── edf.py      # Generic EDF/EDF+ reader
 │       └── types.py    # Format type definitions
 ├── mcp/                # MCP server (third presentation layer, peer of CLI and api/)
-│   ├── server.py       # make_server, SNORERuntime protocol, _scope_and_run, lifespan
+│   ├── server.py       # make_server, SNORERuntime protocol, lifespan, tool/resource registration
 │   ├── auth.py         # OAuth 2.1 GoogleProvider integration (HTTP transport only)
 │   ├── errors.py       # ValidationError (mapped to ToolError at the boundary)
 │   ├── profiles.py     # Clinical profile loading (shapes instructions text only)
@@ -128,17 +128,18 @@ src/snore/
 │   ├── validation.py   # parse_date, parse_date_range, validate_* helpers
 │   └── tools/
 │       ├── _helpers.py         # _str_or_none shared helper
+│       ├── _scaffold.py        # _scope_and_run, tool_error_boundary, _check_response_size
 │       ├── _service_errors.py  # MAPPED_SERVICE_ERRORS, raise_mapped_service_error
 │       ├── _capabilities.py    # build_device_capabilities, get_device_id_for_session
 │       ├── _coverage.py        # map_session_coverage
 │       ├── overview.py         # get_data_overview tool
 │       ├── settings.py         # get_settings_timeline tool
+│       ├── changes.py          # get_settings_changes tool
 │       ├── summary.py          # get_nightly_summary tool
 │       ├── events.py           # get_events tool
 │       ├── breath_table.py     # get_breath_table tool
 │       ├── windows.py          # find_windows tool
 │       ├── epochs.py           # compare_epochs tool
-│       ├── ca_analysis.py      # get_ca_analysis tool
 │       └── waveform.py         # get_waveform + render_window tools
 ├── services/           # Business logic layer (between CLI/API and database)
 │   ├── schemas.py      # Service response schemas (Pydantic)
@@ -451,7 +452,9 @@ Each tool lives in `src/snore/mcp/tools/<name>.py` and follows a two-part struct
 1. A module-level async function that accepts an `AsyncSession` and returns a Pydantic model — this is what tests call directly.
 2. A `register(mcp: FastMCP) -> None` function at the bottom of the module that defines the `@mcp.tool()` closure and wires it to the common scaffold.
 
-The common scaffold for the seven standard-pattern tools lives in `_scope_and_run` (server.py): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`. Tools with non-standard return paths (`get_ca_analysis`, `get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+The common scaffold for the eight standard-pattern tools lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+
+There is deliberately no per-event-type tool: event-type-specific context (e.g. MV slope/stability/PS before a central apnea) belongs in `get_events`' per-event context block, and night-level metrics (e.g. `periodic_breathing_pct`) belong in `get_nightly_summary` rows.
 
 ### Service error mapping seam
 
@@ -467,7 +470,7 @@ Any tool that calls `BreathService` should use `except MAPPED_SERVICE_ERRORS as 
 
 ### `tool_error_boundary` contract
 
-`tool_error_boundary` in `server.py` wraps every registered tool closure. It converts:
+`tool_error_boundary` in `tools/_scaffold.py` (re-exported from `server.py`) wraps every registered tool closure. It converts:
 - `ToolError` → passes through unchanged
 - `PydanticValidationError` → `ToolError` with cleaned field-path messages
 - `ValidationError` or `ValueError` → `ToolError(str(exc))`
