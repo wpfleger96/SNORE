@@ -32,10 +32,14 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from snore.provenance import Provenance, provenance_field
-from snore.services.schemas import MergedSettingsChange
+from snore.provenance import IndexSource, Provenance, provenance_field
+from snore.services.schemas import (
+    HEADLINE_INDEX_DESCRIPTION,
+    INDEX_SOURCE_DESCRIPTION,
+    MergedSettingsChange,
+)
 
 
 def tz_fields(source: Any) -> dict[str, Any]:
@@ -170,26 +174,51 @@ class NightlyRow(BaseModel):
     )
     session_count: int = 0
 
-    # Null + reason when absent
+    # Headline indices: the device-reported daily value when trusted, otherwise
+    # SNORE's recount (index_source says which); the recount, when computable,
+    # is in *_computed.
     ahi: float | None = provenance_field(
-        Provenance.DERIVED,
-        "AHI (events/hr): device-scored events over SNORE-computed mask-on hours.",
+        Provenance.DEVICE,
+        f"Headline AHI (events/hr): {HEADLINE_INDEX_DESCRIPTION}.",
+        source_field="index_source",
         default=None,
     )
     oai: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Obstructive apnea index (events/hr) from device-scored events.",
+        Provenance.DEVICE,
+        "Obstructive apnea index (events/hr); same source rule as ahi.",
+        source_field="index_source",
         default=None,
     )
     cai: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Central apnea index (events/hr) from device-scored events.",
+        Provenance.DEVICE,
+        "Central apnea index (events/hr); same source rule as ahi.",
+        source_field="index_source",
         default=None,
     )
     hi: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Hypopnea index (events/hr) from device-scored events.",
+        Provenance.DEVICE,
+        "Hypopnea index (events/hr); same source rule as ahi.",
+        source_field="index_source",
         default=None,
+    )
+    index_source: IndexSource | None = Field(
+        default=None, description=f"{INDEX_SOURCE_DESCRIPTION}."
+    )
+    ahi_computed: float | None = provenance_field(
+        Provenance.DERIVED,
+        "SNORE recount AHI (events/hr): device-scored events over SNORE mask-on "
+        "hours, usage-weighted across sessions; null when there are no mask-on "
+        "hours or no session statistics.",
+        default=None,
+    )
+    oai_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount OAI (see ahi_computed).", default=None
+    )
+    cai_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount CAI (see ahi_computed).", default=None
+    )
+    hi_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount HI (see ahi_computed).", default=None
     )
 
     # Null when analysis has not been run.  rera_index/rdi use the query-time
@@ -205,7 +234,8 @@ class NightlyRow(BaseModel):
     rera_index_reason: str | None = None
     rdi: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Night AHI plus the query-time experimental RERA-proxy index.",
+        "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
+        "RERA-proxy index.",
         default=None,
     )
     rdi_reason: str | None = None

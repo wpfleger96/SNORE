@@ -1,5 +1,7 @@
 from datetime import date
 
+from snore.provenance import IndexSource
+
 
 class TestDaysRouter:
     def test_list_days_empty(self, api_client):
@@ -89,3 +91,35 @@ class TestDaysRouter:
         assert data["central_apneas"] == 0
         assert data["hypopneas"] == 0
         assert data["reras"] == 0
+
+    def test_days_endpoints_return_index_source_and_recount(
+        self, api_client, db_session, test_device
+    ):
+        from snore.database.models import Day
+
+        db_session.add(
+            Day(
+                device_id=test_device.id,
+                date=date(2025, 1, 11),
+                session_count=1,
+                total_therapy_hours=8.0,
+                ahi=1.2,
+                hi=0.5,
+                index_source=IndexSource.DEVICE,
+                ahi_computed=1.6,
+                hi_computed=0.7,
+            )
+        )
+        db_session.flush()
+
+        item = api_client.get("/api/v1/days/").json()["items"][0]
+        detail = api_client.get("/api/v1/days/2025-01-11").json()
+
+        assert (item["ahi"], item["index_source"], item["ahi_computed"]) == (
+            1.2,
+            "device",
+            1.6,
+        )
+        assert detail["index_source"] == "device"
+        assert (detail["ahi"], detail["ahi_computed"]) == (1.2, 1.6)
+        assert (detail["hi"], detail["hi_computed"]) == (0.5, 0.7)

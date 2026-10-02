@@ -73,6 +73,11 @@ logger = logging.getLogger(__name__)
 # indicate unused STR day slots (sentinel) and are dropped.
 _STR_NEGATIVE_OK_STATS: frozenset[str] = frozenset({"flow_5th"})
 
+# Unit conversions for STR summary stats, applied as ``value * scale``; stats
+# not listed are stored as read.  STR "Duration"/"Mask Dur" is mask-on minutes
+# (EDF dimension "min.", physical range 0-1440).
+_STR_SUMMARY_SCALE: dict[str, float] = {"usage_hours_device": 1 / 60}
+
 
 def _chain_therapy_days(segments: "dict[str, dict[str, Path]]") -> "set[date]":
     """Return the set of STR therapy days covered by a session chain.
@@ -290,6 +295,9 @@ class ResmedEDFParser(DeviceParser):
         ("OAI", "OAI"): "oai_device",
         ("CAI", "CAI"): "cai_device",
         ("HI", "HI"): "hi_device",
+        # Daily mask-on time the device indices cover (OSCAR :1956-1958; S9
+        # "Mask Dur", S10/S11 "Duration"); minutes, scaled via _STR_SUMMARY_SCALE.
+        ("Duration", "Mask Dur"): "usage_hours_device",
         ("AI",): "ai",
         ("UAI",): "uai",
         # APAP-only stats
@@ -2518,6 +2526,7 @@ class ResmedEDFParser(DeviceParser):
                             break
                     if matched_signal:
                         data, _ = edf.read_signal(matched_signal)
+                        scale = _STR_SUMMARY_SCALE.get(stat_name, 1.0)
                         for record_idx in range(min(num_records, len(data))):
                             value = float(data[record_idx])
                             # NaN always means an unused STR slot — skip for all stats.
@@ -2532,7 +2541,7 @@ class ResmedEDFParser(DeviceParser):
                             record_date = record_dates[record_idx]
                             if record_date not in all_summaries:
                                 all_summaries[record_date] = {}
-                            all_summaries[record_date][stat_name] = value
+                            all_summaries[record_date][stat_name] = value * scale
 
                 logger.debug(
                     f"Preloaded STR file {str_file.name}: {len(all_settings)} settings-days, "

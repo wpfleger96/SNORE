@@ -201,7 +201,9 @@ class NightlyMixin(_BreathServiceCore):
         day_status = BreathService._reduce_day_status(
             session_coverages, identities_for_reduce
         )
-        day_ahi = day_row.ahi if day_row is not None else None
+        # Recount, not the device headline: RDI adds a RERA index over SNORE
+        # mask-on hours, so both terms must share that denominator.
+        day_ahi = day_row.ahi_computed if day_row is not None else None
 
         periodic_breathing_pct, pb_reason = _periodic_breathing_pct(
             day_sessions,

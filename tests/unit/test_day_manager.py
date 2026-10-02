@@ -6,14 +6,19 @@ that determines which calendar day sessions belong to and how statistics
 are aggregated across multiple sessions.
 """
 
+import logging
+
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 
 import pytest
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.day_manager import DayManager
-from snore.database.models import Day, Session
+from snore.database.models import Day, Device, Session
+from snore.provenance import IndexSource
 
 
 class TestDaySplitLogic:
@@ -594,3 +599,421 @@ class TestDayPruning:
         assert await DayManager.recalculate_day(day, async_db_session) is True
         assert await async_db_session.get(Day, day_id) is day
         assert day.session_count == 1
+
+
+# usage_hours_device matches the two-session day's 6 h + 2 h of imported time.
+_DEVICE = {
+    "ahi_device": 2.5,
+    "oai_device": 1.0,
+    "cai_device": 0.5,
+    "hi_device": 1.0,
+    "usage_hours_device": 8.0,
+}
+
+
+class TestDeviceIndexHeadline:
+    """Day headline prefers the device-reported daily AHI when it is trusted.
+
+    The two-session day has a recount AHI of (4*6 + 8*2) / 8 = 5.0, distinct
+    from the device value 2.5, so each assertion shows which source won.  Its
+    imported mask-on time is 8 h unless a test overrides ``usage_hours``.
+    """
+
+    async def _two_session_day(
+        self,
+        db: AsyncSession,
+        device: Device,
+        factory: Callable[..., Awaitable[Session]],
+        first_device: dict[str, float] = _DEVICE,
+        second_device: dict[str, float] = _DEVICE,
+    ) -> tuple[Day, Session, Session]:
+        first = await factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=6.0,
+            ahi=4.0,
+            oai=2.0,
+            cai=1.0,
+            hi=1.0,
+            **first_device,
+        )
+        second = await factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 6, 4, 0, 0),
+            duration_hours=2.0,
+            ahi=8.0,
+            oai=4.0,
+            cai=2.0,
+            hi=2.0,
+            **second_device,
+        )
+        await DayManager.link_session_to_day(first, device.id, db)
+        day = await DayManager.link_session_to_day(second, device.id, db)
+        return day, first, second
+
+    async def test_identical_device_values_headline_device(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session, async_test_device, async_test_session_factory
+        )
+
+        assert day.index_source == IndexSource.DEVICE
+        assert (day.ahi, day.oai, day.cai, day.hi) == (2.5, 1.0, 0.5, 1.0)
+        assert day.ahi_computed == pytest.approx(5.0)
+        assert day.oai_computed == pytest.approx(2.5)
+
+    async def test_partial_device_values_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            second_device={},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_disabled_session_on_day_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        device = async_test_device
+        day, _, _ = await self._two_session_day(
+            async_db_session, device, async_test_session_factory
+        )
+        disabled = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 6, 7, 0, 0),
+            duration_hours=1.0,
+            ahi=0.0,
+            **_DEVICE,
+        )
+        disabled.day_id = day.id
+        disabled.enabled = False
+        await async_db_session.flush()
+
+        await DayManager.aggregate_day_statistics(day, async_db_session)
+
+        assert day.session_count == 2
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_no_device_values_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device={},
+            second_device={},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == day.ahi_computed == pytest.approx(5.0)
+        assert day.hi == day.hi_computed == pytest.approx(1.25)
+
+    async def test_disagreeing_device_values_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            second_device={**_DEVICE, "ahi_device": 3.0},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_device_indices_disagree_on_oai_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            second_device={**_DEVICE, "oai_device": 1.5},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+        assert day.oai == pytest.approx(2.5)
+
+    async def test_device_indices_disagree_on_hi_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            second_device={**_DEVICE, "hi_device": 0.0},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.hi == pytest.approx(1.25)
+
+    async def test_device_oai_missing_on_every_session_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        no_oai = {**_DEVICE}
+        del no_oai["oai_device"]
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=no_oai,
+            second_device=no_oai,
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+        assert day.oai == pytest.approx(2.5)
+
+    async def test_enabled_session_without_statistics_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        device = async_test_device
+        day, _, _ = await self._two_session_day(
+            async_db_session, device, async_test_session_factory
+        )
+        bare = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 6, 7, 0, 0),
+            duration_hours=1.0,
+        )
+        await DayManager.link_session_to_day(bare, device.id, async_db_session)
+
+        assert day.session_count == 3
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    @pytest.mark.parametrize(
+        ("usage_hours", "usage_hours_device"),
+        [
+            # No imported mask-on time, device hours within the 5 min floor.
+            (0.0, 0.05),
+            # Device reports no mask-on time, imported time within the floor.
+            (0.02, 0.0),
+        ],
+    )
+    async def test_zero_mask_on_hours_never_headline_device(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        usage_hours,
+        usage_hours_device,
+    ):
+        device = {
+            **_DEVICE,
+            "usage_hours": usage_hours,
+            "usage_hours_device": usage_hours_device,
+        }
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=device,
+            second_device=device,
+        )
+
+        assert day.index_source != IndexSource.DEVICE
+        assert day.ahi == day.ahi_computed
+
+    @pytest.mark.parametrize(
+        ("device_hours", "expected"),
+        [
+            # 24.6 min short, just inside 5% of 8.41 h (25.23 min).
+            (8.41, IndexSource.DEVICE),
+            # 25.8 min short, just beyond 5% of 8.43 h (25.29 min).
+            (8.43, IndexSource.DERIVED),
+        ],
+    )
+    async def test_long_day_uses_fraction_coverage_tolerance(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        device_hours,
+        expected,
+    ):
+        device = {**_DEVICE, "usage_hours_device": device_hours}
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=device,
+            second_device=device,
+        )
+
+        assert day.total_therapy_hours == pytest.approx(8.0)
+        assert day.index_source == expected
+
+    async def test_imported_hours_short_of_device_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        # 8.0 h imported vs 9.0 h reported: 60 min short, beyond 5% (27 min).
+        device = {**_DEVICE, "usage_hours_device": 9.0}
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=device,
+            second_device=device,
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_imported_hours_beyond_device_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        # 8.0 h imported vs 7.0 h reported: 60 min over, beyond 5% (21 min).
+        device = {**_DEVICE, "usage_hours_device": 7.0}
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=device,
+            second_device=device,
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    @pytest.mark.parametrize(
+        ("device_hours", "expected"),
+        [
+            # 4.9 min short: over 5% (3.2 min) but inside the 5 min floor.
+            (1 + 4.9 / 60, IndexSource.DEVICE),
+            # 5.1 min short: beyond the 5 min floor and 5% (3.3 min).
+            (1 + 5.1 / 60, IndexSource.DERIVED),
+        ],
+    )
+    async def test_short_day_uses_minimum_coverage_tolerance(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        device_hours,
+        expected,
+    ):
+        device = {**_DEVICE, "usage_hours": 0.5, "usage_hours_device": device_hours}
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=device,
+            second_device=device,
+        )
+
+        assert day.total_therapy_hours == pytest.approx(1.0)
+        assert day.index_source == expected
+
+    async def test_device_usage_hours_missing_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        no_usage = {**_DEVICE}
+        del no_usage["usage_hours_device"]
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            first_device=no_usage,
+            second_device=no_usage,
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_device_usage_hours_disagree_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, _, _ = await self._two_session_day(
+            async_db_session,
+            async_test_device,
+            async_test_session_factory,
+            second_device={**_DEVICE, "usage_hours_device": 8.05},
+        )
+
+        assert day.index_source == IndexSource.DERIVED
+        assert day.ahi == pytest.approx(5.0)
+
+    async def test_recount_without_ahi_headline_derived(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        device = async_test_device
+        session = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=6.0,
+            oai=2.0,
+        )
+        day = await DayManager.link_session_to_day(session, device.id, async_db_session)
+
+        assert day.ahi_computed is None
+        assert day.oai_computed == pytest.approx(2.0)
+        assert day.index_source == IndexSource.DERIVED
+
+    async def test_empty_day_clears_device_and_computed_indices(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        day, first, second = await self._two_session_day(
+            async_db_session, async_test_device, async_test_session_factory
+        )
+        first.day_id = None
+        second.day_id = None
+        await async_db_session.flush()
+
+        await DayManager.aggregate_day_statistics(day, async_db_session)
+
+        for field in ("ahi", "oai", "cai", "hi"):
+            assert getattr(day, field) is None
+            assert getattr(day, f"{field}_computed") is None
+        assert day.index_source is None
+
+    async def test_hours_without_any_index_leave_index_source_none(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        device = async_test_device
+        session = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=6.0,
+            usage_hours=6.0,
+        )
+        day = await DayManager.link_session_to_day(session, device.id, async_db_session)
+
+        assert day.total_therapy_hours == pytest.approx(6.0)
+        for field in ("ahi", "oai", "cai", "hi"):
+            assert getattr(day, field) is None
+            assert getattr(day, f"{field}_computed") is None
+        assert day.index_source is None
+
+    @pytest.mark.parametrize(("ahi_device", "warns"), [(2.5, False), (12.0, True)])
+    async def test_device_ahi_far_from_recount_logs_warning(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        caplog,
+        ahi_device,
+        warns,
+    ):
+        # Recount AHI is 5.0: 2.5 is within the warning bound, 12.0 is not.
+        device = {**_DEVICE, "ahi_device": ahi_device}
+        with caplog.at_level(logging.WARNING, logger="snore.database.day_manager"):
+            day, _, _ = await self._two_session_day(
+                async_db_session,
+                async_test_device,
+                async_test_session_factory,
+                first_device=device,
+                second_device=device,
+            )
+
+        assert day.index_source == IndexSource.DEVICE
+        assert day.ahi == ahi_device
+        assert ("differs from SNORE's recount" in caplog.text) is warns

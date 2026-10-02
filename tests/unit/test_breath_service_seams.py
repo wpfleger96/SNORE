@@ -49,6 +49,7 @@ from snore.analysis.types import AnalysisComputation
 from snore.analysis.types import AnalysisResult as AnalysisResultDTO
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.provenance import IndexSource
 from snore.services.breath.algorithms import (
     periodic_breathing_seconds,
     raw_window_series,
@@ -5008,7 +5009,11 @@ class TestNightlySummaryReraRdi:
     async def test_rera_index_computed_correctly_with_ahi_and_hours(
         self, async_db_session
     ):
-        """rera_index = round(rera_count / hours, 2); rdi = round(ahi + rera_index, 2)."""
+        """rera_index = round(rera_count / hours, 2); rdi = round(ahi_computed + rera_index, 2).
+
+        The day headline is a device AHI (9.0) that differs from the recount
+        (5.0); RDI must use the recount so both terms share SNORE's hours.
+        """
         from snore.analysis.types import ComputedBreath  # noqa: PLC0415
 
         therapy_date = date(2025, 8, 1)
@@ -5021,7 +5026,9 @@ class TestNightlySummaryReraRdi:
             date=therapy_date,
             session_count=1,
             total_therapy_hours=8.0,
-            ahi=5.0,
+            ahi=9.0,
+            ahi_computed=5.0,
+            index_source=IndexSource.DEVICE,
         )
         async_db_session.add(day)
         await async_db_session.flush()

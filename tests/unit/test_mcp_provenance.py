@@ -35,7 +35,7 @@ from snore.mcp.schemas import (
 )
 from snore.mcp.server import StaticRuntime, _build_instructions, make_server
 from snore.mcp.tools._scaffold import _scope_and_run
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import PROVENANCE_NOTES, IndexSource, Provenance
 
 EXPERIMENTAL_NOTE = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
 EXPERIMENTAL_TOOLS = [
@@ -125,8 +125,14 @@ class TestSchemaFieldLabels:
         assert "rule-matched" in description
         assert "excludes fallback guesses" in description
 
-    def test_nightly_ahi_is_derived(self) -> None:
-        assert _field_description(NightlyRow, "ahi").startswith("[DERIVED]")
+    def test_nightly_ahi_headline_is_device_tagged_by_index_source(self) -> None:
+        prop = NightlyRow.model_json_schema()["properties"]["ahi"]
+
+        assert _field_description(NightlyRow, "ahi").startswith("[DEVICE]")
+        assert prop["x-provenance-source"] == "index_source"
+
+    def test_nightly_ahi_computed_is_derived(self) -> None:
+        assert _field_description(NightlyRow, "ahi_computed").startswith("[DERIVED]")
 
     def test_event_mv_field_names_its_source_field(self) -> None:
         prop = EventContext.model_json_schema()["properties"]["mv_prior_120s_lpm"]
@@ -149,6 +155,7 @@ class TestInstructions:
 
         assert "`source_dependent`" in instructions
         assert "events[].context.mv_source" in instructions
+        assert "nights[].index_source" in instructions
         assert "coverage counts" in instructions
 
     def test_uars_profile_flags_rera_proxy_as_experimental(self) -> None:
@@ -174,8 +181,37 @@ class TestResponseProvenanceBlock:
         payload = await self._run(result)
 
         assert "nights[].rera_index" in payload["provenance"]["experimental"]
-        assert "nights[].ahi" in payload["provenance"]["derived"]
+        assert "nights[].usage_hours" in payload["provenance"]["derived"]
         assert "nights[].rr_mean_bpm" not in json.dumps(payload["provenance"])
+
+    async def test_nightly_response_maps_headline_indices_to_index_source(
+        self,
+    ) -> None:
+        result = NightlySummaryResponse(
+            nights=[
+                NightlyRow(
+                    date=date(2026, 1, 1),
+                    ahi=2.0,
+                    ahi_computed=2.4,
+                    index_source=IndexSource.DEVICE,
+                )
+            ],
+            total_nights=1,
+            page=1,
+            page_size=30,
+        )
+
+        payload = await self._run(result)
+
+        provenance = payload["provenance"]
+        for index in ("ahi", "oai", "cai", "hi"):
+            assert (
+                provenance["source_dependent"][f"nights[].{index}"]
+                == "nights[].index_source"
+            )
+            assert f"nights[].{index}_computed" in provenance["derived"]
+            assert f"nights[].{index}" not in provenance["derived"]
+        assert payload["nights"][0]["index_source"] == "device"
 
     async def test_epoch_distribution_inherits_experimental_parent(self) -> None:
         from snore.mcp.schemas import CompareEpochsResponse  # noqa: PLC0415
