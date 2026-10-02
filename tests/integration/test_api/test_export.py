@@ -1,15 +1,24 @@
+import csv
+import io
 import shutil
 import zipfile
 
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
+
+import httpx
+
+from snore.auth.actor import ActorContext, AuthMode, Role
+from tests.helpers.api_client import make_test_client
+from tests.integration.conftest import _make_day_session, _make_device, _make_profile
 
 
 async def _make_fake_csv_export(
     self: object, db: object, output: Path, **kwargs: object
 ) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("date,ahi\n")
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "sessions.csv").write_text("date,ahi\n")
 
 
 class TestExportCsv:
@@ -27,7 +36,7 @@ class TestExportCsv:
             _make_fake_csv_export,
         ):
             response = api_client.get("/api/v1/export/csv")
-        assert "text/csv" in response.headers["content-type"]
+        assert "application/zip" in response.headers["content-type"]
 
     def test_csv_content_disposition(self, api_client):
         with patch(
@@ -35,7 +44,31 @@ class TestExportCsv:
             _make_fake_csv_export,
         ):
             response = api_client.get("/api/v1/export/csv")
-        assert "snore_export.csv" in response.headers.get("content-disposition", "")
+        assert "snore_export.zip" in response.headers.get("content-disposition", "")
+
+    async def test_csv_streams_zip_of_real_export(self, async_db_session):
+        profile = await _make_profile(async_db_session)
+        device = await _make_device(async_db_session, profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2026, 1, 15))
+        await async_db_session.commit()
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        app = make_test_client(async_db_session, actor=actor).app
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/v1/export/csv")
+
+        assert response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            assert {"sessions.csv", "events.csv", "settings.csv"} <= set(zf.namelist())
+            rows = list(csv.DictReader(io.StringIO(zf.read("sessions.csv").decode())))
+        assert [row["device_session_id"] for row in rows] == [sess.device_session_id]
 
 
 class TestExportJson:
