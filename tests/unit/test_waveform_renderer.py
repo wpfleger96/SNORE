@@ -17,6 +17,11 @@ def _pin_terminal_size(monkeypatch):
     monkeypatch.setenv("COLUMNS", "120")
 
 
+def _has_drawn_braille(text: str) -> bool:
+    # U+2800 is the blank braille cell; any other braille char is a plotted point.
+    return any("\u2801" <= ch <= "\u28ff" for ch in text)
+
+
 def _sine_window() -> tuple[np.ndarray, np.ndarray]:
     timestamps = np.linspace(3600.0, 3630.0, 300)
     return timestamps, np.sin(timestamps)
@@ -30,7 +35,9 @@ def test_render_draws_single_waveform_chart(capsys):
         console=Console(file=console_out), width=60, height=12, show_events=False
     ).render(timestamps, values, session_id=7)
 
-    assert "Session 7 - Flow Waveform" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Session 7 - Flow Waveform" in out
+    assert _has_drawn_braille(out)
     assert "Sample rate" in console_out.getvalue()
 
 
@@ -48,4 +55,5 @@ def test_render_multi_draws_stacked_charts(capsys):
     out = capsys.readouterr().out
     assert "Session 7 - Multi-waveform" in out
     assert "Pressure (cmH2O)" in out
+    assert _has_drawn_braille(out)
     assert "Sample rates:" in console_out.getvalue()

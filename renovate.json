@@ -1,11 +1,4 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>wpfleger96/github-config//renovate-config/default"],
-  "packageRules": [
-    {
-      "description": "Hold plotext below 6 until the CLI charts are ported to its new API (#356)",
-      "matchPackageNames": ["plotext"],
-      "allowedVersions": "<6"
-    }
-  ]
+  "extends": ["github>wpfleger96/github-config//renovate-config/default"]
 }

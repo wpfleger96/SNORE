@@ -128,26 +128,28 @@ class WaveformRenderer:
         )
         self.console.print()
 
-        plt.clear_figure()
-        plt.theme("clear")
+        fig = plt.figure
+        fig.clear()
+        fig.theme("colorless")
 
         start_time = timestamps[0]
         relative_timestamps = timestamps - start_time
         window_duration = timestamps[-1] - start_time
 
-        plt.plot(relative_timestamps, values, marker="braille")
-        plt.title(title)
-        plt.ylabel(unit)
+        fig.draw(fig.signal(relative_timestamps, values, marker="braille").lines())
+        fig.title(title)
+        fig.label(unit, axis="y")
 
         tick_interval = (
             10 if window_duration <= 60 else (15 if window_duration <= 120 else 30)
         )
         tick_positions = list(range(0, int(window_duration) + 1, tick_interval))
         tick_labels = [format_time_offset(start_time + t) for t in tick_positions]
-        plt.xticks(tick_positions, tick_labels)
+        fig.ruler("x").ticks(tick_positions, tick_labels)
 
-        plt.plotsize(self.width, self.height)
-        plt.show()
+        fig.plot_size(self.width, self.height)
+        # fig.show() writes to fd 1 from native code, bypassing sys.stdout.
+        print(fig.build())
 
         if self.show_events:
             self.console.print()
@@ -213,9 +215,9 @@ class WaveformRenderer:
         num_plots = len(waveform_data)
         plot_height = max(8, self.height // num_plots)
 
-        plt.clear_figure()
-        plt.theme("clear")
-        plt.subplots(num_plots, 1)
+        fig = plt.figure
+        fig.clear()
+        fig.subplots(num_plots, 1)
 
         for idx, (timestamps, values, waveform_type) in enumerate(waveform_data):
             if len(timestamps) == 0 or len(values) == 0:
@@ -228,8 +230,11 @@ class WaveformRenderer:
             relative_timestamps = timestamps - start_time
             window_duration = timestamps[-1] - start_time
 
-            plt.subplot(idx + 1, 1)
-            plt.plot(relative_timestamps, values, marker="braille")
+            subplot = fig.subplot(idx + 1, 1)
+            subplot.theme("colorless")
+            subplot.draw(
+                subplot.signal(relative_timestamps, values, marker="braille").lines()
+            )
 
             if idx == 0 and session_id is not None:
                 window_size = timestamps[-1] - timestamps[0]
@@ -237,9 +242,9 @@ class WaveformRenderer:
                     title = f"Session {session_id} - Multi-waveform at {center_time} ({window_size:.0f}s)"
                 else:
                     title = f"Session {session_id} - Multi-waveform"
-                plt.title(title)
+                subplot.title(title)
 
-            plt.ylabel(f"{label} ({unit})")
+            subplot.label(f"{label} ({unit})", axis="y")
 
             if idx == num_plots - 1:
                 tick_interval = (
@@ -251,11 +256,11 @@ class WaveformRenderer:
                 tick_labels = [
                     format_time_offset(start_time + t) for t in tick_positions
                 ]
-                plt.xticks(tick_positions, tick_labels)
+                subplot.ruler("x").ticks(tick_positions, tick_labels)
 
-            plt.plotsize(self.width, plot_height)
+            subplot.plot_size(self.width, plot_height)
 
-        plt.show()
+        print(fig.build())
 
         sample_rates = []
         for timestamps, _values, waveform_type in waveform_data:

@@ -1196,6 +1196,11 @@ class TestWaveformListCommand:
         assert result.exit_code != 0
 
 
+def _has_drawn_braille(text: str) -> bool:
+    # U+2800 is the blank braille cell; any other braille char is a plotted point.
+    return any("\u2801" <= ch <= "\u28ff" for ch in text)
+
+
 @pytest.mark.usefixtures("chart_terminal")
 class TestWaveformShowCommand:
     """Test waveform show draws charts through real (unmocked) plotext."""
@@ -1219,6 +1224,7 @@ class TestWaveformShowCommand:
 
         assert result.exit_code == 0, result.output
         assert "Session 1 - Flow at 00:00:01" in result.output
+        assert _has_drawn_braille(result.output)
 
     def test_waveform_show_renders_stacked_charts(
         self, cli_runner, populated_test_db_full
@@ -1242,6 +1248,7 @@ class TestWaveformShowCommand:
         assert result.exit_code == 0, result.output
         assert "Session 1 - Multi-waveform at 00:00:01" in result.output
         assert "Pressure (cmH2O)" in result.output
+        assert _has_drawn_braille(result.output)
 
 
 class TestSessionShowExpanded:
@@ -1391,6 +1398,7 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0, result.output
         assert "AHI Over Time" in result.output
+        assert _has_drawn_braille(result.output)
 
 
 @pytest.fixture
