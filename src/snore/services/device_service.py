@@ -3,7 +3,7 @@
 from datetime import date
 from itertools import groupby
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from snore.database import models
 from snore.exceptions import NotFoundError
@@ -80,7 +80,15 @@ class DeviceService(ProfileScopedService):
         last_session_date: date | None = (
             sessions[-1].start_time.date() if sessions else None
         )
-        total_therapy_hours = sum((s.duration_seconds or 0.0) for s in sessions) / 3600
+        # Hours come from Day rows (mask-on time, enabled sessions only, kept current by
+        # DayManager.recalculate_day); count, dates and modes come from enabled Sessions.
+        total_therapy_hours = (
+            await self.db_session.execute(
+                select(
+                    func.coalesce(func.sum(models.Day.total_therapy_hours), 0.0)
+                ).where(models.Day.device_id == device_id)
+            )
+        ).scalar_one()
         seen: set[str] = set()
         therapy_modes: list[str] = []
         for s in sessions:

@@ -1,10 +1,10 @@
 """Integration tests for the /devices API router."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session as OrmSession
 
-from snore.database.models import Setting
+from snore.database.models import Day, Setting
 
 
 def _add_settings(
@@ -63,11 +63,22 @@ class TestGetDeviceDetail:
     def test_detail_usage_shape(
         self, api_client, db_session, test_device, test_session_factory
     ):
-        test_session_factory(
+        s = test_session_factory(
             test_device.id,
             start_time=datetime(2024, 1, 1, 22, 0),
             duration_hours=7.5,
         )
+        # Hours set by hand: shape test only; derivation is in test_device_service.py.
+        day = Day(
+            device_id=test_device.id,
+            date=date(2024, 1, 1),
+            session_count=1,
+            total_therapy_hours=7.5,
+        )
+        db_session.add(day)
+        db_session.flush()
+        s.day_id = day.id
+        db_session.flush()
         response = api_client.get(f"/api/v1/devices/{test_device.id}")
         assert response.status_code == 200
         usage = response.json()["usage"]
