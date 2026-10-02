@@ -346,7 +346,9 @@ class SessionImporter:
 
         # Now that the import decision is final ("proceed"), delete the existing
         # same-ID row for force re-imports.  Doing this after the overlap check
-        # ensures no row is deleted when the guard decides to skip.
+        # ensures no row is deleted when the guard decides to skip.  The user's
+        # enable/disable choice survives the re-import (#369).
+        enabled = existing.enabled if existing else True
         if existing:
             logger.debug(f"Force re-importing session {session_data.device_session_id}")
             if existing.day_id is not None:
@@ -381,6 +383,7 @@ class SessionImporter:
             has_waveform_data=session_data.has_waveform_data,
             has_event_data=session_data.has_event_data,
             has_statistics=session_data.has_statistics,
+            enabled=enabled,
         )
         db.add(new_session)
         await db.flush()
