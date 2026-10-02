@@ -15,6 +15,22 @@ if TYPE_CHECKING:
 PeriodType = Literal["day", "week", "month", "6month", "year"]
 
 
+def usage_weighted_avg(days: list[models.Day], field: str) -> float | None:
+    """Usage-weighted average of a Day field, weighted by ``total_therapy_hours``.
+
+    Nights with more mask-on time count proportionally more, and days without
+    the value or without positive therapy hours are excluded.  Returns None
+    when no day qualifies.
+    """
+    return weighted_mean(
+        (getattr(day, field), day.total_therapy_hours)
+        for day in days
+        if getattr(day, field) is not None
+        and day.total_therapy_hours is not None
+        and day.total_therapy_hours > 0
+    )
+
+
 def calculate_average_ahi(days: list[models.Day]) -> float | None:
     """
     Calculate usage-weighted average AHI across multiple days.
@@ -29,13 +45,7 @@ def calculate_average_ahi(days: list[models.Day]) -> float | None:
     Returns:
         Usage-weighted average AHI or None if no qualifying data
     """
-    return weighted_mean(
-        (day.ahi, day.total_therapy_hours)
-        for day in days
-        if day.ahi is not None
-        and day.total_therapy_hours is not None
-        and day.total_therapy_hours > 0
-    )
+    return usage_weighted_avg(days, "ahi")
 
 
 def calculate_average_hours_per_day(days: list[models.Day]) -> float:
@@ -182,23 +192,6 @@ def _get_period_boundaries(
     return periods
 
 
-def _usage_weighted_avg(days: list[models.Day], field: str) -> float | None:
-    """Usage-weighted average of a Day field, weighted by ``total_therapy_hours``.
-
-    Mirrors ``calculate_average_ahi`` and day aggregation: nights with more
-    mask-on time count proportionally more, and days without the value or
-    without positive therapy hours are excluded.  Returns None when no day
-    qualifies.
-    """
-    return weighted_mean(
-        (getattr(day, field), day.total_therapy_hours)
-        for day in days
-        if getattr(day, field) is not None
-        and day.total_therapy_hours is not None
-        and day.total_therapy_hours > 0
-    )
-
-
 def calculate_period_statistics(
     day_records: list[models.Day],
     period_type: PeriodType,
@@ -250,16 +243,16 @@ def calculate_period_statistics(
         avg_ahi = calculate_average_ahi(days_in_period)
         median_ahi = calculate_median_ahi(days_in_period)
 
-        avg_pressure = _usage_weighted_avg(days_in_period, "pressure_median")
-        avg_leak = _usage_weighted_avg(days_in_period, "leak_median")
-        avg_spo2 = _usage_weighted_avg(days_in_period, "spo2_mean")
+        avg_pressure = usage_weighted_avg(days_in_period, "pressure_median")
+        avg_leak = usage_weighted_avg(days_in_period, "leak_median")
+        avg_spo2 = usage_weighted_avg(days_in_period, "spo2_mean")
 
         spo2_mins = [day.spo2_min for day in days_in_period if day.spo2_min is not None]
         min_spo2 = min(spo2_mins) if spo2_mins else None
 
-        avg_oai = _usage_weighted_avg(days_in_period, "oai")
-        avg_cai = _usage_weighted_avg(days_in_period, "cai")
-        avg_hi = _usage_weighted_avg(days_in_period, "hi")
+        avg_oai = usage_weighted_avg(days_in_period, "oai")
+        avg_cai = usage_weighted_avg(days_in_period, "cai")
+        avg_hi = usage_weighted_avg(days_in_period, "hi")
 
         rera_rates = [
             day.reras / day.total_therapy_hours

@@ -11,6 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from snore.analysis.calculations import (
+    calculate_average_ahi,
+    calculate_average_hours_per_day,
+    calculate_median_ahi,
+    usage_weighted_avg,
+)
 from snore.database.models import Day, Device
 from snore.database.models import Session as SessionModel
 from snore.services.schemas import (
@@ -452,29 +458,13 @@ class RxTracker:
         stats_periods: list[RxPeriodStats] = []
 
         for period in periods:
-            valid_ahi_days = [d for d in period.days if d.ahi is not None]
-            valid_leak_days = [d for d in period.days if d.leak_median is not None]
-
-            avg_ahi = None
-            median_ahi = None
-            if valid_ahi_days:
-                ahi_values = sorted(d.ahi for d in valid_ahi_days if d.ahi is not None)
-                avg_ahi = sum(ahi_values) / len(ahi_values)
-                mid = len(ahi_values) // 2
-                if len(ahi_values) % 2 == 0:
-                    median_ahi = (ahi_values[mid - 1] + ahi_values[mid]) / 2
-                else:
-                    median_ahi = ahi_values[mid]
-
-            avg_leak = None
-            if valid_leak_days:
-                leak_values = [
-                    d.leak_median for d in valid_leak_days if d.leak_median is not None
-                ]
-                avg_leak = sum(leak_values) / len(leak_values)
+            median_ahi = calculate_median_ahi(period.days)
+            avg_ahi = calculate_average_ahi(period.days)
+            avg_leak = usage_weighted_avg(period.days, "leak_median")
 
             total_hours = sum(d.total_therapy_hours or 0 for d in period.days)
-            avg_hours = total_hours / len(period.days) if period.days else None
+            # Same rule as the stats summary: average only over days with usage.
+            avg_hours = calculate_average_hours_per_day(period.days) or None
 
             stats_periods.append(
                 RxPeriodStats(
@@ -499,15 +489,15 @@ class RxTracker:
     ) -> tuple[int | None, int | None]:
         """Return (best_index, worst_index) by average AHI among eligible periods."""
         eligible = [
-            (i, p)
+            (i, p.avg_ahi)
             for i, p in enumerate(periods)
             if len(p.days) >= min_days and p.avg_ahi is not None
         ]
         if not eligible:
             return (None, None)
 
-        best_idx = min(eligible, key=lambda t: t[1].avg_ahi or float("inf"))[0]
-        worst_idx = max(eligible, key=lambda t: t[1].avg_ahi or float("-inf"))[0]
+        best_idx = min(eligible, key=lambda t: t[1])[0]
+        worst_idx = max(eligible, key=lambda t: t[1])[0]
         return (best_idx, worst_idx)
 
     def _get_day_settings(

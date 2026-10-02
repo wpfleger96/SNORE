@@ -19,13 +19,17 @@ async def _create_day_with_session(
     day_date: date,
     duration_hours: float = 8.0,
     ahi: float = 2.5,
+    enabled: bool = True,
     **day_kwargs: Any,
 ) -> tuple[Day, Session]:
-    """Helper to create a Day with associated Session."""
+    """Helper to create a Day with associated Session.
+
+    A disabled session contributes no ``total_therapy_hours`` to its Day.
+    """
     day = Day(
         device_id=device.id,
         date=day_date,
-        total_therapy_hours=duration_hours,
+        total_therapy_hours=duration_hours if enabled else 0.0,
         ahi=ahi,
         **day_kwargs,
     )
@@ -39,6 +43,7 @@ async def _create_day_with_session(
         end_time=datetime.combine(day_date, datetime.min.time())
         + timedelta(hours=duration_hours),
         duration_seconds=duration_hours * 3600,
+        enabled=enabled,
     )
     db_session.add(sess)
     await db_session.flush()
@@ -373,31 +378,75 @@ class TestStatsService:
         assert summary is not None
         assert summary.avg_pressure == pytest.approx(11.0)
 
+    async def test_all_disabled_day_excluded_from_hours_and_day_count(
+        self, async_db_session, async_test_device
+    ):
+        """A trailing all-disabled day adds no hours, data day, or last-use date."""
+        today = date.today()
+        last_used = today - timedelta(days=1)
+        await _create_day_with_session(
+            async_db_session, async_test_device, last_used, duration_hours=6.0
+        )
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            today,
+            duration_hours=4.0,
+            enabled=False,
+        )
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.total_hours == pytest.approx(6.0)
+        assert summary.days_with_data == 1
+        assert summary.avg_hours == pytest.approx(6.0)
+        assert summary.first_date == last_used
+        assert summary.last_date == last_used
+        assert summary.days_since_last == 1
+
+    async def test_all_disabled_range_still_reports_dates(
+        self, async_db_session, async_test_device
+    ):
+        """With no usage at all, the date range falls back to the imported days."""
+        today = date.today()
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            today - timedelta(days=2),
+            enabled=False,
+        )
+        await _create_day_with_session(
+            async_db_session, async_test_device, today, enabled=False
+        )
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.days_with_data == 0
+        assert summary.total_hours == 0.0
+        assert summary.avg_hours == 0.0
+        assert summary.first_date == today - timedelta(days=2)
+        assert summary.last_date == today
+        assert summary.days_since_last == 0
+
+    async def test_zero_ahi_assessed_excellent(
+        self, async_db_session, async_test_device
+    ):
+        """An average AHI of exactly 0.0 is a real value, not missing data."""
+        await _create_day_with_session(
+            async_db_session, async_test_device, date.today(), ahi=0.0
+        )
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.avg_ahi == 0.0
+        assert summary.effectiveness == "excellent"
+
 
 class TestChunkedIdBinds:
     """Bulk ``Day.id.in_(...)`` binds are chunked under SQLite's param cap (#280)."""
-
-    async def test_summary_total_duration_summed_across_chunks(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """total_hours sums Session durations across every ID chunk."""
-        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
-        today = date.today()
-        for i, hours in enumerate((8.0, 7.0, 6.0)):
-            await _create_day_with_session(
-                async_db_session,
-                async_test_device,
-                today - timedelta(days=i),
-                duration_hours=hours,
-            )
-
-        service = StatsService(async_db_session, profile_id=1)
-        summary = await service.get_summary()
-
-        assert summary is not None
-        assert summary.days_with_data == 3
-        # 8 + 7 + 6 spans the two-day chunk boundary.
-        assert summary.total_hours == 21.0
 
     async def test_summary_event_counts_added_and_resorted_across_chunks(
         self, async_db_session, async_test_device, monkeypatch

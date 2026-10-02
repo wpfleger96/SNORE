@@ -47,6 +47,7 @@ async def _create_day_with_session(
     total_therapy_hours: float = 8.0,
     settings: dict | None = None,
     enabled: bool = True,
+    leak_median: float = 5.0,
 ) -> Day:
     """Helper to create a Day with a linked Session and optional RX settings."""
     day = Day(
@@ -55,7 +56,7 @@ async def _create_day_with_session(
         session_count=1,
         total_therapy_hours=total_therapy_hours,
         ahi=ahi,
-        leak_median=5.0,
+        leak_median=leak_median,
     )
     db_session.add(day)
     await db_session.flush()
@@ -174,6 +175,63 @@ class TestRxTrackerHistory:
         assert result[0].median_ahi == pytest.approx(4.0)
         assert result[0].avg_hours == pytest.approx(7.5)
         assert result[0].total_hours == pytest.approx(7.5 * 7)
+
+    async def test_history_avg_ahi_and_leak_weighted_by_usage_hours(
+        self, async_db_session, async_test_device
+    ):
+        """Period AHI and leak averages weight each night by therapy hours."""
+        base = date(2025, 3, 1)
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            base,
+            ahi=20.0,
+            total_therapy_hours=1.0,
+            settings=RX_SETTINGS,
+            leak_median=40.0,
+        )
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            base + timedelta(days=1),
+            ahi=2.0,
+            total_therapy_hours=8.0,
+            settings=RX_SETTINGS,
+            leak_median=4.0,
+        )
+
+        result = await RxTracker(1).get_history(async_db_session)
+
+        assert len(result) == 1
+        # (20*1 + 2*8) / 9 = 4.0, not the per-night mean 11.0.
+        assert result[0].avg_ahi == pytest.approx(4.0)
+        # (40*1 + 4*8) / 9 = 8.0, not the per-night mean 22.0.
+        assert result[0].avg_leak == pytest.approx(8.0)
+        # Median stays per-night.
+        assert result[0].median_ahi == pytest.approx(11.0)
+
+    async def test_history_avg_hours_counts_only_days_with_usage(
+        self, async_db_session, async_test_device
+    ):
+        """Zero-hour days stay in the period but do not dilute average hours."""
+        base = date(2025, 3, 1)
+        for i, hours in enumerate([6.0, 0.0, 8.0]):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                base + timedelta(days=i),
+                ahi=2.0,
+                total_therapy_hours=hours,
+                settings=RX_SETTINGS,
+            )
+
+        result = await RxTracker(1).get_history(async_db_session)
+
+        assert len(result) == 1
+        assert result[0].days_count == 3
+        assert result[0].total_hours == pytest.approx(14.0)
+        # 14 / 2 used days, not 14 / 3 days in the period.
+        assert result[0].avg_hours == pytest.approx(7.0)
 
     async def test_history_two_devices_same_settings_produce_separate_periods(
         self, async_db_session, async_test_profile
@@ -701,6 +759,36 @@ class TestRxTrackerComparison:
         assert len(result.periods) == 3
         assert result.best_index == 1
         assert result.worst_index == 2
+
+    async def test_comparison_zero_ahi_period_selected_as_best(
+        self, async_db_session, async_test_device
+    ):
+        """A period averaging AHI 0.0 is the best period, not treated as missing."""
+        base = date(2025, 1, 1)
+        settings_a = {"mode": "CPAP", "pressure_fixed": "8.0"}
+        settings_b = {"mode": "CPAP", "pressure_fixed": "10.0"}
+        for i in range(7):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                base + timedelta(days=i),
+                ahi=3.0,
+                settings=settings_a,
+            )
+        for i in range(7, 14):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                base + timedelta(days=i),
+                ahi=0.0,
+                settings=settings_b,
+            )
+
+        result = await RxTracker(1).get_comparison(async_db_session, min_days=7)
+
+        assert len(result.periods) == 2
+        assert result.best_index == 1
+        assert result.worst_index == 0
 
 
 class TestDiffSettings:
