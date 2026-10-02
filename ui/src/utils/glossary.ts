@@ -14,27 +14,32 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Number of detected complete breath cycles during the session.',
     },
     machine_events: {
-        label: 'Machine Events',
-        short: 'Respiratory events flagged by the CPAP device firmware in real time.',
-        long: 'Machine events use proprietary device algorithms and may differ from SNORE’s programmatic detections.',
+        label: 'Device-scored Events',
+        short: 'Respiratory events scored by the CPAP device firmware in real time.',
+        long: 'Device-scored events use proprietary device algorithms and may differ from SNORE-detected events.',
     },
     pulse_change_count: {
         label: 'Pulse Changes',
         short: 'Number of pulse-rate change events detected, used as arousal markers.',
     },
     programmatic_events: {
-        label: 'Programmatic Events',
+        label: 'SNORE-detected Events',
         short: "Respiratory events detected by SNORE's own analysis algorithms from the raw flow signal.",
     },
     ahi: {
         label: 'AHI',
         short: 'Apnea-Hypopnea Index: total apneas and hypopneas per hour of therapy.',
-        long: 'AHI = (apneas + hypopneas) / hours. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.',
+        long: "A night's headline AHI (and OAI, CAI, HI) is the device-reported daily value when SNORE can trust it: the night has no disabled sessions, every enabled session carries the same device indices and device mask-on time, and SNORE's imported hours are within the larger of 5 minutes or 5% of the device's mask-on time. Otherwise it is SNORE's recount: device-scored events divided by SNORE's mask-on hours. A session's AHI is always the recount. Period and trend AHIs are usage-hours-weighted averages of the nightly headline values, so they can mix device-reported and recounted nights. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.",
+    },
+    mode_ahi: {
+        label: 'Mode AHI',
+        short: "SNORE-detected apneas and hypopneas per hour, from this detection mode's own analysis of the flow waveform.",
+        long: "An experimental SNORE heuristic, not the device's AHI; compare it against the device-scored events to judge the mode.",
     },
     rdi: {
         label: 'RDI',
-        short: 'Respiratory Disturbance Index: AHI plus RERAs per hour.',
-        long: 'RDI is always ≥ AHI; a large gap suggests airway effort and arousals without frank apneas.',
+        short: "Respiratory Disturbance Index: this detection mode's SNORE-detected apneas, hypopneas, and RERAs per hour.",
+        long: "RDI is the mode's AHI plus its RERAs per hour, so it is never below that mode's AHI. A large gap suggests airway effort and arousals without frank apneas.",
     },
     rei: {
         label: 'REI',
@@ -90,7 +95,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: "From SNORE's experimental breath analysis, not the device. Useful for night-to-night trends, not a clinically validated measurement.",
     },
     rera_index: {
-        label: 'RERA Index (proxy)',
+        label: 'RERA Proxy Index',
         short: "Estimated respiratory effort-related arousals per hour, from SNORE's flow-limitation-run RERA proxy.",
         long: "SNORE's experimental breath analysis; useful for night-to-night trends, not a clinically validated measurement. Distinct from the device RERA count and the analysis-time RERA detector.",
     },
@@ -205,11 +210,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     false_negatives: {
         label: 'False Negatives',
-        short: "Machine-flagged events that SNORE's analysis did not detect.",
+        short: "Device-scored events that SNORE's analysis did not detect.",
     },
     false_positives: {
         label: 'False Positives',
-        short: "SNORE-detected events absent from the machine's event log.",
+        short: "SNORE-detected events absent from the device's event log.",
         long: 'May be real events the device missed, or over-detections by the algorithm.',
     },
     days_with_data: {
@@ -226,11 +231,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     sensitivity: {
         label: 'Sensitivity',
-        short: 'Share of machine-flagged events that SNORE also detected (true-positive rate / recall).',
+        short: 'Share of device-scored events that SNORE also detected (true-positive rate / recall).',
     },
     precision: {
         label: 'Precision',
-        short: 'Share of SNORE-detected events that match a machine-flagged event.',
+        short: 'Share of SNORE-detected events that match a device-scored event.',
     },
     f1: {
         label: 'F1 Score',
@@ -251,12 +256,12 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     chance_floor: {
         label: 'Chance Precision Floor',
         short: 'The precision a random detector firing at the same density would reach by chance alone.',
-        long: 'Computed as the pooled machine-RE rate per second × (2 × match tolerance). Measured precision at or below this floor is indistinguishable from chance given how often the proxy fires — it is context, not a signal of failure.',
+        long: 'Computed as the pooled device-scored RE rate per second × (2 × match tolerance). Measured precision at or below this floor is indistinguishable from chance given how often the proxy fires — it is context, not a signal of failure.',
     },
     rera_proxy: {
         label: 'RERA Proxy',
         short: "SNORE's experimental FL-run RERA proxy: runs of ≥2 consecutive flow-limited breaths ending in a recovery breath.",
-        long: 'Fires far more often than the device flags machine RE (which ResMed does very conservatively), so near-zero precision against machine RE is expected. Useful as an internally-consistent trend instrument, not a validated absolute count.',
+        long: 'Fires far more often than the device scores RE (which ResMed does very conservatively), so near-zero precision against device-scored RE is expected. Useful as an internally-consistent trend instrument, not a validated absolute count.',
     },
     apple_breathing_disturbances: {
         label: 'Apple Breathing Disturbances',

@@ -29,7 +29,9 @@
                 :decimals="1"
                 glossary-key="usage"
             />
-            <StatCard label="AHI" :value="data.ahi ?? null" :decimals="1" glossary-key="ahi" />
+            <StatCard label="AHI" :value="data.ahi ?? null" :decimals="1" glossary-key="ahi">
+                <template v-if="ahiSourceNote" #default>{{ ahiSourceNote }}</template>
+            </StatCard>
             <StatCard label="Sessions" :value="data.session_count" :decimals="0" />
             <StatCard label="OAI" :value="data.oai ?? null" :decimals="2" glossary-key="oai" />
             <StatCard label="CAI" :value="data.cai ?? null" :decimals="2" glossary-key="cai" />
@@ -53,31 +55,40 @@
                 glossary-key="hypopneas"
             />
             <StatCard label="RERAs" :value="data.reras" :decimals="0" glossary-key="reras" />
-            <StatCard
-                v-if="data.fl_class_ge4_pct != null || data.fl_class_ge4_pct_reason != null"
-                label="FL Class ≥4"
-                :value="data.fl_class_ge4_pct ?? null"
-                :reason="data.fl_class_ge4_pct_reason"
-                unit="%"
-                :decimals="1"
-                glossary-key="fl_class_ge4_pct"
+        </div>
+
+        <!-- SNORE breath-analysis group (experimental) -->
+        <div v-if="hasBreathAnalysis" class="mb-6 space-y-3">
+            <ExperimentalBanner
+                body="SNORE's own flow-limitation and RERA-proxy analysis: a night-to-night trend instrument, not a clinical measurement."
             />
-            <StatCard
-                v-if="data.rera_index != null || data.rera_index_reason != null"
-                label="RERA Index (proxy)"
-                :value="data.rera_index ?? null"
-                :reason="data.rera_index_reason"
-                :decimals="2"
-                glossary-key="rera_index"
-            />
-            <StatCard
-                v-if="data.rera_count != null || data.rera_count_reason != null"
-                label="RERA Proxy Count"
-                :value="data.rera_count ?? null"
-                :reason="data.rera_count_reason"
-                :decimals="0"
-                glossary-key="rera_count"
-            />
+            <div class="stats-grid">
+                <StatCard
+                    v-if="data.fl_class_ge4_pct != null || data.fl_class_ge4_pct_reason != null"
+                    label="FL Class ≥4"
+                    :value="data.fl_class_ge4_pct ?? null"
+                    :reason="data.fl_class_ge4_pct_reason"
+                    unit="%"
+                    :decimals="1"
+                    glossary-key="fl_class_ge4_pct"
+                />
+                <StatCard
+                    v-if="data.rera_index != null || data.rera_index_reason != null"
+                    label="RERA Proxy Index"
+                    :value="data.rera_index ?? null"
+                    :reason="data.rera_index_reason"
+                    :decimals="2"
+                    glossary-key="rera_index"
+                />
+                <StatCard
+                    v-if="data.rera_count != null || data.rera_count_reason != null"
+                    label="RERA Proxy Count"
+                    :value="data.rera_count ?? null"
+                    :reason="data.rera_count_reason"
+                    :decimals="0"
+                    glossary-key="rera_count"
+                />
+            </div>
         </div>
 
         <!-- Pressure group -->
@@ -312,9 +323,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref, shallowRef } from 'vue'
 import { isAxiosError } from 'axios'
 import StatCard from '@/components/StatCard.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import {
     Table,
     TableBody,
@@ -352,6 +364,30 @@ async function reload(): Promise<void> {
         loading.value = false
     }
 }
+
+// Which value the headline AHI is (index_source), so a recount is never
+// mistaken for the device's own number.
+const ahiSourceNote = computed((): string | null => {
+    const day = data.value
+    if (day?.ahi == null) return null
+    if (day.index_source === 'derived') return 'SNORE recount'
+    if (day.index_source !== 'device') return null
+    return day.ahi_computed != null
+        ? `Device-reported; SNORE recount ${day.ahi_computed.toFixed(1)}`
+        : 'Device-reported'
+})
+
+const hasBreathAnalysis = computed(() => {
+    const day = data.value
+    return [
+        day?.fl_class_ge4_pct,
+        day?.fl_class_ge4_pct_reason,
+        day?.rera_index,
+        day?.rera_index_reason,
+        day?.rera_count,
+        day?.rera_count_reason,
+    ].some((v) => v != null)
+})
 
 onMounted(() => void reload())
 </script>

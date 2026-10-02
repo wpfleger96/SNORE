@@ -16,6 +16,8 @@
                 <span class="stat-empty" :title="reasonLabel ?? undefined">---</span>
             </template>
         </div>
+        <!-- Optional secondary line under the value (e.g. an alternate figure). -->
+        <div v-if="$slots.default" class="stat-footnote"><slot /></div>
     </div>
 </template>
 
@@ -70,6 +72,12 @@ const reasonLabel = computed(() => nullReasonLabel(props.reason))
     font-weight: 400;
     color: var(--color-muted-foreground);
     margin-left: 0.2rem;
+}
+
+.stat-footnote {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--color-muted-foreground);
 }
 
 .stat-empty {

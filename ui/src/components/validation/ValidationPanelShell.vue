@@ -1,18 +1,6 @@
 <template>
     <div class="space-y-4">
-        <div
-            v-if="experimental"
-            class="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-        >
-            <FlaskConical class="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <p>
-                <span class="font-medium">Experimental metric.</span>
-                {{
-                    experimentalNote ??
-                    'These are internally-consistent trend instruments, not clinically validated absolute measurements. Read them for night-to-night direction, not ground truth.'
-                }}
-            </p>
-        </div>
+        <ExperimentalBanner v-if="experimental" :body="experimentalNote" />
 
         <div class="flex flex-wrap items-end gap-3">
             <div class="space-y-1">
@@ -85,8 +73,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Button } from '@/components/ui/button'
 import DatePickerInput from '@/components/DatePickerInput.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import ValidationJobsBanner from '@/components/validation/ValidationJobsBanner.vue'
-import { Loader2, AlertTriangle, FlaskConical, RotateCcw } from '@lucide/vue'
+import { Loader2, AlertTriangle, RotateCcw } from '@lucide/vue'
 import { useAuth } from '@/composables/useAuth'
 import { useAvailableDates } from '@/composables/useAvailableDates'
 import { useValidationRuns } from '@/composables/useValidationRuns'

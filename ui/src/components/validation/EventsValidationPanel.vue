@@ -3,6 +3,8 @@
         validator-type="events"
         :params="{ mode }"
         :load-run-id="loadRunId"
+        experimental
+        experimental-note="SNORE's event detection is scored against the device's own scored events. Agreement shows how closely the heuristic tracks the device, not clinical accuracy."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"

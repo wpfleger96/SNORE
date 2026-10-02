@@ -29,6 +29,12 @@
 
         <h1 class="page-title">Analysis — Session #{{ sessionId }}</h1>
 
+        <ExperimentalBanner
+            class="mb-5"
+            title="Experimental analysis."
+            body="Everything SNORE detects on this page (events, indices, flow-limitation classes, breathing patterns) is its own heuristic, not a clinically validated measurement. Device-scored events are the reference."
+        />
+
         <!-- Summary -->
         <div class="summary-row">
             <StatCard
@@ -45,7 +51,7 @@
                 glossary-key="total_breaths"
             />
             <StatCard
-                label="Machine Events"
+                label="Device-scored Events"
                 :value="analysis.machine_events?.length ?? 0"
                 :decimals="0"
                 glossary-key="machine_events"
@@ -66,7 +72,9 @@
                 <div v-for="(row, i) in modeRows" :key="i" class="data-card">
                     <div class="data-card-header">{{ row.mode }}</div>
                     <div class="data-card-row">
-                        <span class="data-card-label">AHI <InfoHint glossary-key="ahi" /></span>
+                        <span class="data-card-label"
+                            >AHI <InfoHint glossary-key="mode_ahi"
+                        /></span>
                         <span class="data-card-value"
                             ><strong>{{ row.ahi.toFixed(1) }}</strong></span
                         >
@@ -98,7 +106,7 @@
                     <TableRow>
                         <TableHead>Mode</TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
-                            AHI <InfoHint glossary-key="ahi" />
+                            AHI <InfoHint glossary-key="mode_ahi" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
                             RDI <InfoHint glossary-key="rdi" />
@@ -379,13 +387,13 @@
             <h2>Event Comparison</h2>
             <div class="summary-row" style="margin-bottom: 1rem">
                 <StatCard
-                    label="Machine Events"
+                    label="Device-scored Events"
                     :value="comparison.machine_event_count"
                     :decimals="0"
                     glossary-key="machine_events"
                 />
                 <StatCard
-                    label="Programmatic Events"
+                    label="SNORE-detected Events"
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
@@ -408,7 +416,7 @@
             </div>
 
             <div v-if="comparison.false_negatives?.length" class="compare-table-section">
-                <h3>False Negatives (machine events missed by programmatic)</h3>
+                <h3>False Negatives: Device-scored Events SNORE Missed</h3>
                 <div v-if="isMobile" class="card-list">
                     <div
                         v-for="(e, i) in comparison.false_negatives"
@@ -484,7 +492,7 @@
                 "
                 class="compare-table-section"
             >
-                <h3>False Positives (programmatic events not in machine)</h3>
+                <h3>False Positives: SNORE-detected Events the Device Did Not Score</h3>
                 <div v-if="isMobile" class="card-list">
                     <div v-for="(e, i) in allFalsePositives" :key="'fp-' + i" class="data-card">
                         <div class="data-card-header">
@@ -592,6 +600,7 @@ import { Loader2, AlertTriangle, ArrowLeft, BarChart3, Play, ChevronDown } from 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import FlowClassGlyph from '@/components/FlowClassGlyph.vue'
 import FlowClassPopover from '@/components/FlowClassPopover.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'

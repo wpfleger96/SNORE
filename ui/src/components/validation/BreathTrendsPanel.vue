@@ -2,6 +2,8 @@
     <ValidationPanelShell
         validator-type="breaths"
         :load-run-id="loadRunId"
+        experimental
+        experimental-note="SNORE's own breath segmentation is compared against the device's breath-level channels. Correlations show whether it tracks the device night to night, not absolute accuracy."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"

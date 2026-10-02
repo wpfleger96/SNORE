@@ -21,16 +21,20 @@
 
         <!-- Event Match (if analysis exists) -->
         <div v-if="matchResult" class="section-card">
-            <h2>Machine vs Programmatic</h2>
+            <h2>Device-scored vs SNORE-detected</h2>
+            <ExperimentalBanner
+                class="mb-3"
+                body="SNORE's event detection scored against the device's events; not a clinical measurement."
+            />
             <div class="match-grid">
                 <StatCard
-                    label="Machine Events"
+                    label="Device-scored"
                     :value="matchResult.machine_count"
                     :decimals="0"
                     glossary-key="machine_events"
                 />
                 <StatCard
-                    label="Programmatic"
+                    label="SNORE-detected"
                     :value="matchResult.programmatic_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
@@ -58,122 +62,128 @@
             </div>
         </div>
 
-        <!-- Filters -->
-        <div class="filter-bar">
-            <span class="filter-label text-muted-foreground">Filter by type:</span>
-            <div class="type-chips">
-                <button
-                    v-for="t in uniqueTypes"
-                    :key="t"
-                    class="inline-flex cursor-pointer items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors"
-                    :class="
-                        activeTypes.has(t)
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted/50 text-muted-foreground opacity-50'
-                    "
-                    @click="toggleType(t)"
-                >
-                    {{ t }}
-                </button>
-            </div>
-            <InfoHint label="Event Types">
-                <EventTypeLegend />
-            </InfoHint>
-        </div>
+        <div class="section-card">
+            <h2>Device-scored Events</h2>
 
-        <!-- Event List (mobile cards) -->
-        <div v-if="isMobile" class="card-list">
-            <div v-for="(row, i) in paginatedEvents" :key="i" class="data-card">
-                <div class="data-card-header">
-                    <span
-                        class="event-badge"
-                        :style="{ background: EVENT_COLORS[row.event_type] ?? '#ccc' }"
-                    >
-                        {{ row.event_type }}
-                    </span>
+            <!-- Filters -->
+            <div class="filter-bar">
+                <span class="filter-label text-muted-foreground">Filter by type:</span>
+                <div class="type-chips">
                     <button
-                        type="button"
-                        class="time-link text-primary"
-                        @click="jumpToWaveform(row.offset_seconds)"
+                        v-for="t in uniqueTypes"
+                        :key="t"
+                        class="inline-flex cursor-pointer items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors"
+                        :class="
+                            activeTypes.has(t)
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted/50 text-muted-foreground opacity-50'
+                        "
+                        @click="toggleType(t)"
                     >
-                        {{ formatTimeOffset(row.offset_seconds) }}
+                        {{ t }}
                     </button>
                 </div>
-                <div class="data-card-row">
-                    <span class="data-card-label">Duration</span>
-                    <span class="data-card-value">{{ row.duration_seconds.toFixed(1) }}s</span>
-                </div>
-                <div class="data-card-row">
-                    <span class="data-card-label"
-                        >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                    /></span>
-                    <span class="data-card-value">{{
-                        row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                    }}</span>
-                </div>
-                <div class="data-card-row">
-                    <span class="data-card-label">Peak FL <InfoHint glossary-key="peak_fl" /></span>
-                    <span class="data-card-value">{{
-                        row.peak_flow_limitation != null
-                            ? row.peak_flow_limitation.toFixed(2)
-                            : emDash
-                    }}</span>
-                </div>
+                <InfoHint label="Event Types">
+                    <EventTypeLegend />
+                </InfoHint>
             </div>
-        </div>
 
-        <!-- Event List (desktop table) -->
-        <Table v-else>
-            <TableHeader>
-                <TableRow>
-                    <TableHead style="width: 80px">Type</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead style="width: 100px">Duration</TableHead>
-                    <TableHead style="width: 100px" class="whitespace-nowrap"
-                        >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                    /></TableHead>
-                    <TableHead style="width: 90px" class="whitespace-nowrap"
-                        >Peak FL <InfoHint glossary-key="peak_fl"
-                    /></TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                <TableRow v-for="(row, i) in paginatedEvents" :key="i" class="odd:bg-muted/50">
-                    <TableCell>
+            <!-- Event List (mobile cards) -->
+            <div v-if="isMobile" class="card-list">
+                <div v-for="(row, i) in paginatedEvents" :key="i" class="data-card">
+                    <div class="data-card-header">
                         <span
                             class="event-badge"
                             :style="{ background: EVENT_COLORS[row.event_type] ?? '#ccc' }"
                         >
                             {{ row.event_type }}
                         </span>
-                    </TableCell>
-                    <TableCell>
                         <button
+                            type="button"
                             class="time-link text-primary"
                             @click="jumpToWaveform(row.offset_seconds)"
                         >
                             {{ formatTimeOffset(row.offset_seconds) }}
                         </button>
-                    </TableCell>
-                    <TableCell>{{ row.duration_seconds.toFixed(1) }}s</TableCell>
-                    <TableCell>{{
-                        row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                    }}</TableCell>
-                    <TableCell>{{
-                        row.peak_flow_limitation != null
-                            ? row.peak_flow_limitation.toFixed(2)
-                            : emDash
-                    }}</TableCell>
-                </TableRow>
-            </TableBody>
-        </Table>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Duration</span>
+                        <span class="data-card-value">{{ row.duration_seconds.toFixed(1) }}s</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label"
+                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
+                        /></span>
+                        <span class="data-card-value">{{
+                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
+                        }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label"
+                            >Peak FL <InfoHint glossary-key="peak_fl"
+                        /></span>
+                        <span class="data-card-value">{{
+                            row.peak_flow_limitation != null
+                                ? row.peak_flow_limitation.toFixed(2)
+                                : emDash
+                        }}</span>
+                    </div>
+                </div>
+            </div>
 
-        <PaginationBar
-            :offset="currentPage * pageSize"
-            :page-size="pageSize"
-            :total="filteredEvents.length"
-            @page="(newOffset) => (currentPage = Math.floor(newOffset / pageSize))"
-        />
+            <!-- Event List (desktop table) -->
+            <Table v-else>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead style="width: 80px">Type</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead style="width: 100px">Duration</TableHead>
+                        <TableHead style="width: 100px" class="whitespace-nowrap"
+                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
+                        /></TableHead>
+                        <TableHead style="width: 90px" class="whitespace-nowrap"
+                            >Peak FL <InfoHint glossary-key="peak_fl"
+                        /></TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    <TableRow v-for="(row, i) in paginatedEvents" :key="i" class="odd:bg-muted/50">
+                        <TableCell>
+                            <span
+                                class="event-badge"
+                                :style="{ background: EVENT_COLORS[row.event_type] ?? '#ccc' }"
+                            >
+                                {{ row.event_type }}
+                            </span>
+                        </TableCell>
+                        <TableCell>
+                            <button
+                                class="time-link text-primary"
+                                @click="jumpToWaveform(row.offset_seconds)"
+                            >
+                                {{ formatTimeOffset(row.offset_seconds) }}
+                            </button>
+                        </TableCell>
+                        <TableCell>{{ row.duration_seconds.toFixed(1) }}s</TableCell>
+                        <TableCell>{{
+                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
+                        }}</TableCell>
+                        <TableCell>{{
+                            row.peak_flow_limitation != null
+                                ? row.peak_flow_limitation.toFixed(2)
+                                : emDash
+                        }}</TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
+
+            <PaginationBar
+                :offset="currentPage * pageSize"
+                :page-size="pageSize"
+                :total="filteredEvents.length"
+                @page="(newOffset) => (currentPage = Math.floor(newOffset / pageSize))"
+            />
+        </div>
     </div>
 </template>
 
@@ -201,6 +211,7 @@ import { formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import type { EventItem, EventMatchResult } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 
 const emDash = '\u2014' // em-dash used for null display
 const props = defineProps<{ sessionId: number }>()

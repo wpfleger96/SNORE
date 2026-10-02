@@ -20,7 +20,7 @@
                 :key="cell.date"
                 class="cell"
                 :class="cell.class"
-                :title="`${cell.date}: AHI ${cell.ahi?.toFixed(1) ?? 'N/A'}`"
+                :title="cell.title"
                 @click="cell.ahi != null && $emit('day-click', cell.date)"
             />
         </div>
@@ -42,6 +42,19 @@ defineEmits<{
     'day-click': [date: string]
 }>()
 
+// Which value a day's headline AHI is (DayListItem.index_source), shown in the
+// cell tooltip so a recount is never mistaken for the device's own number.
+const AHI_SOURCE_LABELS: Record<NonNullable<DayListItem['index_source']>, string> = {
+    device: 'device-reported',
+    derived: 'SNORE recount',
+}
+
+function cellTitle(date: string, day: DayListItem | undefined): string {
+    if (day?.ahi == null) return `${date}: AHI N/A`
+    const source = day.index_source ? ` (${AHI_SOURCE_LABELS[day.index_source]})` : ''
+    return `${date}: AHI ${day.ahi.toFixed(1)}${source}`
+}
+
 const monthsBack = computed(() => props.monthsBack ?? 6)
 
 const heatmapEl = ref<HTMLElement | null>(null)
@@ -61,12 +74,17 @@ const cells = computed(() => {
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
     start.setDate(start.getDate() + diff)
 
-    const result: { date: string; ahi: number | null; class: string }[] = []
+    const result: { date: string; ahi: number | null; class: string; title: string }[] = []
     const cur = new Date(start)
     while (cur <= end) {
         const iso = cur.toISOString().slice(0, 10)
         const day = dayMap.value.get(iso)
-        result.push({ date: iso, ahi: day?.ahi ?? null, class: ahiColorClass(day?.ahi ?? null) })
+        result.push({
+            date: iso,
+            ahi: day?.ahi ?? null,
+            class: ahiColorClass(day?.ahi ?? null),
+            title: cellTitle(iso, day),
+        })
         cur.setDate(cur.getDate() + 1)
     }
     return result

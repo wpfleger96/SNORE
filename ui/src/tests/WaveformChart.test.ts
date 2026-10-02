@@ -141,6 +141,23 @@ describe('WaveformChart', () => {
         expect(() => mount(WaveformChart, { props: MINIMAL_PROPS })).not.toThrow()
     })
 
+    it('test_event_overlay_is_labelled_device_scored', () => {
+        const event = {
+            id: 1,
+            event_type: 'OA',
+            start_time: 0,
+            duration_seconds: 10,
+            offset_seconds: 0,
+            spo2_drop: null,
+            peak_flow_limitation: null,
+        }
+        const withEvents = mount(WaveformChart, { props: { ...MINIMAL_PROPS, events: [event] } })
+        expect(withEvents.text()).toContain('Shaded bands: device-scored events')
+
+        const without = mount(WaveformChart, { props: MINIMAL_PROPS })
+        expect(without.text()).not.toContain('Shaded bands')
+    })
+
     it('test_refetching_true_renders_corner_spinner', () => {
         const wrapper = mount(WaveformChart, {
             props: { ...MINIMAL_PROPS, refetching: true },

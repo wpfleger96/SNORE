@@ -362,6 +362,11 @@ and headers. The legend line prints automatically only for commands wrapped in
 after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
 header and a CSV `columns.csv` sidecar.
 
+The web UI does not mark individual fields. A section or card whose content is an Experimental
+metric gets one `<ExperimentalBanner>` (pass a short `body` on small cards; `ValidationPanelShell`
+takes `experimental`/`experimental-note`); Device and Derived data stay unflagged. Day-level AHI
+names its source (`index_source`) in text: device-reported or SNORE recount.
+
 **UI:** API types are generated — run `just ui-generate-types` after changing API
 schemas (`ui/src/types/generated.ts`; `types/index.ts` re-exports them). New API
 wrappers use `createApiEndpoint` in `ui/src/api/client.ts`; plain view loaders use

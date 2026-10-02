@@ -4,6 +4,9 @@
         <div v-if="refetching" class="absolute top-2 right-2 text-muted-foreground">
             <Loader2 class="h-4 w-4 animate-spin" />
         </div>
+        <p v-if="events?.length" class="mt-1 text-xs text-muted-foreground">
+            Shaded bands: device-scored events
+        </p>
     </div>
 </template>
 

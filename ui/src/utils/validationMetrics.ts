@@ -194,7 +194,7 @@ export const AGGREGATE_METRICS: Record<ValidatorType, MetricDescriptor[]> = {
             glossaryKey: 'chance_floor',
         },
         { path: 'proxy_density', label: 'Proxy density (/h)', kind: 'rate' },
-        { path: 'machine_re_density', label: 'Machine RE density (/h)', kind: 'rate' },
+        { path: 'machine_re_density', label: 'Device RE density (/h)', kind: 'rate' },
         { path: 'total_proxy_reras', label: 'Total proxy RERAs', kind: 'count' },
     ],
     apple: [
