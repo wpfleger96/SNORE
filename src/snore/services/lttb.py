@@ -52,9 +52,6 @@ def lttb_downsample(
     if len(timestamps) <= target_points:
         return timestamps.copy(), values.copy()
 
-    if len(timestamps) == 0:
-        return np.array([]), np.array([])
-
     if target_points == 2:
         return timestamps[[0, -1]], values[[0, -1]]
 

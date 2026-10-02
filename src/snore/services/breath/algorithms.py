@@ -56,7 +56,7 @@ def compute_waveform_window(raw: RawWaveformWindow) -> WaveformWindow:
         original_count = int(len(ts_slice))
         is_downsampled = False
         if request.max_points is not None and original_count > request.max_points:
-            # max_points >= 2 (DTO bound), so the slice has >= 3 points as LTTB requires
+            # DTO bounds max_points to >= 2, which lttb_downsample requires
             ts_slice, v_slice = lttb_downsample(ts_slice, v_slice, request.max_points)
             is_downsampled = True
 

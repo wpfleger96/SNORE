@@ -309,6 +309,34 @@ class TestPureFunctions:
         assert len(result_ch.values) == 2
         assert result_ch.original_sample_count == 500
 
+    @pytest.mark.parametrize(
+        ("n", "max_points"),
+        [(2, 2), (5, 10)],
+        ids=["equal_to_max_points", "below_max_points"],
+    )
+    def test_window_within_max_points_passes_through_raw(
+        self, n: int, max_points: int
+    ) -> None:
+        """A slice with no more samples than max_points is returned raw, not downsampled."""
+        from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
+
+        flow = _flow_channel(n=n, time_start=0.0, time_end=10.0)
+        raw = _make_raw(
+            channels=[flow],
+            request=_make_request(
+                offset_end=10.0,
+                channels=[WaveformChannelName.FLOW],
+                max_points=max_points,
+            ),
+        )
+
+        response = waveform_response_from_raw(raw)
+
+        result_ch = response.channels[0]
+        assert result_ch.is_downsampled is False
+        assert len(result_ch.values) == n
+        assert result_ch.original_sample_count == n
+
 
 # ---------------------------------------------------------------------------
 # TestPureErrors — fetch_waveform_raw input validation
@@ -622,7 +650,30 @@ class TestGetWaveformClient:
         assert "max_points" in err
         assert "target_points" not in err
         assert "pydantic" not in err.lower()
+        assert "input_value" not in err
         mock_svc.assert_not_called()
+
+    @pytest.mark.parametrize("tool", ["get_waveform", "render_window"])
+    async def test_max_points_bounds_advertised_in_input_schema(
+        self, mock_db_session: MagicMock, mcp_client_factory: object, tool: str
+    ) -> None:
+        """Clients see the max_points range in the tool schema, not only the docstring."""
+        from snore.services.breath.dtos import (  # noqa: PLC0415
+            MAX_POINTS_MAX,
+            MAX_POINTS_MIN,
+        )
+
+        async with mcp_client_factory(mock_db_session) as client:
+            tools = await client.list_tools()
+
+        schema = next(t for t in tools if t.name == tool).inputSchema
+        int_branch = next(
+            b
+            for b in schema["properties"]["max_points"]["anyOf"]
+            if b.get("type") == "integer"
+        )
+        assert int_branch["minimum"] == MAX_POINTS_MIN
+        assert int_branch["maximum"] == MAX_POINTS_MAX
 
 
 # ---------------------------------------------------------------------------
