@@ -212,7 +212,7 @@ def profile_scoped_command(f: Any) -> Any:
     ``click.ClickException`` raised inside the body propagates unchanged.
 
     Provenance markers emitted by the body are collected and their legend is
-    printed once after it returns.
+    printed once after it finishes, including when it raises.
 
     An explicit ``--db`` must already exist: since ``init_database`` silently
     creates a missing SQLite file, the path is checked before the session opens.

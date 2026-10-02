@@ -31,7 +31,7 @@ from snore.constants import DEFAULT_RAW_BACKUP_DIR
 from snore.database import models
 from snore.metrics import EXPORT_STAT_KEYS
 from snore.parsers.base import RawFileManifest
-from snore.provenance import Provenance, field_provenance
+from snore.provenance import Provenance, field_description, field_provenance
 from snore.services.schemas import SessionDetail, SessionStatistics
 
 if TYPE_CHECKING:
@@ -52,14 +52,6 @@ EXPORT_COLUMN_PROVENANCE: dict[str, Provenance] = {
 }
 
 
-def _column_description(name: str) -> str:
-    """Schema description of an export column without its ``[TIER] `` prefix."""
-    description = _EXPORT_COLUMN_FIELDS[name].model_fields[name].description or ""
-    return description.removeprefix(
-        f"[{EXPORT_COLUMN_PROVENANCE[name].value.upper()}] "
-    )
-
-
 def _columns_csv_rows() -> list[list[str]]:
     """Rows of the ``columns.csv`` provenance sidecar.
 
@@ -70,7 +62,7 @@ def _columns_csv_rows() -> list[list[str]]:
     return [
         ["name", "provenance", "description"],
         *(
-            [name, tier, _column_description(name)]
+            [name, tier, field_description(_EXPORT_COLUMN_FIELDS[name], name)]
             for name, tier in EXPORT_COLUMN_PROVENANCE.items()
         ),
         ["events.csv", Provenance.DEVICE, "Device-scored events, verbatim."],

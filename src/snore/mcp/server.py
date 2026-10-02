@@ -180,6 +180,12 @@ class ActorRuntime:
         return current_actor().profile_id
 
 
+def _provenance_legend() -> str:
+    return "\n".join(
+        f"  {tier.value.upper()}: {note}" for tier, note in PROVENANCE_NOTES.items()
+    )
+
+
 def _build_instructions(profile: ClinicalProfile) -> str:
     return f"""\
 SNORE MCP Server v{version("snore")}
@@ -212,15 +218,18 @@ DATA TIERS (progressive disclosure):
 NULL FIELDS: When data is absent, fields are null + a companion *_reason field
 explains why (e.g. rera_index_reason: "analysis_not_run"). Never infer from null.
 
-PROVENANCE: every metric has one provenance class — DEVICE (reported by the
-recording device), DERIVED (SNORE math on device data), or EXPERIMENTAL
-(SNORE's own heuristics; not validated). Field descriptions in docs://schemas
-start with [DEVICE] / [DERIVED] / [EXPERIMENTAL]. Responses with derived or
-experimental fields carry a top-level `provenance` block listing those field
-paths; metric fields it does not list are device data, counts/identifiers/
-bookkeeping are not classified, and responses with only device data carry no
-block. Device-scored events are the reference standard; never present
-experimental metrics as device-scored or clinically validated.
+PROVENANCE: every metric has one provenance class:
+{_provenance_legend()}
+Field descriptions in docs://schemas start with [DEVICE] / [DERIVED] /
+[EXPERIMENTAL]. Responses with derived or experimental fields carry a top-level
+`provenance` block listing those field paths; metric fields it does not list
+are device data, identifiers and bookkeeping fields (ids, offsets, pagination,
+coverage counts) are not classified, and responses with only device data carry
+no block. The block's `source_dependent` map takes a field path to the sibling
+field whose value decides that value's tier (e.g. MV fields ->
+`events[].context.mv_source`, where `flow_derived` means experimental). Device-scored events are the reference
+standard; never present experimental metrics as device-scored or clinically
+validated.
 
 See docs://capabilities for dataset-specific channel availability.
 """

@@ -16,11 +16,12 @@ from snore.cli.decorators import (
 from snore.cli.display import (
     console,
     fmt_sig,
+    mark_field,
     mark_provenance,
     print_footer,
     print_header,
 )
-from snore.provenance import Provenance, field_provenance
+from snore.provenance import Provenance
 from snore.validation.rera_report import ReraAggregateMetrics
 
 
@@ -86,29 +87,32 @@ async def validate_rera(
         console.print(f"Skipped (error):          {agg.sessions_skipped_error}")
 
         console.print("\nEvent counts / densities (per therapy hour):")
-        machine_re = mark_provenance(
-            "Machine RE", field_provenance(ReraAggregateMetrics, "total_machine_re")
-        )
-        machine_re_density = mark_provenance(
+        machine_re_density = mark_field(
             f"{fmt_sig(agg.machine_re_density)}/h",
-            field_provenance(ReraAggregateMetrics, "machine_re_density"),
+            ReraAggregateMetrics,
+            "machine_re_density",
         )
-        console.print(
-            f"  {machine_re}:  {agg.total_machine_re:<6} ({machine_re_density})"
-        )
-        amplitude = mark_provenance(
-            "Amplitude", field_provenance(ReraAggregateMetrics, "total_amplitude_reras")
-        )
-        console.print(
-            f"  {amplitude}:  {agg.total_amplitude_reras:<6} "
-            f"({fmt_sig(agg.amplitude_density)}/h)"
-        )
-        proxy = mark_provenance(
-            "FL-run proxy", field_provenance(ReraAggregateMetrics, "total_proxy_reras")
-        )
-        console.print(
-            f"  {proxy}:{agg.total_proxy_reras:<6} ({fmt_sig(agg.proxy_density)}/h)"
-        )
+        count_rows = [
+            (
+                mark_field("Machine RE", ReraAggregateMetrics, "total_machine_re"),
+                agg.total_machine_re,
+                machine_re_density,
+            ),
+            (
+                mark_field("Amplitude", ReraAggregateMetrics, "total_amplitude_reras"),
+                agg.total_amplitude_reras,
+                f"{fmt_sig(agg.amplitude_density)}/h",
+            ),
+            (
+                mark_field("FL-run proxy", ReraAggregateMetrics, "total_proxy_reras"),
+                agg.total_proxy_reras,
+                f"{fmt_sig(agg.proxy_density)}/h",
+            ),
+        ]
+        # Pad on the marked labels so the count column lines up.
+        label_width = max(len(label) for label, _, _ in count_rows) + 1
+        for label, count, density in count_rows:
+            console.print(f"  {label + ':':<{label_width}} {count:<6} ({density})")
         console.print(
             "  Chance-precision floor (whole-dataset, "
             f"tol={agg.match_tolerance_seconds}s): "

@@ -20,7 +20,9 @@ from snore.services.schemas import (
     DataRange,
     EventTypeCount,
     PeriodStatistics,
+    RecordsResponse,
     TherapySummary,
+    TrendsResponse,
 )
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import usage_weighted_means
@@ -389,8 +391,12 @@ class StatsService(ProfileScopedService):
         days_limit: int | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
-    ) -> dict[str, list[tuple[date, float | None]]]:
-        """Compute extended trend data for the requested period granularity."""
+    ) -> TrendsResponse:
+        """Compute extended trend data for the requested period granularity.
+
+        Apple Health series are left unset (not ``None``) when no night has data,
+        so ``exclude_unset`` serialization omits their keys.
+        """
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
@@ -420,12 +426,16 @@ class StatsService(ProfileScopedService):
             if any(v is not None for _, v in sleep_eff_series):
                 trends["sleep_efficiency"] = sleep_eff_series
 
-        return trends
+        return TrendsResponse.model_validate(trends)
 
     async def get_records(
         self, days_limit: int | None = None, top_n: int = 5
-    ) -> dict[str, dict[str, list[tuple[date, float]]]]:
-        """Calculate top best/worst days for key metrics."""
+    ) -> RecordsResponse:
+        """Calculate top best/worst days for key metrics.
+
+        Metrics without a qualifying day are left unset (not ``None``), so
+        ``exclude_unset`` serialization omits their keys.
+        """
         day_records = await self._query_days(days_limit)
         records = calculate_records(day_records, top_n)
 
@@ -441,7 +451,7 @@ class StatsService(ProfileScopedService):
                 "worst": sorted(sleep_pairs, key=lambda x: x[1])[:top_n],
             }
 
-        return records
+        return RecordsResponse.model_validate(records)
 
     async def get_data_range(self) -> DataRange:
         """Return the profile's earliest and latest Day.date (all-time, ignores days_limit)."""

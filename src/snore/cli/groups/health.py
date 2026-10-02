@@ -24,7 +24,7 @@ from snore.cli.display import (
     ICON_STATS,
     Column,
     console,
-    mark_provenance,
+    mark_field,
     print_dry_run_complete,
     print_dry_run_header,
     print_footer,
@@ -328,7 +328,7 @@ async def health_show(ctx: CliCtx, night_date: datetime) -> None:
         ("Awake", "awake_seconds", _fmt_hours(detail.awake_seconds)),
         ("Stage coverage", "stage_coverage_pct", _fmt_pct(detail.stage_coverage_pct)),
     ]:
-        label = mark_provenance(label, field_provenance(HealthNightDetailRead, field))
+        label = mark_field(label, HealthNightDetailRead, field)
         console.print(f"  {label:<18} {value}", markup=False, highlight=False)
     print_footer()
 

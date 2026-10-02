@@ -63,14 +63,13 @@ class FlSessionValidation(BaseModel):
     low_sample_warning: bool = provenance_field(
         Provenance.EXPERIMENTAL, "True when n_breaths_compared < 20", default=False
     )
-    n_class_breaths_compared: int = Field(
+    n_class_breaths_compared: int = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Number of breaths entering the flow_class-weight metrics "
+        "(spearman_class_weight_r, auc_class_t25/t50): the subset of "
+        "n_breaths_compared that is also rule-matched with a known class. "
+        "Can be far smaller than n_breaths_compared",
         default=0,
-        description=(
-            "Number of breaths entering the flow_class-weight metrics "
-            "(spearman_class_weight_r, auc_class_t25/t50): the subset of "
-            "n_breaths_compared that is also rule-matched with a known class. "
-            "Can be far smaller than n_breaths_compared"
-        ),
     )
     spearman_flattening_r: float | None = provenance_field(
         Provenance.EXPERIMENTAL,

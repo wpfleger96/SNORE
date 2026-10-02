@@ -327,20 +327,32 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 Aggregates inherit the weakest input: anything built on an experimental input stays Experimental;
 aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
 (across sessions, days, or a validation run) stays Device; rates, means, percentiles and recounts
-are Derived. The declared tier is the preferred source: fields recomputed from the waveform when
-present and falling back to the device's summary value otherwise (ResMed pressure/EPAP/leak
-percentiles) are tagged Derived and say so in their description.
+are Derived. A field with a preferred source and a fallback is tagged with the preferred source's
+tier and its description names the fallback, in both directions: pressure/EPAP/leak percentiles
+recomputed from the waveform when present are Derived (falling back to the device's summary value);
+`respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR
+value and are Device (falling back to the OSCAR session summary).
 
 The Pydantic schemas are the single source of tiers. Every metric field in MCP/REST schemas uses
 `provenance_field(Provenance.X, "...")` (adds `x-provenance` + a `[TIER]` description prefix);
-`SessionStatistics` (`services/schemas.py`) is canonical for the Statistics columns. The CLI and
-exports read tiers with `field_provenance(<Model>, "<field>")` from the response model that carries
-the value — never hardcode `Provenance.X` for a value a schema already tags. MCP responses get a
-top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
-`tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean response field (with a
-bookkeeping allowlist `_NON_METRIC_FIELDS`) and on fields holding a model whose tier depends on the
-parent. The CLI marks columns with `provenance_marker` and a legend from `cli/display`;
-exports carry a JSON `provenance` header and a CSV `columns.csv` sidecar.
+`SessionStatistics` (`services/schemas.py`) is canonical for the Statistics columns. Read a tier
+back with `field_provenance(<Model>, "<field>")` and the prefix-free description with
+`field_description(<Model>, "<field>")`, from the response model that carries the value. Any value
+or column label backed by a tagged field must read its tier this way (or via `mark_field`);
+hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field.
+MCP responses get a top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
+`tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
+response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that are never metrics
+(ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts keyed by
+`(model, field)`; it also requires a tag on fields holding a model whose tier depends on the parent.
+
+CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
+field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;
+`print_kv(..., provenance=...)` and `Column(header, width, provenance)` for `print_table` mark keys
+and headers. The legend line prints automatically only for commands wrapped in
+`profile_scoped_command` (`cli/decorators.py`), including when the command exits with an error
+after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
+header and a CSV `columns.csv` sidecar.
 
 **UI:** API types are generated — run `just ui-generate-types` after changing API
 schemas (`ui/src/types/generated.ts`; `types/index.ts` re-exports them). New API
@@ -365,7 +377,8 @@ the `useApiLoad` composable; date/time formatting comes from `ui/src/utils/forma
 - Type hints: `str | None` (not Optional), `list[str]` (not List), avoid `Any` types
 - Imports: stdlib, third-party, then `snore.` absolute imports
 - Naming: snake_case functions, PascalCase classes, UPPER_SNAKE constants
-- All data types use Pydantic models (no dataclasses)
+- All data types use Pydantic models (no dataclasses). One exception: display-only value tuples in
+  `cli/display` (e.g. `Column`) may be `NamedTuple`.
 
 ## Testing
 

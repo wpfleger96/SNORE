@@ -9,6 +9,7 @@ dispatch — against a synthetic report.
 from __future__ import annotations
 
 import json
+import re
 
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner, Result
 
 from snore.cli.commands.validate_rera import validate_rera
+from snore.provenance import PROVENANCE_NOTES, Provenance
 from snore.validation.rera_report import (
     ReraSessionValidation,
     ReraValidationReport,
@@ -112,10 +114,26 @@ def test_report_marks_snore_scores_and_prints_legend_once():
     assert machine_line.rstrip().endswith("/h†)")
     legend = result.output.splitlines()[-1]
     assert legend == (
-        "* experimental (SNORE heuristic)  "
-        "† derived (computed by SNORE from device data)"
+        f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
+        f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
     )
     assert result.output.count("* experimental") == 1
+
+
+def test_event_count_column_aligns_across_marked_labels():
+    result = _invoke(_report(3))
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    start = lines.index("Event counts / densities (per therapy hour):") + 1
+    count_lines = lines[start : start + 3]
+    assert [line.split(":")[0].strip() for line in count_lines] == [
+        "Machine RE",
+        "Amplitude*",
+        "FL-run proxy*",
+    ]
+    # Every count starts in the same column regardless of label/marker width.
+    count_columns = {re.match(r"\s+[^:]+:\s+", line).end() for line in count_lines}
+    assert len(count_columns) == 1
 
 
 def test_export_json_dispatch_writes_file(tmp_path):

@@ -2994,7 +2994,7 @@ export interface components {
             epap_min?: number | null
             /**
              * Fl Class Ge4 Pct
-             * @description [EXPERIMENTAL] Percent of rule-classified breaths flagged flow-class >= 4 (flow-limitation proxy). SNORE's own heuristic analysis. Experimental trend instrument; not validated against device-scored events; not clinically validated.
+             * @description [EXPERIMENTAL] Percent of rule-classified breaths flagged flow-class >= 4 (flow-limitation proxy).
              */
             fl_class_ge4_pct?: number | null
             /** Fl Class Ge4 Pct Reason */
@@ -3064,14 +3064,14 @@ export interface components {
             pressure_min?: number | null
             /**
              * Rera Count
-             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`. SNORE's own heuristic analysis. Experimental trend instrument; not validated against device-scored events; not clinically validated.
+             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`.
              */
             rera_count?: number | null
             /** Rera Count Reason */
             rera_count_reason?: string | null
             /**
              * Rera Index
-             * @description [EXPERIMENTAL] RERA-proxy events per therapy hour (FL-run proxy, not device-scored). SNORE's own heuristic analysis. Experimental trend instrument; not validated against device-scored events; not clinically validated.
+             * @description [EXPERIMENTAL] RERA-proxy events per therapy hour (FL-run proxy, not device-scored).
              */
             rera_index?: number | null
             /** Rera Index Reason */
@@ -3324,17 +3324,17 @@ export interface components {
         EventComparisonResult: {
             /**
              * False Negatives
-             * @description Machine events missed by programmatic detection
+             * @description [EXPERIMENTAL] Machine events missed by programmatic detection
              */
             false_negatives?: components['schemas']['EventComparisonDetail'][]
             /**
              * False Positives Apnea
-             * @description Programmatic apneas not in machine events
+             * @description [EXPERIMENTAL] Programmatic apneas not in machine events
              */
             false_positives_apnea?: components['schemas']['EventComparisonDetail'][]
             /**
              * False Positives Hypopnea
-             * @description Programmatic hypopneas not in machine events
+             * @description [EXPERIMENTAL] Programmatic hypopneas not in machine events
              */
             false_positives_hypopnea?: components['schemas']['EventComparisonDetail'][]
             /**
@@ -3568,7 +3568,7 @@ export interface components {
             n_breaths_compared: number
             /**
              * N Class Breaths Compared
-             * @description Number of breaths entering the flow_class-weight metrics (spearman_class_weight_r, auc_class_t25/t50): the subset of n_breaths_compared that is also rule-matched with a known class. Can be far smaller than n_breaths_compared
+             * @description [EXPERIMENTAL] Number of breaths entering the flow_class-weight metrics (spearman_class_weight_r, auc_class_t25/t50): the subset of n_breaths_compared that is also rule-matched with a known class. Can be far smaller than n_breaths_compared
              * @default 0
              */
             n_class_breaths_compared: number
@@ -6314,7 +6314,10 @@ export interface components {
             total_samples: number
             /** Unit */
             unit: string
-            /** Values */
+            /**
+             * Values
+             * @description [DEVICE] Waveform samples (possibly LTTB-downsampled)
+             */
             values: number[]
         }
         /**

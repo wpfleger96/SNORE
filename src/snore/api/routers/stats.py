@@ -1,4 +1,3 @@
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -57,9 +56,8 @@ async def get_trends(
             "to keep the response size reasonable."
         ),
     ),
-) -> dict[str, list[tuple[date, float | None]]]:
-    # The service returns a plain dict; exclude_unset keeps absent optional series
-    # (Apple Health) omitted rather than null, matching the service's wire shape.
+) -> TrendsResponse:
+    # exclude_unset keeps absent Apple Health series omitted rather than null.
     if period_type == "day" and days_limit is None:
         days_limit = 180
     return await service.get_trends(period_type, days_limit)
@@ -77,6 +75,6 @@ async def get_records(
     service: StatsServiceDep,
     days_limit: int | None = Query(default=None),
     top_n: int = Query(default=5),
-) -> dict[str, dict[str, list[tuple[date, float]]]]:
+) -> RecordsResponse:
     # exclude_unset keeps metrics with no qualifying day omitted rather than null.
     return await service.get_records(days_limit, top_n)

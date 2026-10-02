@@ -25,6 +25,11 @@ from snore.cli import cli
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
+from snore.provenance import PROVENANCE_NOTES, Provenance
+
+_DERIVED_LEGEND = (
+    f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
+)
 
 
 @pytest.fixture
@@ -1212,11 +1217,9 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert result.output.count("† derived") == 1
-        assert result.output.rstrip().endswith(
-            "† derived (computed by SNORE from device data)"
-        )
-        assert "* experimental" not in result.output
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
+        assert f"* {Provenance.EXPERIMENTAL.value}:" not in result.output
 
     def test_session_show_displays_waveform_types(
         self, cli_runner, populated_test_db_full
@@ -1304,10 +1307,8 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0, result.output
         assert "AHI Trend†" in result.output
-        assert result.output.count("† derived") == 1
-        assert result.output.rstrip().endswith(
-            "† derived (computed by SNORE from device data)"
-        )
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 
     def test_stats_records_marks_derived_columns(
         self, cli_runner, populated_test_db_with_day_stats
@@ -1320,10 +1321,8 @@ class TestStatsPeriod:
         assert result.exit_code == 0, result.output
         assert "Best AHI†" in result.output
         assert "Worst AHI†" in result.output
-        assert result.output.count("† derived") == 1
-        assert result.output.rstrip().endswith(
-            "† derived (computed by SNORE from device data)"
-        )
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 
 
 @pytest.fixture

@@ -1,10 +1,26 @@
 import uuid
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from snore.database.models import Day, Device, Profile, User
+from snore.database.models import Day, Device, HealthNightlySummary, Profile, User
+
+_TREND_KEYS = {
+    "ahi",
+    "usage",
+    "spo2",
+    "leak",
+    "pressure",
+    "oai",
+    "cai",
+    "hi",
+    "rera",
+    "epap",
+    "rr",
+    "pulse",
+    "mv",
+}
 
 
 class TestStatsSummary:
@@ -185,13 +201,91 @@ class TestStatsTrends:
         ahi_dates = [entry[0] for entry in data["ahi"]]
         assert str(old_date) in ahi_dates
 
+    def test_trends_wire_shape_without_health_data(
+        self, api_client, db_session, test_device
+    ):
+        """Apple Health series keys are omitted, not null, when no night has data."""
+        db_session.add(
+            Day(
+                device_id=test_device.id,
+                date=date(2024, 3, 15),
+                session_count=1,
+                total_therapy_hours=7.0,
+                ahi=2.5,
+            )
+        )
+        db_session.flush()
+
+        data = api_client.get("/api/v1/stats/trends?period_type=month").json()
+
+        assert set(data) == _TREND_KEYS
+        assert data["ahi"] == [["2024-03-01", 2.5]]
+        assert data["spo2"] == [["2024-03-01", None]]
+
+    def test_trends_wire_shape_with_health_data(
+        self, api_client, db_session, test_device
+    ):
+        """Apple Health series appear alongside the 13 device keys when present."""
+        db_session.add(
+            Day(
+                device_id=test_device.id,
+                date=date(2024, 3, 15),
+                session_count=1,
+                total_therapy_hours=7.0,
+                ahi=2.5,
+            )
+        )
+        db_session.add(
+            HealthNightlySummary(
+                profile_id=test_device.profile_id,
+                night_date=date(2024, 3, 15),
+                total_sleep_seconds=7.5 * 3600,
+                sleep_efficiency_pct=90.0,
+                computed_at=datetime.now(UTC),
+            )
+        )
+        db_session.flush()
+
+        data = api_client.get("/api/v1/stats/trends?period_type=month").json()
+
+        assert set(data) == _TREND_KEYS | {"total_sleep_hours", "sleep_efficiency"}
+        assert data["ahi"] == [["2024-03-01", 2.5]]
+        assert data["total_sleep_hours"] == [["2024-03-01", 7.5]]
+        assert data["sleep_efficiency"] == [["2024-03-01", 90.0]]
+
 
 class TestStatsRecords:
     def test_records_empty(self, api_client):
         response = api_client.get("/api/v1/stats/records")
         assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
+        assert response.json() == {}
+
+    def test_records_wire_shape(self, api_client, db_session, test_device):
+        """Only metrics with a qualifying day appear; pairs serialize as [date, value]."""
+        for i, ahi in enumerate([1.0, 4.5]):
+            db_session.add(
+                Day(
+                    device_id=test_device.id,
+                    date=date(2024, 3, 1) + timedelta(days=i),
+                    session_count=1,
+                    total_therapy_hours=6.0 + i,
+                    ahi=ahi,
+                )
+            )
+        db_session.flush()
+
+        data = api_client.get("/api/v1/stats/records").json()
+
+        assert data == {
+            "ahi": {
+                "best": [["2024-03-01", 1.0], ["2024-03-02", 4.5]],
+                "worst": [["2024-03-02", 4.5], ["2024-03-01", 1.0]],
+            },
+            "therapy_hours": {
+                "best": [["2024-03-02", 7.0], ["2024-03-01", 6.0]],
+                "worst": [["2024-03-01", 6.0], ["2024-03-02", 7.0]],
+            },
+        }
 
 
 class TestStatsDataRange:

@@ -34,10 +34,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict
 
-from snore.provenance import PROVENANCE_NOTES, Provenance, provenance_field
+from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import MergedSettingsChange
-
-_EXPERIMENTAL_NOTE = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
 
 
 def tz_fields(source: Any) -> dict[str, Any]:
@@ -201,14 +199,13 @@ class NightlyRow(BaseModel):
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "RERA-proxy events per therapy hour from flow-limitation runs "
-        f"(FL-run proxy, not device-reported). {_EXPERIMENTAL_NOTE}",
+        "(FL-run proxy, not device-reported).",
         default=None,
     )
     rera_index_reason: str | None = None
     rdi: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Night AHI plus the query-time experimental RERA-proxy index. "
-        f"{_EXPERIMENTAL_NOTE}",
+        "Night AHI plus the query-time experimental RERA-proxy index.",
         default=None,
     )
     rdi_reason: str | None = None
@@ -281,15 +278,14 @@ class NightlyRow(BaseModel):
         Provenance.EXPERIMENTAL,
         "Percent of leak-valid, rule-matched classified breaths with "
         "flow_class >= 4; the confidence gate excludes fallback guesses "
-        f"(flow-limitation proxy). {_EXPERIMENTAL_NOTE}",
+        "(flow-limitation proxy).",
         default=None,
     )
     fl_class_ge4_pct_reason: str | None = None
     rera_proxy_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
-        "ending in a recovery breath, over stored breath rows. "
-        f"{_EXPERIMENTAL_NOTE}",
+        "ending in a recovery breath, over stored breath rows.",
         default=None,
     )
     rera_proxy_reason: str | None = None
@@ -818,7 +814,7 @@ class EpochStats(BaseModel):
     flow_class_distribution: dict[str, int] = provenance_field(
         Provenance.EXPERIMENTAL,
         "Rule-matched FL classifications only; the class>=4 fraction "
-        f"reconciles with nightly fl_class_ge4_pct. {_EXPERIMENTAL_NOTE}",
+        "reconciles with nightly fl_class_ge4_pct.",
         default_factory=dict,
     )
     flow_class_distribution_fallback: dict[str, int] = provenance_field(
@@ -826,7 +822,7 @@ class EpochStats(BaseModel):
         "Low-confidence fallback flatness-triage guesses (confidence at the "
         "default), reported separately from flow_class_distribution so they "
         "don't inflate FL rates. Missing or below-default confidence values "
-        f"are excluded from both distributions. {_EXPERIMENTAL_NOTE}",
+        "are excluded from both distributions.",
         default_factory=dict,
     )
     tidal_volume_ml: EpochDistribution = provenance_field(
@@ -838,7 +834,7 @@ class EpochStats(BaseModel):
     rera_proxy_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
-        f"ending in a recovery breath. {_EXPERIMENTAL_NOTE}",
+        "ending in a recovery breath.",
         default=None,
     )
     rera_reason: str | None = None

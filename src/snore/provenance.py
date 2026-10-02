@@ -14,21 +14,25 @@ One exception: a sum of device-scored event counts (across sessions, days, or
 a validation run) stays device, since it adds no SNORE judgement.  Rates,
 means, percentiles and recounts of those events are derived.
 
-The declared tier is the preferred source.  Some fields are recomputed from
-the waveform when it is present and fall back to the device's own summary
-value otherwise (e.g. ResMed pressure/EPAP/leak percentiles); they are tagged
-with the recomputed tier and their description says so.
+A field with a preferred source and a fallback is tagged with the preferred
+source's tier, and its description names the fallback.  This runs in both
+directions: pressure/EPAP/leak percentiles are recomputed from the waveform
+when present (Derived) and fall back to the device's summary value;
+``respiratory_rate_mean/max`` and tidal volume / minute ventilation mean/max
+prefer the device STR value (Device) and fall back to the OSCAR session
+summary.
 
 Response fields declare their tier with :func:`provenance_field`, which both
 prefixes the description (visible to LLMs and in generated TS JSDoc) and adds a
 machine-readable ``x-provenance`` JSON-schema key (``docs://schemas``, OpenAPI).
-Presentation layers read a field's tier back with :func:`field_provenance`, and
+Presentation layers read a field's tier back with :func:`field_provenance` (and
+the untagged description with :func:`field_description`), and
 :func:`response_provenance` lists a whole response model's non-device paths.
 """
 
 from enum import StrEnum
 from functools import cache
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -40,11 +44,6 @@ class Provenance(StrEnum):
     DERIVED = "derived"
     EXPERIMENTAL = "experimental"
 
-    @classmethod
-    def weakest(cls, *tiers: "Provenance") -> "Provenance":
-        """The least certain of ``tiers`` (what an aggregate of them inherits)."""
-        return max(tiers, key=list(cls).index)
-
 
 PROVENANCE_NOTES: dict[Provenance, str] = {
     Provenance.DEVICE: (
@@ -52,10 +51,28 @@ PROVENANCE_NOTES: dict[Provenance, str] = {
     ),
     Provenance.DERIVED: "Computed by SNORE from device data.",
     Provenance.EXPERIMENTAL: (
-        "SNORE's own heuristic analysis. Experimental trend instrument; not "
-        "validated against device-scored events; not clinically validated."
+        "SNORE's own heuristic; an experimental trend instrument, not clinically "
+        "validated."
     ),
 }
+
+
+class ProvenanceBlock(TypedDict):
+    """Per-response ``provenance`` block (see :func:`response_provenance`)."""
+
+    experimental: NotRequired[list[str]]
+    derived: NotRequired[list[str]]
+    source_dependent: NotRequired[dict[str, str]]
+
+
+def description_prefix(provenance: Provenance) -> str:
+    """The ``[TIER] `` prefix :func:`provenance_field` puts on descriptions."""
+    return f"[{provenance.value.upper()}] "
+
+
+def _weakest(*tiers: Provenance) -> Provenance:
+    """The least certain of ``tiers`` (what an aggregate of them inherits)."""
+    return max(tiers, key=list(Provenance).index)
 
 
 def provenance_field(
@@ -75,7 +92,7 @@ def provenance_field(
     if source_field is not None:
         extra["x-provenance-source"] = source_field
     return Field(
-        description=f"[{provenance.value.upper()}] {description}",
+        description=f"{description_prefix(provenance)}{description}",
         json_schema_extra=extra,  # type: ignore[arg-type]
         **kwargs,
     )
@@ -89,7 +106,15 @@ def field_provenance(model: type[BaseModel], name: str) -> Provenance:
     return Provenance(str(extra["x-provenance"]))
 
 
-def response_provenance(model: type[BaseModel]) -> dict[str, Any]:
+def field_description(model: type[BaseModel], name: str) -> str:
+    """Description of ``model.name`` without its ``[TIER] `` prefix."""
+    description = model.model_fields[name].description or ""
+    for tier in Provenance:
+        description = description.removeprefix(description_prefix(tier))
+    return description
+
+
+def response_provenance(model: type[BaseModel]) -> ProvenanceBlock:
     """Dotted paths of a response model's non-device fields, by tier.
 
     Shape: ``{"experimental": [...], "derived": [...], "source_dependent":
@@ -97,14 +122,17 @@ def response_provenance(model: type[BaseModel]) -> dict[str, Any]:
     marks dict values, and empty keys are omitted.  A field nested in a tagged
     parent takes the weaker of the two tiers.  ``source_dependent`` lists
     fields whose tier is set per value by a sibling field (e.g. ``mv_source``).
-    Returns a fresh dict on every call; the schema walk itself is cached.
+    A model that references itself is walked only once per path: tagged fields
+    below the recursion point are not listed (no MCP response model is
+    recursive today).  Returns a fresh dict on every call; the schema walk
+    itself is cached.
     """
     experimental, derived, source_dependent = _provenance_paths(model)
-    block: dict[str, Any] = {}
+    block: ProvenanceBlock = {}
     if experimental:
-        block[Provenance.EXPERIMENTAL.value] = list(experimental)
+        block["experimental"] = list(experimental)
     if derived:
-        block[Provenance.DERIVED.value] = list(derived)
+        block["derived"] = list(derived)
     if source_dependent:
         block["source_dependent"] = dict(source_dependent)
     return block
@@ -113,6 +141,7 @@ def response_provenance(model: type[BaseModel]) -> dict[str, Any]:
 _Object = tuple[dict[str, Any], str, frozenset[str]]
 
 
+# Keyed on response model classes, a static, bounded set, so the cache cannot grow.
 @cache
 def _provenance_paths(
     model: type[BaseModel],
@@ -143,7 +172,7 @@ def _provenance_paths(
         node: dict[str, Any], path: str, inherited: Provenance, seen: frozenset[str]
     ) -> None:
         own = node.get("x-provenance")
-        tier = Provenance.weakest(inherited, Provenance(own or inherited))
+        tier = _weakest(inherited, Provenance(own or inherited))
         nested = objects(node, path, seen)
         if not nested:
             if own is not None:

@@ -28,6 +28,8 @@ from snore.mcp.schemas import (
     DataOverviewResponse,
     EpochStats,
     EventContext,
+    EventRow,
+    EventsResponse,
     NightlyRow,
     NightlySummaryResponse,
 )
@@ -102,13 +104,10 @@ class TestSchemaFieldLabels:
             (EpochStats, "flow_class_distribution_fallback"),
         ],
     )
-    def test_fl_rera_proxy_field_is_experimental_with_note(
+    def test_fl_rera_proxy_field_is_experimental(
         self, model: type[BaseModel], field_name: str
     ) -> None:
-        description = _field_description(model, field_name)
-
-        assert description.startswith("[EXPERIMENTAL]")
-        assert EXPERIMENTAL_NOTE in description
+        assert _field_description(model, field_name).startswith("[EXPERIMENTAL]")
 
     @pytest.mark.parametrize(
         "field_name", ["flow_class", "trigger_type", "tidal_volume_ml", "leak_valid"]
@@ -142,6 +141,15 @@ class TestInstructions:
         assert "PROVENANCE:" in instructions
         for marker in ("[DEVICE]", "[DERIVED]", "[EXPERIMENTAL]", "`provenance`"):
             assert marker in instructions
+        for note in PROVENANCE_NOTES.values():
+            assert note in instructions
+
+    def test_instructions_explain_source_dependent_map(self) -> None:
+        instructions = " ".join(_build_instructions(get_profile("neutral")).split())
+
+        assert "`source_dependent`" in instructions
+        assert "events[].context.mv_source" in instructions
+        assert "coverage counts" in instructions
 
     def test_uars_profile_flags_rera_proxy_as_experimental(self) -> None:
         assert "experimental" in get_profile("uars").priority_hint
@@ -184,6 +192,38 @@ class TestResponseProvenanceBlock:
             in payload["provenance"]["experimental"]
         )
         assert "epochs[].device_flg.n_breaths" in payload["provenance"]["derived"]
+
+    async def test_events_response_maps_mv_fields_to_mv_source(self) -> None:
+        result = EventsResponse(
+            date="2026-01-01",
+            events=[
+                EventRow(
+                    session_id=1,
+                    session_start_wall_clock="2026-01-01T22:00:00",
+                    event_type="CA",
+                    start_time_wall_clock="2026-01-01T23:00:00",
+                    offset_seconds=3600.0,
+                    context=EventContext(
+                        mv_prior_120s_lpm=6.5, mv_source="flow_derived"
+                    ),
+                )
+            ],
+            total_events=1,
+        )
+
+        payload = await self._run(result)
+
+        source_dependent = payload["provenance"]["source_dependent"]
+        for field in (
+            "mv_prior_120s_lpm",
+            "preceding_mv_slope_lpm_per_min",
+            "stability_index",
+        ):
+            assert (
+                source_dependent[f"events[].context.{field}"]
+                == "events[].context.mv_source"
+            )
+        assert payload["events"][0]["context"]["mv_source"] == "flow_derived"
 
     async def test_device_only_response_has_no_block(self) -> None:
         payload = await self._run(DataOverviewResponse(devices=[]))

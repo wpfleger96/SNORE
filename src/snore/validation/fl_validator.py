@@ -47,6 +47,8 @@ from snore.validation.stats import mean_or_none, spearman_or_none
 logger = logging.getLogger(__name__)
 
 _FLG_WAVEFORM_TYPE = "fl"
+# Sessions comparing fewer breaths than this set ``low_sample_warning``.
+LOW_SAMPLE_BREATHS = 20
 
 
 def _auc_mwu(scores: np.ndarray, labels: np.ndarray) -> float | None:
@@ -391,7 +393,7 @@ class FlowLimitationValidator:
             has_flg_waveform=True,
             skipped_reason=None,
             n_breaths_compared=scores.n_breaths_compared,
-            low_sample_warning=scores.n_breaths_compared < 20,
+            low_sample_warning=scores.n_breaths_compared < LOW_SAMPLE_BREATHS,
             n_class_breaths_compared=scores.n_class_breaths_compared,
             spearman_flattening_r=scores.spearman_flattening_r,
             spearman_flattening_p=scores.spearman_flattening_p,

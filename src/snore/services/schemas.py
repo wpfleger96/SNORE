@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from snore.provenance import PROVENANCE_NOTES, Provenance, provenance_field
+from snore.provenance import Provenance, provenance_field
 
 __all__ = [
     "PeriodStatistics",
@@ -1025,21 +1025,20 @@ class DayDetail(DayListItem):
     fl_class_ge4_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of rule-classified breaths flagged flow-class >= 4 "
-        f"(flow-limitation proxy). {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
+        "(flow-limitation proxy).",
         default=None,
     )
     fl_class_ge4_pct_reason: str | None = None
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "RERA-proxy events per therapy hour (FL-run proxy, not device-scored). "
-        f"{PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
+        "RERA-proxy events per therapy hour (FL-run proxy, not device-scored).",
         default=None,
     )
     rera_index_reason: str | None = None
     rera_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "RERA-proxy count from flow-limitation runs ending in a recovery breath; "
-        f"distinct from device-scored `reras`. {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
+        "distinct from device-scored `reras`.",
         default=None,
     )
     rera_count_reason: str | None = None
@@ -1233,15 +1232,20 @@ class EventComparisonResult(BaseModel):
     programmatic_event_count: int = provenance_field(
         Provenance.EXPERIMENTAL, "Total programmatically-detected events"
     )
-    false_negatives: list[EventComparisonDetail] = Field(
+    false_negatives: list[EventComparisonDetail] = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Machine events missed by programmatic detection",
         default_factory=list,
-        description="Machine events missed by programmatic detection",
     )
-    false_positives_apnea: list[EventComparisonDetail] = Field(
-        default_factory=list, description="Programmatic apneas not in machine events"
+    false_positives_apnea: list[EventComparisonDetail] = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Programmatic apneas not in machine events",
+        default_factory=list,
     )
-    false_positives_hypopnea: list[EventComparisonDetail] = Field(
-        default_factory=list, description="Programmatic hypopneas not in machine events"
+    false_positives_hypopnea: list[EventComparisonDetail] = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Programmatic hypopneas not in machine events",
+        default_factory=list,
     )
 
 

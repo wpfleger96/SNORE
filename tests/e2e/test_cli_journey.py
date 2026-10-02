@@ -9,6 +9,8 @@ cause false failures while real behavioral regressions still surface.
 
 from __future__ import annotations
 
+from snore.provenance import PROVENANCE_NOTES, Provenance
+
 
 def test_import_creates_populated_database(snore, fresh_db_path, resmed_sd):
     """`snore import` on the SD fixture creates a DB with the expected entities."""
@@ -54,7 +56,7 @@ def test_session_list_and_show(snore, imported_db):
     assert "CAI†: 3.5" in show.stdout
     assert "HI†: 7.1" in show.stdout
     assert show.stdout.strip().splitlines()[-1] == (
-        "† derived (computed by SNORE from device data)"
+        f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}"
     )
     # All five real waveform channels parsed from the EDF files.
     for channel in ("epap", "flow", "leak", "pressure", "therapy_pressure"):

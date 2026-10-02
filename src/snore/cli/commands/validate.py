@@ -23,13 +23,14 @@ from snore.cli.display import (
     Column,
     console,
     err_console,
+    mark_field,
     mark_provenance,
     print_footer,
     print_header,
     print_kv,
     print_table,
 )
-from snore.provenance import Provenance, field_provenance
+from snore.provenance import Provenance
 from snore.validation.report import AggregateMetrics
 
 
@@ -117,9 +118,8 @@ async def validate(
         )
         console.print(f"Sessions Analyzed: {report.aggregate.total_sessions}")
         console.print(f"Total Machine Events: {report.aggregate.total_machine_events}")
-        programmatic = mark_provenance(
-            "Total Programmatic Events",
-            field_provenance(AggregateMetrics, "total_programmatic_events"),
+        programmatic = mark_field(
+            "Total Programmatic Events", AggregateMetrics, "total_programmatic_events"
         )
         console.print(f"{programmatic}: {report.aggregate.total_programmatic_events}")
 

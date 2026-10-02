@@ -32,6 +32,7 @@ from snore.cli.display import (
     print_table,
     print_tip,
     print_warning,
+    use_plain_legend,
 )
 from snore.cli.display.analysis import display_analysis_result
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
@@ -94,6 +95,8 @@ async def run(
     plain: bool,
 ) -> int | None:
     """Run analysis on CPAP sessions."""
+    if plain:
+        use_plain_legend()
     single_session_flags = [session_id is not None, date is not None]
     batch_flags = [date_from is not None, date_to is not None]
 
@@ -190,6 +193,8 @@ async def show(
     plain: bool,
 ) -> None:
     """Display stored analysis results."""
+    if plain:
+        use_plain_legend()
     from snore.analysis.service import AnalysisService  # noqa: PLC0415
     from snore.services.session_service import SessionService  # noqa: PLC0415
 

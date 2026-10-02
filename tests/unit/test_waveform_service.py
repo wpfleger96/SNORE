@@ -558,6 +558,46 @@ class TestCompareEvents:
         assert result.false_negatives == []
         assert result.false_positives_apnea == []
 
+    async def test_event_source_names_machine_or_programmatic(
+        self, async_db_session, async_test_device, monkeypatch
+    ):
+        """Unmatched machine events are tagged "machine"; detected ones "programmatic"."""
+        now = datetime(2025, 1, 1, 0, 0, 0)
+        session = Session(
+            device_id=async_test_device.id,
+            device_session_id="test_compare_source",
+            start_time=now,
+            end_time=now + timedelta(hours=8),
+            duration_seconds=28800,
+        )
+        async_db_session.add(session)
+        await async_db_session.flush()
+
+        m_event = _make_machine_event(start_time=100.0)
+        prog_apnea = _make_event(start_time=1000.0, event_type="CA")
+        prog_hypopnea = _make_event(
+            start_time=2000.0, confidence=0.8, flow_reduction=0.4
+        )
+        fake_result = _make_analysis_result(
+            machine_events=[m_event], apneas=[prog_apnea], hypopneas=[prog_hypopnea]
+        )
+        monkeypatch.setattr(
+            WaveformService,
+            "_load_analysis_result",
+            AsyncMock(return_value=fake_result),
+        )
+        monkeypatch.setattr(
+            "snore.analysis.utils.convert_machine_events",
+            lambda events: ([m_event], []),
+        )
+
+        service = WaveformService(async_db_session, profile_id=1)
+        result = await service.compare_events(session.id)
+
+        assert [e.source for e in result.false_negatives] == ["machine"]
+        assert [e.source for e in result.false_positives_apnea] == ["programmatic"]
+        assert [e.source for e in result.false_positives_hypopnea] == ["programmatic"]
+
     async def test_get_waveform_data_leaves_session_open_for_subsequent_queries(
         self, async_db_session, async_test_device
     ):

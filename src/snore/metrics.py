@@ -174,10 +174,6 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "oai",
     "cai",
     "hi",
-    "ahi_device",
-    "oai_device",
-    "cai_device",
-    "hi_device",
     "obstructive_apneas",
     "central_apneas",
     "hypopneas",
@@ -189,4 +185,9 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "leak_95th",
     "spo2_mean",
     "usage_hours",
+    # Appended last so pre-existing sessions.csv columns keep their positions.
+    "ahi_device",
+    "oai_device",
+    "cai_device",
+    "hi_device",
 )

@@ -15,15 +15,24 @@ import pytest
 from pydantic import BaseModel
 
 from snore.api.app import create_app
+from snore.api.schemas import WaveformDataResponse
 from snore.mcp.schemas import SCHEMA_MODEL_MAP
-from snore.provenance import Provenance, provenance_field, response_provenance
+from snore.provenance import (
+    Provenance,
+    _weakest,
+    description_prefix,
+    field_description,
+    field_provenance,
+    provenance_field,
+    response_provenance,
+)
 
 pytestmark = pytest.mark.unit
 
 _TIERS = {p.value for p in Provenance}
 _SCALAR_TYPES = {"number", "integer", "boolean"}
 
-# Numeric/boolean properties that are not metrics, by name.
+# Numeric/boolean properties that are never metrics, whatever model holds them.
 _NON_METRIC_FIELDS = {
     # Identifiers, pagination and list positions
     "id",
@@ -34,15 +43,12 @@ _NON_METRIC_FIELDS = {
     "page_size",
     "truncated",
     "breath_number",
-    "total_events",
-    "total_nights",
-    "total_changes",
-    "total_epochs",
     "best_index",
     "worst_index",
     # Time positions (seconds from session start / epoch), not durations
     "start_time",
     "end_time",
+    "timestamps",
     "timestamp_start",
     "timestamp_end",
     "start_offset_s",
@@ -60,37 +66,6 @@ _NON_METRIC_FIELDS = {
     "window_end_offset_s",
     "anchor_event_offset",
     "bin_minutes",
-    # Bookkeeping counts of rows/days, not therapy events
-    "session_count",
-    "event_count",
-    "waveform_count",
-    "days_count",
-    "days_in_period",
-    "total_sessions",
-    # Validation-run session/night/sample bookkeeping
-    "sessions_compared",
-    "sessions_with_data",
-    "sessions_with_machine_re",
-    "sessions_skipped_error",
-    "sessions_skipped_no_analysis",
-    "sessions_skipped_no_flg",
-    "sessions_skipped_no_machine_re",
-    "sessions_skipped_no_valid_breaths",
-    "n_analysis_not_run",
-    "n_analysis_stale",
-    "n_device_ambiguous",
-    "n_skipped_no_apple_bd",
-    "n_with_apple_bd",
-    "n_breaths_compared",
-    "n_class_breaths_compared",
-    "n_nights",
-    "n_pairs",
-    "n_paired_nights",
-    "nights_with_data",
-    "nights_missing_analysis",
-    "analysis_session_count",
-    "match_tolerance_seconds",  # configured matching window, echoed back
-    "threshold_hours",  # configured compliance threshold, echoed back
     # Data-availability flags
     "has_analysis",
     "has_events",
@@ -113,7 +88,65 @@ _NON_METRIC_FIELDS = {
     # User toggle: session included in stats
     "enabled",
 }
-_NON_METRIC_SUFFIXES = ("_id",)  # identifiers
+_NON_METRIC_SUFFIXES = ("_id", "_ids")  # identifiers
+
+# Count-like names that are bookkeeping in these models only.  Keyed per model
+# because the same name can be a metric elsewhere (a count of SNORE-segmented
+# breaths is experimental; a count of rows in a page is not).
+_NON_METRIC_MODEL_FIELDS = {
+    # Pagination / page-size totals
+    ("EventsResponse", "total_events"),
+    ("NightlySummaryResponse", "total_nights"),
+    ("SettingsChangesResponse", "total_changes"),
+    ("SettingsTimelineResponse", "total_epochs"),
+    # Coverage counts of rows/days/sessions, not therapy events
+    ("AnalysisJobEnqueued", "session_count"),
+    ("DayDetail", "session_count"),
+    ("DayListItem", "session_count"),
+    ("DeviceInfo", "session_count"),
+    ("DeviceUsageSummary", "session_count"),
+    ("NightlyRow", "session_count"),
+    ("DataOverviewResponse", "analysis_session_count"),
+    ("DataOverviewResponse", "total_sessions"),
+    ("SessionDetail", "event_count"),
+    ("SessionDetail", "waveform_count"),
+    ("MaskEpochResponse", "days_count"),
+    ("RxPeriodResponse", "days_count"),
+    ("PeriodStatistics", "days_in_period"),
+    ("EpochDistribution", "n_nights"),
+    ("EpochStats", "nights_with_data"),
+    ("EpochStats", "nights_missing_analysis"),
+    # Validation-run session/night/sample coverage
+    ("AggregateMetrics", "total_sessions"),
+    ("AggregateMetrics", "low_sensitivity_sessions"),  # session ids
+    ("BreathTrendsAggregateMetrics", "total_sessions"),
+    ("BreathTrendsAggregateMetrics", "sessions_compared"),
+    ("BreathTrendsAggregateMetrics", "sessions_skipped_no_analysis"),
+    ("BreathTrendsAggregateMetrics", "sessions_skipped_no_valid_breaths"),
+    ("FlAggregateMetrics", "total_sessions"),
+    ("FlAggregateMetrics", "sessions_compared"),
+    ("FlAggregateMetrics", "sessions_skipped_no_analysis"),
+    ("FlAggregateMetrics", "sessions_skipped_no_flg"),
+    ("FlAggregateMetrics", "sessions_skipped_no_valid_breaths"),
+    ("ReraAggregateMetrics", "total_sessions"),
+    ("ReraAggregateMetrics", "sessions_with_machine_re"),
+    ("ReraAggregateMetrics", "sessions_skipped_error"),
+    ("ReraAggregateMetrics", "sessions_skipped_no_analysis"),
+    ("ReraAggregateMetrics", "sessions_skipped_no_machine_re"),
+    ("ReraAggregateMetrics", "sessions_skipped_no_valid_breaths"),
+    ("ChannelAggregateMetrics", "sessions_with_data"),
+    ("AppleCrossAggregate", "total_nights"),
+    ("AppleCrossAggregate", "n_analysis_not_run"),
+    ("AppleCrossAggregate", "n_analysis_stale"),
+    ("AppleCrossAggregate", "n_device_ambiguous"),
+    ("AppleCrossAggregate", "n_skipped_no_apple_bd"),
+    ("AppleCrossAggregate", "n_with_apple_bd"),
+    ("ChannelComparison", "n_pairs"),
+    ("PairCorrelation", "n_paired_nights"),
+    # Configured parameters echoed back
+    ("ReraAggregateMetrics", "match_tolerance_seconds"),
+    ("ComplianceFields", "threshold_hours"),
+}
 
 # Operational responses (auth, admin, jobs, imports, DB maintenance) whose
 # numbers describe the system, not therapy data.
@@ -172,8 +205,9 @@ _UNTYPED_METRIC_ROUTES = {
 
 _FIX_HINT = (
     "Wrap each metric in provenance_field(Provenance.X, ...); if a field is "
-    "bookkeeping (ids, positions, row counts), add it to _NON_METRIC_FIELDS with "
-    'a comment. See AGENTS.md "Provenance tagging".'
+    "bookkeeping (ids, positions), add it to _NON_METRIC_FIELDS; a coverage "
+    "count goes in _NON_METRIC_MODEL_FIELDS keyed by model, with a comment. "
+    'See AGENTS.md "Provenance tagging".'
 )
 
 
@@ -253,14 +287,22 @@ def _untyped_routes() -> set[str]:
 
 
 def _is_scalar_metric(prop: dict[str, Any]) -> bool:
+    """Numeric/boolean values, or lists of them (e.g. waveform sample arrays)."""
     variants = prop.get("anyOf", [prop])
-    return any(v.get("type") in _SCALAR_TYPES for v in variants)
+    return any(
+        v.get("type") in _SCALAR_TYPES
+        or (
+            v.get("type") == "array" and v.get("items", {}).get("type") in _SCALAR_TYPES
+        )
+        for v in variants
+    )
 
 
 def _is_exempt(model: str, field: str) -> bool:
     return (
         model in _OPERATIONAL_MODELS
         or field in _NON_METRIC_FIELDS
+        or (model, field) in _NON_METRIC_MODEL_FIELDS
         or field.endswith(_NON_METRIC_SUFFIXES)
     )
 
@@ -330,7 +372,7 @@ def test_tagged_descriptions_start_with_matching_tier_prefix() -> None:
             for surface, model, field, prop in _object_properties()
             if "x-provenance" in prop
             and not prop.get("description", "").startswith(
-                f"[{prop['x-provenance'].upper()}]"
+                description_prefix(Provenance(prop["x-provenance"]))
             )
         }
     )
@@ -361,10 +403,18 @@ def test_response_provenance_returns_independent_copies() -> None:
 
 
 def test_weakest_picks_least_certain_tier() -> None:
-    assert (
-        Provenance.weakest(Provenance.DEVICE, Provenance.EXPERIMENTAL)
-        == Provenance.EXPERIMENTAL
+    assert _weakest(Provenance.DEVICE, Provenance.EXPERIMENTAL) == (
+        Provenance.EXPERIMENTAL
     )
-    assert Provenance.weakest(Provenance.DERIVED, Provenance.DEVICE) == (
-        Provenance.DERIVED
+    assert _weakest(Provenance.DERIVED, Provenance.DEVICE) == Provenance.DERIVED
+
+
+def test_field_description_strips_tier_prefix() -> None:
+    assert _Leaf.model_fields["value"].description == (
+        f"{description_prefix(Provenance.DERIVED)}Value."
     )
+    assert field_description(_Leaf, "value") == "Value."
+
+
+def test_rest_waveform_values_are_tagged_device() -> None:
+    assert field_provenance(WaveformDataResponse, "values") == Provenance.DEVICE

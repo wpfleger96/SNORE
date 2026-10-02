@@ -95,7 +95,9 @@ class PaginatedResponse[T](BaseModel):
 
 class WaveformDataResponse(BaseModel):
     timestamps: list[float]
-    values: list[float]
+    values: list[float] = provenance_field(
+        Provenance.DEVICE, "Waveform samples (possibly LTTB-downsampled)"
+    )
     sample_rate: float = provenance_field(Provenance.DEVICE, "Sample rate (Hz)")
     unit: str
     total_samples: int

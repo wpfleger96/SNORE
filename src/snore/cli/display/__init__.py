@@ -7,10 +7,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import NamedTuple
 
+from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.markup import escape
 
-from snore.provenance import Provenance
+from snore.provenance import PROVENANCE_NOTES, Provenance, field_provenance
 
 console = Console()
 err_console = Console(stderr=True)
@@ -37,39 +38,86 @@ _PROVENANCE_MARKERS: dict[Provenance, str] = {
     Provenance.DERIVED: "†",
     Provenance.DEVICE: "",
 }
-_PROVENANCE_LEGEND: dict[Provenance, str] = {
-    Provenance.EXPERIMENTAL: "* experimental (SNORE heuristic)",
-    Provenance.DERIVED: "† derived (computed by SNORE from device data)",
-}
+# Legend order: least to most uncertain.
+_LEGEND_TIERS = (Provenance.DERIVED, Provenance.EXPERIMENTAL)
 
-# Tiers marked during the current command; None outside provenance_legend().
-_used_provenance: ContextVar[set[Provenance] | None] = ContextVar(
-    "_used_provenance", default=None
+
+class _LegendState(BaseModel):
+    """Per-command legend state, mutated in place.
+
+    Mutation (not ``ContextVar.set``) is what lets writes made inside the
+    command's ``asyncio.run`` task, which runs in a copied context, reach the
+    outer ``provenance_legend()`` block.
+    """
+
+    used: set[Provenance] = Field(default_factory=set)
+    plain: bool = False
+
+
+# State of the current command; None outside provenance_legend().
+_legend_state: ContextVar[_LegendState | None] = ContextVar(
+    "_legend_state", default=None
 )
 
 
 def mark_provenance(label: str, provenance: Provenance | None) -> str:
-    """Append the tier's marker to ``label`` and record it for the legend."""
+    """Append the tier's marker to ``label`` and record it for the legend.
+
+    The legend itself is printed only for commands wrapped in
+    ``profile_scoped_command`` (which opens ``provenance_legend()``); elsewhere
+    the marker is still appended but no legend line follows.
+    """
     if provenance is None or provenance is Provenance.DEVICE:
         return label
-    used = _used_provenance.get()
-    if used is not None:
-        used.add(provenance)
+    state = _legend_state.get()
+    if state is not None:
+        state.used.add(provenance)
     return f"{label}{_PROVENANCE_MARKERS[provenance]}"
+
+
+def mark_field(label: str, model: type[BaseModel], field: str) -> str:
+    """``mark_provenance`` with the tier read from ``model.field``'s tag.
+
+    As with ``mark_provenance``, the legend is printed only for commands
+    wrapped in ``profile_scoped_command``.
+    """
+    return mark_provenance(label, field_provenance(model, field))
+
+
+def use_plain_legend() -> None:
+    """Render the current command's provenance legend without styling."""
+    state = _legend_state.get()
+    if state is not None:
+        state.plain = True
 
 
 @contextmanager
 def provenance_legend() -> Iterator[None]:
-    """Collect markers emitted inside the block; print their legend on clean exit."""
-    used: set[Provenance] = set()
-    token = _used_provenance.set(used)
+    """Collect markers emitted inside the block; print their legend on exit.
+
+    The legend is printed even when the block raises (e.g. a
+    ``click.ClickException`` after partial output), then the exception
+    propagates.
+    """
+    state = _LegendState()
+    token = _legend_state.set(state)
     try:
         yield
     finally:
-        _used_provenance.reset(token)
-    parts = [text for tier, text in _PROVENANCE_LEGEND.items() if tier in used]
-    if parts:
-        console.print(f"[dim]{'  '.join(parts)}[/dim]", highlight=False)
+        _legend_state.reset(token)
+        parts = [
+            f"{_PROVENANCE_MARKERS[tier]} {tier.value}: {PROVENANCE_NOTES[tier]}"
+            for tier in _LEGEND_TIERS
+            if tier in state.used
+        ]
+        if parts:
+            console.print(
+                "  ".join(parts),
+                style=None if state.plain else "dim",
+                markup=False,
+                highlight=False,
+                soft_wrap=True,
+            )
 
 
 def fmt_sig(v: float | None, *, na: str = "N/A") -> str:

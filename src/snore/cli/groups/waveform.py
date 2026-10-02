@@ -19,11 +19,10 @@ from snore.cli.decorators import (
 from snore.cli.display import (
     Column,
     console,
-    mark_provenance,
+    mark_field,
     print_table,
     print_warning,
 )
-from snore.provenance import Provenance, field_provenance
 from snore.services.schemas import EventComparisonResult
 from snore.waveform import format_time_offset
 from snore.waveform.inspector import parse_time_offset
@@ -369,9 +368,8 @@ async def compare_events(
     except NotFoundError as e:
         raise click.ClickException(str(e)) from e
 
-    programmatic = mark_provenance(
-        "Programmatic",
-        field_provenance(EventComparisonResult, "programmatic_event_count"),
+    programmatic = mark_field(
+        "Programmatic", EventComparisonResult, "programmatic_event_count"
     )
     console.print(f"Session {resolved_id} - Event Comparison ({mode} mode)")
     console.print(
@@ -381,7 +379,7 @@ async def compare_events(
 
     if not show_unmatched or len(comparison.false_negatives) > 0:
         console.print(
-            f"{mark_provenance('FALSE NEGATIVES', Provenance.EXPERIMENTAL)} (machine events missed by programmatic): {len(comparison.false_negatives)}"
+            f"{mark_field('FALSE NEGATIVES', EventComparisonResult, 'false_negatives')} (machine events missed by programmatic): {len(comparison.false_negatives)}"
         )
         for event in comparison.false_negatives:
             time_str = format_time_offset(event.start_time)
@@ -400,7 +398,7 @@ async def compare_events(
         > 0
     ):
         console.print(
-            f"{mark_provenance('FALSE POSITIVES', Provenance.EXPERIMENTAL)} (programmatic events not in machine): {len(comparison.false_positives_apnea) + len(comparison.false_positives_hypopnea)}"
+            f"{mark_field('FALSE POSITIVES', EventComparisonResult, 'false_positives_apnea')} (programmatic events not in machine): {len(comparison.false_positives_apnea) + len(comparison.false_positives_hypopnea)}"
         )
 
         for event in comparison.false_positives_apnea:

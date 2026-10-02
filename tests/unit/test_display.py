@@ -12,6 +12,7 @@ from snore.cli.display import (
     SEP_WIDE,
     Column,
     _indent_prefix,
+    mark_field,
     mark_provenance,
     print_dry_run_complete,
     print_dry_run_header,
@@ -22,8 +23,15 @@ from snore.cli.display import (
     print_table,
     print_warning,
     provenance_legend,
+    use_plain_legend,
 )
-from snore.provenance import Provenance
+from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.services.schemas import SessionStatistics
+
+
+def _legend_part(tier: Provenance) -> str:
+    marker = {Provenance.DERIVED: "†", Provenance.EXPERIMENTAL: "*"}[tier]
+    return f"{marker} {tier.value}: {PROVENANCE_NOTES[tier]}"
 
 
 @pytest.fixture()
@@ -124,6 +132,9 @@ class TestProvenance:
         header = capture_stdout.getvalue().splitlines()[0]
         assert header.split() == ["Day", "AHI†", "FLI"]
 
+    def test_mark_field_reads_tier_from_model_tag(self):
+        assert mark_field("AHI", SessionStatistics, "ahi") == "AHI†"
+
     def test_legend_lists_only_used_markers_once(self, capture_stdout):
         with provenance_legend():
             print_kv("A", "1", provenance=Provenance.DERIVED)
@@ -132,27 +143,44 @@ class TestProvenance:
         output = capture_stdout.getvalue()
         assert output.count("† derived") == 1
         assert "* experimental" not in output
-        assert (
-            "† derived (computed by SNORE from device data)" in output.splitlines()[-1]
-        )
+        assert _legend_part(Provenance.DERIVED) in output.splitlines()[-1]
 
-    def test_legend_lists_experimental_before_derived(self, capture_stdout):
+    def test_legend_lists_derived_before_experimental(self, capture_stdout):
         with provenance_legend():
-            mark_provenance("x", Provenance.DERIVED)
             mark_provenance("y", Provenance.EXPERIMENTAL)
-        legend = capture_stdout.getvalue().strip()
-        assert legend.index("* experimental") < legend.index("† derived")
+            mark_provenance("x", Provenance.DERIVED)
+        expected = (
+            f"{_legend_part(Provenance.DERIVED)}  "
+            f"{_legend_part(Provenance.EXPERIMENTAL)}"
+        )
+        assert expected in capture_stdout.getvalue().splitlines()[-1]
 
     def test_legend_without_markers_prints_nothing(self, capture_stdout):
         with provenance_legend():
             print_kv("OA", "3", provenance=Provenance.DEVICE)
         assert "derived" not in capture_stdout.getvalue()
 
-    def test_legend_skipped_when_block_raises(self, capture_stdout):
-        with pytest.raises(RuntimeError), provenance_legend():
+    def test_legend_printed_when_block_raises_after_markers(self, capture_stdout):
+        with pytest.raises(SystemExit), provenance_legend():
             mark_provenance("x", Provenance.EXPERIMENTAL)
+            raise SystemExit(1)
+        assert _legend_part(Provenance.EXPERIMENTAL) in capture_stdout.getvalue()
+
+    def test_legend_skipped_when_block_raises_before_markers(self, capture_stdout):
+        with pytest.raises(RuntimeError), provenance_legend():
             raise RuntimeError
         assert capture_stdout.getvalue() == ""
+
+    def test_legend_is_dim_by_default(self, capture_stdout):
+        with provenance_legend():
+            mark_provenance("x", Provenance.DERIVED)
+        assert "\x1b[2m" in capture_stdout.getvalue()
+
+    def test_plain_legend_has_no_styling(self, capture_stdout):
+        with provenance_legend():
+            use_plain_legend()
+            mark_provenance("x", Provenance.DERIVED)
+        assert capture_stdout.getvalue() == f"{_legend_part(Provenance.DERIVED)}\n"
 
     def test_markers_do_not_leak_into_next_legend(self, capture_stdout):
         with provenance_legend():
@@ -160,7 +188,7 @@ class TestProvenance:
         mark_provenance("outside", Provenance.DERIVED)
         with provenance_legend():
             pass
-        assert capture_stdout.getvalue().count("experimental") == 1
+        assert capture_stdout.getvalue().count("* experimental") == 1
         assert "derived" not in capture_stdout.getvalue()
 
 

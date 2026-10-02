@@ -8,7 +8,7 @@ from snore.cli.decorators import CliCtx, profile_scoped_command
 from snore.cli.display import (
     Column,
     console,
-    mark_provenance,
+    mark_field,
     print_footer,
     print_header,
     print_kv,
@@ -18,11 +18,6 @@ from snore.cli.display import (
 from snore.cli.display.settings import format_setting_key, format_setting_value
 from snore.provenance import field_provenance
 from snore.services.schemas import RxPeriodResponse
-
-
-def _outcome(label: str, field: str) -> str:
-    """Mark a period-outcome label; settings stay unmarked (device values)."""
-    return mark_provenance(label, field_provenance(RxPeriodResponse, field))
 
 
 def _format_change_value(key: str, val: str | None) -> str:
@@ -103,13 +98,15 @@ async def rx_history(ctx: CliCtx) -> None:
         console.print("  " + " | ".join(summary_parts))
 
         ahi_val = f"{period.avg_ahi:.1f}" if period.avg_ahi is not None else "N/A"
-        parts = [f"  {_outcome('Avg AHI', 'avg_ahi')}: {ahi_val}"]
+        parts = [f"  {mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {ahi_val}"]
         if period.avg_hours is not None:
             parts.append(
-                f"{_outcome('Avg Hours', 'avg_hours')}: {period.avg_hours:.1f}"
+                f"{mark_field('Avg Hours', RxPeriodResponse, 'avg_hours')}: {period.avg_hours:.1f}"
             )
         if period.avg_leak is not None:
-            parts.append(f"{_outcome('Avg Leak', 'avg_leak')}: {period.avg_leak:.1f}")
+            parts.append(
+                f"{mark_field('Avg Leak', RxPeriodResponse, 'avg_leak')}: {period.avg_leak:.1f}"
+            )
         console.print(" | ".join(parts))
 
     console.print()
@@ -236,7 +233,7 @@ async def rx_compare(ctx: CliCtx, min_days: int) -> None:
 
     print_header("RX Period Comparison", wide=True)
     console.print(
-        f"{'Dates':<25} {'Days':<6} {_outcome('Avg AHI', 'avg_ahi'):<10} {_outcome('Avg Leak', 'avg_leak'):<10} {'Mode':<8} {'Pressure':<15} {'EPR':<10}"
+        f"{'Dates':<25} {'Days':<6} {mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi'):<10} {mark_field('Avg Leak', RxPeriodResponse, 'avg_leak'):<10} {'Mode':<8} {'Pressure':<15} {'EPR':<10}"
     )
     print_footer(wide=True)
 
@@ -277,7 +274,7 @@ async def rx_compare(ctx: CliCtx, min_days: int) -> None:
 
     if best:
         console.print(
-            f"\nBest Period ({_outcome('Avg AHI', 'avg_ahi')}: {best.avg_ahi:.1f}):"
+            f"\nBest Period ({mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {best.avg_ahi:.1f}):"
         )
         console.print(
             f"  {best.start_date.strftime('%Y-%m-%d')} to {best.end_date.strftime('%Y-%m-%d')} ({best.days_count} days)"
@@ -286,7 +283,7 @@ async def rx_compare(ctx: CliCtx, min_days: int) -> None:
 
     if worst:
         console.print(
-            f"\nWorst Period ({_outcome('Avg AHI', 'avg_ahi')}: {worst.avg_ahi:.1f}):"
+            f"\nWorst Period ({mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {worst.avg_ahi:.1f}):"
         )
         console.print(
             f"  {worst.start_date.strftime('%Y-%m-%d')} to {worst.end_date.strftime('%Y-%m-%d')} ({worst.days_count} days)"

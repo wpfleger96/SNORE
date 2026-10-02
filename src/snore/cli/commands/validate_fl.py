@@ -47,6 +47,7 @@ async def validate_fl(
         export_fl_report_csv,
         export_fl_report_json,
     )
+    from snore.validation.fl_validator import LOW_SAMPLE_BREATHS  # noqa: PLC0415
 
     async with cli_error_boundary("FL validation error"):
         validator = FlowLimitationValidator(ctx.db, ctx.profile_id)
@@ -146,6 +147,9 @@ async def validate_fl(
 
             if len(compared_sessions) > 10:
                 console.print(f"... and {len(compared_sessions) - 10} more sessions")
+
+            if any(s.low_sample_warning for s in compared_sessions[:10]):
+                console.print(f"! fewer than {LOW_SAMPLE_BREATHS} breaths compared")
 
         if skipped_sessions:
             console.print(f"\nSkipped sessions: {len(skipped_sessions)}")

@@ -17,6 +17,7 @@ from snore.cli.display.analysis import (
     create_validation_table,
     format_event_list,
 )
+from snore.provenance import PROVENANCE_NOTES, Provenance
 from snore.services.schemas import EventValidationResult
 
 
@@ -235,6 +236,6 @@ class TestAnalysisProvenanceLegend:
         assert "AHI†" in machine
         assert "Validation: aasm*" in validation
         assert legend_buf.getvalue().strip() == (
-            "* experimental (SNORE heuristic)  "
-            "† derived (computed by SNORE from device data)"
+            f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
+            f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
         )
