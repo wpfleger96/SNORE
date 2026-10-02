@@ -8,6 +8,7 @@ Covers:
 - Adjacent non-overlapping (a.end == b.start) → both kept
 - Force re-import of same device_session_id does not false-trigger the guard
 - Replaced row on a different day → extra_day_ids contains its day_id
+- Replacement inherits the disabled state when every replaced row was disabled
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ async def _seed_session(
     start: datetime,
     end: datetime,
     import_source: str = "resmed_edf",
+    enabled: bool = True,
 ) -> models.Session:
     """Insert a bare Session row linked to the correct Day."""
     day_date = DayManager.get_day_for_session(start)
@@ -80,6 +82,7 @@ async def _seed_session(
         duration_seconds=(end - start).total_seconds(),
         day_id=day.id,
         import_source=import_source,
+        enabled=enabled,
     )
     db.add(session)
     await db.flush()
@@ -655,6 +658,112 @@ class TestOldFormatPurge:
         # Incoming was not inserted.
         assert not await _session_exists(async_db_session, "20260121_223000_merged")
         assert "Overlap guard: skipping" in caplog.text
+
+
+async def _import_and_get(
+    db: AsyncSession, importer: SessionImporter, incoming: UnifiedSession
+) -> tuple[models.Session, models.Day]:
+    """Batch-import ``incoming`` (re-aggregating days) and return its row + Day."""
+    full_importer = SessionImporter(profile_id=importer.profile_id)
+    imported, skipped, failed, _ = await full_importer.import_sessions_batch(
+        [incoming], db=db
+    )
+    assert (imported, skipped, failed) == (1, 0, 0)
+    row = (
+        await db.execute(
+            select(models.Session).where(
+                models.Session.device_session_id == incoming.device_session_id
+            )
+        )
+    ).scalar_one()
+    day = await db.get(models.Day, row.day_id)
+    assert day is not None
+    await db.refresh(day)
+    return row, day
+
+
+class TestReplacementKeepsDisabledState:
+    """A replacement must not silently re-enable time the user disabled (#369)."""
+
+    async def test_all_covered_rows_disabled_replacement_disabled(
+        self, async_db_session, importer, device
+    ):
+        await _seed_session(
+            async_db_session,
+            device,
+            "20260106_010000",
+            _dt(6, 1),
+            _dt(6, 4),
+            enabled=False,
+        )
+        await _seed_session(
+            async_db_session,
+            device,
+            "20260106_040000",
+            _dt(6, 4),
+            _dt(6, 8),
+            enabled=False,
+        )
+        await async_db_session.flush()
+
+        incoming = _make_unified(_SERIAL, "20260106_merged", _dt(6, 1), _dt(6, 8))
+        row, day = await _import_and_get(async_db_session, importer, incoming)
+
+        assert row.enabled is False
+        assert await _count_sessions(async_db_session, device.id) == 1
+        assert day.session_count == 0
+        assert day.total_therapy_hours == 0
+
+    async def test_old_format_row_disabled_replacement_disabled(
+        self, async_db_session, importer, device
+    ):
+        await _seed_session(
+            async_db_session,
+            device,
+            "20260130_merged",
+            _dt(29, 22),
+            _dt(30, 7),
+            enabled=False,
+        )
+        await async_db_session.flush()
+
+        incoming = _make_unified(
+            _SERIAL, "20260129_223000_merged", _dt(29, 22, 30), _dt(30, 6, 30)
+        )
+        row, day = await _import_and_get(async_db_session, importer, incoming)
+
+        assert row.enabled is False
+        assert not await _session_exists(async_db_session, "20260130_merged")
+        assert day.session_count == 0
+
+    async def test_mixed_replaced_rows_replacement_enabled_with_warning(
+        self, async_db_session, importer, device, caplog
+    ):
+        await _seed_session(
+            async_db_session,
+            device,
+            "20260106_010000",
+            _dt(6, 1),
+            _dt(6, 4),
+            enabled=False,
+        )
+        await _seed_session(
+            async_db_session, device, "20260106_040000", _dt(6, 4), _dt(6, 8)
+        )
+        await async_db_session.flush()
+
+        incoming = _make_unified(_SERIAL, "20260106_merged", _dt(6, 1), _dt(6, 8))
+        with caplog.at_level(logging.WARNING, logger="snore.database.importers"):
+            row, day = await _import_and_get(async_db_session, importer, incoming)
+
+        assert row.enabled is True
+        assert day.session_count == 1
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any(
+            "20260106_010000" in r.getMessage()
+            and "20260106_040000" not in r.getMessage()
+            for r in warnings
+        )
 
 
 class TestBatchSessionIdPruning:
