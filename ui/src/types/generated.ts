@@ -3271,7 +3271,7 @@ export interface components {
             therapy_modes: string[]
             /**
              * Total Therapy Hours
-             * @description [DERIVED] Total therapy hours
+             * @description [DERIVED] Total therapy hours from enabled sessions, summed over the device's days (mask-on time, falling back to session span)
              */
             total_therapy_hours: number
         }
