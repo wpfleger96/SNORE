@@ -1,4 +1,4 @@
-import type { Provenance } from '@/types/provenance.generated'
+import type { Provenance } from '@/utils/provenance'
 
 export interface GlossaryEntry {
     label: string

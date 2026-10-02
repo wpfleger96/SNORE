@@ -25,7 +25,7 @@ function markLabels(wrapper: ReturnType<typeof mountCard>): string[] {
 
 describe('StatCard provenance mark', () => {
     it('test_derived_field_renders_sigma_mark', () => {
-        const wrapper = mountCard({ field: 'leak_mean' })
+        const wrapper = mountCard({ field: 'SessionStatistics.leak_mean' })
 
         expect(markLabels(wrapper)).toHaveLength(1)
         expect(markLabels(wrapper)[0]).toMatch(/^Derived/)
@@ -33,14 +33,14 @@ describe('StatCard provenance mark', () => {
     })
 
     it('test_experimental_field_renders_flask_mark', () => {
-        const wrapper = mountCard({ field: 'rera_index' })
+        const wrapper = mountCard({ field: 'DayDetail.rera_index' })
 
         expect(markLabels(wrapper)[0]).toMatch(/^Experimental/)
         expect(wrapper.find('.icon-flask-stub').exists()).toBe(true)
     })
 
     it('test_device_field_renders_no_mark', () => {
-        const wrapper = mountCard({ field: 'obstructive_apneas' })
+        const wrapper = mountCard({ field: 'SessionStatistics.obstructive_apneas' })
 
         expect(markLabels(wrapper)).toEqual([])
         // Nothing to show next to the label at all without a glossary key.
@@ -52,7 +52,10 @@ describe('StatCard provenance mark', () => {
     })
 
     it('test_provenance_prop_overrides_field_lookup', () => {
-        const wrapper = mountCard({ field: 'leak_mean', provenance: 'experimental' })
+        const wrapper = mountCard({
+            field: 'SessionStatistics.leak_mean',
+            provenance: 'experimental',
+        })
 
         expect(markLabels(wrapper)).toHaveLength(1)
         expect(markLabels(wrapper)[0]).toMatch(/^Experimental/)
@@ -60,7 +63,7 @@ describe('StatCard provenance mark', () => {
 
     it('test_glossary_key_without_mark_shows_only_info_hint', () => {
         const wrapper = mountCard({
-            field: 'obstructive_apneas',
+            field: 'SessionStatistics.obstructive_apneas',
             glossaryKey: 'obstructive_apneas',
         })
 

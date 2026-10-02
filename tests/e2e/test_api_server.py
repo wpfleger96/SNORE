@@ -114,32 +114,3 @@ def test_openapi_matches_committed_generated_types(running_api, request):
                 f"openapi.json: {sorted(missing_props)}. "
                 "Regenerate ui/openapi.json and ui/src/types/generated.ts."
             )
-
-
-def test_provenance_map_matches_committed_generated_file(running_api, request):
-    """``ui/src/types/provenance.generated.ts`` must match the live schema's tags.
-
-    Rebuilds the map from the live OpenAPI spec with the same generator
-    ``just ui-generate-types`` runs, so a changed tier, a new tagged field, or a
-    new cross-schema conflict that was never regenerated fails here.  The
-    committed file is Prettier-formatted, so the comparison ignores formatting.
-    """
-    from scripts.export_provenance_ts import (  # noqa: PLC0415
-        build_provenance_map,
-        render_provenance_ts,
-        ts_fingerprint,
-    )
-
-    committed = (
-        request.config.rootpath / "ui" / "src" / "types" / "provenance.generated.ts"
-    )
-    if not committed.exists():
-        pytest.skip("ui/src/types/provenance.generated.ts not present in this checkout")
-
-    schema = running_api.get("/openapi.json").json()
-    expected = render_provenance_ts(build_provenance_map(schema))
-    assert ts_fingerprint(committed.read_text(encoding="utf-8")) == ts_fingerprint(
-        expected
-    ), (
-        "ui/src/types/provenance.generated.ts is stale; regenerate with `just ui-generate-types`"
-    )

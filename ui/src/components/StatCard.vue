@@ -28,7 +28,7 @@ import { computed } from 'vue'
 import InfoHint from '@/components/InfoHint.vue'
 import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import { nullReasonLabel } from '@/utils/formatting'
-import { provenanceFor, type Provenance } from '@/utils/provenance'
+import { provenanceFor, type Provenance, type ProvenanceKey } from '@/utils/provenance'
 
 const props = defineProps<{
     label: string
@@ -43,11 +43,10 @@ const props = defineProps<{
     // Null-with-reason code (e.g. 'analysis_not_run'); shown as a tooltip on the
     // em-dash state to explain why a value is absent for this night.
     reason?: string | null
-    // Provenance mark next to the label. `field` is a plain provenanceFor(field)
-    // lookup for an unambiguous API field; anything needing a schema, a
-    // per-value source, or glossaryProvenance() resolves the tier at the call
-    // site and passes `provenance`, which wins over `field`.
-    field?: string
+    // Provenance mark next to the label. `field` is the tagged API field the
+    // value comes from; a value needing a per-value source or glossaryProvenance()
+    // resolves the tier at the call site and passes `provenance`, which wins.
+    field?: ProvenanceKey
     provenance?: Provenance
 }>()
 

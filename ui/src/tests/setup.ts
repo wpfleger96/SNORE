@@ -11,7 +11,7 @@ if (typeof window !== 'undefined') {
 }
 
 // A provenance lookup warning means a mark silently resolved to a fallback tier
-// (missing schema, untagged field, unknown source). Fail the test that caused
+// (unknown per-value source, glossary entry without a tier). Fail the test that caused
 // it, or the first test of a file whose module-level code did. Tests that
 // assert on the warning replace console.warn with vi.spyOn and bypass this.
 const PROVENANCE_WARNING = /^\[(provenanceFor|glossaryProvenance)\]/

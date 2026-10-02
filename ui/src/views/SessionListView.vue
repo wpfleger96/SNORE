@@ -154,11 +154,7 @@
                             <!-- Tapping the mark opens its popover, not a re-sort. -->
                             <span class="contents" @click.stop>
                                 <ProvenanceMark
-                                    :provenance="
-                                        provenanceFor('duration_hours', {
-                                            schema: 'SessionListItem',
-                                        })
-                                    "
+                                    :provenance="provenanceFor('SessionListItem.duration_hours')"
                                 />
                             </span>
                             <ArrowUp v-if="sortBy === 'duration'" class="h-3 w-3 text-primary" />
@@ -166,9 +162,7 @@
                         </span>
                     </TableHead>
                     <TableHead style="width: 80px"
-                        >AHI
-                        <ProvenanceMark
-                            :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })"
+                        >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
                     /></TableHead>
                     <TableHead>Device</TableHead>
                     <TableHead style="width: 90px">Status</TableHead>

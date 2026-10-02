@@ -6,7 +6,7 @@
  * delta and identity-diff functions below are pure so they can be unit-tested. */
 import type { ValidatorType } from '@/types'
 import { formatPercent, formatPercentPointsDelta } from '@/utils/formatting'
-import { provenanceFor, type Provenance } from '@/utils/provenance'
+import { provenanceFor, type Provenance, type ProvenanceKey } from '@/utils/provenance'
 
 export const VALIDATOR_LABELS: Record<ValidatorType, string> = {
     events: 'Events',
@@ -28,20 +28,21 @@ export interface MetricDescriptor {
     glossaryKey?: string
     // Direction that counts as an improvement; omitted when neutral (counts).
     higherIsBetter?: boolean
-    // Tier of the value, resolved from the backend's tag for the path's leaf field.
+    // Tier of the value: its tagged API field's, else device (unmarked).
     provenance: Provenance
 }
 
-type MetricSpec = Omit<MetricDescriptor, 'provenance'>
+// `field` is the tagged API field the path reads, when it has one.
+type MetricSpec = Omit<MetricDescriptor, 'provenance'> & { field?: ProvenanceKey }
 
 function withProvenance(
     specs: Record<ValidatorType, MetricSpec[]>,
 ): Record<ValidatorType, MetricDescriptor[]> {
     const out = {} as Record<ValidatorType, MetricDescriptor[]>
     for (const [type, metrics] of Object.entries(specs) as [ValidatorType, MetricSpec[]][]) {
-        out[type] = metrics.map((m) => ({
+        out[type] = metrics.map(({ field, ...m }) => ({
             ...m,
-            provenance: provenanceFor(m.path.slice(m.path.lastIndexOf('.') + 1)),
+            provenance: field ? provenanceFor(field) : 'device',
         }))
     }
     return out
@@ -51,6 +52,7 @@ export const AGGREGATE_METRICS = withProvenance({
     events: [
         {
             path: 'avg_apnea_sensitivity',
+            field: 'AggregateMetrics.avg_apnea_sensitivity',
             label: 'Apnea Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
@@ -58,6 +60,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_apnea_precision',
+            field: 'AggregateMetrics.avg_apnea_precision',
             label: 'Apnea Precision',
             kind: 'percent',
             glossaryKey: 'precision',
@@ -65,6 +68,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_apnea_f1',
+            field: 'AggregateMetrics.avg_apnea_f1',
             label: 'Apnea F1',
             kind: 'percent',
             glossaryKey: 'f1',
@@ -72,6 +76,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_hypopnea_sensitivity',
+            field: 'AggregateMetrics.avg_hypopnea_sensitivity',
             label: 'Hypopnea Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
@@ -79,6 +84,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_hypopnea_precision',
+            field: 'AggregateMetrics.avg_hypopnea_precision',
             label: 'Hypopnea Precision',
             kind: 'percent',
             glossaryKey: 'precision',
@@ -86,6 +92,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_hypopnea_f1',
+            field: 'AggregateMetrics.avg_hypopnea_f1',
             label: 'Hypopnea F1',
             kind: 'percent',
             glossaryKey: 'f1',
@@ -96,6 +103,7 @@ export const AGGREGATE_METRICS = withProvenance({
     fl: [
         {
             path: 'mean_spearman_flattening_r',
+            field: 'FlAggregateMetrics.mean_spearman_flattening_r',
             label: 'Spearman (Flattening)',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -103,6 +111,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_spearman_class_weight_r',
+            field: 'FlAggregateMetrics.mean_spearman_class_weight_r',
             label: 'Spearman (Class Weight)',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -110,6 +119,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_auc_t25',
+            field: 'FlAggregateMetrics.mean_auc_t25',
             label: 'AUC25',
             kind: 'decimal',
             glossaryKey: 'auc',
@@ -117,6 +127,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_auc_t50',
+            field: 'FlAggregateMetrics.mean_auc_t50',
             label: 'AUC50',
             kind: 'decimal',
             glossaryKey: 'auc',
@@ -124,6 +135,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_auc_class_t25',
+            field: 'FlAggregateMetrics.mean_auc_class_t25',
             label: 'Class AUC25',
             kind: 'decimal',
             glossaryKey: 'auc',
@@ -131,6 +143,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_auc_class_t50',
+            field: 'FlAggregateMetrics.mean_auc_class_t50',
             label: 'Class AUC50',
             kind: 'decimal',
             glossaryKey: 'auc',
@@ -138,6 +151,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'cross_night_spearman_r',
+            field: 'FlAggregateMetrics.cross_night_spearman_r',
             label: 'Cross-night Spearman',
             kind: 'decimal',
             glossaryKey: 'cross_night_spearman',
@@ -148,6 +162,7 @@ export const AGGREGATE_METRICS = withProvenance({
     breaths: [
         {
             path: 'rr.mean_spearman_r',
+            field: 'ChannelAggregateMetrics.mean_spearman_r',
             label: 'RR Spearman',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -155,6 +170,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'tv.mean_spearman_r',
+            field: 'ChannelAggregateMetrics.mean_spearman_r',
             label: 'TV Spearman',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -162,6 +178,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'ti.mean_spearman_r',
+            field: 'ChannelAggregateMetrics.mean_spearman_r',
             label: 'Ti Spearman',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -169,6 +186,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'ie_ratio.mean_spearman_r',
+            field: 'ChannelAggregateMetrics.mean_spearman_r',
             label: 'I:E Spearman',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -179,6 +197,7 @@ export const AGGREGATE_METRICS = withProvenance({
     rera: [
         {
             path: 'mean_amplitude_sensitivity',
+            field: 'ReraAggregateMetrics.mean_amplitude_sensitivity',
             label: 'Amplitude Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
@@ -186,6 +205,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_amplitude_precision',
+            field: 'ReraAggregateMetrics.mean_amplitude_precision',
             label: 'Amplitude Precision',
             kind: 'percent',
             glossaryKey: 'precision',
@@ -193,6 +213,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_proxy_sensitivity',
+            field: 'ReraAggregateMetrics.mean_proxy_sensitivity',
             label: 'Proxy Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
@@ -200,6 +221,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'mean_proxy_precision',
+            field: 'ReraAggregateMetrics.mean_proxy_precision',
             label: 'Proxy Precision',
             kind: 'percent',
             glossaryKey: 'precision',
@@ -207,17 +229,34 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'chance_precision_floor',
+            field: 'ReraAggregateMetrics.chance_precision_floor',
             label: 'Chance Precision Floor',
             kind: 'percent',
             glossaryKey: 'chance_floor',
         },
-        { path: 'proxy_density', label: 'Proxy Density (/h)', kind: 'rate' },
-        { path: 'machine_re_density', label: 'Device RE Density (/h)', kind: 'rate' },
-        { path: 'total_proxy_reras', label: 'Total Proxy RERAs', kind: 'count' },
+        {
+            field: 'ReraAggregateMetrics.proxy_density',
+            path: 'proxy_density',
+            label: 'Proxy Density (/h)',
+            kind: 'rate',
+        },
+        {
+            field: 'ReraAggregateMetrics.machine_re_density',
+            path: 'machine_re_density',
+            label: 'Device RE Density (/h)',
+            kind: 'rate',
+        },
+        {
+            field: 'ReraAggregateMetrics.total_proxy_reras',
+            path: 'total_proxy_reras',
+            label: 'Total Proxy RERAs',
+            kind: 'count',
+        },
     ],
     apple: [
         {
             path: 'rera_vs_apple_bd.rho',
+            field: 'PairCorrelation.rho',
             label: 'RERA vs Apple BD',
             kind: 'decimal',
             glossaryKey: 'apple_breathing_disturbances',
@@ -225,6 +264,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'fl_vs_apple_bd.rho',
+            field: 'PairCorrelation.rho',
             label: 'FL vs Apple BD',
             kind: 'decimal',
             glossaryKey: 'apple_breathing_disturbances',
@@ -232,6 +272,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'rera_vs_awake_seconds.rho',
+            field: 'PairCorrelation.rho',
             label: 'RERA vs Awake Time',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
@@ -239,6 +280,7 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'fl_vs_sleep_efficiency.rho',
+            field: 'PairCorrelation.rho',
             label: 'FL vs Sleep Efficiency',
             kind: 'decimal',
             glossaryKey: 'spearman_r',

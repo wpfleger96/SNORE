@@ -18,7 +18,7 @@
                         :value="report.aggregate[ch.key].mean_spearman_r"
                         :decimals="3"
                         glossary-key="spearman_r"
-                        field="mean_spearman_r"
+                        field="ChannelAggregateMetrics.mean_spearman_r"
                     />
                     <StatCard
                         label="Sessions Compared"
@@ -34,7 +34,10 @@
                                 <TableHead>Date</TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Breaths
-                                    <ProvenanceMark :provenance="provenanceFor('n_breaths')"
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('BreathTrendsSessionValidation.n_breaths')
+                                        "
                                 /></TableHead>
                                 <TableHead
                                     v-for="ch in CHANNELS"
@@ -42,7 +45,9 @@
                                     class="whitespace-nowrap"
                                 >
                                     {{ ch.label }}
-                                    <ProvenanceMark :provenance="provenanceFor('spearman_r')" />
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('ChannelComparison.spearman_r')"
+                                    />
                                     <InfoHint glossary-key="spearman_r" />
                                 </TableHead>
                             </TableRow>

@@ -68,9 +68,7 @@
                             >Total Hours
                             <ProvenanceMark
                                 :provenance="
-                                    provenanceFor('total_therapy_hours', {
-                                        schema: 'DeviceUsageSummary',
-                                    })
+                                    provenanceFor('DeviceUsageSummary.total_therapy_hours')
                                 "
                         /></span>
                     </div>

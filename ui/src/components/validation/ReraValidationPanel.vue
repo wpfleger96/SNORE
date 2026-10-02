@@ -32,21 +32,21 @@
                     <StatCard
                         label="Proxy Sensitivity"
                         :value="report.aggregate.mean_proxy_sensitivity"
-                        field="mean_proxy_sensitivity"
+                        field="ReraAggregateMetrics.mean_proxy_sensitivity"
                         :display="formatPercent(report.aggregate.mean_proxy_sensitivity)"
                         glossary-key="sensitivity"
                     />
                     <StatCard
                         label="Proxy Precision"
                         :value="report.aggregate.mean_proxy_precision"
-                        field="mean_proxy_precision"
+                        field="ReraAggregateMetrics.mean_proxy_precision"
                         :display="formatPercent(report.aggregate.mean_proxy_precision, 2)"
                         glossary-key="precision"
                     />
                     <StatCard
                         label="Chance Precision Floor"
                         :value="report.aggregate.chance_precision_floor"
-                        field="chance_precision_floor"
+                        field="ReraAggregateMetrics.chance_precision_floor"
                         :display="formatPercent(report.aggregate.chance_precision_floor, 2)"
                         glossary-key="chance_floor"
                         :reason="floorReason"
@@ -54,28 +54,28 @@
                     <StatCard
                         label="Amplitude Sensitivity"
                         :value="report.aggregate.mean_amplitude_sensitivity"
-                        field="mean_amplitude_sensitivity"
+                        field="ReraAggregateMetrics.mean_amplitude_sensitivity"
                         :display="formatPercent(report.aggregate.mean_amplitude_sensitivity)"
                         glossary-key="sensitivity"
                     />
                     <StatCard
                         label="Amplitude Precision"
                         :value="report.aggregate.mean_amplitude_precision"
-                        field="mean_amplitude_precision"
+                        field="ReraAggregateMetrics.mean_amplitude_precision"
                         :display="formatPercent(report.aggregate.mean_amplitude_precision, 2)"
                         glossary-key="precision"
                     />
                     <StatCard
                         label="Device RE Density"
                         :value="report.aggregate.machine_re_density"
-                        field="machine_re_density"
+                        field="ReraAggregateMetrics.machine_re_density"
                         :decimals="2"
                         unit="/h"
                     />
                     <StatCard
                         label="Proxy Density"
                         :value="report.aggregate.proxy_density"
-                        field="proxy_density"
+                        field="ReraAggregateMetrics.proxy_density"
                         :decimals="2"
                         unit="/h"
                         glossary-key="rera_proxy"
@@ -97,7 +97,7 @@
                     <StatCard
                         label="Total Proxy RERAs"
                         :value="report.aggregate.total_proxy_reras"
-                        field="total_proxy_reras"
+                        field="ReraAggregateMetrics.total_proxy_reras"
                         :decimals="0"
                     />
                     <StatCard
@@ -121,22 +121,33 @@
                                 <TableHead class="whitespace-nowrap"
                                     >Amplitude RERAs
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('amplitude_rera_count')"
+                                        :provenance="
+                                            provenanceFor(
+                                                'ReraSessionValidation.amplitude_rera_count',
+                                            )
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Proxy RERAs
-                                    <ProvenanceMark :provenance="provenanceFor('proxy_rera_count')"
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('ReraSessionValidation.proxy_rera_count')
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Proxy Sens
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('proxy_sensitivity')" />
+                                        :provenance="
+                                            provenanceFor('ReraSessionValidation.proxy_sensitivity')
+                                        " />
                                     <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Proxy Prec
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('proxy_precision')" />
+                                        :provenance="
+                                            provenanceFor('ReraSessionValidation.proxy_precision')
+                                        " />
                                     <InfoHint glossary-key="precision"
                                 /></TableHead>
                             </TableRow>

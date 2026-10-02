@@ -11,7 +11,7 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Avg Sleep"
-                field="total_sleep_seconds"
+                field="HealthNightSummaryRead.total_sleep_seconds"
                 :value="avgTotalSleep"
                 unit="hr"
                 :decimals="1"
@@ -19,7 +19,7 @@
             />
             <StatCard
                 label="Avg Efficiency"
-                field="sleep_efficiency_pct"
+                field="HealthNightSummaryRead.sleep_efficiency_pct"
                 :value="avgEfficiency"
                 unit="%"
                 :decimals="1"
@@ -27,7 +27,7 @@
             />
             <StatCard
                 label="Avg Deep"
-                field="deep_seconds"
+                field="HealthNightSummaryRead.deep_seconds"
                 :value="avgDeep"
                 unit="hr"
                 :decimals="1"
@@ -35,7 +35,7 @@
             />
             <StatCard
                 label="Avg REM"
-                field="rem_seconds"
+                field="HealthNightSummaryRead.rem_seconds"
                 :value="avgRem"
                 unit="hr"
                 :decimals="1"
@@ -65,20 +65,32 @@
                         <TableHead>Date</TableHead>
                         <TableHead class="text-right"
                             >Total Sleep
-                            <ProvenanceMark :provenance="provenanceFor('total_sleep_seconds')"
+                            <ProvenanceMark
+                                :provenance="
+                                    provenanceFor('HealthNightSummaryRead.total_sleep_seconds')
+                                "
                         /></TableHead>
                         <TableHead class="text-right"
                             >Efficiency
-                            <ProvenanceMark :provenance="provenanceFor('sleep_efficiency_pct')"
+                            <ProvenanceMark
+                                :provenance="
+                                    provenanceFor('HealthNightSummaryRead.sleep_efficiency_pct')
+                                "
                         /></TableHead>
                         <TableHead class="text-right"
-                            >Core <ProvenanceMark :provenance="provenanceFor('core_seconds')"
+                            >Core
+                            <ProvenanceMark
+                                :provenance="provenanceFor('HealthNightSummaryRead.core_seconds')"
                         /></TableHead>
                         <TableHead class="text-right"
-                            >Deep <ProvenanceMark :provenance="provenanceFor('deep_seconds')"
+                            >Deep
+                            <ProvenanceMark
+                                :provenance="provenanceFor('HealthNightSummaryRead.deep_seconds')"
                         /></TableHead>
                         <TableHead class="text-right"
-                            >REM <ProvenanceMark :provenance="provenanceFor('rem_seconds')"
+                            >REM
+                            <ProvenanceMark
+                                :provenance="provenanceFor('HealthNightSummaryRead.rem_seconds')"
                         /></TableHead>
                         <TableHead>Source</TableHead>
                     </TableRow>

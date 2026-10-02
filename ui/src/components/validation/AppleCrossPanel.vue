@@ -16,7 +16,7 @@
                         :key="corr.key"
                         :label="corr.label"
                         :value="report.aggregate[corr.key]?.rho"
-                        field="rho"
+                        field="PairCorrelation.rho"
                         :decimals="3"
                         :reason="report.aggregate[corr.key]?.reason"
                         :glossary-key="corr.glossaryKey"
@@ -54,13 +54,18 @@
                                 <TableHead>Night</TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >RERA Index
-                                    <ProvenanceMark :provenance="provenanceFor('rera_index')" />
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('AppleCrossNightRecord.rera_index')
+                                        " />
                                     <InfoHint glossary-key="rera_index"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >FL Class ≥4
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('fl_class_ge4_pct')" />
+                                        :provenance="
+                                            provenanceFor('AppleCrossNightRecord.fl_class_ge4_pct')
+                                        " />
                                     <InfoHint glossary-key="fl_class_ge4_pct"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
@@ -68,12 +73,19 @@
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Awake (s)
-                                    <ProvenanceMark :provenance="provenanceFor('awake_seconds')"
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('AppleCrossNightRecord.awake_seconds')
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Sleep Eff %
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('sleep_efficiency_pct')"
+                                        :provenance="
+                                            provenanceFor(
+                                                'AppleCrossNightRecord.sleep_efficiency_pct',
+                                            )
+                                        "
                                 /></TableHead>
                             </TableRow>
                         </TableHeader>

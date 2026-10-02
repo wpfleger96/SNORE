@@ -28,7 +28,7 @@ import { computed } from 'vue'
 import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import type { HealthNightSummaryRead } from '@/types'
 import { formatDateFull } from '@/utils/formatting'
-import { provenanceFor } from '@/utils/provenance'
+import { provenanceFor, type ProvenanceKey } from '@/utils/provenance'
 
 const props = defineProps<{ night: HealthNightSummaryRead }>()
 
@@ -36,22 +36,34 @@ function fmtHours(seconds: number | null | undefined): string {
     return seconds != null ? (seconds / 3600).toFixed(1) : '---'
 }
 
-const rows = computed(() => {
+const rows = computed((): { label: string; field: ProvenanceKey; value: string }[] => {
     const n = props.night
     return [
         {
             label: 'Total Sleep (hr)',
-            field: 'total_sleep_seconds',
+            field: 'HealthNightSummaryRead.total_sleep_seconds',
             value: fmtHours(n.total_sleep_seconds),
         },
         {
             label: 'Efficiency (%)',
-            field: 'sleep_efficiency_pct',
+            field: 'HealthNightSummaryRead.sleep_efficiency_pct',
             value: n.sleep_efficiency_pct != null ? n.sleep_efficiency_pct.toFixed(1) : '---',
         },
-        { label: 'Core (hr)', field: 'core_seconds', value: fmtHours(n.core_seconds) },
-        { label: 'Deep (hr)', field: 'deep_seconds', value: fmtHours(n.deep_seconds) },
-        { label: 'REM (hr)', field: 'rem_seconds', value: fmtHours(n.rem_seconds) },
+        {
+            label: 'Core (hr)',
+            field: 'HealthNightSummaryRead.core_seconds',
+            value: fmtHours(n.core_seconds),
+        },
+        {
+            label: 'Deep (hr)',
+            field: 'HealthNightSummaryRead.deep_seconds',
+            value: fmtHours(n.deep_seconds),
+        },
+        {
+            label: 'REM (hr)',
+            field: 'HealthNightSummaryRead.rem_seconds',
+            value: fmtHours(n.rem_seconds),
+        },
     ]
 })
 </script>

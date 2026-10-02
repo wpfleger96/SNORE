@@ -13,7 +13,7 @@
     "lint": "eslint . --fix",
     "format-check": "prettier --check 'src/**/*.{ts,vue,json,css}' 'tests/**/*.ts' '*.spec.ts'",
     "format": "prettier --write 'src/**/*.{ts,vue,json,css}' 'tests/**/*.ts' '*.spec.ts'",
-    "generate:types": "openapi-typescript openapi.json --output src/types/generated.ts && prettier --write src/types/generated.ts src/types/provenance.generated.ts",
+    "generate:types": "openapi-typescript openapi.json --output src/types/generated.ts && prettier --write src/types/generated.ts",
     "test:screenshot": "playwright test screenshot.spec.ts",
     "test:unit": "vitest run"
   },

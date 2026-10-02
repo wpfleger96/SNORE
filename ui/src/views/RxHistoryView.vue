@@ -21,11 +21,11 @@
                     <span v-if="current.device_name">{{ current.device_name }}</span>
                     <span v-if="current.avg_ahi != null"
                         >Avg AHI: {{ current.avg_ahi.toFixed(1) }}
-                        <ProvenanceMark :provenance="provenanceFor('avg_ahi')"
+                        <ProvenanceMark :provenance="provenanceFor('RxPeriodResponse.avg_ahi')"
                     /></span>
                     <span v-if="current.avg_hours != null"
                         >Avg {{ current.avg_hours.toFixed(1) }} hrs/night
-                        <ProvenanceMark :provenance="provenanceFor('avg_hours')"
+                        <ProvenanceMark :provenance="provenanceFor('RxPeriodResponse.avg_hours')"
                     /></span>
                 </div>
                 <div class="settings-pills">
@@ -72,7 +72,9 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label"
-                                >Avg AHI <ProvenanceMark :provenance="provenanceFor('avg_ahi')"
+                                >Avg AHI
+                                <ProvenanceMark
+                                    :provenance="provenanceFor('RxPeriodResponse.avg_ahi')"
                             /></span>
                             <span class="data-card-value">{{
                                 row.avg_ahi?.toFixed(1) ?? '---'
@@ -81,7 +83,8 @@
                         <div class="data-card-row">
                             <span class="data-card-label"
                                 >Median AHI
-                                <ProvenanceMark :provenance="provenanceFor('median_ahi')"
+                                <ProvenanceMark
+                                    :provenance="provenanceFor('RxPeriodResponse.median_ahi')"
                             /></span>
                             <span class="data-card-value">{{
                                 row.median_ahi?.toFixed(1) ?? '---'
@@ -89,7 +92,9 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label"
-                                >Avg Hours <ProvenanceMark :provenance="provenanceFor('avg_hours')"
+                                >Avg Hours
+                                <ProvenanceMark
+                                    :provenance="provenanceFor('RxPeriodResponse.avg_hours')"
                             /></span>
                             <span class="data-card-value">{{
                                 row.avg_hours?.toFixed(1) ?? '---'
@@ -97,7 +102,9 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label"
-                                >Avg Leak <ProvenanceMark :provenance="provenanceFor('avg_leak')"
+                                >Avg Leak
+                                <ProvenanceMark
+                                    :provenance="provenanceFor('RxPeriodResponse.avg_leak')"
                             /></span>
                             <span class="data-card-value">{{
                                 row.avg_leak?.toFixed(1) ?? '---'
@@ -116,19 +123,24 @@
                                 <TableHead class="whitespace-nowrap">Device</TableHead>
                                 <TableHead>Settings</TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Avg AHI <ProvenanceMark :provenance="provenanceFor('avg_ahi')"
+                                    >Avg AHI
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('RxPeriodResponse.avg_ahi')"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Median AHI
-                                    <ProvenanceMark :provenance="provenanceFor('median_ahi')"
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('RxPeriodResponse.median_ahi')"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Avg Hours
-                                    <ProvenanceMark :provenance="provenanceFor('avg_hours')"
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('RxPeriodResponse.avg_hours')"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Avg Leak
-                                    <ProvenanceMark :provenance="provenanceFor('avg_leak')"
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('RxPeriodResponse.avg_leak')"
                                 /></TableHead>
                                 <TableHead></TableHead>
                             </TableRow>

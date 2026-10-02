@@ -40,27 +40,27 @@
                     :value="matchResult.programmatic_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
-                    field="programmatic_count"
+                    field="EventMatchResult.programmatic_count"
                 />
                 <StatCard
                     label="Matched"
                     :value="matchResult.matched"
                     :decimals="0"
-                    field="matched"
+                    field="EventMatchResult.matched"
                 />
                 <StatCard
                     label="False Positives"
                     :value="matchResult.false_positives"
                     :decimals="0"
                     glossary-key="false_positives"
-                    field="false_positives"
+                    field="EventMatchResult.false_positives"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="matchResult.false_negatives"
                     :decimals="0"
                     glossary-key="false_negatives"
-                    field="false_negatives"
+                    field="EventMatchResult.false_negatives"
                 />
                 <StatCard
                     label="Sensitivity"

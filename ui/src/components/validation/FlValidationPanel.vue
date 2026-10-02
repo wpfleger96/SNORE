@@ -14,49 +14,49 @@
                     <StatCard
                         label="Spearman (Flattening)"
                         :value="report.aggregate.mean_spearman_flattening_r"
-                        field="mean_spearman_flattening_r"
+                        field="FlAggregateMetrics.mean_spearman_flattening_r"
                         :decimals="3"
                         glossary-key="spearman_r"
                     />
                     <StatCard
                         label="Spearman (Class Weight)"
                         :value="report.aggregate.mean_spearman_class_weight_r"
-                        field="mean_spearman_class_weight_r"
+                        field="FlAggregateMetrics.mean_spearman_class_weight_r"
                         :decimals="3"
                         glossary-key="spearman_r"
                     />
                     <StatCard
                         label="AUC25"
                         :value="report.aggregate.mean_auc_t25"
-                        field="mean_auc_t25"
+                        field="FlAggregateMetrics.mean_auc_t25"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="AUC50"
                         :value="report.aggregate.mean_auc_t50"
-                        field="mean_auc_t50"
+                        field="FlAggregateMetrics.mean_auc_t50"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Class AUC25"
                         :value="report.aggregate.mean_auc_class_t25"
-                        field="mean_auc_class_t25"
+                        field="FlAggregateMetrics.mean_auc_class_t25"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Class AUC50"
                         :value="report.aggregate.mean_auc_class_t50"
-                        field="mean_auc_class_t50"
+                        field="FlAggregateMetrics.mean_auc_class_t50"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Cross-night Spearman"
                         :value="report.aggregate.cross_night_spearman_r"
-                        field="cross_night_spearman_r"
+                        field="FlAggregateMetrics.cross_night_spearman_r"
                         :decimals="3"
                         glossary-key="cross_night_spearman"
                     />
@@ -75,29 +75,49 @@
                                 <TableHead
                                     >Breaths
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('n_breaths_compared')"
+                                        :provenance="
+                                            provenanceFor('FlSessionValidation.n_breaths_compared')
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Spearman
                                     <ProvenanceMark
-                                        :provenance="provenanceFor('spearman_flattening_r')" />
+                                        :provenance="
+                                            provenanceFor(
+                                                'FlSessionValidation.spearman_flattening_r',
+                                            )
+                                        " />
                                     <InfoHint glossary-key="spearman_r"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >AUC25 <ProvenanceMark :provenance="provenanceFor('auc_t25')" />
+                                    >AUC25
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('FlSessionValidation.auc_t25')
+                                        " />
                                     <InfoHint glossary-key="auc"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >AUC50 <ProvenanceMark :provenance="provenanceFor('auc_t50')" />
+                                    >AUC50
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('FlSessionValidation.auc_t50')
+                                        " />
                                     <InfoHint glossary-key="auc"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >SNORE FL 95th
-                                    <ProvenanceMark :provenance="provenanceFor('snore_fl_95th')"
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('FlSessionValidation.snore_fl_95th')
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Device FLG 95th
-                                    <ProvenanceMark :provenance="provenanceFor('device_flg_95th')"
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('FlSessionValidation.device_flg_95th')
+                                        "
                                 /></TableHead>
                             </TableRow>
                         </TableHeader>

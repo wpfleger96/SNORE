@@ -48,15 +48,13 @@
         <div class="data-card-row">
             <span class="data-card-label"
                 >Duration
-                <ProvenanceMark
-                    :provenance="provenanceFor('duration_hours', { schema: 'SessionListItem' })"
+                <ProvenanceMark :provenance="provenanceFor('SessionListItem.duration_hours')"
             /></span>
             <span class="data-card-value">{{ session.duration_hours.toFixed(1) }}h</span>
         </div>
         <div class="data-card-row">
             <span class="data-card-label"
-                >AHI
-                <ProvenanceMark :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })"
+                >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
             /></span>
             <span class="data-card-value" :class="ahiClass(session.ahi)">
                 {{ session.ahi?.toFixed(1) ?? '---' }}

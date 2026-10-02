@@ -8,7 +8,7 @@
                 :class="'trend-' + summary.ahi_trend_direction"
             >
                 AHI {{ summary.ahi_trend_direction }}
-                <ProvenanceMark :provenance="provenanceFor('ahi_trend_direction')" />
+                <ProvenanceMark :provenance="provenanceFor('TherapySummary.ahi_trend_direction')" />
             </span>
         </div>
 
@@ -378,7 +378,7 @@ function metricDataset(key: string): { label: string; values: (number | null)[];
 }
 
 function trendProvenance(key: string): Provenance {
-    return provenanceFor(METRIC_CONFIG[key].key, { schema: 'TrendsResponse' })
+    return provenanceFor(`TrendsResponse.${METRIC_CONFIG[key].key}`)
 }
 
 const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasData(key)))

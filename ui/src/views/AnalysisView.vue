@@ -43,14 +43,14 @@
                 unit="hrs"
                 :decimals="1"
                 glossary-key="session_duration_hours"
-                field="session_duration_hours"
+                field="AnalysisResult.session_duration_hours"
             />
             <StatCard
                 label="Total Breaths"
                 :value="analysis.total_breaths"
                 :decimals="0"
                 glossary-key="total_breaths"
-                field="total_breaths"
+                field="AnalysisResult.total_breaths"
             />
             <StatCard
                 label="Device-scored Events"
@@ -64,7 +64,7 @@
                 :value="analysis.pulse_change_count"
                 :decimals="0"
                 glossary-key="pulse_change_count"
-                field="pulse_change_count"
+                field="AnalysisResult.pulse_change_count"
             />
         </div>
 
@@ -313,7 +313,7 @@
                     :value="flowAnalysis!.total_breaths"
                     :decimals="0"
                     glossary-key="total_breaths"
-                    field="total_breaths"
+                    field="AnalysisResult.total_breaths"
                 />
                 <StatCard
                     label="Avg Confidence"
@@ -437,14 +437,14 @@
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
-                    field="programmatic_event_count"
+                    field="EventComparisonResult.programmatic_event_count"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="comparison.false_negatives?.length ?? 0"
                     :decimals="0"
                     glossary-key="false_negatives"
-                    field="false_negatives"
+                    field="EventComparisonResult.false_negatives"
                 />
                 <StatCard
                     label="False Positives"
@@ -454,7 +454,7 @@
                     "
                     :decimals="0"
                     glossary-key="false_positives"
-                    field="false_positives"
+                    field="EventComparisonResult.false_positives_apnea"
                 />
             </div>
 
@@ -695,15 +695,15 @@ interface FlowAnalysis {
 // they take the glossary tier of SNORE-detected events.
 const MARKS = {
     snoreDetected: glossaryProvenance('programmatic_events'),
-    modeAhi: provenanceFor('ahi', { schema: 'ModeResult' }),
-    rdi: provenanceFor('rdi'),
-    snoreEventDuration: provenanceFor('duration', { schema: 'ApneaEvent' }),
-    flowReduction: provenanceFor('flow_reduction'),
-    confidence: provenanceFor('confidence'),
+    modeAhi: provenanceFor('ModeResult.ahi'),
+    rdi: provenanceFor('ModeResult.rdi'),
+    snoreEventDuration: provenanceFor('ApneaEvent.duration'),
+    flowReduction: provenanceFor('ApneaEvent.flow_reduction'),
+    confidence: provenanceFor('ApneaEvent.confidence'),
 }
 
 function comparisonDurationProvenance(e: EventComparisonDetail): Provenance {
-    return provenanceFor('duration', { source: e.source, schema: 'EventComparisonDetail' })
+    return provenanceFor('EventComparisonDetail.duration', e.source)
 }
 
 const { canWrite } = useAuth()

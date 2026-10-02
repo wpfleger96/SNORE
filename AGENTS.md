@@ -362,21 +362,19 @@ and headers. The legend line prints automatically only for commands wrapped in
 after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
 header and a CSV `columns.csv` sidecar.
 
-**UI provenance marks:** `just ui-generate-types` turns the `x-provenance` tags into
-`ui/src/types/provenance.generated.ts` (never hand-edit; a unit test fails when it is stale).
-Views resolve tiers in `ui/src/utils/provenance.ts`:
-- `provenanceFor(field, { schema, source })` for API fields. `schema` (typed as a
-  `components['schemas']` key) is required for the schema-dependent names (`ahi`, `oai`, `cai`,
-  `hi`, `duration`, `duration_hours`); pass `source` only for fields with a source sibling
-  (`PROVENANCE_SOURCE_FIELDS`, e.g. `DayDetail.ahi` ← `index_source`, `EventComparisonDetail.duration`
-  ← event `source`).
+**UI provenance marks:** `just ui-generate-types` (`scripts/export_openapi.py`) exports the
+`x-provenance` tags to `ui/src/types/provenance.json`, keyed `Schema.field` (never hand-edit; a unit
+test fails when it is stale). Views resolve tiers in `ui/src/utils/provenance.ts`:
+- `provenanceFor('Schema.field', source?)` for API fields; the key is type-checked (`ProvenanceKey`),
+  so name the schema the value actually comes from. Pass `source` only for fields with a per-value
+  source sibling (the JSON's `sources`, e.g. `DayDetail.ahi` ← `index_source`,
+  `EventComparisonDetail.duration` ← event `source`). A value with no tagged field gets no mark.
 - `glossaryProvenance(key)` for displayed metrics with no API field (the glossary `provenance` key;
   set it only where a call site reads it — `glossary.test.ts` enforces this).
 
-A missing schema, untagged field, or unknown source logs a `[provenanceFor]` warning, which fails
-Vitest; deliberately untagged display fields go in `UNTAGGED_DISPLAY_FIELDS` with a reason.
+An unrecognised source or a glossary entry without a tier logs a warning, which fails Vitest.
 `<ProvenanceMark :provenance>` is the only tier carrier (`InfoHint` explains terms, not tiers).
-`StatCard` takes `field` for a plain unambiguous lookup, else a call-site-resolved `provenance`.
+`StatCard` takes `field` (a `ProvenanceKey`), else a call-site-resolved `provenance`.
 Never nest a mark inside a link: on cards only the date is a `RouterLink` (see `SessionCard.vue`).
 Headings and labels are Title Case; prose is sentence case.
 

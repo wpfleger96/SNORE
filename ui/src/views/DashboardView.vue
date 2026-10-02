@@ -23,7 +23,7 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Days with Data"
-                field="days_with_data"
+                field="TherapySummary.days_with_data"
                 :value="summary.days_with_data"
                 :decimals="0"
                 glossary-key="days_with_data"
@@ -31,7 +31,7 @@
             <div class="stat-card-ahi">
                 <StatCard
                     label="Avg AHI"
-                    field="avg_ahi"
+                    field="TherapySummary.avg_ahi"
                     :value="summary.avg_ahi"
                     :decimals="1"
                     glossary-key="ahi"
@@ -42,9 +42,9 @@
                     class="effectiveness-badge"
                 >
                     {{ summary.effectiveness
-                    }}<ProvenanceMark :provenance="provenanceFor('effectiveness')" /><InfoHint
-                        glossary-key="effectiveness"
-                    />
+                    }}<ProvenanceMark
+                        :provenance="provenanceFor('TherapySummary.effectiveness')"
+                    /><InfoHint glossary-key="effectiveness" />
                 </Badge>
                 <span
                     v-if="summary.ahi_trend_direction"
@@ -52,14 +52,14 @@
                     :class="'trend-' + summary.ahi_trend_direction"
                 >
                     {{ summary.ahi_trend_direction
-                    }}<ProvenanceMark :provenance="provenanceFor('ahi_trend_direction')" /><InfoHint
-                        glossary-key="ahi_trend"
-                    />
+                    }}<ProvenanceMark
+                        :provenance="provenanceFor('TherapySummary.ahi_trend_direction')"
+                    /><InfoHint glossary-key="ahi_trend" />
                 </span>
             </div>
             <StatCard
                 label="Avg Hours"
-                field="avg_hours"
+                field="TherapySummary.avg_hours"
                 :value="summary.avg_hours"
                 unit="hrs"
                 :decimals="1"
@@ -67,7 +67,7 @@
             />
             <StatCard
                 label="Avg Leak"
-                field="avg_leak"
+                field="TherapySummary.avg_leak"
                 :value="summary.avg_leak"
                 unit="L/min"
                 :decimals="1"
@@ -77,7 +77,7 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Avg SpO₂"
-                field="avg_spo2"
+                field="TherapySummary.avg_spo2"
                 :value="summary.avg_spo2"
                 unit="%"
                 :decimals="1"
@@ -85,7 +85,7 @@
             />
             <StatCard
                 label="Avg Pulse"
-                field="avg_pulse"
+                field="TherapySummary.avg_pulse"
                 :value="summary.avg_pulse"
                 unit="bpm"
                 :decimals="0"
@@ -93,7 +93,7 @@
             />
             <StatCard
                 label="Avg Pressure"
-                field="avg_pressure"
+                field="TherapySummary.avg_pressure"
                 :value="summary.avg_pressure"
                 unit="cmH₂O"
                 :decimals="1"
@@ -101,7 +101,7 @@
             />
             <StatCard
                 label="Avg Resp Rate"
-                field="avg_respiratory_rate"
+                field="TherapySummary.avg_respiratory_rate"
                 :value="summary.avg_respiratory_rate"
                 unit="br/min"
                 :decimals="1"
@@ -116,7 +116,7 @@
         >
             <StatCard
                 label="Avg Sleep"
-                field="avg_total_sleep_hours"
+                field="PeriodStatistics.avg_total_sleep_hours"
                 :value="avgTotalSleepHours"
                 unit="hrs"
                 :decimals="1"
@@ -124,7 +124,7 @@
             />
             <StatCard
                 label="Avg Sleep Efficiency"
-                field="avg_sleep_efficiency_pct"
+                field="PeriodStatistics.avg_sleep_efficiency_pct"
                 :value="avgSleepEfficiency"
                 unit="%"
                 :decimals="1"
@@ -158,7 +158,7 @@
         <div v-if="trendLabels.length" class="section-card">
             <h2>
                 AHI Trend (Weekly)
-                <ProvenanceMark :provenance="provenanceFor('ahi', { schema: 'TrendsResponse' })" />
+                <ProvenanceMark :provenance="provenanceFor('TrendsResponse.ahi')" />
             </h2>
             <TrendChart :labels="trendLabels" :datasets="trendDatasets" />
         </div>
@@ -214,9 +214,7 @@
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >AHI
-                            <ProvenanceMark
-                                :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })"
+                            >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
                         /></span>
                         <span class="data-card-value">{{ session.ahi?.toFixed(1) ?? '---' }}</span>
                     </div>
@@ -229,8 +227,7 @@
                         <TableHead class="w-[90px]">Duration</TableHead>
                         <TableHead class="w-[80px] whitespace-nowrap"
                             >AHI
-                            <ProvenanceMark
-                                :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })" />
+                            <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')" />
                             <InfoHint glossary-key="ahi"
                         /></TableHead>
                     </TableRow>
