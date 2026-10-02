@@ -5087,17 +5087,17 @@ export interface components {
         RxPeriodResponse: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Average AHI over the period
+             * @description [DERIVED] Usage-hours-weighted average AHI over the period
              */
             avg_ahi?: number | null
             /**
              * Avg Hours
-             * @description [DERIVED] Average therapy hours per day
+             * @description [DERIVED] Average therapy hours per day with usage
              */
             avg_hours?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Average leak (L/min)
+             * @description [DERIVED] Usage-hours-weighted average leak (L/min)
              */
             avg_leak?: number | null
             /** Days Count */
@@ -5834,7 +5834,7 @@ export interface components {
             avg_epap?: number | null
             /**
              * Avg Hours
-             * @description [DERIVED] Average therapy hours per day
+             * @description [DERIVED] Average therapy hours per day with usage
              */
             avg_hours: number
             /**
@@ -5884,7 +5884,7 @@ export interface components {
             days_since_last: number
             /**
              * Days With Data
-             * @description [DERIVED] Days with therapy data
+             * @description [DERIVED] Days with therapy hours from enabled sessions
              */
             days_with_data: number
             /**
@@ -5898,11 +5898,13 @@ export interface components {
             /**
              * First Date
              * Format: date
+             * @description First day with therapy hours (first day in range if none)
              */
             first_date: string
             /**
              * Last Date
              * Format: date
+             * @description Last day with therapy hours (last day in range if none)
              */
             last_date: string
             /**

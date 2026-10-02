@@ -659,16 +659,22 @@ class EventTypeCount(BaseModel):
 class TherapySummary(BaseModel):
     """Aggregated therapy statistics summary."""
 
-    first_date: date
-    last_date: date
+    first_date: date = Field(
+        description="First day with therapy hours (first day in range if none)"
+    )
+    last_date: date = Field(
+        description="Last day with therapy hours (last day in range if none)"
+    )
     days_since_last: int = provenance_field(
         Provenance.DERIVED, "Days since the last therapy day"
     )
     total_hours: float = provenance_field(Provenance.DERIVED, "Total therapy hours")
     avg_hours: float = provenance_field(
-        Provenance.DERIVED, "Average therapy hours per day"
+        Provenance.DERIVED, "Average therapy hours per day with usage"
     )
-    days_with_data: int = provenance_field(Provenance.DERIVED, "Days with therapy data")
+    days_with_data: int = provenance_field(
+        Provenance.DERIVED, "Days with therapy hours from enabled sessions"
+    )
     avg_ahi: float | None = provenance_field(
         Provenance.DERIVED, "Average AHI", default=None
     )
@@ -1054,19 +1060,21 @@ class RxPeriodResponse(BaseModel):
     end_date: date
     days_count: int
     avg_ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Average AHI over the period", default=None
+        Provenance.DERIVED,
+        "Usage-hours-weighted average AHI over the period",
+        default=None,
     )
     median_ahi: float | None = provenance_field(
         Provenance.DERIVED, "Median AHI over the period", default=None
     )
     avg_hours: float | None = provenance_field(
-        Provenance.DERIVED, "Average therapy hours per day", default=None
+        Provenance.DERIVED, "Average therapy hours per day with usage", default=None
     )
     total_hours: float = provenance_field(
         Provenance.DERIVED, "Total therapy hours", default=0.0
     )
     avg_leak: float | None = provenance_field(
-        Provenance.DERIVED, "Average leak (L/min)", default=None
+        Provenance.DERIVED, "Usage-hours-weighted average leak (L/min)", default=None
     )
     device_id: int | None = None
     device_name: str | None = None

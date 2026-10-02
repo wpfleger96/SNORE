@@ -214,7 +214,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     days_with_data: {
         label: 'Days with Data',
-        short: 'Number of days in the period with at least one recorded session.',
+        short: 'Number of days in the period with therapy hours from enabled sessions.',
     },
     effectiveness: {
         label: 'Effectiveness',

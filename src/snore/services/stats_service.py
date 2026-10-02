@@ -10,7 +10,6 @@ from snore.analysis.calculations import (
     assess_therapy_effectiveness,
     calculate_ahi_trend_direction,
     calculate_average_ahi,
-    calculate_average_hours_per_day,
     calculate_period_statistics,
     calculate_records,
     calculate_trends_extended,
@@ -162,21 +161,23 @@ class StatsService(ProfileScopedService):
         if not day_records:
             return None
 
-        dates = [d.date for d in day_records]
+        # Day.total_therapy_hours counts only enabled sessions, so days whose
+        # sessions are all disabled contribute neither hours nor a data day.
+        used_days = [
+            d
+            for d in day_records
+            if d.total_therapy_hours is not None and d.total_therapy_hours > 0
+        ]
+        total_hours = sum(d.total_therapy_hours for d in used_days)
+        days_with_data = len(used_days)
+        avg_hours = total_hours / days_with_data if days_with_data else 0.0
+
+        # The date range reports therapy use; an all-disabled range still
+        # reports the dates it spans.
+        dates = [d.date for d in used_days or day_records]
         first_date = min(dates)
         last_date = max(dates)
         days_since_last = (date.today() - last_date).days
-
-        day_ids = [d.id for d in day_records]
-        # Day.total_therapy_hours counts only enabled sessions, so days whose
-        # sessions are all disabled contribute neither hours nor a data day.
-        total_hours = sum(d.total_therapy_hours or 0 for d in day_records)
-        days_with_data = sum(
-            1
-            for d in day_records
-            if d.total_therapy_hours and d.total_therapy_hours > 0
-        )
-        avg_hours = calculate_average_hours_per_day(day_records)
 
         avg_ahi = calculate_average_ahi(day_records)
         effectiveness = assess_therapy_effectiveness(avg_ahi)
@@ -211,6 +212,7 @@ class StatsService(ProfileScopedService):
         spo2_mins = [d.spo2_min for d in day_records if d.spo2_min is not None]
         min_spo2 = min(spo2_mins) if spo2_mins else None
 
+        day_ids = [d.id for d in day_records]
         # event_type is the GROUP BY key, not the chunked column, so the same
         # type recurs across day-chunks: merge counts by addition, then re-sort.
         merged_events: dict[str, int] = {}

@@ -6,13 +6,17 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from snore.analysis.calculations import calculate_average_ahi
+from snore.analysis.calculations import (
+    calculate_average_ahi,
+    calculate_average_hours_per_day,
+    calculate_median_ahi,
+    usage_weighted_avg,
+)
 from snore.database.models import Day, Device
 from snore.database.models import Session as SessionModel
 from snore.services.schemas import (
@@ -24,7 +28,6 @@ from snore.services.schemas import (
     RxPeriodResponse,
     RxSettingChange,
 )
-from snore.utils.stats import weighted_mean
 
 logger = logging.getLogger(__name__)
 
@@ -455,19 +458,13 @@ class RxTracker:
         stats_periods: list[RxPeriodStats] = []
 
         for period in periods:
-            ahi_values = [d.ahi for d in period.days if d.ahi is not None]
-            median_ahi = median(ahi_values) if ahi_values else None
+            median_ahi = calculate_median_ahi(period.days)
             avg_ahi = calculate_average_ahi(period.days)
-            avg_leak = weighted_mean(
-                (d.leak_median, d.total_therapy_hours)
-                for d in period.days
-                if d.leak_median is not None
-                and d.total_therapy_hours is not None
-                and d.total_therapy_hours > 0
-            )
+            avg_leak = usage_weighted_avg(period.days, "leak_median")
 
             total_hours = sum(d.total_therapy_hours or 0 for d in period.days)
-            avg_hours = total_hours / len(period.days) if period.days else None
+            # Same rule as the stats summary: average only over days with usage.
+            avg_hours = calculate_average_hours_per_day(period.days) or None
 
             stats_periods.append(
                 RxPeriodStats(

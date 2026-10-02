@@ -210,6 +210,29 @@ class TestRxTrackerHistory:
         # Median stays per-night.
         assert result[0].median_ahi == pytest.approx(11.0)
 
+    async def test_history_avg_hours_counts_only_days_with_usage(
+        self, async_db_session, async_test_device
+    ):
+        """Zero-hour days stay in the period but do not dilute average hours."""
+        base = date(2025, 3, 1)
+        for i, hours in enumerate([6.0, 0.0, 8.0]):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                base + timedelta(days=i),
+                ahi=2.0,
+                total_therapy_hours=hours,
+                settings=RX_SETTINGS,
+            )
+
+        result = await RxTracker(1).get_history(async_db_session)
+
+        assert len(result) == 1
+        assert result[0].days_count == 3
+        assert result[0].total_hours == pytest.approx(14.0)
+        # 14 / 2 used days, not 14 / 3 days in the period.
+        assert result[0].avg_hours == pytest.approx(7.0)
+
     async def test_history_two_devices_same_settings_produce_separate_periods(
         self, async_db_session, async_test_profile
     ):
