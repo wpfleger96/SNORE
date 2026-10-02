@@ -468,9 +468,10 @@ def register(mcp: FastMCP) -> None:
         only for single-date requests. ``days_total`` counts CALENDAR nights in
         the requested range — nights without data count as non-compliant.
 
-        ``rera_index_reason`` may be ``"duration_zero"`` when a RERA count
-        exists but therapy hours for the night is zero, making the per-hour
-        rate undefined.
+        ``rera_index`` is RERA-proxy events per mask-on hour of analyzed
+        sessions; ``rera_index_reason`` is ``"duration_zero"`` when a RERA
+        count exists but those analyzed sessions have zero mask-on hours,
+        making the per-hour rate undefined.
 
         ``periodic_breathing_pct`` is the percent of analyzed-session time
         spent in periodic-breathing episodes found by analysis (0.0 when

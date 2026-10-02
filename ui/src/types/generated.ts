@@ -3093,7 +3093,7 @@ export interface components {
             rera_count_reason?: string | null
             /**
              * Rera Index
-             * @description [EXPERIMENTAL] RERA-proxy events per hour of analyzed sessions (FL-run proxy, not device-scored).
+             * @description [EXPERIMENTAL] RERA-proxy events per mask-on hour of analyzed sessions (FL-run proxy, not device-scored).
              */
             rera_index?: number | null
             /** Rera Index Reason */

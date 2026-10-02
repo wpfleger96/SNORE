@@ -180,7 +180,7 @@ const NULL_REASON_LABELS: Record<string, string> = {
     not_available: 'Not available for this night.',
     no_data_in_range: 'No breath data was recorded for this night.',
     table_missing: 'Breath-level data has not been stored for this night.',
-    duration_zero: 'Therapy duration was zero, so a per-hour rate is undefined.',
+    duration_zero: 'The analyzed sessions had no mask-on time, so a per-hour rate is undefined.',
     no_sessions: 'No therapy sessions were recorded for this night.',
     primary_mode_mismatch:
         "This night's therapy mode did not match the primary mode for this period.",

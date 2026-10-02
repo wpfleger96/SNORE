@@ -1,9 +1,9 @@
 """Integration tests for new MCP tool behaviors added in the mcp-skeleton review cycle.
 
 Covers:
-- rera_index / rdi reason="duration_zero" when the analysed sessions have zero
-  duration but analysis IS present (NullReason.DURATION_ZERO branch).
-- rera_index divides by analysed (OK, enabled) session hours only.
+- rera_index / rdi reason="duration_zero" when the analyzed sessions have zero
+  mask-on hours but analysis IS present (NullReason.DURATION_ZERO branch).
+- rera_index divides by the mask-on hours of analyzed (OK, enabled) sessions only.
 - Compliance block present even on empty range-mode responses (no day rows).
 - get_events max_events truncation: total_events keeps untruncated count; truncated=True
   when cut; validate_max_events raises ValidationError for max_events < 1.
@@ -29,6 +29,7 @@ from snore.database.models import (
     Breath,
     Event,
     Session,
+    Statistics,
 )
 from snore.services.breath_service import BreathService, NoSessionsInRangeError
 from tests.integration.conftest import (
@@ -74,7 +75,7 @@ class TestDurationZeroReason:
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         """rera_index and rdi are null with reason 'duration_zero' when analysis is
-        present but the analysed sessions last 0 h (cannot divide RERA count by hours).
+        present but the analyzed sessions last 0 h (cannot divide RERA count by hours).
         """
         from snore.mcp.tools.summary import get_nightly_summary
 
@@ -190,15 +191,15 @@ async def _seed_rera_proxies(
 
 
 class TestReraIndexAnalyzedHours:
-    async def test_unanalysed_session_hours_excluded_from_denominator(
+    async def test_unanalyzed_session_hours_excluded_from_denominator(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """20 RERAs over the one analysed 4 h session → 5.0/h, not 20 / 8 h."""
+        """20 RERAs over the one analyzed 4 h session → 5.0/h, not 20 / 8 h."""
         from snore.mcp.tools.summary import get_nightly_summary
 
         target_date = date(2024, 3, 12)
         device = await _make_device(async_db_session, async_test_profile.id)
-        day, analysed = await _make_day_session(
+        day, analyzed = await _make_day_session(
             async_db_session, device, target_date, duration_hours=4.0
         )
         day.total_therapy_hours = 8.0
@@ -206,11 +207,11 @@ class TestReraIndexAnalyzedHours:
             async_db_session,
             device,
             day,
-            start=analysed.start_time + timedelta(hours=4),
+            start=analyzed.start_time + timedelta(hours=4),
             duration_hours=4.0,
         )
-        ar = await _make_analysis_result(async_db_session, analysed)
-        await _seed_rera_proxies(async_db_session, ar, analysed, count=20)
+        ar = await _make_analysis_result(async_db_session, analyzed)
+        await _seed_rera_proxies(async_db_session, ar, analyzed, count=20)
 
         result = await get_nightly_summary(
             async_db_session,
@@ -223,10 +224,38 @@ class TestReraIndexAnalyzedHours:
         assert night.rera_index == pytest.approx(5.0)
         assert night.usage_hours == pytest.approx(8.0)
 
-    async def test_disabled_session_with_analysis_contributes_nothing(
+    async def test_rera_index_divides_by_usage_hours_not_span(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """A disabled session's RERAs and hours stay out of rera_index."""
+        """12 RERAs over a 4 h span with 3 h mask-on → 4.0/h, and rdi adds the
+        mask-on day_ahi to that same per-mask-on-hour rate."""
+        target_date = date(2024, 3, 15)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        day, sess = await _make_day_session(
+            async_db_session, device, target_date, duration_hours=4.0, ahi_computed=2.0
+        )
+        day.total_therapy_hours = 3.0
+        async_db_session.add(Statistics(session_id=sess.id, usage_hours=3.0))
+        ar = await _make_analysis_result(async_db_session, sess)
+        await _seed_rera_proxies(async_db_session, ar, sess, count=12)
+
+        night = await BreathService(
+            async_db_session, profile_id=async_test_profile.id
+        ).get_nightly_summary(target_date)
+
+        assert night.rera_count == 12
+        assert night.rera_index == pytest.approx(4.0)
+        assert night.rdi == pytest.approx(6.0)
+
+    @pytest.mark.parametrize("explicit_device", [False, True])
+    async def test_disabled_session_with_analysis_contributes_nothing(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        explicit_device: bool,
+    ) -> None:
+        """A disabled session's RERAs and hours stay out of rera_index, whether
+        the device is auto-selected or passed explicitly."""
         target_date = date(2024, 3, 13)
         device = await _make_device(async_db_session, async_test_profile.id)
         day, enabled = await _make_day_session(
@@ -247,7 +276,9 @@ class TestReraIndexAnalyzedHours:
 
         night = await BreathService(
             async_db_session, profile_id=async_test_profile.id
-        ).get_nightly_summary(target_date)
+        ).get_nightly_summary(
+            target_date, device_id=device.id if explicit_device else None
+        )
 
         assert night.rera_count == 4
         assert night.rera_index == pytest.approx(1.0)

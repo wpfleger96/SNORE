@@ -1115,8 +1115,8 @@ class DayDetail(DayListItem):
     fl_class_ge4_pct_reason: str | None = None
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "RERA-proxy events per hour of analyzed sessions (FL-run proxy, "
-        "not device-scored).",
+        "RERA-proxy events per mask-on hour of analyzed sessions (FL-run "
+        "proxy, not device-scored).",
         default=None,
     )
     rera_index_reason: str | None = None

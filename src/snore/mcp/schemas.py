@@ -227,8 +227,10 @@ class NightlyRow(BaseModel):
     # (ModeResult.rdi); the two disagree by construction.
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "RERA-proxy events per hour of analyzed sessions from flow-limitation runs "
-        "(FL-run proxy, not device-reported).",
+        "RERA-proxy events per mask-on hour of analyzed sessions, from "
+        "flow-limitation runs (FL-run proxy, not device-reported); "
+        "rera_index_reason='duration_zero' when those sessions have zero "
+        "mask-on hours.",
         default=None,
     )
     rera_index_reason: str | None = None

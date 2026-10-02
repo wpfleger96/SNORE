@@ -23,7 +23,7 @@ from snore.metrics import (
     DayAgg,
 )
 from snore.provenance import IndexSource
-from snore.therapy_hours import TherapyHoursBasis, therapy_hours
+from snore.therapy_hours import effective_session_hours
 from snore.utils.stats import weighted_mean
 
 logger = logging.getLogger(__name__)
@@ -117,24 +117,6 @@ class DayManager:
         await cls.aggregate_day_statistics(day, db_session)
         return day
 
-    @staticmethod
-    def _effective_session_hours(
-        stats: Statistics | None, session: SessionModel
-    ) -> float:
-        """Effective therapy hours for a session.
-
-        Prefers statistics.usage_hours (actual mask-on time) over session span.
-        usage_hours == 0.0 is treated as known-zero; no span fallback applies.
-        """
-        if stats is not None and stats.usage_hours is not None:
-            return stats.usage_hours
-        return (
-            therapy_hours(
-                TherapyHoursBasis.SESSION_SPAN, span_seconds=session.duration_seconds
-            )
-            or 0.0
-        )
-
     @classmethod
     def _weighted_average(
         cls,
@@ -149,7 +131,10 @@ class DayManager:
         weight), so they cannot distort the average.
         """
         return weighted_mean(
-            (getattr(s, attr), cls._effective_session_hours(s, sess))
+            (
+                getattr(s, attr),
+                effective_session_hours(s.usage_hours, sess.duration_seconds),
+            )
             for s, sess in stat_pairs
             if getattr(s, attr) is not None
         )
@@ -286,7 +271,11 @@ class DayManager:
         day.session_count = len(sessions)
 
         total_hours = sum(
-            cls._effective_session_hours(s.statistics, s) for s in sessions
+            effective_session_hours(
+                s.statistics.usage_hours if s.statistics is not None else None,
+                s.duration_seconds,
+            )
+            for s in sessions
         )
         day.total_therapy_hours = total_hours
 

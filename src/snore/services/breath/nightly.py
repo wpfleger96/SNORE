@@ -23,6 +23,7 @@ from snore.analysis.shared.versioning import (
 )
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import percentile_nearest_rank
 
@@ -67,8 +68,7 @@ def _sorted_distribution(
 
 
 def _periodic_breathing_pct(
-    day_sessions: Sequence[models.Session],
-    ok_session_ids: set[int],
+    ok_day_sessions: Sequence[models.Session],
     pb_seconds_by_session: Mapping[int, float | None],
     *,
     mixed_version: bool,
@@ -76,7 +76,7 @@ def _periodic_breathing_pct(
     """Percent of analyzed (OK-session) time spent in periodic breathing.
 
     Numerator: persisted PB episode seconds; denominator: the durations of
-    ``ok_session_ids`` sessions (the same OK gate the rest of the night uses).
+    ``ok_day_sessions`` (the same OK gate the rest of the night uses).
     PB detection having run on >= 1 OK session with zero episodes is a
     genuine 0.0 %.  Mixed algorithm versions → ``ALGO_VERSION_MISMATCH``; no
     parseable PB result or zero eligible duration → ``NOT_AVAILABLE``.
@@ -86,9 +86,7 @@ def _periodic_breathing_pct(
     pb_seconds = 0.0
     eligible_seconds = 0.0
     pb_ran = False
-    for s in day_sessions:
-        if s.id not in ok_session_ids:
-            continue
+    for s in ok_day_sessions:
         eligible_seconds += s.duration_seconds or 0.0
         session_pb = pb_seconds_by_session.get(s.id)
         if session_pb is not None:
@@ -156,12 +154,16 @@ class NightlyMixin(_BreathServiceCore):
         fl_vals_by_session: dict[int, list[float]] | None = None,
         snore_vals_by_session: dict[int, list[float]] | None = None,
         pb_seconds_by_session: Mapping[int, float | None] | None = None,
+        usage_hours_by_session: Mapping[int, float | None] | None = None,
     ) -> NightlyAnalysisSummary:
         """Build a NightlyAnalysisSummary from pre-fetched data. No I/O.
 
         ``pb_seconds_by_session`` maps a session id to its latest run's
         persisted periodic-breathing seconds (None when PB detection never ran
         or its episodes were malformed); only OK sessions are consulted.
+        ``usage_hours_by_session`` maps a session id to its
+        ``Statistics.usage_hours`` (absent: no Statistics row); it feeds the
+        ``rera_index`` mask-on denominator.
         """
         from snore.services.breath_service import BreathService  # noqa: PLC0415
 
@@ -206,9 +208,11 @@ class NightlyMixin(_BreathServiceCore):
         day_ahi = day_row.ahi_computed if day_row is not None else None
 
         ok_session_ids = {sid for sid, _algo in ok_sessions}
+        ok_day_sessions = [s for s in day_sessions if s.id in ok_session_ids]
+        # PB is a share of recorded time, so it divides by session span; the
+        # RERA index below is a rate per mask-on hour like day_ahi.
         periodic_breathing_pct, pb_reason = _periodic_breathing_pct(
-            day_sessions,
-            ok_session_ids,
+            ok_day_sessions,
             pb_seconds_by_session or {},
             mixed_version=day_status == DayAnalysisStatus.MIXED_VERSION,
         )
@@ -370,15 +374,14 @@ class NightlyMixin(_BreathServiceCore):
         rdi: float | None
         rdi_reason: NullReason | None
 
-        # RERAs are only counted on OK sessions, so divide by their hours alone;
-        # the whole night's hours would understate a partially analysed night.
-        analyzed_hours = (
-            sum(
-                s.duration_seconds or 0.0
-                for s in day_sessions
-                if s.id in ok_session_ids
-            )
-            / 3600.0
+        # RERAs are only counted on OK sessions, so divide by their mask-on
+        # hours alone (the Day.total_therapy_hours rule, restricted to analyzed
+        # sessions): the whole night's hours would understate a partially
+        # analyzed night, and day_ahi shares this per-session basis in rdi.
+        usage_hours = usage_hours_by_session or {}
+        analyzed_hours = sum(
+            effective_session_hours(usage_hours.get(s.id), s.duration_seconds)
+            for s in ok_day_sessions
         )
         if final_rera_count is not None:
             if analyzed_hours > 0:
@@ -576,6 +579,23 @@ class NightlyMixin(_BreathServiceCore):
             if ar_classification[sid][0] == AnalysisStatus.OK
         }
 
+        # Statistics.usage_hours of OK sessions: the rera_index denominator.
+        ok_session_ids = [
+            sid
+            for sid, (status, _algo, _ar_id) in ar_classification.items()
+            if status == AnalysisStatus.OK
+        ]
+        usage_hours_by_session: dict[int, float | None] = {}
+        for sid_chunk in iter_id_chunks(ok_session_ids):
+            usage_rows = await self._db.execute(
+                select(
+                    models.Statistics.session_id, models.Statistics.usage_hours
+                ).where(models.Statistics.session_id.in_(sid_chunk))
+            )
+            usage_hours_by_session.update(
+                {row.session_id: row.usage_hours for row in usage_rows}
+            )
+
         # Bulk Breath query for all OK ar_ids (10 columns only)
         ok_ar_ids = [
             ar_id
@@ -643,6 +663,7 @@ class NightlyMixin(_BreathServiceCore):
                     fl_vals_by_session=fl_vals_by_session,
                     snore_vals_by_session=snore_vals_by_session,
                     pb_seconds_by_session=pb_seconds_by_session,
+                    usage_hours_by_session=usage_hours_by_session,
                 )
                 nights.append(summary)
                 if summary.is_compliant:
