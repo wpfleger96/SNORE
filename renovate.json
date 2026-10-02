@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>wpfleger96/github-config//renovate-config/default"]
+  "extends": ["github>wpfleger96/github-config//renovate-config/default"],
+  "packageRules": [
+    {
+      "description": "Hold pint below 0.26 until mypy can analyze pint 0.26.x without crashing (#380)",
+      "matchPackageNames": ["pint"],
+      "allowedVersions": "<0.26"
+    }
+  ]
 }
