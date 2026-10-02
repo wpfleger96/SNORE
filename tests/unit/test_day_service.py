@@ -542,3 +542,21 @@ class TestDayServiceFlReraProxy:
         assert result.rera_count_reason == "analysis_not_run"
         assert "no analyzable sessions" in caplog.text
         assert "2025-09-03" in caplog.text
+
+    async def test_get_day_nulls_without_warning_when_all_sessions_disabled(
+        self, async_db_session, async_test_device, caplog
+    ):
+        """Disabling every session of a night is a normal user choice: the
+        FL/RERA fields null with ``analysis_not_run`` but nothing is warned."""
+        day = await _create_day(async_db_session, async_test_device, date(2025, 9, 4))
+        sess = await _create_session_for_day(async_db_session, async_test_device, day)
+        sess.enabled = False
+        await async_db_session.flush()
+
+        service = DayService(async_db_session, async_test_device.profile_id)
+        with caplog.at_level(logging.WARNING, logger="snore.services.day_service"):
+            result = await service.get_day(date(2025, 9, 4))
+
+        assert result.rera_index_reason == "analysis_not_run"
+        assert result.fl_class_ge4_pct_reason == "analysis_not_run"
+        assert caplog.text == ""

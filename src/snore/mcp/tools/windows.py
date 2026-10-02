@@ -270,7 +270,7 @@ def register(mcp: FastMCP) -> None:
             sessions on the date mix primary modes.
 
         Refusal semantics (successful responses with empty ``windows`` list):
-            ``null_reason: "algo_version_mismatch"`` — the day has sessions analysed
+            ``null_reason: "algo_version_mismatch"`` — the day has sessions analyzed
                 with different algorithm versions; FL-ranked criteria
                 (``worst_flattening_leak_valid``, ``fl_run_ending_in_recovery``,
                 ``rera_proxy_centered``) refuse comparison.

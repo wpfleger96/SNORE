@@ -129,16 +129,14 @@ class DayService(ProfileScopedService):
 
         day = rows[0]
 
-        session_ids = [
-            row[0]
-            for row in (
-                await self.db_session.execute(
-                    select(models.Session.id)
-                    .where(models.Session.day_id == day.id)
-                    .order_by(models.Session.start_time)
-                )
-            ).all()
-        ]
+        session_rows = (
+            await self.db_session.execute(
+                select(models.Session.id, models.Session.enabled)
+                .where(models.Session.day_id == day.id)
+                .order_by(models.Session.start_time)
+            )
+        ).all()
+        session_ids = [row.id for row in session_rows]
 
         health_summary_row = (
             await self.db_session.execute(
@@ -155,7 +153,12 @@ class DayService(ProfileScopedService):
             else None
         )
 
-        fl_rera = await self._nightly_fl_rera(day_date, day.device_id)
+        fl_rera = await self._nightly_fl_rera(
+            day_date,
+            day.device_id,
+            all_sessions_disabled=bool(session_rows)
+            and not any(row.enabled for row in session_rows),
+        )
 
         identity = {name: getattr(day, name) for name in _DAY_DETAIL_IDENTITY_FIELDS}
         return DayDetail.model_validate(
@@ -174,7 +177,9 @@ class DayService(ProfileScopedService):
             }
         )
 
-    async def _nightly_fl_rera(self, day_date: date, device_id: int) -> dict[str, Any]:
+    async def _nightly_fl_rera(
+        self, day_date: date, device_id: int, *, all_sessions_disabled: bool
+    ) -> dict[str, Any]:
         """Read-time flow-limitation / RERA-proxy metrics for one night.
 
         Sourced from BreathService.get_nightly_summary — the same latest-run
@@ -193,6 +198,11 @@ class DayService(ProfileScopedService):
           breath-table DB error, or device resolution declining) degrades to
           null values with an ``analysis_not_run`` reason, so day detail never
           fails on missing breath analysis.
+
+        A night whose sessions are all disabled (``all_sessions_disabled``) is
+        a normal user choice the breath service skips, so it short-circuits to
+        the same ``analysis_not_run`` nulls without the anomaly warning; a Day
+        row with no sessions at all still warns.
         """
         from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415
 
@@ -202,6 +212,9 @@ class DayService(ProfileScopedService):
             DeviceAmbiguityError,
             DeviceNotOwnedError,
         )
+
+        if all_sessions_disabled:
+            return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
 
         try:
             night = await BreathService(

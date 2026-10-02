@@ -542,6 +542,39 @@ class TestCaCenteredNoAnalysis:
         assert w.window_start_offset == pytest.approx(ev_offset_s - 120.0)
         assert w.window_end_offset == pytest.approx(ev_offset_s + 120.0)
 
+    async def test_ca_centered_skips_disabled_sessions(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """CA events of a disabled session on the same night yield no windows."""
+        from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
+
+        target_date = date(2024, 3, 3)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        day, enabled = await _make_day_session(async_db_session, device, target_date)
+        disabled = await _add_session_to_day(async_db_session, device, day)
+        disabled.enabled = False
+        for sess in (enabled, disabled):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type="CA",
+                    start_time=sess.start_time + timedelta(seconds=300.0),
+                    duration_seconds=15.0,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await find_windows(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            criterion="ca_centered",
+            n=5,
+            device_id=device.id,
+        )
+
+        assert [w.session_id for w in result.windows] == [enabled.id]
+
 
 # ---------------------------------------------------------------------------
 # TestFlRunEndingInRecovery
@@ -842,9 +875,32 @@ class TestReraProxyCentered:
         _, sess = await _make_day_session(async_db_session, device, target_date)
         ar = await _make_analysis_result(async_db_session, sess)
 
-        await _make_breath(async_db_session, ar, sess, breath_number=0, flow_class=1)
-        await _make_breath(async_db_session, ar, sess, breath_number=1, flow_class=5)
-        await _make_breath(async_db_session, ar, sess, breath_number=2, flow_class=6)
+        # Flattening outside the FL run (breaths 0, 3, 4) is lower than inside
+        # it, so worst_mid_insp_flattening proves it reads the run's minimum.
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=0,
+            flow_class=1,
+            mid_insp_flattening=0.05,
+        )
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=1,
+            flow_class=5,
+            mid_insp_flattening=0.4,
+        )
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=2,
+            flow_class=6,
+            mid_insp_flattening=0.2,
+        )
         await _make_breath(
             async_db_session,
             ar,
@@ -852,8 +908,16 @@ class TestReraProxyCentered:
             breath_number=3,
             flow_class=1,
             is_recovery_breath=True,
+            mid_insp_flattening=0.1,
         )
-        await _make_breath(async_db_session, ar, sess, breath_number=4, flow_class=1)
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=4,
+            flow_class=1,
+            mid_insp_flattening=0.05,
+        )
 
         await async_db_session.flush()
         result = await find_windows(
@@ -876,6 +940,7 @@ class TestReraProxyCentered:
         assert w.window_end_offset == pytest.approx(24.0)
         assert w.analysis_status == "ok"
         assert "rera_proxy" in w.reason_summary
+        assert w.worst_mid_insp_flattening == pytest.approx(0.2)
 
     async def test_rera_proxy_centered_no_clamping_mid_session(
         self, async_db_session: AsyncSession, async_test_profile: Any

@@ -271,6 +271,7 @@ class WindowCriterionOptions(BaseModel):
     """Criterion-specific options."""
 
     include_unknown_leak: bool = False
+    # Maximum anchor mid-insp flattening (lower = more flow-limited); None = no cutoff.
     flattening_threshold: float | None = None
     min_window_breaths: int = 3
     context_breaths_before: int = Field(default=3, ge=0)
