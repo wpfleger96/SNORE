@@ -1,7 +1,12 @@
+import type { Provenance } from '@/types/provenance.generated'
+
 export interface GlossaryEntry {
     label: string
     short: string // one-sentence explanation
     long?: string // optional fuller detail
+    // Tier for metrics with no backing API field; tagged API fields take their
+    // tier from the generated map instead (see provenanceFor in utils/provenance).
+    provenance?: Provenance
 }
 
 export const GLOSSARY: Record<string, GlossaryEntry> = {
@@ -25,6 +30,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     programmatic_events: {
         label: 'Programmatic Events',
         short: "Respiratory events detected by SNORE's own analysis algorithms from the raw flow signal.",
+        provenance: 'experimental',
     },
     ahi: {
         label: 'AHI',
@@ -189,6 +195,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     avg_confidence: {
         label: 'Avg Confidence',
         short: 'Average breath-classification confidence across all breaths in the session.',
+        provenance: 'experimental',
     },
     csr: {
         label: 'Cheyne-Stokes Respiration',
@@ -202,6 +209,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Flow Limitation Index',
         short: 'Severity-weighted share of breaths showing flow limitation.',
         long: "Each breath's class weight (0.0 for Class 1 up to 1.0 for Class 7) is multiplied by its classification confidence, then averaged across all breaths.",
+        provenance: 'experimental',
     },
     false_negatives: {
         label: 'False Negatives',
@@ -227,14 +235,17 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     sensitivity: {
         label: 'Sensitivity',
         short: 'Share of machine-flagged events that SNORE also detected (true-positive rate / recall).',
+        provenance: 'experimental',
     },
     precision: {
         label: 'Precision',
         short: 'Share of SNORE-detected events that match a machine-flagged event.',
+        provenance: 'experimental',
     },
     f1: {
         label: 'F1 Score',
         short: 'Harmonic mean of sensitivity and precision; balances missed events against over-detection.',
+        provenance: 'experimental',
     },
 
     // ── Validation: signal-correlation & experimental-metric axes ─────────────
@@ -247,6 +258,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'AUC',
         short: 'Area under the ROC curve: how well a SNORE score separates device-flagged flow-limited breaths from the rest (0.5 = chance, 1.0 = perfect).',
         long: 'AUC25 and AUC50 are the same measure taken at two device FLG operating points — discriminating breaths at device FLG ≥ 0.25 and ≥ 0.50 respectively. Higher thresholds isolate more severely flow-limited breaths.',
+        provenance: 'experimental',
     },
     chance_floor: {
         label: 'Chance Precision Floor',
@@ -257,6 +269,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'RERA Proxy',
         short: "SNORE's experimental FL-run RERA proxy: runs of ≥2 consecutive flow-limited breaths ending in a recovery breath.",
         long: 'Fires far more often than the device flags machine RE (which ResMed does very conservatively), so near-zero precision against machine RE is expected. Useful as an internally-consistent trend instrument, not a validated absolute count.',
+        provenance: 'experimental',
     },
     apple_breathing_disturbances: {
         label: 'Apple Breathing Disturbances',
@@ -267,6 +280,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Cross-night Spearman',
         short: "Rank correlation of SNORE's nightly 95th-percentile FL against the device's nightly 95th-percentile FLG, across nights.",
         long: 'A night-level agreement check: even when per-breath alignment is noisy, nights the device ranks as more flow-limited should rank higher for SNORE too.',
+        provenance: 'experimental',
     },
 
     // ── New device-channel labels ──────────────────────────────────────────
