@@ -1,8 +1,9 @@
 """Integration tests for new MCP tool behaviors added in the mcp-skeleton review cycle.
 
 Covers:
-- rera_index / rdi reason="duration_zero" when Day.total_therapy_hours == 0 but
-  analysis IS present (NullReason.DURATION_ZERO branch).
+- rera_index / rdi reason="duration_zero" when the analysed sessions have zero
+  duration but analysis IS present (NullReason.DURATION_ZERO branch).
+- rera_index divides by analysed (OK, enabled) session hours only.
 - Compliance block present even on empty range-mode responses (no day rows).
 - get_events max_events truncation: total_events keeps untruncated count; truncated=True
   when cut; validate_max_events raises ValidationError for max_events < 1.
@@ -14,7 +15,9 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+import uuid
+
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -27,6 +30,7 @@ from snore.database.models import (
     Event,
     Session,
 )
+from snore.services.breath_service import BreathService, NoSessionsInRangeError
 from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
@@ -70,7 +74,7 @@ class TestDurationZeroReason:
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         """rera_index and rdi are null with reason 'duration_zero' when analysis is
-        present but Day.total_therapy_hours == 0 (cannot divide RERA count by hours).
+        present but the analysed sessions last 0 h (cannot divide RERA count by hours).
         """
         from snore.mcp.tools.summary import get_nightly_summary
 
@@ -133,6 +137,136 @@ class TestDurationZeroReason:
         assert night.rdi is not None
         assert night.rdi_reason is None
         assert night.rera_proxy_version == "v2"
+
+
+# ---------------------------------------------------------------------------
+# TestReraIndexAnalyzedHours
+# ---------------------------------------------------------------------------
+
+
+async def _add_session(
+    db: AsyncSession,
+    device: Any,
+    day: Any,
+    *,
+    start: datetime,
+    duration_hours: float,
+    enabled: bool = True,
+) -> Session:
+    sess = Session(
+        device_id=device.id,
+        day_id=day.id,
+        device_session_id=f"rera_{uuid.uuid4().hex[:8]}",
+        start_time=start,
+        end_time=start + timedelta(hours=duration_hours),
+        duration_seconds=duration_hours * 3600,
+        enabled=enabled,
+    )
+    db.add(sess)
+    await db.flush()
+    return sess
+
+
+async def _seed_rera_proxies(
+    db: AsyncSession, ar: AnalysisResult, session: Session, count: int
+) -> None:
+    """Seed ``count`` RERA proxies: two FL breaths, then a recovery breath."""
+    for n in range(count * 3):
+        is_recovery = n % 3 == 2
+        start_offset = float(n) * 5.0
+        db.add(
+            Breath(
+                analysis_result_id=ar.id,
+                session_id=session.id,
+                breath_number=n,
+                start_offset_s=start_offset,
+                end_offset_s=start_offset + 4.0,
+                leak_valid=True,
+                flow_class=1 if is_recovery else 5,
+                is_recovery_breath=is_recovery,
+            )
+        )
+    await db.flush()
+
+
+class TestReraIndexAnalyzedHours:
+    async def test_unanalysed_session_hours_excluded_from_denominator(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """20 RERAs over the one analysed 4 h session → 5.0/h, not 20 / 8 h."""
+        from snore.mcp.tools.summary import get_nightly_summary
+
+        target_date = date(2024, 3, 12)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        day, analysed = await _make_day_session(
+            async_db_session, device, target_date, duration_hours=4.0
+        )
+        day.total_therapy_hours = 8.0
+        await _add_session(
+            async_db_session,
+            device,
+            day,
+            start=analysed.start_time + timedelta(hours=4),
+            duration_hours=4.0,
+        )
+        ar = await _make_analysis_result(async_db_session, analysed)
+        await _seed_rera_proxies(async_db_session, ar, analysed, count=20)
+
+        result = await get_nightly_summary(
+            async_db_session,
+            target_date,
+            target_date,
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        assert night.rera_index == pytest.approx(5.0)
+        assert night.usage_hours == pytest.approx(8.0)
+
+    async def test_disabled_session_with_analysis_contributes_nothing(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """A disabled session's RERAs and hours stay out of rera_index."""
+        target_date = date(2024, 3, 13)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        day, enabled = await _make_day_session(
+            async_db_session, device, target_date, duration_hours=4.0
+        )
+        disabled = await _add_session(
+            async_db_session,
+            device,
+            day,
+            start=enabled.start_time + timedelta(hours=4),
+            duration_hours=4.0,
+            enabled=False,
+        )
+        enabled_ar = await _make_analysis_result(async_db_session, enabled)
+        await _seed_rera_proxies(async_db_session, enabled_ar, enabled, count=4)
+        disabled_ar = await _make_analysis_result(async_db_session, disabled)
+        await _seed_rera_proxies(async_db_session, disabled_ar, disabled, count=20)
+
+        night = await BreathService(
+            async_db_session, profile_id=async_test_profile.id
+        ).get_nightly_summary(target_date)
+
+        assert night.rera_count == 4
+        assert night.rera_index == pytest.approx(1.0)
+        assert [c.session_id for c in night.session_coverage] == [enabled.id]
+
+    async def test_all_disabled_range_raises_no_sessions(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """A date whose only session is disabled has no sessions to summarise."""
+        target_date = date(2024, 3, 14)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        sess.enabled = False
+        await async_db_session.flush()
+
+        with pytest.raises(NoSessionsInRangeError):
+            await BreathService(
+                async_db_session, profile_id=async_test_profile.id
+            ).get_nightly_summary(target_date)
 
 
 # ---------------------------------------------------------------------------

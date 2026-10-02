@@ -205,9 +205,10 @@ class NightlyMixin(_BreathServiceCore):
         # mask-on hours, so both terms must share that denominator.
         day_ahi = day_row.ahi_computed if day_row is not None else None
 
+        ok_session_ids = {sid for sid, _algo in ok_sessions}
         periodic_breathing_pct, pb_reason = _periodic_breathing_pct(
             day_sessions,
-            {sid for sid, _algo in ok_sessions},
+            ok_session_ids,
             pb_seconds_by_session or {},
             mixed_version=day_status == DayAnalysisStatus.MIXED_VERSION,
         )
@@ -369,9 +370,19 @@ class NightlyMixin(_BreathServiceCore):
         rdi: float | None
         rdi_reason: NullReason | None
 
+        # RERAs are only counted on OK sessions, so divide by their hours alone;
+        # the whole night's hours would understate a partially analysed night.
+        analyzed_hours = (
+            sum(
+                s.duration_seconds or 0.0
+                for s in day_sessions
+                if s.id in ok_session_ids
+            )
+            / 3600.0
+        )
         if final_rera_count is not None:
-            if total_therapy_hours > 0:
-                rera_index = round(final_rera_count / total_therapy_hours, 2)
+            if analyzed_hours > 0:
+                rera_index = round(final_rera_count / analyzed_hours, 2)
                 rera_index_reason = None
             else:
                 rera_index = None

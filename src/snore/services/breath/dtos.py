@@ -622,7 +622,7 @@ class NightlyAnalysisSummary(BaseModel):
     compliance_threshold_hours: float
     is_compliant: bool
 
-    # rera_index = rera_count (FL-run proxy v2) / therapy hours; rdi = day AHI +
+    # rera_index = rera_count (FL-run proxy v2) / OK-session hours; rdi = day AHI +
     # rera_index. RERAs come from the query-time FL-run proxy, NOT the
     # analysis-time amplitude-crescendo detector behind ModeResult.rdi, so this
     # nightly rdi and the per-session ModeResult.rdi disagree by construction.
