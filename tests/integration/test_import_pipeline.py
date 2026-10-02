@@ -124,7 +124,10 @@ class TestImportPipeline:
             ).scalar()
             assert session_count == 1
 
-    @pytest.mark.parametrize("enabled", [False, True])
+    # ``False`` is the #369 regression case; ``True`` guards the positive day totals.
+    @pytest.mark.parametrize(
+        "enabled", [False, True], ids=["disabled-regression", "enabled-baseline"]
+    )
     async def test_force_reimport_preserves_enabled_flag(
         self, temp_db, resmed_parser, resmed_fixture_path, enabled
     ):
@@ -148,6 +151,11 @@ class TestImportPipeline:
             assert day is not None
             assert day.session_count == (1 if enabled else 0)
             assert (day.total_therapy_hours > 0) is enabled
+            if not enabled:
+                # With its only session disabled the day must not headline the
+                # device's daily AHI (or any index).
+                assert day.ahi is None
+                assert day.index_source is None
 
     async def test_waveform_storage(self, temp_db, resmed_parser, resmed_fixture_path):
         """Test that waveforms are stored correctly."""

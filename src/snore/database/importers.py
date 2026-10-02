@@ -127,6 +127,28 @@ def serialize_waveform(waveform: WaveformData) -> bytes:
     return data.tobytes()
 
 
+def _replacement_enabled(
+    incoming_id: str, replaced_rows: list[tuple[str, bool]]
+) -> bool:
+    """Return the ``enabled`` flag for a session replacing ``replaced_rows``.
+
+    The replacement stays disabled when every row it replaces was disabled.
+    When only some were, it is enabled (it carries the enabled rows' time) and
+    a warning names the disabled ones so the user can re-disable.
+    """
+    disabled_ids = [sid for sid, enabled in replaced_rows if not enabled]
+    if not disabled_ids:
+        return True
+    if len(disabled_ids) == len(replaced_rows):
+        return False
+    logger.warning(
+        f"Session {incoming_id} replaces disabled session(s) {disabled_ids} "
+        f"alongside enabled ones and is imported enabled; disable it to "
+        f"exclude that time again"
+    )
+    return True
+
+
 class SessionImporter:
     """Handles importing UnifiedSession objects to database using SQLAlchemy."""
 
@@ -274,6 +296,9 @@ class SessionImporter:
 
         replaced_day_ids: set[int] = set()
         deleted_session_ids: set[int] = set()
+        # Every row the incoming session replaces, captured before deletion so
+        # the new row can inherit the user's enable/disable choice (#369).
+        replaced_rows: list[tuple[str, bool]] = []
         if overlapping:
             # Partition: stale legacy noon-bucket rows (e.g. "20260130_merged") are
             # purged unconditionally so a plain re-import can replace them with the
@@ -295,6 +320,9 @@ class SessionImporter:
                     row.day_id for row in old_format_rows if row.day_id is not None
                 )
                 deleted_session_ids.update(row.id for row in old_format_rows)
+                replaced_rows.extend(
+                    (row.device_session_id, row.enabled) for row in old_format_rows
+                )
                 for row in old_format_rows:
                     await db.delete(row)
                 await db.flush()
@@ -318,6 +346,10 @@ class SessionImporter:
                         if row.day_id is not None
                     )
                     deleted_session_ids.update(row.id for row in remaining_overlapping)
+                    replaced_rows.extend(
+                        (row.device_session_id, row.enabled)
+                        for row in remaining_overlapping
+                    )
                     for row in remaining_overlapping:
                         await db.delete(row)
                     await db.flush()
@@ -346,16 +378,16 @@ class SessionImporter:
 
         # Now that the import decision is final ("proceed"), delete the existing
         # same-ID row for force re-imports.  Doing this after the overlap check
-        # ensures no row is deleted when the guard decides to skip.  The user's
-        # enable/disable choice survives the re-import (#369).
-        enabled = existing.enabled if existing else True
+        # ensures no row is deleted when the guard decides to skip.
         if existing:
             logger.debug(f"Force re-importing session {session_data.device_session_id}")
             if existing.day_id is not None:
                 replaced_day_ids.add(existing.day_id)
             deleted_session_ids.add(existing.id)
+            replaced_rows.append((existing.device_session_id, existing.enabled))
             await db.delete(existing)
             await db.flush()
+        enabled = _replacement_enabled(session_data.device_session_id, replaced_rows)
 
         notes_json = (
             json.dumps(session_data.data_quality_notes)
