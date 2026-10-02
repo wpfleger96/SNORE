@@ -31,25 +31,36 @@ def _classify_apnea_type(
     if flow_signal is not None and len(flow_signal) > 5:
         effort_from_flow = _estimate_effort_from_flow(flow_signal, sample_rate)
 
-        if effort_from_flow > EDC.APNEA_EFFORT_OBSTRUCTIVE_MIN:
+        # Each band maps its distance from the nearest typing threshold onto a
+        # confidence range: OA/CA rise from 0.5 to 1.0 as effort approaches its
+        # saturation point; MA rises from 0.3 to 0.5 away from the band midpoint.
+        obstructive = EDC.APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD
+        central = EDC.APNEA_EFFORT_CENTRAL_THRESHOLD
+        midpoint = EDC.APNEA_EFFORT_MIXED_MIDPOINT
+
+        if effort_from_flow > obstructive:
+            obstructive_span = EDC.APNEA_EFFORT_OBSTRUCTIVE_SATURATION - obstructive
             distance_from_boundary = min(
-                effort_from_flow - EDC.APNEA_EFFORT_OBSTRUCTIVE_MIN, 0.35
+                effort_from_flow - obstructive, obstructive_span
             )
-            classification_confidence = 0.5 + (distance_from_boundary / 0.35) * 0.5
+            classification_confidence = (
+                0.5 + (distance_from_boundary / obstructive_span) * 0.5
+            )
             return "OA", float(classification_confidence)
 
-        elif effort_from_flow < EDC.APNEA_EFFORT_CENTRAL_MAX:
-            distance_from_boundary = min(
-                EDC.APNEA_EFFORT_CENTRAL_MAX - effort_from_flow, 0.05
-            )
-            classification_confidence = 0.5 + (distance_from_boundary / 0.05) * 0.5
+        elif effort_from_flow < central:
+            distance_from_boundary = min(central - effort_from_flow, central)
+            classification_confidence = 0.5 + (distance_from_boundary / central) * 0.5
             return "CA", float(classification_confidence)
 
         else:
-            distance_from_midpoint = abs(
-                effort_from_flow - EDC.APNEA_EFFORT_MIXED_MIDPOINT
+            # midpoint - central, not (obstructive - central) / 2: the latter
+            # rounds to 0.049999... and would shift MA confidences in the last bit.
+            mixed_half_width = midpoint - central
+            distance_from_midpoint = abs(effort_from_flow - midpoint)
+            classification_confidence = (
+                0.3 + (distance_from_midpoint / mixed_half_width) * 0.2
             )
-            classification_confidence = 0.3 + (distance_from_midpoint / 0.05) * 0.2
             return "MA", float(classification_confidence)
 
     return "UA", 0.2

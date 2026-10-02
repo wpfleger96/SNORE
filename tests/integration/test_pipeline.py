@@ -21,6 +21,7 @@ import pytest
 from snore.analysis.data.waveform_loader import WaveformLoader
 from snore.analysis.shared.breath_segmenter import BreathSegmenter
 from snore.analysis.shared.feature_extractors import WaveformFeatureExtractor
+from tests.helpers.validation_helpers import assert_features_in_range
 
 
 @pytest.mark.integration_pipeline
@@ -59,8 +60,7 @@ class TestEndToEndPipeline:
             breath_flow, sample_rate=metadata["sample_rate"]
         )
 
-        assert shape is not None
-        assert peak is not None
+        assert_features_in_range(shape=shape, peak=peak)
 
     async def test_multi_segment_discontinuity_handling(self, async_recorded_session):
         """Sessions with mask-off periods process correctly."""

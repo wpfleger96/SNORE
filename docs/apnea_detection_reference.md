@@ -212,9 +212,9 @@ def classify_apnea_type(flow_during_event):
         std_dev * 0.3 + peak_to_peak * 0.3 + roughness * 0.2 + breathing_power * 0.2
     )
 
-    if effort_score > 0.15:
+    if effort_score > 0.15:  # APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD
         return "OA"  # Obstructive (effort present)
-    elif effort_score < 0.05:
+    elif effort_score < 0.05:  # APNEA_EFFORT_CENTRAL_THRESHOLD
         return "CA"  # Central (no effort)
     else:
         return "MA"  # Mixed or uncertain
