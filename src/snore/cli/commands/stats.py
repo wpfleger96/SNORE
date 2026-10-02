@@ -257,13 +257,18 @@ async def stats(
                         mark_field("AHI Trend", TrendsResponse, "ahi"), wide=True
                     )
 
-                    plt.clf()
-                    plt.plot(x_indices, ahi_values, marker="braille")
-                    plt.xticks(x_indices, date_labels)
-                    plt.title(f"AHI Over Time {direction}")
-                    plt.xlabel("Period")
-                    plt.ylabel("AHI (events/hour)")
-                    plt.show()
+                    fig = plt.figure
+                    fig.clear()
+                    fig.draw(
+                        fig.signal(x_indices, ahi_values, marker="braille").lines()
+                    )
+                    fig.ruler("x").ticks(x_indices, date_labels)
+                    fig.title(f"AHI Over Time {direction}")
+                    fig.label("Period", axis="x")
+                    fig.label("AHI (events/hour)", axis="y")
+                    # fig.show() writes to fd 1 from native code, bypassing sys.stdout
+                    # and the console; build() + console.out keeps ordering/capture.
+                    console.out(fig.build().string(colorless=True), highlight=False)
 
                     print_footer(wide=True)
 
