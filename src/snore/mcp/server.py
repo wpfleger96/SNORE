@@ -58,6 +58,7 @@ from snore.mcp.profiles import ClinicalProfile, get_profile
 from snore.mcp.schemas import SCHEMA_MODEL_MAP, model_to_schema
 from snore.mcp.tools._scaffold import (  # noqa: F401  (re-exported; tests import from here)
     RESPONSE_SIZE_LIMIT,
+    ArgumentValidationMiddleware,
     _check_response_size,
     _runtime,
     _scope_and_run,
@@ -400,6 +401,7 @@ def make_server(
         instructions=_build_instructions(profile),
         lifespan=_bound_lifespan,
         auth=auth,
+        middleware=[ArgumentValidationMiddleware()],
     )
 
     _register_resources(mcp)
