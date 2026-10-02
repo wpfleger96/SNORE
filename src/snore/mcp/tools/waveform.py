@@ -34,7 +34,7 @@ from snore.mcp.schemas import (
     localize_wall_clock,
     tz_fields,
 )
-from snore.mcp.tools._scaffold import _check_response_size, tool_error_boundary
+from snore.mcp.tools._scaffold import _dump_response, tool_error_boundary
 from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
@@ -234,11 +234,8 @@ def register(mcp: FastMCP) -> None:
             window_cap_seconds=120.0,
         )
         # CPU-bound: deserialize blobs, LTTB, map to schema — off the event loop.
-        payload = (await asyncio.to_thread(waveform_response_from_raw, raw)).model_dump(
-            mode="json"
-        )
-        _check_response_size(payload, "get_waveform")
-        return payload
+        response = await asyncio.to_thread(waveform_response_from_raw, raw)
+        return _dump_response(response, "get_waveform")
 
     get_waveform.__doc__ = (
         "Raw per-sample waveform arrays for a single therapy-night window (≤2 min).\n\n"

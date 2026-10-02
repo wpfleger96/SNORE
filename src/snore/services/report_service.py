@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.analysis.svg_charts import render_trend_line
 from snore.database import models
 from snore.services._base import ProfileScopedService
-from snore.services.schemas import DeviceInfo, TherapySummary
+from snore.services.schemas import DeviceInfo, TherapySummary, TrendsResponse
 from snore.services.stats_service import StatsService
 
 __all__ = ["ReportService"]
@@ -213,14 +213,14 @@ class ReportService(ProfileScopedService):
         data: dict[str, Any],
     ) -> str:
         """Render summary HTML from pre-fetched data.  No DB access."""
-        trends = data["trends"]
+        trends: TrendsResponse = data["trends"]
         ahi_chart = render_trend_line(
-            trends.get("ahi", []),
+            trends.ahi,
             color="#dc2626",
             y_label="AHI",
         )
         usage_chart = render_trend_line(
-            trends.get("usage", []),
+            trends.usage,
             color="#2563eb",
             y_label="Hours",
         )

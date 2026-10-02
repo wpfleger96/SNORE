@@ -2,21 +2,28 @@
 
 from io import StringIO
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
-from rich.console import Console
-from rich.table import Table
+from rich.console import Console, RenderableType
 
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.analysis.types import AnalysisResult
-from snore.cli.display.analysis import create_validation_table, format_event_list
+from snore.cli.display import provenance_legend
+from snore.cli.display.analysis import (
+    create_header_panel,
+    create_machine_events_table,
+    create_validation_table,
+    format_event_list,
+)
+from snore.provenance import PROVENANCE_NOTES, Provenance
 from snore.services.schemas import EventValidationResult
 
 
-def _render(table: Table) -> str:
+def _render(renderable: RenderableType) -> str:
     buf = StringIO()
-    Console(file=buf, width=200, no_color=True, force_terminal=False).print(table)
+    Console(file=buf, width=200, no_color=True, force_terminal=False).print(renderable)
     return buf.getvalue()
 
 
@@ -204,3 +211,31 @@ class TestCreateValidationTableReraRow:
             rera_status="no_machine_re_events",
         )
         assert "RERAs" not in _render(empty_rera)
+
+
+class TestAnalysisProvenanceLegend:
+    def test_header_panel_has_no_provenance_legend(self):
+        output = _render(create_header_panel("2025-06-01", 8.0))
+        assert "OA=Obstructive" in output
+        assert "derived" not in output
+        assert "experimental" not in output
+
+    def test_marked_tables_feed_the_command_legend(self):
+        legend_buf = StringIO()
+        legend_console = Console(file=legend_buf, no_color=True, width=200)
+        with patch("snore.cli.display.console", legend_console), provenance_legend():
+            machine = _render(create_machine_events_table([], 2.0, 2.0))
+            validation = _render(
+                create_validation_table(
+                    "aasm",
+                    _val(1, 1, 1, 1.0, 1.0, 1.0),
+                    _val(1, 1, 1, 1.0, 1.0, 1.0),
+                    [],
+                )
+            )
+        assert "AHI†" in machine
+        assert "Validation: aasm*" in validation
+        assert legend_buf.getvalue().strip() == (
+            f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
+            f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
+        )

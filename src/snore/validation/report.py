@@ -12,6 +12,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from snore.provenance import Provenance, provenance_field
+
 
 class OverlappingSessionPair(BaseModel):
     """A pair of sessions on the same device whose time ranges strictly overlap."""
@@ -65,33 +67,55 @@ class SessionValidation(BaseModel):
 
     session_id: int = Field(description="Database session ID")
     date: str = Field(description="Session date (YYYY-MM-DD)")
-    duration_hours: float = Field(description="Session duration in hours")
-    machine_event_count: int = Field(description="Total machine events")
-    programmatic_event_count: int = Field(description="Total programmatic events")
-    apnea_sensitivity: float = Field(description="Apnea sensitivity (0-1)")
-    apnea_precision: float = Field(description="Apnea precision (0-1)")
-    apnea_f1: float = Field(description="Apnea F1 score (0-1)")
-    hypopnea_sensitivity: float = Field(description="Hypopnea sensitivity (0-1)")
-    hypopnea_precision: float = Field(description="Hypopnea precision (0-1)")
-    hypopnea_f1: float = Field(description="Hypopnea F1 score (0-1)")
+    duration_hours: float = provenance_field(
+        Provenance.DERIVED, "Flow-waveform coverage (hours)"
+    )
+    machine_event_count: int = provenance_field(
+        Provenance.DEVICE, "Total machine events"
+    )
+    programmatic_event_count: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Total programmatic events"
+    )
+    apnea_sensitivity: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Apnea sensitivity (0-1)"
+    )
+    apnea_precision: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Apnea precision (0-1)"
+    )
+    apnea_f1: float = provenance_field(Provenance.EXPERIMENTAL, "Apnea F1 score (0-1)")
+    hypopnea_sensitivity: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Hypopnea sensitivity (0-1)"
+    )
+    hypopnea_precision: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Hypopnea precision (0-1)"
+    )
+    hypopnea_f1: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Hypopnea F1 score (0-1)"
+    )
     notes: str | None = Field(default=None, description="Additional notes")
 
-    # Device-reported nightly indices from the Statistics table.
-    # Null when the Statistics row is absent or the device did not record the index
-    # (e.g. APAP records ahi/oai/cai/hi but not uai; vAuto records all five).
-    device_ahi: float | None = Field(default=None, description="Device AHI (events/hr)")
-    device_oai: float | None = Field(
-        default=None, description="Device OAI (obstructive apnea index, events/hr)"
+    # Device-reported (STR) nightly indices from the Statistics ``*_device``
+    # columns and ``uai``.  Null when the Statistics row is absent or the device
+    # did not record the index (e.g. APAP records ahi/oai/cai/hi but not uai;
+    # vAuto records all five).
+    device_ahi: float | None = provenance_field(
+        Provenance.DEVICE, "Device AHI (events/hr)", default=None
     )
-    device_cai: float | None = Field(
-        default=None, description="Device CAI (central apnea index, events/hr)"
-    )
-    device_hi: float | None = Field(
-        default=None, description="Device HI (hypopnea index, events/hr)"
-    )
-    device_uai: float | None = Field(
+    device_oai: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Device OAI (obstructive apnea index, events/hr)",
         default=None,
-        description="Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)",
+    )
+    device_cai: float | None = provenance_field(
+        Provenance.DEVICE, "Device CAI (central apnea index, events/hr)", default=None
+    )
+    device_hi: float | None = provenance_field(
+        Provenance.DEVICE, "Device HI (hypopnea index, events/hr)", default=None
+    )
+    device_uai: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)",
+        default=None,
     )
 
 
@@ -99,14 +123,28 @@ class AggregateMetrics(BaseModel):
     """Aggregate validation metrics across multiple sessions."""
 
     total_sessions: int = Field(description="Total sessions analyzed")
-    total_machine_events: int = Field(description="Total machine events")
-    total_programmatic_events: int = Field(description="Total programmatic events")
-    avg_apnea_sensitivity: float = Field(description="Average apnea sensitivity")
-    avg_apnea_precision: float = Field(description="Average apnea precision")
-    avg_apnea_f1: float = Field(description="Average apnea F1")
-    avg_hypopnea_sensitivity: float = Field(description="Average hypopnea sensitivity")
-    avg_hypopnea_precision: float = Field(description="Average hypopnea precision")
-    avg_hypopnea_f1: float = Field(description="Average hypopnea F1")
+    total_machine_events: int = provenance_field(
+        Provenance.DEVICE, "Total machine events"
+    )
+    total_programmatic_events: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Total programmatic events"
+    )
+    avg_apnea_sensitivity: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Average apnea sensitivity"
+    )
+    avg_apnea_precision: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Average apnea precision"
+    )
+    avg_apnea_f1: float = provenance_field(Provenance.EXPERIMENTAL, "Average apnea F1")
+    avg_hypopnea_sensitivity: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Average hypopnea sensitivity"
+    )
+    avg_hypopnea_precision: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Average hypopnea precision"
+    )
+    avg_hypopnea_f1: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Average hypopnea F1"
+    )
     low_sensitivity_sessions: list[int] = Field(
         description="Session IDs with <60% sensitivity"
     )

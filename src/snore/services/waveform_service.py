@@ -392,6 +392,7 @@ class WaveformService(ProfileScopedService):
                         event_type=getattr(m_event, "event_type", "unknown"),
                         start_time=m_event.start_time,
                         duration=getattr(m_event, "duration", 0.0),
+                        source="machine",
                         confidence=None,
                         flow_reduction=None,
                     )
@@ -406,6 +407,7 @@ class WaveformService(ProfileScopedService):
                         event_type=apnea_event.event_type,
                         start_time=apnea_event.start_time,
                         duration=apnea_event.duration,
+                        source="programmatic",
                         confidence=getattr(apnea_event, "confidence", None),
                         flow_reduction=getattr(apnea_event, "flow_reduction", None),
                     )
@@ -424,6 +426,7 @@ class WaveformService(ProfileScopedService):
                         event_type="H",
                         start_time=hypopnea_event.start_time,
                         duration=hypopnea_event.duration,
+                        source="programmatic",
                         confidence=hypopnea_event.confidence,
                         flow_reduction=hypopnea_event.flow_reduction,
                     )

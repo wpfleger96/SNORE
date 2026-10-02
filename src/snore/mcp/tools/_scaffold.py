@@ -25,10 +25,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
-from snore.constants import FL_RERA_EXPERIMENTAL_DISCLAIMER
 from snore.mcp.errors import ValidationError
+from snore.provenance import PROVENANCE_NOTES, Provenance, response_provenance
 
 if TYPE_CHECKING:
     from snore.mcp.server import SNORERuntime
@@ -86,10 +87,10 @@ def tool_error_boundary(
 _DOC_SECTION_HEADER = re.compile(r"^[A-Z][A-Za-z ]*:$")
 
 
-def _with_fl_rera_disclaimer(
+def _with_experimental_disclaimer(
     func: Callable[..., Awaitable[Any]],
 ) -> Callable[..., Awaitable[Any]]:
-    """Inject the FL/RERA experimental disclaimer into a tool's description.
+    """Inject the experimental-metrics disclaimer into a tool's description.
 
     ``@mcp.tool()`` reads ``__doc__`` at decoration time and docstrings are static
     string literals, so the shared constant cannot be interpolated into the
@@ -102,7 +103,7 @@ def _with_fl_rera_disclaimer(
     if not func.__doc__:
         return func
     lines = inspect.cleandoc(func.__doc__).splitlines()
-    disclaimer = f"FL/RERA proxy metrics: {FL_RERA_EXPERIMENTAL_DISCLAIMER}"
+    disclaimer = f"Experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
     insert_at = next(
         (i for i, line in enumerate(lines) if _DOC_SECTION_HEADER.match(line)),
         len(lines),
@@ -137,6 +138,19 @@ def _check_response_size(result: Any, tool_name: str) -> None:
         )
 
 
+def _dump_response(result: BaseModel, tool_name: str) -> dict[str, Any]:
+    """model_dump a tool response, attach its provenance block, and size-check it.
+
+    The top-level ``provenance`` key (``response_provenance``) is added only
+    when the response model has derived or experimental fields.
+    """
+    payload: dict[str, Any] = result.model_dump(mode="json")
+    if provenance := response_provenance(type(result)):
+        payload["provenance"] = provenance
+    _check_response_size(payload, tool_name)
+    return payload
+
+
 def _runtime(ctx: Context) -> SNORERuntime:
     """Extract the SNORERuntime from the FastMCP context.
 
@@ -153,7 +167,7 @@ async def _scope_and_run(
     tool_name: str,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Open a DB scope, call impl, model_dump the result, and size-check it.
+    """Open a DB scope, call impl, and serialize the result via ``_dump_response``.
 
     Shared scaffold for the 8 standard-pattern tools (all except the waveform pair,
     which has non-standard return paths).  Each tool module's
@@ -162,6 +176,4 @@ async def _scope_and_run(
     runtime = _runtime(ctx)
     async with runtime.scope_provider() as db:
         result = await impl(db, profile_id=runtime.profile_id, **kwargs)
-    payload: dict[str, Any] = result.model_dump(mode="json")
-    _check_response_size(payload, tool_name)
-    return payload
+    return _dump_response(result, tool_name)

@@ -16,9 +16,13 @@ from snore.cli.decorators import (
 from snore.cli.display import (
     console,
     fmt_sig,
+    mark_field,
+    mark_provenance,
     print_footer,
     print_header,
 )
+from snore.provenance import Provenance
+from snore.validation.rera_report import ReraAggregateMetrics
 
 
 @click.command()
@@ -83,18 +87,32 @@ async def validate_rera(
         console.print(f"Skipped (error):          {agg.sessions_skipped_error}")
 
         console.print("\nEvent counts / densities (per therapy hour):")
-        console.print(
-            f"  Machine RE:  {agg.total_machine_re:<6} "
-            f"({fmt_sig(agg.machine_re_density)}/h)"
+        machine_re_density = mark_field(
+            f"{fmt_sig(agg.machine_re_density)}/h",
+            ReraAggregateMetrics,
+            "machine_re_density",
         )
-        console.print(
-            f"  Amplitude:   {agg.total_amplitude_reras:<6} "
-            f"({fmt_sig(agg.amplitude_density)}/h)"
-        )
-        console.print(
-            f"  FL-run proxy:{agg.total_proxy_reras:<6} "
-            f"({fmt_sig(agg.proxy_density)}/h)"
-        )
+        count_rows = [
+            (
+                mark_field("Machine RE", ReraAggregateMetrics, "total_machine_re"),
+                agg.total_machine_re,
+                machine_re_density,
+            ),
+            (
+                mark_field("Amplitude", ReraAggregateMetrics, "total_amplitude_reras"),
+                agg.total_amplitude_reras,
+                f"{fmt_sig(agg.amplitude_density)}/h",
+            ),
+            (
+                mark_field("FL-run proxy", ReraAggregateMetrics, "total_proxy_reras"),
+                agg.total_proxy_reras,
+                f"{fmt_sig(agg.proxy_density)}/h",
+            ),
+        ]
+        # Pad on the marked labels so the count column lines up.
+        label_width = max(len(label) for label, _, _ in count_rows) + 1
+        for label, count, density in count_rows:
+            console.print(f"  {label + ':':<{label_width}} {count:<6} ({density})")
         console.print(
             "  Chance-precision floor (whole-dataset, "
             f"tol={agg.match_tolerance_seconds}s): "
@@ -102,7 +120,9 @@ async def validate_rera(
         )
 
         if agg.sessions_with_machine_re > 0:
-            console.print("\nScores over sessions with machine RE (amplitude | proxy):")
+            console.print(
+                f"\n{mark_provenance('Scores', Provenance.EXPERIMENTAL)} over sessions with machine RE (amplitude | proxy):"
+            )
             console.print(
                 f"  Sensitivity (mean):   "
                 f"{fmt_sig(agg.mean_amplitude_sensitivity)} | "
@@ -143,11 +163,11 @@ async def validate_rera(
             shown = scored[:_table_cap]
             if len(scored) > _table_cap:
                 header = (
-                    f"\nScored sessions (top {_table_cap} of {len(scored)} "
+                    f"\n{mark_provenance('Scored sessions', Provenance.EXPERIMENTAL)} (top {_table_cap} of {len(scored)} "
                     "by machine RE; amplitude / proxy):"
                 )
             else:
-                header = f"\nScored sessions ({len(scored)}; amplitude / proxy):"
+                header = f"\n{mark_provenance('Scored sessions', Provenance.EXPERIMENTAL)} ({len(scored)}; amplitude / proxy):"
             console.print(header)
             console.print(
                 f"{'Date':<12} {'ID':<6} {'RE':<4} "

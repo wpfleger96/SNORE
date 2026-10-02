@@ -20,6 +20,7 @@ from snore.cli.decorators import (
 )
 from snore.cli.display import (
     ICON_STATS,
+    Column,
     console,
     err_console,
     print_dry_run_complete,
@@ -31,6 +32,7 @@ from snore.cli.display import (
     print_table,
     print_tip,
     print_warning,
+    use_plain_legend,
 )
 from snore.cli.display.analysis import display_analysis_result
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
@@ -93,6 +95,8 @@ async def run(
     plain: bool,
 ) -> int | None:
     """Run analysis on CPAP sessions."""
+    if plain:
+        use_plain_legend()
     single_session_flags = [session_id is not None, date is not None]
     batch_flags = [date_from is not None, date_to is not None]
 
@@ -189,6 +193,8 @@ async def show(
     plain: bool,
 ) -> None:
     """Display stored analysis results."""
+    if plain:
+        use_plain_legend()
     from snore.analysis.service import AnalysisService  # noqa: PLC0415
     from snore.services.session_service import SessionService  # noqa: PLC0415
 
@@ -319,11 +325,11 @@ async def analysis_delete(
 
     print_table(
         [
-            ("Sess ID", 8),
-            ("Date", 12),
-            ("Time", 8),
-            ("Versions", 10),
-            ("Device", 25),
+            Column("Sess ID", 8),
+            Column("Date", 12),
+            Column("Time", 8),
+            Column("Versions", 10),
+            Column("Device", 25),
         ],
         rows,
     )
@@ -567,11 +573,11 @@ async def _list_sessions(
 
     print_table(
         [
-            ("Date", 12),
-            ("ID", 6),
-            ("Duration", 10),
-            ("Analyzed", 10),
-            ("Analysis ID", 12),
+            Column("Date", 12),
+            Column("ID", 6),
+            Column("Duration", 10),
+            Column("Analyzed", 10),
+            Column("Analysis ID", 12),
         ],
         (
             (

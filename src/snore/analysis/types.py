@@ -15,8 +15,9 @@ from snore.constants import (
     EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
 )
+from snore.provenance import Provenance, provenance_field
 
-# Machine event types counted toward the machine-reported AHI (apneas +
+# Machine event types counted toward the machine-event AHI recount (apneas +
 # hypopneas).  RERAs are excluded — for CPAP data RDI equals AHI.
 _MACHINE_AHI_EVENT_TYPES: frozenset[str] = frozenset(
     {
@@ -40,26 +41,31 @@ class AnalysisEvent(BaseModel):
 
     event_type: str = Field(description="Event type")
     start_time: float = Field(description="Session offset (seconds from session start)")
-    duration: float = Field(ge=0, description="Event duration (seconds)")
+    duration: float = provenance_field(
+        Provenance.DEVICE,
+        "Event duration (seconds); experimental for programmatic events",
+        source_field="source",
+        ge=0,
+    )
     source: str = Field(description="Event source (machine/programmatic)")
-    confidence: float | None = Field(
-        default=None, ge=0, le=1, description="Detection confidence"
+    confidence: float | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Detection confidence", default=None, ge=0, le=1
     )
-    flow_reduction: float | None = Field(
-        default=None, ge=0, le=1, description="Flow reduction (0-1)"
+    flow_reduction: float | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", default=None, ge=0, le=1
     )
-    has_desaturation: bool | None = Field(
-        default=None, description="Has SpO2 desaturation"
+    has_desaturation: bool | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Has SpO2 desaturation", default=None
     )
-    baseline_flow: float | None = Field(
-        default=None, description="Baseline flow (L/min)"
+    baseline_flow: float | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Baseline flow (L/min)", default=None
     )
 
 
 def _machine_ahi_rdi(
     machine_events: list[AnalysisEvent], session_duration_hours: float
 ) -> tuple[float | None, float | None]:
-    """Compute the machine-reported AHI/RDI over waveform-coverage hours.
+    """Recount machine events into AHI/RDI over waveform-coverage hours.
 
     Returns ``(None, None)`` when there are no machine events.  RDI equals AHI
     for CPAP data because RERA scoring requires EEG.
@@ -75,14 +81,26 @@ class AnalysisResult(BaseModel):
     """Results from session analysis."""
 
     session_id: int = Field(description="Database session ID")
-    session_duration_hours: float = Field(ge=0, description="Session duration (hours)")
-    total_breaths: int = Field(ge=0, description="Total breaths segmented")
-    machine_events: list[AnalysisEvent] = Field(description="Machine-flagged events")
-    machine_ahi: float | None = Field(
-        default=None, ge=0, description="Machine-reported AHI (None if no events)"
+    session_duration_hours: float = provenance_field(
+        Provenance.DERIVED, "Flow-waveform coverage (hours)", ge=0
     )
-    machine_rdi: float | None = Field(
-        default=None, ge=0, description="Machine-reported RDI (None if no events)"
+    total_breaths: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Total breaths segmented", ge=0
+    )
+    machine_events: list[AnalysisEvent] = Field(description="Machine-flagged events")
+    machine_ahi: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, "
+        "not the device-reported AHI (None if no events)",
+        default=None,
+        ge=0,
+    )
+    machine_rdi: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Equal to machine_ahi: RERAs need EEG, so CPAP RDI is the AHI recount "
+        "(None if no events)",
+        default=None,
+        ge=0,
     )
     mode_results: dict[str, ModeResult] = Field(description="Results by detection mode")
     flow_analysis: dict[str, Any] | None = Field(
@@ -100,11 +118,11 @@ class AnalysisResult(BaseModel):
     periodic_breathing_episodes: list[dict[str, Any]] | None = Field(
         default=None, description="Time-localized periodic breathing episodes"
     )
-    pulse_change_count: int | None = Field(
-        default=None, description="Total pulse change events detected"
+    pulse_change_count: int | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Total pulse change events detected", default=None
     )
-    pulse_change_index: float | None = Field(
-        default=None, description="Pulse changes per hour"
+    pulse_change_index: float | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Pulse changes per hour", default=None
     )
     timestamp_start: float = Field(default=0.0, description="Session start timestamp")
     timestamp_end: float = Field(default=0.0, description="Session end timestamp")

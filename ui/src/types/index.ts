@@ -172,8 +172,8 @@ export type EventComparisonDetail = Schemas['EventComparisonDetail']
 export type BulkDeletePreviewRequest = Schemas['BulkDeletePreviewRequest']
 
 // ---------------------------------------------------------------------------
-// UI-only types below: /stats/trends and /stats/records return loose dict
-// schemas that generate less useful TypeScript than hand-written types.
+// UI-only types below. TrendData and RecordsData are hand-written views of
+// /stats/trends and /stats/records (generated: TrendsResponse, RecordsResponse).
 // WaveformType, WAVEFORM_LABELS, EVENT_COLORS are pure UI constants.
 // ---------------------------------------------------------------------------
 

@@ -243,19 +243,14 @@ class TestStatsService:
         service = StatsService(async_db_session, profile_id=1)
         records = await service.get_records(top_n=5)
 
-        assert "ahi" in records
-        assert "leak" in records
-        assert "therapy_hours" in records
-        assert "spo2_min" in records
+        assert records.model_fields_set >= {"ahi", "leak", "therapy_hours", "spo2_min"}
+        assert records.ahi is not None
 
-        assert len(records["ahi"]["best"]) <= 5
-        assert len(records["ahi"]["worst"]) <= 5
+        assert len(records.ahi.best) <= 5
+        assert len(records.ahi.worst) <= 5
 
-        best_ahi = records["ahi"]["best"][0]
-        assert best_ahi[1] == 2.0
-
-        worst_ahi = records["ahi"]["worst"][0]
-        assert worst_ahi[1] == 5.0
+        assert records.ahi.best[0][1] == 2.0
+        assert records.ahi.worst[0][1] == 5.0
 
     async def test_pressure_aggregates(self, async_db_session, async_test_device):
         """Pressure avg is usage-weighted from Day.pressure_median; min/max unweighted."""
@@ -859,7 +854,7 @@ class TestGetTrends:
             "pulse",
             "mv",
         }
-        assert set(result.keys()) == expected
+        assert result.model_fields_set == expected
 
     async def test_get_trends_day_granularity(
         self, async_db_session, async_test_device
@@ -878,7 +873,7 @@ class TestGetTrends:
         service = StatsService(async_db_session, profile_id=1)
         result = await service.get_trends("day")
 
-        assert len(result["ahi"]) == 3
+        assert len(result.ahi) == 3
 
     async def test_get_trends_days_limit_filters(
         self, async_db_session, async_test_device
@@ -902,13 +897,13 @@ class TestGetTrends:
         result = await service.get_trends("month", days_limit=30)
 
         # Only the recent day should appear
-        assert len(result["ahi"]) == 1
+        assert len(result.ahi) == 1
 
     async def test_get_trends_empty_returns_13_empty_lists(self, async_db_session):
         """Empty database returns 13-key dict with empty lists."""
         service = StatsService(async_db_session, profile_id=1)
         result = await service.get_trends("week")
 
-        assert len(result) == 13
-        for v in result.values():
-            assert v == []
+        assert len(result.model_fields_set) == 13
+        for field in result.model_fields_set:
+            assert getattr(result, field) == []

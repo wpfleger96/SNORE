@@ -34,7 +34,7 @@ from snore.mcp.tools._capabilities import _has_analysis, build_device_capabiliti
 from snore.mcp.tools._helpers import str_or_none
 from snore.mcp.tools._scaffold import (
     _scope_and_run,
-    _with_fl_rera_disclaimer,
+    _with_experimental_disclaimer,
     tool_error_boundary,
 )
 from snore.mcp.tools._service_errors import (
@@ -64,7 +64,7 @@ async def get_nightly_summary(
     with flow_class >= 4) are populated from
     BreathService.get_nightly_range_summary(); absent entries are null with
     reason (A2).  RDI here adds the experimental RERA-proxy index to the
-    device-reported AHI.  Compliance uses n_calendar_nights as denominator.
+    night's AHI.  Compliance uses n_calendar_nights as denominator.
 
     Raises ValidationError when BreathService reports device ownership problems
     (DeviceAmbiguityError, DeviceNotOwnedError).  The server boundary converts
@@ -421,7 +421,7 @@ def register(mcp: FastMCP) -> None:
     )
 
     @mcp.tool()
-    @_with_fl_rera_disclaimer
+    @_with_experimental_disclaimer
     @tool_error_boundary
     async def get_nightly_summary(
         ctx: Context,
@@ -439,7 +439,7 @@ def register(mcp: FastMCP) -> None:
         ``"not_available"`` when the night has sessions but no current (OK)
         analysis to draw from, ``"analysis_not_run"`` when the night has no
         analyzable session summary at all. RDI here adds the experimental RERA-proxy index to the
-        device-reported AHI. ``fl_class_ge4_pct`` is the percent of leak-valid,
+        night's AHI. ``fl_class_ge4_pct`` is the percent of leak-valid,
         rule-matched classified breaths with ``flow_class >= 4``; the confidence
         gate excludes fallback guesses. Compliance fields are included in the
         response.

@@ -14,6 +14,7 @@ from snore.cli.decorators import (
 )
 from snore.cli.display import (
     ICON_STATS,
+    Column,
     console,
     print_dry_run_complete,
     print_dry_run_header,
@@ -25,6 +26,8 @@ from snore.cli.display import (
     print_warning,
 )
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
+from snore.provenance import field_provenance
+from snore.services.schemas import SessionListItem
 
 
 @click.group()
@@ -95,13 +98,13 @@ async def session_list(
 
     print_table(
         [
-            ("ID", 5),
-            ("Therapy Day", 12),
-            ("Time", 8),
-            ("Duration", 10),
-            ("Device", 30),
-            ("Serial", 15),
-            ("AHI", 8),
+            Column("ID", 5),
+            Column("Therapy Day", 12),
+            Column("Time", 8),
+            Column("Duration", 10, field_provenance(SessionListItem, "duration_hours")),
+            Column("Device", 30),
+            Column("Serial", 15),
+            Column("AHI", 8, field_provenance(SessionListItem, "ahi")),
         ],
         rows,
     )
@@ -199,12 +202,12 @@ async def session_delete(
 
     print_table(
         [
-            ("ID", 5),
-            ("Therapy Day", 12),
-            ("Time", 8),
-            ("Duration", 10),
-            ("Device", 30),
-            ("Serial", 15),
+            Column("ID", 5),
+            Column("Therapy Day", 12),
+            Column("Time", 8),
+            Column("Duration", 10),
+            Column("Device", 30),
+            Column("Serial", 15),
         ],
         (
             (

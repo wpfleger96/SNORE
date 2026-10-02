@@ -6,7 +6,6 @@ import math
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -204,7 +203,6 @@ class BreathRow(BaseModel):
     trigger_type: TriggerType | None
     cycle_type: CycleType | None
     trigger_cycle_confidence: float | None
-    trigger_cycle_experimental: Literal[True] = True
     trigger_cycle_applicability: TriggerCycleApplicability | None
     trigger_cycle_reason: NullReason | None
 

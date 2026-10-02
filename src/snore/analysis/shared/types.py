@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from snore.constants import ApneaEventType
+from snore.provenance import Provenance, provenance_field
 
 
 class BreathMetrics(BaseModel):
@@ -77,17 +78,26 @@ class ApneaEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = Field(ge=0, description="Event duration (seconds)")
+    duration: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
+    )
     event_type: ApneaEventType = Field(description="Apnea type")
-    flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
-    confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
-    classification_confidence: float = Field(
+    flow_reduction: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", ge=0, le=1
+    )
+    confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Detection confidence (0-1)", ge=0, le=1
+    )
+    classification_confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Confidence in OA/CA/MA classification (0-1)",
         default=0.5,
         ge=0,
         le=1,
-        description="Confidence in OA/CA/MA classification (0-1)",
     )
-    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
+    baseline_flow: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
+    )
     detection_method: str = Field(
         default="amplitude",
         description="Detection method (amplitude, gap, near_zero_flow)",
@@ -111,13 +121,23 @@ class HypopneaEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = Field(ge=0, description="Event duration (seconds)")
-    flow_reduction: float = Field(ge=0, le=1, description="Flow reduction (0-1)")
-    confidence: float = Field(ge=0, le=1, description="Detection confidence (0-1)")
-    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
-    has_arousal: bool | None = Field(default=None, description="Arousal detected")
-    has_desaturation: bool | None = Field(
-        default=None, description="SpO2 desaturation ≥3%"
+    duration: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
+    )
+    flow_reduction: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", ge=0, le=1
+    )
+    confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Detection confidence (0-1)", ge=0, le=1
+    )
+    baseline_flow: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
+    )
+    has_arousal: bool | None = provenance_field(
+        Provenance.EXPERIMENTAL, "Arousal detected", default=None
+    )
+    has_desaturation: bool | None = provenance_field(
+        Provenance.EXPERIMENTAL, "SpO2 desaturation ≥3%", default=None
     )
 
 
@@ -140,17 +160,24 @@ class RERAEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = Field(ge=0, description="Event duration (seconds)")
-    obstructed_breath_count: int = Field(
-        ge=2, description="Breaths showing flow limitation"
+    duration: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
     )
-    recovery_amplitude_increase_pct: float = Field(
-        ge=0, description="Recovery breath amplitude increase (%)"
+    obstructed_breath_count: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Breaths showing flow limitation", ge=2
     )
-    confidence: float = Field(
-        ge=0, le=1, description="Detection confidence (0-1, lower without EEG)"
+    recovery_amplitude_increase_pct: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Recovery breath amplitude increase (%)", ge=0
     )
-    baseline_flow: float = Field(description="Baseline flow before event (L/min)")
+    confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Detection confidence (0-1, lower without EEG)",
+        ge=0,
+        le=1,
+    )
+    baseline_flow: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
+    )
 
 
 class EventTimeline(BaseModel):

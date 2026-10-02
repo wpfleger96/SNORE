@@ -13,7 +13,8 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, print_footer, print_header
+from snore.cli.display import console, mark_provenance, print_footer, print_header
+from snore.provenance import Provenance
 
 
 @click.command()
@@ -76,7 +77,9 @@ async def validate_breaths(
         )
 
         if agg.sessions_compared > 0:
-            console.print("\nAggregate Metrics (over sessions with channel data):")
+            console.print(
+                f"\n{mark_provenance('Aggregate Metrics', Provenance.EXPERIMENTAL)} (over sessions with channel data):"
+            )
 
             def _fmt(v: float | None, precision: int = 3) -> str:
                 return f"{v:.{precision}f}" if v is not None else "N/A"
@@ -105,7 +108,9 @@ async def validate_breaths(
         skipped_sessions = [s for s in report.sessions if s.skipped_reason is not None]
 
         if compared_sessions:
-            console.print("\nPer-Session Results (MAE per channel):")
+            console.print(
+                f"\n{mark_provenance('Per-Session Results', Provenance.EXPERIMENTAL)} (MAE per channel):"
+            )
             console.print(
                 f"{'Date':<12} {'ID':<6} {'N':<6} "
                 f"{'RR MAE':>8} {'TV MAE':>8} {'Ti MAE':>8} {'IE MAE':>8}"
@@ -123,7 +128,7 @@ async def validate_breaths(
                 return f"{cc.median_abs_error:>8.2f}"
 
             def _low_sample_flag(session_result: object) -> str:
-                """Return '*' if any compared channel has n_pairs < threshold."""
+                """Return '!' if any compared channel has n_pairs < threshold."""
                 for ch in ("rr", "tv", "ti", "ie_ratio"):
                     cc = session_result.channels.get(ch)  # type: ignore[attr-defined]
                     if (
@@ -132,13 +137,13 @@ async def validate_breaths(
                         and cc.n_pairs < _LOW_SAMPLE_THRESHOLD
                         and cc.n_pairs > 0
                     ):
-                        return "*"
+                        return "!"
                 return " "
 
             low_sample_shown = False
             for s in compared_sessions[:20]:
                 flag = _low_sample_flag(s)
-                if flag == "*":
+                if flag == "!":
                     low_sample_shown = True
                 console.print(
                     f"{s.date:<12} "
@@ -156,7 +161,7 @@ async def validate_breaths(
 
             if low_sample_shown:
                 console.print(
-                    f"* at least one channel has < {_LOW_SAMPLE_THRESHOLD} pairs"
+                    f"! at least one channel has < {_LOW_SAMPLE_THRESHOLD} pairs"
                 )
 
         if skipped_sessions:

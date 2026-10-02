@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import (
     DayDetail,
     DayListItem,
@@ -94,8 +95,10 @@ class PaginatedResponse[T](BaseModel):
 
 class WaveformDataResponse(BaseModel):
     timestamps: list[float]
-    values: list[float]
-    sample_rate: float
+    values: list[float] = provenance_field(
+        Provenance.DEVICE, "Waveform samples (possibly LTTB-downsampled)"
+    )
+    sample_rate: float = provenance_field(Provenance.DEVICE, "Sample rate (Hz)")
     unit: str
     total_samples: int
     downsampled: bool
@@ -140,10 +143,16 @@ class EventItem(BaseModel):
     id: int
     event_type: str
     start_time: float
-    duration_seconds: float
+    duration_seconds: float = provenance_field(
+        Provenance.DEVICE, "Device-scored event duration (s)"
+    )
     offset_seconds: float
-    spo2_drop: float | None = None
-    peak_flow_limitation: float | None = None
+    spo2_drop: float | None = provenance_field(
+        Provenance.DEVICE, "SpO2 drop (%)", default=None
+    )
+    peak_flow_limitation: float | None = provenance_field(
+        Provenance.DEVICE, "Peak flow limitation", default=None
+    )
 
 
 AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]

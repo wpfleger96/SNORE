@@ -31,7 +31,11 @@ from snore.mcp.schemas import (
 from snore.mcp.tools._capabilities import build_device_capabilities
 from snore.mcp.tools._coverage import map_session_coverage
 from snore.mcp.tools._helpers import str_or_none
-from snore.mcp.tools._scaffold import _scope_and_run, tool_error_boundary
+from snore.mcp.tools._scaffold import (
+    _scope_and_run,
+    _with_experimental_disclaimer,
+    tool_error_boundary,
+)
 from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
@@ -178,6 +182,7 @@ def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import parse_date, validate_window_count  # noqa: PLC0415
 
     @mcp.tool()
+    @_with_experimental_disclaimer
     @tool_error_boundary
     async def find_windows(
         ctx: Context,
@@ -200,8 +205,10 @@ def register(mcp: FastMCP) -> None:
         Use this tool to locate specific regions in a therapy session worth reviewing in
         detail (e.g. in ``get_breath_table`` or ``render_window``).  Each window
         is a contiguous breath sequence ranked by severity; windows with >50% overlap
-        (relative to the shorter) are deduped, keeping the worst.  Results are ordered
-        worst-first.
+        (relative to the shorter) are deduped, keeping the higher-ranked.  Results are
+        ordered worst-first, except ``ca_centered``, which is ordered by the CA event's
+        offset from its own session's start (smallest first; windows from different
+        sessions interleave by offset, not by wall-clock time).
 
         Requires breath-level analysis results (``get_data_overview`` → ``analysis_run``
         must be true).
@@ -209,16 +216,19 @@ def register(mcp: FastMCP) -> None:
         Args:
             date: Session date in YYYY-MM-DD format.
             criterion: Window selection criterion.  One of:
-                ``"worst_flattening_leak_valid"`` — worst mean mid-inspiratory flattening
-                    among leak-valid breaths; use to find FL hotspots.
-                ``"ca_centered"`` — context window around each CA event; works even when
-                    the day mixes algorithm versions.
+                ``"worst_flattening_leak_valid"`` — windows anchored on the leak-valid
+                    breaths with the highest mid-inspiratory flattening, ranked by that
+                    single anchor breath's score; use to find FL hotspots.
+                ``"ca_centered"`` — context window of ±``context_seconds`` around each
+                    CA event, ordered by offset within its session (see above); ``n``
+                    keeps the first N in that order.  Works even when the day mixes
+                    algorithm versions.
                 ``"fl_run_ending_in_recovery"`` — FL runs immediately followed by a
                     recovery breath (the analysis-time recovery flag OR the
                     self-contained v2 criterion: flow class drops to <=2 with peak
                     flow >= ``(1 + recovery_amplitude_margin)`` x the run mean);
                     requires uniform primary_mode across sessions.
-                ``"rera_proxy_centered"`` — context window of ±(``context_seconds``/2)
+                ``"rera_proxy_centered"`` — context window of ±``context_seconds``
                     centered on the recovery breath of each detected RERA-proxy event
                     (FL run → recovery breath); ranked by FL run length descending.
                     Accepts ``context_seconds``, ``min_fl_run_length``,
@@ -236,7 +246,7 @@ def register(mcp: FastMCP) -> None:
             min_window_breaths: Minimum breaths per window (default 3).
             context_breaths_before: Context breaths before the anchor (default 3).
             context_breaths_after: Context breaths after the anchor (default 3).
-            context_seconds: Context window duration in seconds (default 120.0).
+            context_seconds: Context seconds on each side of the anchor (default 120.0).
                 Only relevant for ``ca_centered`` and ``rera_proxy_centered``.
             min_fl_run_length: Minimum FL-class run length (default 2).
                 Only relevant for ``fl_run_ending_in_recovery`` and
@@ -250,7 +260,8 @@ def register(mcp: FastMCP) -> None:
                 ``rera_proxy_centered``.
 
         Returns:
-            FindWindowsResponse.  ``windows`` is ordered worst-first.
+            FindWindowsResponse.  ``windows`` is ordered worst-first (``ca_centered``:
+            smallest CA offset from session start first).
             ``device_id`` is ``null`` when no sessions were found on the date
             (the service-internal sentinel ``0`` is never emitted).
             ``session_coverage`` lists per-session analysis status.

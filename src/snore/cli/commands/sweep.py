@@ -21,7 +21,8 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, fmt_sig
+from snore.cli.display import console, fmt_sig, mark_provenance
+from snore.provenance import Provenance
 from snore.validation.sweep import SweepResult
 
 
@@ -65,10 +66,11 @@ def _fmt(v: float | int | None) -> str:
 def _render_table(result: SweepResult, top: int) -> None:
     """Render the ranked grid as a Rich table, current-defaults row highlighted."""
     knob_cols = list(result.rows[0].knobs.keys())
-    table = Table(
-        title=f"Top {min(top, len(result.rows))} of {len(result.rows)} "
+    title = (
+        f"Top {min(top, len(result.rows))} of {len(result.rows)} "
         f"(ranked by {result.objective_label})"
     )
+    table = Table(title=mark_provenance(title, Provenance.EXPERIMENTAL))
     table.add_column("#", justify="right")
     for knob in knob_cols:
         table.add_column(knob, justify="right")

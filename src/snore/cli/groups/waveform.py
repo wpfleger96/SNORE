@@ -16,7 +16,14 @@ from snore.cli.decorators import (
     profile_scoped_command,
     session_id_date_options,
 )
-from snore.cli.display import console, print_table, print_warning
+from snore.cli.display import (
+    Column,
+    console,
+    mark_field,
+    print_table,
+    print_warning,
+)
+from snore.services.schemas import EventComparisonResult
 from snore.waveform import format_time_offset
 from snore.waveform.inspector import parse_time_offset
 
@@ -91,11 +98,11 @@ async def list_waveforms(
     console.print(f"Available waveforms for session {resolved_id}:")
     print_table(
         [
-            ("TYPE", 12),
-            ("RATE", 12),
-            ("SAMPLES", 10),
-            ("UNIT", 10),
-            ("DURATION", 0),
+            Column("TYPE", 12),
+            Column("RATE", 12),
+            Column("SAMPLES", 10),
+            Column("UNIT", 10),
+            Column("DURATION", 0),
         ],
         (
             (
@@ -361,15 +368,18 @@ async def compare_events(
     except NotFoundError as e:
         raise click.ClickException(str(e)) from e
 
+    programmatic = mark_field(
+        "Programmatic", EventComparisonResult, "programmatic_event_count"
+    )
     console.print(f"Session {resolved_id} - Event Comparison ({mode} mode)")
     console.print(
-        f"Machine: {comparison.machine_event_count} events | Programmatic: {comparison.programmatic_event_count} events"
+        f"Machine: {comparison.machine_event_count} events | {programmatic}: {comparison.programmatic_event_count} events"
     )
     console.print("")
 
     if not show_unmatched or len(comparison.false_negatives) > 0:
         console.print(
-            f"FALSE NEGATIVES (machine events missed by programmatic): {len(comparison.false_negatives)}"
+            f"{mark_field('FALSE NEGATIVES', EventComparisonResult, 'false_negatives')} (machine events missed by programmatic): {len(comparison.false_negatives)}"
         )
         for event in comparison.false_negatives:
             time_str = format_time_offset(event.start_time)
@@ -388,7 +398,7 @@ async def compare_events(
         > 0
     ):
         console.print(
-            f"FALSE POSITIVES (programmatic events not in machine): {len(comparison.false_positives_apnea) + len(comparison.false_positives_hypopnea)}"
+            f"{mark_field('FALSE POSITIVES', EventComparisonResult, 'false_positives_apnea')} (programmatic events not in machine): {len(comparison.false_positives_apnea) + len(comparison.false_positives_hypopnea)}"
         )
 
         for event in comparison.false_positives_apnea:

@@ -1995,32 +1995,32 @@ export interface components {
         AggregateMetrics: {
             /**
              * Avg Apnea F1
-             * @description Average apnea F1
+             * @description [EXPERIMENTAL] Average apnea F1
              */
             avg_apnea_f1: number
             /**
              * Avg Apnea Precision
-             * @description Average apnea precision
+             * @description [EXPERIMENTAL] Average apnea precision
              */
             avg_apnea_precision: number
             /**
              * Avg Apnea Sensitivity
-             * @description Average apnea sensitivity
+             * @description [EXPERIMENTAL] Average apnea sensitivity
              */
             avg_apnea_sensitivity: number
             /**
              * Avg Hypopnea F1
-             * @description Average hypopnea F1
+             * @description [EXPERIMENTAL] Average hypopnea F1
              */
             avg_hypopnea_f1: number
             /**
              * Avg Hypopnea Precision
-             * @description Average hypopnea precision
+             * @description [EXPERIMENTAL] Average hypopnea precision
              */
             avg_hypopnea_precision: number
             /**
              * Avg Hypopnea Sensitivity
-             * @description Average hypopnea sensitivity
+             * @description [EXPERIMENTAL] Average hypopnea sensitivity
              */
             avg_hypopnea_sensitivity: number
             /**
@@ -2030,12 +2030,12 @@ export interface components {
             low_sensitivity_sessions: number[]
             /**
              * Total Machine Events
-             * @description Total machine events
+             * @description [DEVICE] Total machine events
              */
             total_machine_events: number
             /**
              * Total Programmatic Events
-             * @description Total programmatic events
+             * @description [EXPERIMENTAL] Total programmatic events
              */
             total_programmatic_events: number
             /**
@@ -2081,17 +2081,17 @@ export interface components {
         AnalysisEvent: {
             /**
              * Baseline Flow
-             * @description Baseline flow (L/min)
+             * @description [EXPERIMENTAL] Baseline flow (L/min)
              */
             baseline_flow?: number | null
             /**
              * Confidence
-             * @description Detection confidence
+             * @description [EXPERIMENTAL] Detection confidence
              */
             confidence?: number | null
             /**
              * Duration
-             * @description Event duration (seconds)
+             * @description [DEVICE] Event duration (seconds); experimental for programmatic events
              */
             duration: number
             /**
@@ -2101,12 +2101,12 @@ export interface components {
             event_type: string
             /**
              * Flow Reduction
-             * @description Flow reduction (0-1)
+             * @description [EXPERIMENTAL] Flow reduction (0-1)
              */
             flow_reduction?: number | null
             /**
              * Has Desaturation
-             * @description Has SpO2 desaturation
+             * @description [EXPERIMENTAL] Has SpO2 desaturation
              */
             has_desaturation?: boolean | null
             /**
@@ -2176,7 +2176,10 @@ export interface components {
         AnalysisListItem: {
             /** Analysis Id */
             analysis_id?: number | null
-            /** Duration Hours */
+            /**
+             * Duration Hours
+             * @description [DEVICE] Session duration in hours
+             */
             duration_hours?: number | null
             /** Has Analysis */
             has_analysis: boolean
@@ -2218,7 +2221,7 @@ export interface components {
             } | null
             /**
              * Machine Ahi
-             * @description Machine-reported AHI (None if no events)
+             * @description [DERIVED] Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, not the device-reported AHI (None if no events)
              */
             machine_ahi?: number | null
             /**
@@ -2228,7 +2231,7 @@ export interface components {
             machine_events: components['schemas']['AnalysisEvent'][]
             /**
              * Machine Rdi
-             * @description Machine-reported RDI (None if no events)
+             * @description [DERIVED] Equal to machine_ahi: RERAs need EEG, so CPAP RDI is the AHI recount (None if no events)
              */
             machine_rdi?: number | null
             /**
@@ -2256,17 +2259,17 @@ export interface components {
                 | null
             /**
              * Pulse Change Count
-             * @description Total pulse change events detected
+             * @description [EXPERIMENTAL] Total pulse change events detected
              */
             pulse_change_count?: number | null
             /**
              * Pulse Change Index
-             * @description Pulse changes per hour
+             * @description [EXPERIMENTAL] Pulse changes per hour
              */
             pulse_change_index?: number | null
             /**
              * Session Duration Hours
-             * @description Session duration (hours)
+             * @description [DERIVED] Flow-waveform coverage (hours)
              */
             session_duration_hours: number
             /**
@@ -2288,7 +2291,7 @@ export interface components {
             timestamp_start: number
             /**
              * Total Breaths
-             * @description Total breaths segmented
+             * @description [EXPERIMENTAL] Total breaths segmented
              */
             total_breaths: number
         }
@@ -2344,18 +2347,18 @@ export interface components {
         ApneaEvent: {
             /**
              * Baseline Flow
-             * @description Baseline flow before event (L/min)
+             * @description [EXPERIMENTAL] Baseline flow before event (L/min)
              */
             baseline_flow: number
             /**
              * Classification Confidence
-             * @description Confidence in OA/CA/MA classification (0-1)
+             * @description [EXPERIMENTAL] Confidence in OA/CA/MA classification (0-1)
              * @default 0.5
              */
             classification_confidence: number
             /**
              * Confidence
-             * @description Detection confidence (0-1)
+             * @description [EXPERIMENTAL] Detection confidence (0-1)
              */
             confidence: number
             /**
@@ -2366,7 +2369,7 @@ export interface components {
             detection_method: string
             /**
              * Duration
-             * @description Event duration (seconds)
+             * @description [EXPERIMENTAL] Event duration (seconds)
              */
             duration: number
             /**
@@ -2378,7 +2381,7 @@ export interface components {
             event_type: components['schemas']['ApneaEventType']
             /**
              * Flow Reduction
-             * @description Flow reduction (0-1)
+             * @description [EXPERIMENTAL] Flow reduction (0-1)
              */
             flow_reduction: number
             /**
@@ -2452,17 +2455,17 @@ export interface components {
             apple_bd_reason?: string | null
             /**
              * Apple Breathing Disturbances
-             * @description Mean Apple sleeping-breathing-disturbance value for the night
+             * @description [DEVICE] Mean Apple sleeping-breathing-disturbance value for the night
              */
             apple_breathing_disturbances?: number | null
             /**
              * Awake Seconds
-             * @description Apple-derived awake time in seconds (fragmentation)
+             * @description [DERIVED] Apple-derived awake time in seconds (fragmentation)
              */
             awake_seconds?: number | null
             /**
              * Fl Class Ge4 Pct
-             * @description SNORE percent of leak-valid classified breaths at flow_class >= 4
+             * @description [EXPERIMENTAL] SNORE percent of leak-valid classified breaths at flow_class >= 4
              */
             fl_class_ge4_pct?: number | null
             /**
@@ -2477,7 +2480,7 @@ export interface components {
             night_date: string
             /**
              * Rera Index
-             * @description SNORE nightly RERA index (RERAs / therapy hour)
+             * @description [EXPERIMENTAL] SNORE nightly RERA index (RERAs / therapy hour)
              */
             rera_index?: number | null
             /**
@@ -2492,7 +2495,7 @@ export interface components {
             skip_reason?: string | null
             /**
              * Sleep Efficiency Pct
-             * @description Apple-derived sleep efficiency percent
+             * @description [DERIVED] Apple-derived sleep efficiency percent
              */
             sleep_efficiency_pct?: number | null
         }
@@ -2642,12 +2645,12 @@ export interface components {
             date: string
             /**
              * Duration Hours
-             * @description Session duration in hours
+             * @description [DEVICE] Session duration in hours
              */
             duration_hours: number
             /**
              * N Breaths
-             * @description Count of leak-valid breaths with timing columns fetched for this session.  This is the count BEFORE per-channel alignment filtering, so it is an upper bound across all channels; the authoritative per-channel count is each channel's `n_pairs`.  Intentionally differs from FL's `n_breaths_compared`, which counts breaths used in the FL comparison.
+             * @description [EXPERIMENTAL] Count of SNORE-segmented leak-valid breaths with timing columns fetched for this session.  This is the count BEFORE per-channel alignment filtering, so it is an upper bound across all channels; the authoritative per-channel count is each channel's `n_pairs`.  Intentionally differs from FL's `n_breaths_compared`, which counts breaths used in the FL comparison.
              * @default 0
              */
             n_breaths: number
@@ -2731,17 +2734,17 @@ export interface components {
         ChannelAggregateMetrics: {
             /**
              * Mean Bias
-             * @description Mean of per-session mean_bias over sessions with data
+             * @description [EXPERIMENTAL] Mean of per-session mean_bias over sessions with data
              */
             mean_bias?: number | null
             /**
              * Mean Median Abs Error
-             * @description Mean of per-session median_abs_error over sessions with data
+             * @description [EXPERIMENTAL] Mean of per-session median_abs_error over sessions with data
              */
             mean_median_abs_error?: number | null
             /**
              * Mean Spearman R
-             * @description Mean Spearman r over sessions with a non-None spearman_r
+             * @description [EXPERIMENTAL] Mean Spearman r over sessions with a non-None spearman_r
              */
             mean_spearman_r?: number | null
             /**
@@ -2757,12 +2760,12 @@ export interface components {
         ChannelComparison: {
             /**
              * Mean Bias
-             * @description Mean (SNORE − device) in native units; None if n_pairs == 0
+             * @description [EXPERIMENTAL] Mean (SNORE − device) in native units; None if n_pairs == 0
              */
             mean_bias?: number | null
             /**
              * Median Abs Error
-             * @description Median |SNORE − device| in native units (bpm / mL / s / pp); None if n_pairs == 0
+             * @description [EXPERIMENTAL] Median |SNORE − device| in native units (bpm / mL / s / pp); None if n_pairs == 0
              */
             median_abs_error?: number | null
             /**
@@ -2778,12 +2781,12 @@ export interface components {
             skipped_reason?: string | null
             /**
              * Spearman P
-             * @description p-value for spearman_r
+             * @description [EXPERIMENTAL] p-value for spearman_r
              */
             spearman_p?: number | null
             /**
              * Spearman R
-             * @description Spearman r between SNORE per-breath value and device breath-window average; None if n < 3 or either side is constant
+             * @description [EXPERIMENTAL] Spearman r between SNORE per-breath value and device breath-window average; None if n < 3 or either side is constant
              */
             spearman_r?: number | null
         }
@@ -2926,18 +2929,34 @@ export interface components {
          *     MCP nightly-summary null-with-reason convention.
          */
         DayDetail: {
-            /** Ahi */
+            /**
+             * Ahi
+             * @description [DERIVED] Usage-weighted mean of session AHI
+             */
             ahi?: number | null
-            /** Avg Leak */
+            /**
+             * Avg Leak
+             * @description [DERIVED] Usage-weighted mean leak (L/min)
+             */
             avg_leak?: number | null
-            /** Avg Pressure */
+            /**
+             * Avg Pressure
+             * @description [DERIVED] Usage-weighted mean pressure (cmH2O)
+             */
             avg_pressure?: number | null
-            /** Avg Spo2 */
+            /**
+             * Avg Spo2
+             * @description [DERIVED] Usage-weighted mean SpO2 (%)
+             */
             avg_spo2?: number | null
-            /** Cai */
+            /**
+             * Cai
+             * @description [DERIVED] Usage-weighted mean of session CAI
+             */
             cai?: number | null
             /**
              * Central Apneas
+             * @description [DEVICE] Device-scored central apnea count for the night
              * @default 0
              */
             central_apneas: number
@@ -2948,71 +2967,118 @@ export interface components {
             date: string
             /** Device Id */
             device_id: number
-            /** Epap 95Th */
+            /**
+             * Epap 95Th
+             * @description [DERIVED] Usage-weighted 95th percentile EPAP (cmH2O)
+             */
             epap_95th?: number | null
-            /** Epap Max */
+            /**
+             * Epap Max
+             * @description [DERIVED] Max EPAP (cmH2O)
+             */
             epap_max?: number | null
-            /** Epap Mean */
+            /**
+             * Epap Mean
+             * @description [DERIVED] Usage-weighted mean EPAP (cmH2O)
+             */
             epap_mean?: number | null
-            /** Epap Median */
+            /**
+             * Epap Median
+             * @description [DERIVED] Usage-weighted median EPAP (cmH2O)
+             */
             epap_median?: number | null
-            /** Epap Min */
+            /**
+             * Epap Min
+             * @description [DERIVED] Min EPAP (cmH2O)
+             */
             epap_min?: number | null
             /**
              * Fl Class Ge4 Pct
-             * @description Percent of rule-classified breaths flagged flow-class >= 4 (experimental SNORE flow-limitation proxy).
+             * @description [EXPERIMENTAL] Percent of rule-classified breaths flagged flow-class >= 4 (flow-limitation proxy).
              */
             fl_class_ge4_pct?: number | null
             /** Fl Class Ge4 Pct Reason */
             fl_class_ge4_pct_reason?: string | null
             health_sleep?: components['schemas']['HealthNightSummaryRead'] | null
-            /** Hi */
+            /**
+             * Hi
+             * @description [DERIVED] Usage-weighted mean of session HI
+             */
             hi?: number | null
             /**
              * Hypopneas
+             * @description [DEVICE] Device-scored hypopnea count for the night
              * @default 0
              */
             hypopneas: number
-            /** Leak 95Th */
+            /**
+             * Leak 95Th
+             * @description [DERIVED] Usage-weighted 95th percentile leak (L/min)
+             */
             leak_95th?: number | null
-            /** Leak Max */
+            /**
+             * Leak Max
+             * @description [DERIVED] Max leak (L/min)
+             */
             leak_max?: number | null
-            /** Leak Mean */
+            /**
+             * Leak Mean
+             * @description [DERIVED] Usage-weighted mean leak (L/min)
+             */
             leak_mean?: number | null
-            /** Leak Min */
+            /**
+             * Leak Min
+             * @description [DERIVED] Min leak (L/min)
+             */
             leak_min?: number | null
-            /** Oai */
+            /**
+             * Oai
+             * @description [DERIVED] Usage-weighted mean of session OAI
+             */
             oai?: number | null
             /**
              * Obstructive Apneas
+             * @description [DEVICE] Device-scored obstructive apnea count for the night
              * @default 0
              */
             obstructive_apneas: number
-            /** Pressure 95Th */
+            /**
+             * Pressure 95Th
+             * @description [DERIVED] Usage-weighted 95th percentile pressure (cmH2O)
+             */
             pressure_95th?: number | null
-            /** Pressure Max */
+            /**
+             * Pressure Max
+             * @description [DERIVED] Max pressure (cmH2O)
+             */
             pressure_max?: number | null
-            /** Pressure Median */
+            /**
+             * Pressure Median
+             * @description [DERIVED] Usage-weighted median pressure (cmH2O)
+             */
             pressure_median?: number | null
-            /** Pressure Min */
+            /**
+             * Pressure Min
+             * @description [DERIVED] Min pressure (cmH2O)
+             */
             pressure_min?: number | null
             /**
              * Rera Count
-             * @description Experimental SNORE RERA-proxy count from flow-limitation runs ending in a recovery breath — distinct from device-reported `reras`.
+             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`.
              */
             rera_count?: number | null
             /** Rera Count Reason */
             rera_count_reason?: string | null
             /**
              * Rera Index
-             * @description Experimental SNORE RERA-proxy events per therapy hour (FL-run proxy, not device-reported).
+             * @description [EXPERIMENTAL] RERA-proxy events per therapy hour (FL-run proxy, not device-scored).
              */
             rera_index?: number | null
             /** Rera Index Reason */
             rera_index_reason?: string | null
             /**
              * Reras
-             * @description Device-reported RERA count for the night (from the machine).
+             * @description [DEVICE] Device-scored RERA count for the night
              * @default 0
              */
             reras: number
@@ -3020,11 +3086,20 @@ export interface components {
             session_count: number
             /** Session Ids */
             session_ids?: number[]
-            /** Spo2 Max */
+            /**
+             * Spo2 Max
+             * @description [DERIVED] Max SpO2 (%)
+             */
             spo2_max?: number | null
-            /** Spo2 Min */
+            /**
+             * Spo2 Min
+             * @description [DERIVED] Min SpO2 (%)
+             */
             spo2_min?: number | null
-            /** Total Therapy Hours */
+            /**
+             * Total Therapy Hours
+             * @description [DERIVED] Total mask-on hours across the day's sessions
+             */
             total_therapy_hours?: number | null
         }
         /**
@@ -3032,7 +3107,10 @@ export interface components {
          * @description Summary of a single therapy day.
          */
         DayListItem: {
-            /** Ahi */
+            /**
+             * Ahi
+             * @description [DERIVED] Usage-weighted mean of session AHI
+             */
             ahi?: number | null
             /**
              * Date
@@ -3043,7 +3121,10 @@ export interface components {
             device_id: number
             /** Session Count */
             session_count: number
-            /** Total Therapy Hours */
+            /**
+             * Total Therapy Hours
+             * @description [DERIVED] Total mask-on hours across the day's sessions
+             */
             total_therapy_hours?: number | null
         }
         /**
@@ -3188,7 +3269,10 @@ export interface components {
             session_count: number
             /** Therapy Modes */
             therapy_modes: string[]
-            /** Total Therapy Hours */
+            /**
+             * Total Therapy Hours
+             * @description [DERIVED] Total therapy hours
+             */
             total_therapy_hours: number
         }
         /** DisplayNameRequest */
@@ -3203,12 +3287,12 @@ export interface components {
         EventComparisonDetail: {
             /**
              * Confidence
-             * @description Detection confidence (programmatic events only)
+             * @description [EXPERIMENTAL] Detection confidence (programmatic events only)
              */
             confidence?: number | null
             /**
              * Duration
-             * @description Event duration in seconds
+             * @description [DEVICE] Event duration (seconds); experimental for programmatic events
              */
             duration: number
             /**
@@ -3218,9 +3302,15 @@ export interface components {
             event_type: string
             /**
              * Flow Reduction
-             * @description Flow reduction fraction (programmatic events only)
+             * @description [EXPERIMENTAL] Flow reduction fraction (programmatic events only)
              */
             flow_reduction?: number | null
+            /**
+             * Source
+             * @description Event source (machine/programmatic)
+             * @enum {string}
+             */
+            source: 'machine' | 'programmatic'
             /**
              * Start Time
              * @description Event start time in seconds from session start
@@ -3234,22 +3324,22 @@ export interface components {
         EventComparisonResult: {
             /**
              * False Negatives
-             * @description Machine events missed by programmatic detection
+             * @description [EXPERIMENTAL] Machine events missed by programmatic detection
              */
             false_negatives?: components['schemas']['EventComparisonDetail'][]
             /**
              * False Positives Apnea
-             * @description Programmatic apneas not in machine events
+             * @description [EXPERIMENTAL] Programmatic apneas not in machine events
              */
             false_positives_apnea?: components['schemas']['EventComparisonDetail'][]
             /**
              * False Positives Hypopnea
-             * @description Programmatic hypopneas not in machine events
+             * @description [EXPERIMENTAL] Programmatic hypopneas not in machine events
              */
             false_positives_hypopnea?: components['schemas']['EventComparisonDetail'][]
             /**
              * Machine Event Count
-             * @description Total machine-detected events
+             * @description [DEVICE] Total machine-detected events
              */
             machine_event_count: number
             /**
@@ -3259,7 +3349,7 @@ export interface components {
             mode: string
             /**
              * Programmatic Event Count
-             * @description Total programmatically-detected events
+             * @description [EXPERIMENTAL] Total programmatically-detected events
              */
             programmatic_event_count: number
             /**
@@ -3270,7 +3360,10 @@ export interface components {
         }
         /** EventItem */
         EventItem: {
-            /** Duration Seconds */
+            /**
+             * Duration Seconds
+             * @description [DEVICE] Device-scored event duration (s)
+             */
             duration_seconds: number
             /** Event Type */
             event_type: string
@@ -3278,9 +3371,15 @@ export interface components {
             id: number
             /** Offset Seconds */
             offset_seconds: number
-            /** Peak Flow Limitation */
+            /**
+             * Peak Flow Limitation
+             * @description [DEVICE] Peak flow limitation
+             */
             peak_flow_limitation?: number | null
-            /** Spo2 Drop */
+            /**
+             * Spo2 Drop
+             * @description [DEVICE] SpO2 drop (%)
+             */
             spo2_drop?: number | null
             /** Start Time */
             start_time: number
@@ -3290,15 +3389,30 @@ export interface components {
          * @description Result of matching machine vs programmatic events.
          */
         EventMatchResult: {
-            /** False Negatives */
+            /**
+             * False Negatives
+             * @description [EXPERIMENTAL] Machine events unmatched
+             */
             false_negatives: number
-            /** False Positives */
+            /**
+             * False Positives
+             * @description [EXPERIMENTAL] Programmatic events unmatched
+             */
             false_positives: number
-            /** Machine Count */
+            /**
+             * Machine Count
+             * @description [DEVICE] Machine-scored events
+             */
             machine_count: number
-            /** Matched */
+            /**
+             * Matched
+             * @description [EXPERIMENTAL] Events matched within tolerance
+             */
             matched: number
-            /** Programmatic Count */
+            /**
+             * Programmatic Count
+             * @description [EXPERIMENTAL] Programmatically detected events
+             */
             programmatic_count: number
         }
         /**
@@ -3306,11 +3420,17 @@ export interface components {
          * @description Event type with count and percentage.
          */
         EventTypeCount: {
-            /** Count */
+            /**
+             * Count
+             * @description [DEVICE] Device-scored events of this type
+             */
             count: number
             /** Event Type */
             event_type: string
-            /** Percentage */
+            /**
+             * Percentage
+             * @description [DERIVED] Share of all device-scored events (%)
+             */
             percentage: number
         }
         /**
@@ -3320,47 +3440,47 @@ export interface components {
         FlAggregateMetrics: {
             /**
              * Cross Night Spearman P
-             * @description p-value for cross_night_spearman_r
+             * @description [EXPERIMENTAL] p-value for cross_night_spearman_r
              */
             cross_night_spearman_p?: number | null
             /**
              * Cross Night Spearman R
-             * @description Cross-night Spearman r of (snore_fl_95th, device_flg_95th) pairs; None if fewer than 3 paired nights
+             * @description [EXPERIMENTAL] Cross-night Spearman r of (snore_fl_95th, device_flg_95th) pairs; None if fewer than 3 paired nights
              */
             cross_night_spearman_r?: number | null
             /**
              * Mean Auc Class T25
-             * @description Mean class-weight AUC at FLG threshold 0.25
+             * @description [EXPERIMENTAL] Mean class-weight AUC at FLG threshold 0.25
              */
             mean_auc_class_t25?: number | null
             /**
              * Mean Auc Class T50
-             * @description Mean class-weight AUC at FLG threshold 0.50
+             * @description [EXPERIMENTAL] Mean class-weight AUC at FLG threshold 0.50
              */
             mean_auc_class_t50?: number | null
             /**
              * Mean Auc T25
-             * @description Mean AUC at FLG threshold 0.25
+             * @description [EXPERIMENTAL] Mean AUC at FLG threshold 0.25
              */
             mean_auc_t25?: number | null
             /**
              * Mean Auc T50
-             * @description Mean AUC at FLG threshold 0.50
+             * @description [EXPERIMENTAL] Mean AUC at FLG threshold 0.50
              */
             mean_auc_t50?: number | null
             /**
              * Mean Spearman Class Weight R
-             * @description Mean Spearman r (flow_class severity weight) over compared sessions
+             * @description [EXPERIMENTAL] Mean Spearman r (flow_class severity weight) over compared sessions
              */
             mean_spearman_class_weight_r?: number | null
             /**
              * Mean Spearman Flatness R
-             * @description Mean Spearman r (flatness_index) over compared sessions
+             * @description [EXPERIMENTAL] Mean Spearman r (flatness_index) over compared sessions
              */
             mean_spearman_flatness_r?: number | null
             /**
              * Mean Spearman Flattening R
-             * @description Mean Spearman r (flattening_severity) over compared sessions
+             * @description [EXPERIMENTAL] Mean Spearman r (flattening_severity) over compared sessions
              */
             mean_spearman_flattening_r?: number | null
             /**
@@ -3396,22 +3516,22 @@ export interface components {
         FlSessionValidation: {
             /**
              * Auc Class T25
-             * @description AUC discriminating device FLG >= 0.25 using flow_class severity weight as score, over rule-matched breaths; None if either class empty
+             * @description [EXPERIMENTAL] AUC discriminating device FLG >= 0.25 using flow_class severity weight as score, over rule-matched breaths; None if either class empty
              */
             auc_class_t25?: number | null
             /**
              * Auc Class T50
-             * @description AUC discriminating device FLG >= 0.50 using flow_class severity weight, over rule-matched breaths; None if either class empty
+             * @description [EXPERIMENTAL] AUC discriminating device FLG >= 0.50 using flow_class severity weight, over rule-matched breaths; None if either class empty
              */
             auc_class_t50?: number | null
             /**
              * Auc T25
-             * @description AUC (Mann-Whitney U / n_pos*n_neg) discriminating device FLG >= 0.25 using flattening_severity as score; None if either class empty
+             * @description [EXPERIMENTAL] AUC (Mann-Whitney U / n_pos*n_neg) discriminating device FLG >= 0.25 using flattening_severity as score; None if either class empty
              */
             auc_t25?: number | null
             /**
              * Auc T50
-             * @description AUC discriminating device FLG >= 0.50 using flattening_severity; None if either class empty
+             * @description [EXPERIMENTAL] AUC discriminating device FLG >= 0.50 using flattening_severity; None if either class empty
              */
             auc_t50?: number | null
             /**
@@ -3421,12 +3541,12 @@ export interface components {
             date: string
             /**
              * Device Flg 95Th
-             * @description 95th percentile of masked FLG samples (values in [0, 1]) over the full session
+             * @description [DERIVED] 95th percentile of masked FLG samples (values in [0, 1]) over the full session
              */
             device_flg_95th?: number | null
             /**
              * Duration Hours
-             * @description Session duration in hours
+             * @description [DEVICE] Session duration in hours
              */
             duration_hours: number
             /**
@@ -3436,19 +3556,19 @@ export interface components {
             has_flg_waveform: boolean
             /**
              * Low Sample Warning
-             * @description True when n_breaths_compared < 20
+             * @description [EXPERIMENTAL] True when n_breaths_compared < 20
              * @default false
              */
             low_sample_warning: boolean
             /**
              * N Breaths Compared
-             * @description Number of (breath, FLG) pairs actually compared after dropping NaN (zero-sample) alignment windows
+             * @description [EXPERIMENTAL] Number of (SNORE-segmented breath, FLG) pairs actually compared after dropping NaN (zero-sample) alignment windows
              * @default 0
              */
             n_breaths_compared: number
             /**
              * N Class Breaths Compared
-             * @description Number of breaths entering the flow_class-weight metrics (spearman_class_weight_r, auc_class_t25/t50): the subset of n_breaths_compared that is also rule-matched with a known class. Can be far smaller than n_breaths_compared
+             * @description [EXPERIMENTAL] Number of breaths entering the flow_class-weight metrics (spearman_class_weight_r, auc_class_t25/t50): the subset of n_breaths_compared that is also rule-matched with a known class. Can be far smaller than n_breaths_compared
              * @default 0
              */
             n_class_breaths_compared: number
@@ -3469,37 +3589,37 @@ export interface components {
             skipped_reason?: string | null
             /**
              * Snore Fl 95Th
-             * @description 95th percentile of flattening_severity (1 − mid_insp_flattening) over leak-valid breaths; direct severity orientation
+             * @description [EXPERIMENTAL] 95th percentile of flattening_severity (1 − mid_insp_flattening) over leak-valid breaths; direct severity orientation
              */
             snore_fl_95th?: number | null
             /**
              * Spearman Class Weight P
-             * @description p-value for spearman_class_weight_r
+             * @description [EXPERIMENTAL] p-value for spearman_class_weight_r
              */
             spearman_class_weight_p?: number | null
             /**
              * Spearman Class Weight R
-             * @description Spearman r between 7-class flow_class severity weight and breath-averaged device FLG, over rule-matched breaths only (flow_confidence > 0.5; fallback-confidence guesses excluded); None if fewer than 3 such breaths or either side constant
+             * @description [EXPERIMENTAL] Spearman r between 7-class flow_class severity weight and breath-averaged device FLG, over rule-matched breaths only (flow_confidence > 0.5; fallback-confidence guesses excluded); None if fewer than 3 such breaths or either side constant
              */
             spearman_class_weight_r?: number | null
             /**
              * Spearman Flatness P
-             * @description p-value for spearman_flatness_r
+             * @description [EXPERIMENTAL] p-value for spearman_flatness_r
              */
             spearman_flatness_p?: number | null
             /**
              * Spearman Flatness R
-             * @description Spearman r between flatness_index (direct severity) and breath-averaged device FLG; None if n < 3 or either side constant
+             * @description [EXPERIMENTAL] Spearman r between flatness_index (direct severity) and breath-averaged device FLG; None if n < 3 or either side constant
              */
             spearman_flatness_r?: number | null
             /**
              * Spearman Flattening P
-             * @description p-value for spearman_flattening_r
+             * @description [EXPERIMENTAL] p-value for spearman_flattening_r
              */
             spearman_flattening_p?: number | null
             /**
              * Spearman Flattening R
-             * @description Spearman r between flattening_severity (1 − mid_insp_flattening) and breath-averaged device FLG; None if n < 3 or either side constant
+             * @description [EXPERIMENTAL] Spearman r between flattening_severity (1 − mid_insp_flattening) and breath-averaged device FLG; None if n < 3 or either side constant
              */
             spearman_flattening_r?: number | null
         }
@@ -3589,22 +3709,40 @@ export interface components {
          * @description Nightly sleep summary with aggregated oximetry and respiratory rate metrics.
          */
         HealthNightDetailRead: {
-            /** Avg Rr */
+            /**
+             * Avg Rr
+             * @description [DERIVED] Average respiratory rate (breaths/min)
+             */
             avg_rr?: number | null
-            /** Avg Spo2 Pct */
+            /**
+             * Avg Spo2 Pct
+             * @description [DERIVED] Average SpO2 (%)
+             */
             avg_spo2_pct?: number | null
-            /** Awake Seconds */
+            /**
+             * Awake Seconds
+             * @description [DERIVED] Awake time (s)
+             */
             awake_seconds?: number | null
             /**
              * Computed At
              * Format: date-time
              */
             computed_at: string
-            /** Core Seconds */
+            /**
+             * Core Seconds
+             * @description [DERIVED] Core sleep (s)
+             */
             core_seconds?: number | null
-            /** Deep Seconds */
+            /**
+             * Deep Seconds
+             * @description [DERIVED] Deep sleep (s)
+             */
             deep_seconds?: number | null
-            /** Min Spo2 Pct */
+            /**
+             * Min Spo2 Pct
+             * @description [DERIVED] Minimum SpO2 (%)
+             */
             min_spo2_pct?: number | null
             /**
              * Night Date
@@ -3613,17 +3751,35 @@ export interface components {
             night_date: string
             /** Preferred Source */
             preferred_source?: string | null
-            /** Rem Seconds */
+            /**
+             * Rem Seconds
+             * @description [DERIVED] REM sleep (s)
+             */
             rem_seconds?: number | null
-            /** Sleep Efficiency Pct */
+            /**
+             * Sleep Efficiency Pct
+             * @description [DERIVED] Total sleep / time in bed (%)
+             */
             sleep_efficiency_pct?: number | null
-            /** Stage Coverage Pct */
+            /**
+             * Stage Coverage Pct
+             * @description [DERIVED] Share of sleep with a known stage (%)
+             */
             stage_coverage_pct?: number | null
-            /** Time In Bed Seconds */
+            /**
+             * Time In Bed Seconds
+             * @description [DERIVED] Time in bed (s)
+             */
             time_in_bed_seconds?: number | null
-            /** Total Sleep Seconds */
+            /**
+             * Total Sleep Seconds
+             * @description [DERIVED] Total sleep (s)
+             */
             total_sleep_seconds?: number | null
-            /** Unspecified Seconds */
+            /**
+             * Unspecified Seconds
+             * @description [DERIVED] Asleep, unspecified stage (s)
+             */
             unspecified_seconds?: number | null
         }
         /**
@@ -3631,16 +3787,25 @@ export interface components {
          * @description Derived nightly sleep summary from Apple Health data.
          */
         HealthNightSummaryRead: {
-            /** Awake Seconds */
+            /**
+             * Awake Seconds
+             * @description [DERIVED] Awake time (s)
+             */
             awake_seconds?: number | null
             /**
              * Computed At
              * Format: date-time
              */
             computed_at: string
-            /** Core Seconds */
+            /**
+             * Core Seconds
+             * @description [DERIVED] Core sleep (s)
+             */
             core_seconds?: number | null
-            /** Deep Seconds */
+            /**
+             * Deep Seconds
+             * @description [DERIVED] Deep sleep (s)
+             */
             deep_seconds?: number | null
             /**
              * Night Date
@@ -3649,17 +3814,35 @@ export interface components {
             night_date: string
             /** Preferred Source */
             preferred_source?: string | null
-            /** Rem Seconds */
+            /**
+             * Rem Seconds
+             * @description [DERIVED] REM sleep (s)
+             */
             rem_seconds?: number | null
-            /** Sleep Efficiency Pct */
+            /**
+             * Sleep Efficiency Pct
+             * @description [DERIVED] Total sleep / time in bed (%)
+             */
             sleep_efficiency_pct?: number | null
-            /** Stage Coverage Pct */
+            /**
+             * Stage Coverage Pct
+             * @description [DERIVED] Share of sleep with a known stage (%)
+             */
             stage_coverage_pct?: number | null
-            /** Time In Bed Seconds */
+            /**
+             * Time In Bed Seconds
+             * @description [DERIVED] Time in bed (s)
+             */
             time_in_bed_seconds?: number | null
-            /** Total Sleep Seconds */
+            /**
+             * Total Sleep Seconds
+             * @description [DERIVED] Total sleep (s)
+             */
             total_sleep_seconds?: number | null
-            /** Unspecified Seconds */
+            /**
+             * Unspecified Seconds
+             * @description [DERIVED] Asleep, unspecified stage (s)
+             */
             unspecified_seconds?: number | null
         }
         /**
@@ -3690,7 +3873,10 @@ export interface components {
             start_time: string
             /** Unit */
             unit?: string | null
-            /** Value Num */
+            /**
+             * Value Num
+             * @description [DEVICE] Numeric sample value as recorded
+             */
             value_num?: number | null
             /** Value Text */
             value_text?: string | null
@@ -3712,17 +3898,17 @@ export interface components {
         HypopneaEvent: {
             /**
              * Baseline Flow
-             * @description Baseline flow before event (L/min)
+             * @description [EXPERIMENTAL] Baseline flow before event (L/min)
              */
             baseline_flow: number
             /**
              * Confidence
-             * @description Detection confidence (0-1)
+             * @description [EXPERIMENTAL] Detection confidence (0-1)
              */
             confidence: number
             /**
              * Duration
-             * @description Event duration (seconds)
+             * @description [EXPERIMENTAL] Event duration (seconds)
              */
             duration: number
             /**
@@ -3732,17 +3918,17 @@ export interface components {
             end_time: number
             /**
              * Flow Reduction
-             * @description Flow reduction (0-1)
+             * @description [EXPERIMENTAL] Flow reduction (0-1)
              */
             flow_reduction: number
             /**
              * Has Arousal
-             * @description Arousal detected
+             * @description [EXPERIMENTAL] Arousal detected
              */
             has_arousal?: boolean | null
             /**
              * Has Desaturation
-             * @description SpO2 desaturation ≥3%
+             * @description [EXPERIMENTAL] SpO2 desaturation ≥3%
              */
             has_desaturation?: boolean | null
             /**
@@ -4048,7 +4234,7 @@ export interface components {
         ModeResult: {
             /**
              * Ahi
-             * @description Apnea-Hypopnea Index
+             * @description [EXPERIMENTAL] Apnea-Hypopnea Index from programmatic detection
              */
             ahi: number
             /**
@@ -4075,7 +4261,7 @@ export interface components {
             mode_name: string
             /**
              * Rdi
-             * @description Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come from the analysis-time amplitude-crescendo detector (detector.py::_detect_reras). This is a DIFFERENT RERA definition from the nightly rdi in NightlyAnalysisSummary, which uses the query-time FL-run proxy over stored breath rows; the two indices disagree by construction.
+             * @description [EXPERIMENTAL] Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come from the analysis-time amplitude-crescendo detector (detector.py::_detect_reras). This is a DIFFERENT RERA definition from the nightly rdi in NightlyAnalysisSummary, which uses the query-time FL-run proxy over stored breath rows; the two indices disagree by construction.
              */
             rdi: number
             /**
@@ -4141,7 +4327,7 @@ export interface components {
             n_paired_nights: number
             /**
              * P Value
-             * @description p-value for rho; None whenever rho is None
+             * @description [EXPERIMENTAL] p-value for rho; None whenever rho is None
              */
             p_value?: number | null
             /**
@@ -4151,7 +4337,7 @@ export interface components {
             reason?: string | null
             /**
              * Rho
-             * @description Spearman rho over nights present in both series; None when fewer than 3 pairs or a side is constant (see reason)
+             * @description [EXPERIMENTAL] Spearman rho over nights present in both series; None when fewer than 3 pairs or a side is constant (see reason)
              */
             rho?: number | null
         }
@@ -4197,57 +4383,57 @@ export interface components {
         PeriodStatistics: {
             /**
              * Avg Ahi
-             * @description Average AHI
+             * @description [DERIVED] Average AHI
              */
             avg_ahi?: number | null
             /**
              * Avg Cai
-             * @description Average CAI (events/hour)
+             * @description [DERIVED] Average CAI (events/hour)
              */
             avg_cai?: number | null
             /**
              * Avg Hi
-             * @description Average HI (events/hour)
+             * @description [DERIVED] Average HI (events/hour)
              */
             avg_hi?: number | null
             /**
              * Avg Hours Per Day
-             * @description Average hours per day used
+             * @description [DERIVED] Average hours per day used
              */
             avg_hours_per_day?: number | null
             /**
              * Avg Leak
-             * @description Average leak rate (L/min)
+             * @description [DERIVED] Average leak rate (L/min)
              */
             avg_leak?: number | null
             /**
              * Avg Oai
-             * @description Average OAI (events/hour)
+             * @description [DERIVED] Average OAI (events/hour)
              */
             avg_oai?: number | null
             /**
              * Avg Pressure
-             * @description Average pressure (cmH₂O)
+             * @description [DERIVED] Average pressure (cmH₂O)
              */
             avg_pressure?: number | null
             /**
              * Avg Rera
-             * @description Average RERA index (events/hour)
+             * @description [DERIVED] Average device-scored RERA index (events/hour)
              */
             avg_rera?: number | null
             /**
              * Avg Sleep Efficiency Pct
-             * @description Average sleep efficiency % per night (Apple Health)
+             * @description [DERIVED] Average sleep efficiency % per night (Apple Health)
              */
             avg_sleep_efficiency_pct?: number | null
             /**
              * Avg Spo2
-             * @description Average SpO₂ (%)
+             * @description [DERIVED] Average SpO₂ (%)
              */
             avg_spo2?: number | null
             /**
              * Avg Total Sleep Hours
-             * @description Average total sleep hours per night (Apple Health)
+             * @description [DERIVED] Average total sleep hours per night (Apple Health)
              */
             avg_total_sleep_hours?: number | null
             /**
@@ -4258,18 +4444,18 @@ export interface components {
             days_in_period: number
             /**
              * Days Used
-             * @description Number of days with therapy
+             * @description [DERIVED] Number of days with therapy
              * @default 0
              */
             days_used: number
             /**
              * Median Ahi
-             * @description Median AHI
+             * @description [DERIVED] Median AHI
              */
             median_ahi?: number | null
             /**
              * Min Spo2
-             * @description Minimum SpO₂ (%)
+             * @description [DERIVED] Minimum SpO₂ (%)
              */
             min_spo2?: number | null
             /**
@@ -4397,17 +4583,17 @@ export interface components {
         RERAEvent: {
             /**
              * Baseline Flow
-             * @description Baseline flow before event (L/min)
+             * @description [EXPERIMENTAL] Baseline flow before event (L/min)
              */
             baseline_flow: number
             /**
              * Confidence
-             * @description Detection confidence (0-1, lower without EEG)
+             * @description [EXPERIMENTAL] Detection confidence (0-1, lower without EEG)
              */
             confidence: number
             /**
              * Duration
-             * @description Event duration (seconds)
+             * @description [EXPERIMENTAL] Event duration (seconds)
              */
             duration: number
             /**
@@ -4417,12 +4603,12 @@ export interface components {
             end_time: number
             /**
              * Obstructed Breath Count
-             * @description Breaths showing flow limitation
+             * @description [EXPERIMENTAL] Breaths showing flow limitation
              */
             obstructed_breath_count: number
             /**
              * Recovery Amplitude Increase Pct
-             * @description Recovery breath amplitude increase (%)
+             * @description [EXPERIMENTAL] Recovery breath amplitude increase (%)
              */
             recovery_amplitude_increase_pct: number
             /**
@@ -4430,6 +4616,41 @@ export interface components {
              * @description Event start timestamp (seconds)
              */
             start_time: number
+        }
+        /**
+         * RecordExtremes
+         * @description Top-N best and worst ``[date, value]`` days for one metric.
+         */
+        RecordExtremes: {
+            /**
+             * Best
+             * @description [DERIVED] Best days, best first
+             */
+            best: [string, number][]
+            /**
+             * Worst
+             * @description [DERIVED] Worst days, worst first
+             */
+            worst: [string, number][]
+        }
+        /**
+         * RecordsResponse
+         * @description Best/worst days for ``GET /stats/records``.
+         *
+         *     Keys are omitted (not null) when no qualifying day (>= 1 h therapy) has the
+         *     metric.
+         */
+        RecordsResponse: {
+            /** @description [DERIVED] Nightly AHI */
+            ahi?: components['schemas']['RecordExtremes'] | null
+            /** @description [DERIVED] Nightly median leak (L/min) */
+            leak?: components['schemas']['RecordExtremes'] | null
+            /** @description [DERIVED] Nightly minimum SpO2 (%) */
+            spo2_min?: components['schemas']['RecordExtremes'] | null
+            /** @description [DERIVED] Nightly therapy hours */
+            therapy_hours?: components['schemas']['RecordExtremes'] | null
+            /** @description [DERIVED] Nightly total sleep hours (Apple Health) */
+            total_sleep_hours?: components['schemas']['RecordExtremes'] | null
         }
         /** RecoveryCodesResponse */
         RecoveryCodesResponse: {
@@ -4452,17 +4673,17 @@ export interface components {
         ReraAggregateMetrics: {
             /**
              * Amplitude Density
-             * @description Pooled amplitude RERAs per therapy hour
+             * @description [EXPERIMENTAL] Pooled amplitude RERAs per therapy hour
              */
             amplitude_density?: number | null
             /**
              * Chance Precision Floor
-             * @description Whole-dataset chance-precision floor (density context): machine RE per SECOND over ALL evaluated therapy hours (scored + no-machine-RE sessions) x (2 x match_tolerance_seconds). Most hours carry zero RE, so this reads against the pooled densities. For the scored-session scores below use `scored_chance_precision_floor` instead. Null when no evaluated therapy hours exist.
+             * @description [EXPERIMENTAL] Whole-dataset chance-precision floor (density context): machine RE per SECOND over ALL evaluated therapy hours (scored + no-machine-RE sessions) x (2 x match_tolerance_seconds). Most hours carry zero RE, so this reads against the pooled densities. For the scored-session scores below use `scored_chance_precision_floor` instead. Null when no evaluated therapy hours exist.
              */
             chance_precision_floor?: number | null
             /**
              * Machine Re Density
-             * @description Pooled machine RE per therapy hour
+             * @description [DERIVED] Pooled machine RE per therapy hour
              */
             machine_re_density?: number | null
             /**
@@ -4472,62 +4693,62 @@ export interface components {
             match_tolerance_seconds: number
             /**
              * Mean Amplitude F1
-             * @description Mean amplitude F1 over scored sessions
+             * @description [EXPERIMENTAL] Mean amplitude F1 over scored sessions
              */
             mean_amplitude_f1?: number | null
             /**
              * Mean Amplitude Precision
-             * @description Mean amplitude precision over scored sessions
+             * @description [EXPERIMENTAL] Mean amplitude precision over scored sessions
              */
             mean_amplitude_precision?: number | null
             /**
              * Mean Amplitude Sensitivity
-             * @description Mean amplitude sensitivity over scored sessions
+             * @description [EXPERIMENTAL] Mean amplitude sensitivity over scored sessions
              */
             mean_amplitude_sensitivity?: number | null
             /**
              * Mean Proxy F1
-             * @description Mean FL-run-proxy F1 over scored sessions
+             * @description [EXPERIMENTAL] Mean FL-run-proxy F1 over scored sessions
              */
             mean_proxy_f1?: number | null
             /**
              * Mean Proxy Precision
-             * @description Mean FL-run-proxy precision over scored sessions
+             * @description [EXPERIMENTAL] Mean FL-run-proxy precision over scored sessions
              */
             mean_proxy_precision?: number | null
             /**
              * Mean Proxy Sensitivity
-             * @description Mean FL-run-proxy sensitivity over scored sessions
+             * @description [EXPERIMENTAL] Mean FL-run-proxy sensitivity over scored sessions
              */
             mean_proxy_sensitivity?: number | null
             /**
              * Pooled Amplitude Precision
-             * @description Pooled amplitude precision over scored sessions (total matched / total amplitude RERAs), not a per-session mean
+             * @description [EXPERIMENTAL] Pooled amplitude precision over scored sessions (total matched / total amplitude RERAs), not a per-session mean
              */
             pooled_amplitude_precision?: number | null
             /**
              * Pooled Amplitude Sensitivity
-             * @description Pooled amplitude sensitivity over scored sessions (total matched / total machine RE), not a per-session mean
+             * @description [EXPERIMENTAL] Pooled amplitude sensitivity over scored sessions (total matched / total machine RE), not a per-session mean
              */
             pooled_amplitude_sensitivity?: number | null
             /**
              * Pooled Proxy Precision
-             * @description Pooled FL-run-proxy precision over scored sessions (total matched / total proxy RERAs), not a per-session mean
+             * @description [EXPERIMENTAL] Pooled FL-run-proxy precision over scored sessions (total matched / total proxy RERAs), not a per-session mean
              */
             pooled_proxy_precision?: number | null
             /**
              * Pooled Proxy Sensitivity
-             * @description Pooled FL-run-proxy sensitivity over scored sessions (total matched / total machine RE), not a per-session mean
+             * @description [EXPERIMENTAL] Pooled FL-run-proxy sensitivity over scored sessions (total matched / total machine RE), not a per-session mean
              */
             pooled_proxy_sensitivity?: number | null
             /**
              * Proxy Density
-             * @description Pooled FL-run-proxy RERAs per therapy hour
+             * @description [EXPERIMENTAL] Pooled FL-run-proxy RERAs per therapy hour
              */
             proxy_density?: number | null
             /**
              * Scored Chance Precision Floor
-             * @description Scored-population chance-precision floor: machine RE per SECOND over scored-session hours only x (2 x match_tolerance_seconds). Scored sessions carry far more RE than the dataset average, so this is the honest baseline to compare the precision/sensitivity below against. Null when no scored therapy hours exist.
+             * @description [EXPERIMENTAL] Scored-population chance-precision floor: machine RE per SECOND over scored-session hours only x (2 x match_tolerance_seconds). Scored sessions carry far more RE than the dataset average, so this is the honest baseline to compare the precision/sensitivity below against. Null when no scored therapy hours exist.
              */
             scored_chance_precision_floor?: number | null
             /**
@@ -4557,17 +4778,17 @@ export interface components {
             sessions_with_machine_re: number
             /**
              * Total Amplitude Reras
-             * @description Total amplitude-detector RERAs
+             * @description [EXPERIMENTAL] Total amplitude-detector RERAs
              */
             total_amplitude_reras: number
             /**
              * Total Machine Re
-             * @description Total machine RE across all sessions
+             * @description [DEVICE] Total machine RE across all sessions
              */
             total_machine_re: number
             /**
              * Total Proxy Reras
-             * @description Total FL-run-proxy RERAs
+             * @description [EXPERIMENTAL] Total FL-run-proxy RERAs
              */
             total_proxy_reras: number
             /**
@@ -4583,7 +4804,7 @@ export interface components {
         ReraSessionValidation: {
             /**
              * Amplitude Density
-             * @description Amplitude RERAs per therapy hour
+             * @description [EXPERIMENTAL] Amplitude RERAs per therapy hour
              */
             amplitude_density?: number | null
             /**
@@ -4593,7 +4814,7 @@ export interface components {
             amplitude_density_reason?: string | null
             /**
              * Amplitude F1
-             * @description Amplitude-RERA F1 vs machine RE
+             * @description [EXPERIMENTAL] Amplitude-RERA F1 vs machine RE
              */
             amplitude_f1?: number | null
             /**
@@ -4603,12 +4824,12 @@ export interface components {
             amplitude_f1_reason?: string | null
             /**
              * Amplitude Matched
-             * @description Amplitude RERAs matched to a machine RE event (scored sessions only; null when the session was skipped)
+             * @description [EXPERIMENTAL] Amplitude RERAs matched to a machine RE event (scored sessions only; null when the session was skipped)
              */
             amplitude_matched?: number | null
             /**
              * Amplitude Precision
-             * @description Amplitude-RERA precision vs machine RE (matched / amplitude RERAs)
+             * @description [EXPERIMENTAL] Amplitude-RERA precision vs machine RE (matched / amplitude RERAs)
              */
             amplitude_precision?: number | null
             /**
@@ -4618,13 +4839,13 @@ export interface components {
             amplitude_precision_reason?: string | null
             /**
              * Amplitude Rera Count
-             * @description Amplitude-detector RERAs (mode_result.reras)
+             * @description [EXPERIMENTAL] Amplitude-detector RERAs (mode_result.reras)
              * @default 0
              */
             amplitude_rera_count: number
             /**
              * Amplitude Sensitivity
-             * @description Amplitude-RERA recall vs machine RE (matched / machine RE)
+             * @description [EXPERIMENTAL] Amplitude-RERA recall vs machine RE (matched / machine RE)
              */
             amplitude_sensitivity?: number | null
             /**
@@ -4639,18 +4860,18 @@ export interface components {
             date: string
             /**
              * Duration Hours
-             * @description Session duration in hours
+             * @description [DEVICE] Session duration in hours
              */
             duration_hours: number
             /**
              * Machine Re Count
-             * @description Machine-flagged RE (RERA) events for this session
+             * @description [DEVICE] Machine-flagged RE (RERA) events for this session
              * @default 0
              */
             machine_re_count: number
             /**
              * Machine Re Density
-             * @description Machine RE events per therapy hour
+             * @description [DERIVED] Machine RE events per therapy hour
              */
             machine_re_density?: number | null
             /**
@@ -4660,7 +4881,7 @@ export interface components {
             machine_re_density_reason?: string | null
             /**
              * Proxy Density
-             * @description FL-run-proxy RERAs per therapy hour
+             * @description [EXPERIMENTAL] FL-run-proxy RERAs per therapy hour
              */
             proxy_density?: number | null
             /**
@@ -4670,7 +4891,7 @@ export interface components {
             proxy_density_reason?: string | null
             /**
              * Proxy F1
-             * @description FL-run-proxy F1 vs machine RE
+             * @description [EXPERIMENTAL] FL-run-proxy F1 vs machine RE
              */
             proxy_f1?: number | null
             /**
@@ -4680,12 +4901,12 @@ export interface components {
             proxy_f1_reason?: string | null
             /**
              * Proxy Matched
-             * @description FL-run-proxy RERAs matched to a machine RE event (scored sessions only; null when the session was skipped)
+             * @description [EXPERIMENTAL] FL-run-proxy RERAs matched to a machine RE event (scored sessions only; null when the session was skipped)
              */
             proxy_matched?: number | null
             /**
              * Proxy Precision
-             * @description FL-run-proxy precision vs machine RE (matched / proxy RERAs)
+             * @description [EXPERIMENTAL] FL-run-proxy precision vs machine RE (matched / proxy RERAs)
              */
             proxy_precision?: number | null
             /**
@@ -4695,13 +4916,13 @@ export interface components {
             proxy_precision_reason?: string | null
             /**
              * Proxy Rera Count
-             * @description FL-run proxy RERAs recomputed from stored breaths
+             * @description [EXPERIMENTAL] FL-run proxy RERAs recomputed from stored breaths
              * @default 0
              */
             proxy_rera_count: number
             /**
              * Proxy Sensitivity
-             * @description FL-run-proxy recall vs machine RE (matched / machine RE)
+             * @description [EXPERIMENTAL] FL-run-proxy recall vs machine RE (matched / machine RE)
              */
             proxy_sensitivity?: number | null
             /**
@@ -4864,11 +5085,20 @@ export interface components {
          * @description Single therapy prescription period with aggregated stats.
          */
         RxPeriodResponse: {
-            /** Avg Ahi */
+            /**
+             * Avg Ahi
+             * @description [DERIVED] Average AHI over the period
+             */
             avg_ahi?: number | null
-            /** Avg Hours */
+            /**
+             * Avg Hours
+             * @description [DERIVED] Average therapy hours per day
+             */
             avg_hours?: number | null
-            /** Avg Leak */
+            /**
+             * Avg Leak
+             * @description [DERIVED] Average leak (L/min)
+             */
             avg_leak?: number | null
             /** Days Count */
             days_count: number
@@ -4881,7 +5111,10 @@ export interface components {
              * Format: date
              */
             end_date: string
-            /** Median Ahi */
+            /**
+             * Median Ahi
+             * @description [DERIVED] Median AHI over the period
+             */
             median_ahi?: number | null
             /** Settings */
             settings: {
@@ -4894,6 +5127,7 @@ export interface components {
             start_date: string
             /**
              * Total Hours
+             * @description [DERIVED] Total therapy hours
              * @default 0
              */
             total_hours: number
@@ -4940,9 +5174,15 @@ export interface components {
             device_serial: string | null
             /** Device Session Id */
             device_session_id: string
-            /** Duration Hours */
+            /**
+             * Duration Hours
+             * @description [DEVICE] Session duration in hours
+             */
             duration_hours: number
-            /** Duration Seconds */
+            /**
+             * Duration Seconds
+             * @description [DEVICE] Session duration in seconds
+             */
             duration_seconds: number
             /** Enabled */
             enabled: boolean
@@ -4996,12 +5236,12 @@ export interface components {
         SessionListItem: {
             /**
              * Ahi
-             * @description Apnea-Hypopnea Index
+             * @description [DERIVED] Apnea-Hypopnea Index (device events / mask-on hours)
              */
             ahi?: number | null
             /**
              * Duration Hours
-             * @description Session duration in hours
+             * @description [DEVICE] Session duration in hours
              */
             duration_hours: number
             /**
@@ -5063,161 +5303,395 @@ export interface components {
          * @description Statistics for a single session (from Statistics table).
          */
         SessionStatistics: {
-            /** Ahi */
+            /**
+             * Ahi
+             * @description [DERIVED] AHI: device-scored OA+CA+H per mask-on hour
+             */
             ahi?: number | null
-            /** Ahi Device */
+            /**
+             * Ahi Device
+             * @description [DEVICE] AHI as reported by the device (STR)
+             */
             ahi_device?: number | null
-            /** Ai */
+            /**
+             * Ai
+             * @description [DEVICE] Apnea index
+             */
             ai?: number | null
-            /** Amb Humidity Median */
+            /**
+             * Amb Humidity Median
+             * @description [DEVICE] Median ambient humidity (%)
+             */
             amb_humidity_median?: number | null
-            /** Blow Flow Median */
+            /**
+             * Blow Flow Median
+             * @description [DEVICE] Median blower flow (L/min)
+             */
             blow_flow_median?: number | null
-            /** Blow Press 5Th */
+            /**
+             * Blow Press 5Th
+             * @description [DEVICE] 5th percentile blower pressure (cmH2O)
+             */
             blow_press_5th?: number | null
-            /** Blow Press 95Th */
+            /**
+             * Blow Press 95Th
+             * @description [DEVICE] 95th percentile blower pressure (cmH2O)
+             */
             blow_press_95th?: number | null
-            /** Cai */
+            /**
+             * Cai
+             * @description [DERIVED] Device-scored central apneas per mask-on hour
+             */
             cai?: number | null
-            /** Cai Device */
+            /**
+             * Cai Device
+             * @description [DEVICE] Central apnea index as reported by the device (STR)
+             */
             cai_device?: number | null
-            /** Central Apneas */
+            /**
+             * Central Apneas
+             * @description [DEVICE] Device-scored central apnea count
+             */
             central_apneas?: number | null
-            /** Csr Pct */
+            /**
+             * Csr Pct
+             * @description [DEVICE] Percent of session in Cheyne-Stokes respiration
+             */
             csr_pct?: number | null
-            /** Epap 95Th */
+            /**
+             * Epap 95Th
+             * @description [DERIVED] 95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             epap_95th?: number | null
-            /** Epap Max */
+            /**
+             * Epap Max
+             * @description [DERIVED] Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             epap_max?: number | null
-            /** Epap Mean */
+            /**
+             * Epap Mean
+             * @description [DERIVED] Mean EPAP (cmH2O)
+             */
             epap_mean?: number | null
-            /** Epap Median */
+            /**
+             * Epap Median
+             * @description [DERIVED] Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             epap_median?: number | null
-            /** Epap Min */
+            /**
+             * Epap Min
+             * @description [DERIVED] Min EPAP (cmH2O)
+             */
             epap_min?: number | null
-            /** Flow 5Th */
+            /**
+             * Flow 5Th
+             * @description [DEVICE] 5th percentile flow (L/min)
+             */
             flow_5th?: number | null
-            /** Flow 95Th */
+            /**
+             * Flow 95Th
+             * @description [DEVICE] 95th percentile flow (L/min)
+             */
             flow_95th?: number | null
-            /** Flow Limitations */
+            /**
+             * Flow Limitations
+             * @description [DEVICE] Device-flagged flow limitation count
+             */
             flow_limitations?: number | null
-            /** Hi */
+            /**
+             * Hi
+             * @description [DERIVED] Device-scored hypopneas per mask-on hour
+             */
             hi?: number | null
-            /** Hi Device */
+            /**
+             * Hi Device
+             * @description [DEVICE] Hypopnea index as reported by the device (STR)
+             */
             hi_device?: number | null
-            /** Htube Pow Median */
+            /**
+             * Htube Pow Median
+             * @description [DEVICE] Median heated-tube power (%)
+             */
             htube_pow_median?: number | null
-            /** Htube Temp Median */
+            /**
+             * Htube Temp Median
+             * @description [DEVICE] Median heated-tube temperature (C)
+             */
             htube_temp_median?: number | null
-            /** Hum Pow Median */
+            /**
+             * Hum Pow Median
+             * @description [DEVICE] Median humidifier power (%)
+             */
             hum_pow_median?: number | null
-            /** Hum Temp Median */
+            /**
+             * Hum Temp Median
+             * @description [DEVICE] Median humidifier temperature (C)
+             */
             hum_temp_median?: number | null
-            /** Hypopneas */
+            /**
+             * Hypopneas
+             * @description [DEVICE] Device-scored hypopnea count
+             */
             hypopneas?: number | null
-            /** Ie Ratio 95Th */
+            /**
+             * Ie Ratio 95Th
+             * @description [DEVICE] 95th percentile I:E ratio
+             */
             ie_ratio_95th?: number | null
-            /** Ie Ratio Max */
+            /**
+             * Ie Ratio Max
+             * @description [DEVICE] Max I:E ratio
+             */
             ie_ratio_max?: number | null
-            /** Ie Ratio Median */
+            /**
+             * Ie Ratio Median
+             * @description [DEVICE] Median I:E ratio
+             */
             ie_ratio_median?: number | null
-            /** Ipap 95Th */
+            /**
+             * Ipap 95Th
+             * @description [DEVICE] 95th percentile IPAP (cmH2O)
+             */
             ipap_95th?: number | null
-            /** Ipap Max */
+            /**
+             * Ipap Max
+             * @description [DEVICE] Max IPAP (cmH2O)
+             */
             ipap_max?: number | null
-            /** Ipap Median */
+            /**
+             * Ipap Median
+             * @description [DEVICE] Median IPAP (cmH2O)
+             */
             ipap_median?: number | null
-            /** Leak 95Th */
+            /**
+             * Leak 95Th
+             * @description [DERIVED] 95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             */
             leak_95th?: number | null
-            /** Leak Max */
+            /**
+             * Leak Max
+             * @description [DERIVED] Max leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             */
             leak_max?: number | null
-            /** Leak Mean */
+            /**
+             * Leak Mean
+             * @description [DERIVED] Mean leak (L/min)
+             */
             leak_mean?: number | null
-            /** Leak Median */
+            /**
+             * Leak Median
+             * @description [DERIVED] Median leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             */
             leak_median?: number | null
-            /** Leak Min */
+            /**
+             * Leak Min
+             * @description [DERIVED] Min leak (L/min)
+             */
             leak_min?: number | null
-            /** Leak Percentile 70 */
+            /**
+             * Leak Percentile 70
+             * @description [DEVICE] 70th percentile leak (L/min)
+             */
             leak_percentile_70?: number | null
-            /** Mask Events */
+            /**
+             * Mask Events
+             * @description [DEVICE] Mask-on events
+             */
             mask_events?: number | null
-            /** Minute Ventilation 95Th */
+            /**
+             * Minute Ventilation 95Th
+             * @description [DEVICE] 95th percentile minute ventilation (L/min)
+             */
             minute_ventilation_95th?: number | null
-            /** Minute Ventilation Max */
+            /**
+             * Minute Ventilation Max
+             * @description [DEVICE] Max minute ventilation (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             */
             minute_ventilation_max?: number | null
-            /** Minute Ventilation Mean */
+            /**
+             * Minute Ventilation Mean
+             * @description [DEVICE] Minute ventilation (L/min); device STR median on ResMed, OSCAR session average on OSCAR imports
+             */
             minute_ventilation_mean?: number | null
-            /** Minute Ventilation Min */
+            /**
+             * Minute Ventilation Min
+             * @description [DERIVED] Min minute ventilation (L/min); OSCAR session summary (OSCAR imports only)
+             */
             minute_ventilation_min?: number | null
-            /** Mixed Apneas */
+            /**
+             * Mixed Apneas
+             * @description [DEVICE] Device-scored mixed apnea count
+             */
             mixed_apneas?: number | null
-            /** Oai */
+            /**
+             * Oai
+             * @description [DERIVED] Device-scored obstructive apneas per mask-on hour
+             */
             oai?: number | null
-            /** Oai Device */
+            /**
+             * Oai Device
+             * @description [DEVICE] Obstructive apnea index as reported by the device (STR)
+             */
             oai_device?: number | null
-            /** Obstructive Apneas */
+            /**
+             * Obstructive Apneas
+             * @description [DEVICE] Device-scored obstructive apnea count
+             */
             obstructive_apneas?: number | null
-            /** Pressure 95Th */
+            /**
+             * Pressure 95Th
+             * @description [DERIVED] 95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             pressure_95th?: number | null
-            /** Pressure Max */
+            /**
+             * Pressure Max
+             * @description [DERIVED] Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             pressure_max?: number | null
-            /** Pressure Mean */
+            /**
+             * Pressure Mean
+             * @description [DERIVED] Mean pressure (cmH2O)
+             */
             pressure_mean?: number | null
-            /** Pressure Median */
+            /**
+             * Pressure Median
+             * @description [DERIVED] Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             */
             pressure_median?: number | null
-            /** Pressure Min */
+            /**
+             * Pressure Min
+             * @description [DERIVED] Min pressure (cmH2O)
+             */
             pressure_min?: number | null
-            /** Pulse Max */
+            /**
+             * Pulse Max
+             * @description [DERIVED] Max pulse (BPM)
+             */
             pulse_max?: number | null
-            /** Pulse Mean */
+            /**
+             * Pulse Mean
+             * @description [DERIVED] Mean pulse (BPM)
+             */
             pulse_mean?: number | null
-            /** Pulse Min */
+            /**
+             * Pulse Min
+             * @description [DERIVED] Min pulse (BPM)
+             */
             pulse_min?: number | null
-            /** Rei */
+            /**
+             * Rei
+             * @description [DERIVED] Respiratory Event Index
+             */
             rei?: number | null
-            /** Reras */
+            /**
+             * Reras
+             * @description [DEVICE] Device-scored RERA count
+             */
             reras?: number | null
-            /** Respiratory Rate 95Th */
+            /**
+             * Respiratory Rate 95Th
+             * @description [DEVICE] 95th percentile respiratory rate (breaths/min)
+             */
             respiratory_rate_95th?: number | null
-            /** Respiratory Rate Max */
+            /**
+             * Respiratory Rate Max
+             * @description [DEVICE] Max respiratory rate (breaths/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             */
             respiratory_rate_max?: number | null
-            /** Respiratory Rate Mean */
+            /**
+             * Respiratory Rate Mean
+             * @description [DEVICE] Respiratory rate (breaths/min); device STR median on ResMed, OSCAR session average on OSCAR imports
+             */
             respiratory_rate_mean?: number | null
-            /** Respiratory Rate Min */
+            /**
+             * Respiratory Rate Min
+             * @description [DERIVED] Min respiratory rate (breaths/min); OSCAR session summary (OSCAR imports only)
+             */
             respiratory_rate_min?: number | null
-            /** Rin */
+            /**
+             * Rin
+             * @description [DEVICE] RERA index
+             */
             rin?: number | null
-            /** Spo2 95Th */
+            /**
+             * Spo2 95Th
+             * @description [DEVICE] 95th percentile SpO2 (%)
+             */
             spo2_95th?: number | null
-            /** Spo2 Max */
+            /**
+             * Spo2 Max
+             * @description [DERIVED] Max SpO2 (%); recomputed from the waveform when available, otherwise the device's value
+             */
             spo2_max?: number | null
-            /** Spo2 Mean */
+            /**
+             * Spo2 Mean
+             * @description [DERIVED] Mean SpO2 (%)
+             */
             spo2_mean?: number | null
-            /** Spo2 Median */
+            /**
+             * Spo2 Median
+             * @description [DEVICE] Median SpO2 (%)
+             */
             spo2_median?: number | null
-            /** Spo2 Min */
+            /**
+             * Spo2 Min
+             * @description [DERIVED] Min SpO2 (%)
+             */
             spo2_min?: number | null
-            /** Spo2 Time Below 90 */
+            /**
+             * Spo2 Time Below 90
+             * @description [DERIVED] Seconds with SpO2 below 90%
+             */
             spo2_time_below_90?: number | null
-            /** Spont Cyc Pct */
+            /**
+             * Spont Cyc Pct
+             * @description [DEVICE] Percent of breaths spontaneously cycled
+             */
             spont_cyc_pct?: number | null
-            /** Ti 95Th */
+            /**
+             * Ti 95Th
+             * @description [DEVICE] 95th percentile inspiratory time (s)
+             */
             ti_95th?: number | null
-            /** Ti Max */
+            /**
+             * Ti Max
+             * @description [DEVICE] Max inspiratory time (s)
+             */
             ti_max?: number | null
-            /** Ti Median */
+            /**
+             * Ti Median
+             * @description [DEVICE] Median inspiratory time (s)
+             */
             ti_median?: number | null
-            /** Tidal Volume 95Th */
+            /**
+             * Tidal Volume 95Th
+             * @description [DEVICE] 95th percentile tidal volume (mL)
+             */
             tidal_volume_95th?: number | null
-            /** Tidal Volume Max */
+            /**
+             * Tidal Volume Max
+             * @description [DEVICE] Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             */
             tidal_volume_max?: number | null
-            /** Tidal Volume Mean */
+            /**
+             * Tidal Volume Mean
+             * @description [DEVICE] Tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports
+             */
             tidal_volume_mean?: number | null
-            /** Tidal Volume Min */
+            /**
+             * Tidal Volume Min
+             * @description [DERIVED] Min tidal volume (mL); OSCAR session summary (OSCAR imports only)
+             */
             tidal_volume_min?: number | null
-            /** Uai */
+            /**
+             * Uai
+             * @description [DEVICE] Unknown apnea index
+             */
             uai?: number | null
-            /** Usage Hours */
+            /**
+             * Usage Hours
+             * @description [DERIVED] Mask-on therapy hours
+             */
             usage_hours?: number | null
         }
         /**
@@ -5227,17 +5701,17 @@ export interface components {
         SessionValidation: {
             /**
              * Apnea F1
-             * @description Apnea F1 score (0-1)
+             * @description [EXPERIMENTAL] Apnea F1 score (0-1)
              */
             apnea_f1: number
             /**
              * Apnea Precision
-             * @description Apnea precision (0-1)
+             * @description [EXPERIMENTAL] Apnea precision (0-1)
              */
             apnea_precision: number
             /**
              * Apnea Sensitivity
-             * @description Apnea sensitivity (0-1)
+             * @description [EXPERIMENTAL] Apnea sensitivity (0-1)
              */
             apnea_sensitivity: number
             /**
@@ -5247,52 +5721,52 @@ export interface components {
             date: string
             /**
              * Device Ahi
-             * @description Device AHI (events/hr)
+             * @description [DEVICE] Device AHI (events/hr)
              */
             device_ahi?: number | null
             /**
              * Device Cai
-             * @description Device CAI (central apnea index, events/hr)
+             * @description [DEVICE] Device CAI (central apnea index, events/hr)
              */
             device_cai?: number | null
             /**
              * Device Hi
-             * @description Device HI (hypopnea index, events/hr)
+             * @description [DEVICE] Device HI (hypopnea index, events/hr)
              */
             device_hi?: number | null
             /**
              * Device Oai
-             * @description Device OAI (obstructive apnea index, events/hr)
+             * @description [DEVICE] Device OAI (obstructive apnea index, events/hr)
              */
             device_oai?: number | null
             /**
              * Device Uai
-             * @description Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)
+             * @description [DEVICE] Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)
              */
             device_uai?: number | null
             /**
              * Duration Hours
-             * @description Session duration in hours
+             * @description [DERIVED] Flow-waveform coverage (hours)
              */
             duration_hours: number
             /**
              * Hypopnea F1
-             * @description Hypopnea F1 score (0-1)
+             * @description [EXPERIMENTAL] Hypopnea F1 score (0-1)
              */
             hypopnea_f1: number
             /**
              * Hypopnea Precision
-             * @description Hypopnea precision (0-1)
+             * @description [EXPERIMENTAL] Hypopnea precision (0-1)
              */
             hypopnea_precision: number
             /**
              * Hypopnea Sensitivity
-             * @description Hypopnea sensitivity (0-1)
+             * @description [EXPERIMENTAL] Hypopnea sensitivity (0-1)
              */
             hypopnea_sensitivity: number
             /**
              * Machine Event Count
-             * @description Total machine events
+             * @description [DEVICE] Total machine events
              */
             machine_event_count: number
             /**
@@ -5302,7 +5776,7 @@ export interface components {
             notes?: string | null
             /**
              * Programmatic Event Count
-             * @description Total programmatic events
+             * @description [EXPERIMENTAL] Total programmatic events
              */
             programmatic_event_count: number
             /**
@@ -5343,36 +5817,79 @@ export interface components {
          * @description Aggregated therapy statistics summary.
          */
         TherapySummary: {
-            /** Ahi Trend Direction */
+            /**
+             * Ahi Trend Direction
+             * @description [DERIVED] AHI trend direction over the range
+             */
             ahi_trend_direction?: string | null
-            /** Avg Ahi */
+            /**
+             * Avg Ahi
+             * @description [DERIVED] Average AHI
+             */
             avg_ahi?: number | null
-            /** Avg Epap */
+            /**
+             * Avg Epap
+             * @description [DERIVED] Average EPAP (cmH2O)
+             */
             avg_epap?: number | null
-            /** Avg Hours */
+            /**
+             * Avg Hours
+             * @description [DERIVED] Average therapy hours per day
+             */
             avg_hours: number
-            /** Avg Leak */
+            /**
+             * Avg Leak
+             * @description [DERIVED] Average leak (L/min)
+             */
             avg_leak?: number | null
-            /** Avg Minute Ventilation */
+            /**
+             * Avg Minute Ventilation
+             * @description [DERIVED] Average minute ventilation (L/min)
+             */
             avg_minute_ventilation?: number | null
-            /** Avg Pressure */
+            /**
+             * Avg Pressure
+             * @description [DERIVED] Average pressure (cmH2O)
+             */
             avg_pressure?: number | null
-            /** Avg Pulse */
+            /**
+             * Avg Pulse
+             * @description [DERIVED] Average pulse (BPM)
+             */
             avg_pulse?: number | null
-            /** Avg Rei */
+            /**
+             * Avg Rei
+             * @description [DERIVED] Average REI
+             */
             avg_rei?: number | null
-            /** Avg Respiratory Rate */
+            /**
+             * Avg Respiratory Rate
+             * @description [DERIVED] Average respiratory rate (breaths/min)
+             */
             avg_respiratory_rate?: number | null
-            /** Avg Spo2 */
+            /**
+             * Avg Spo2
+             * @description [DERIVED] Average SpO2 (%)
+             */
             avg_spo2?: number | null
-            /** Avg Tidal Volume */
+            /**
+             * Avg Tidal Volume
+             * @description [DERIVED] Average tidal volume (mL)
+             */
             avg_tidal_volume?: number | null
-            /** Days Since Last */
+            /**
+             * Days Since Last
+             * @description [DERIVED] Days since the last therapy day
+             */
             days_since_last: number
-            /** Days With Data */
+            /**
+             * Days With Data
+             * @description [DERIVED] Days with therapy data
+             */
             days_with_data: number
             /**
              * Effectiveness
+             * @description [DERIVED] Therapy effectiveness band from average AHI
              * @default unknown
              */
             effectiveness: string
@@ -5388,16 +5905,29 @@ export interface components {
              * Format: date
              */
             last_date: string
-            /** Max Pressure */
+            /**
+             * Max Pressure
+             * @description [DERIVED] Maximum pressure (cmH2O)
+             */
             max_pressure?: number | null
-            /** Min Pressure */
+            /**
+             * Min Pressure
+             * @description [DERIVED] Minimum pressure (cmH2O)
+             */
             min_pressure?: number | null
-            /** Min Spo2 */
+            /**
+             * Min Spo2
+             * @description [DERIVED] Minimum SpO2 (%)
+             */
             min_spo2?: number | null
-            /** Total Hours */
+            /**
+             * Total Hours
+             * @description [DERIVED] Total therapy hours
+             */
             total_hours: number
             /**
              * Total Spo2 Time Below 90
+             * @description [DERIVED] Total seconds with SpO2 below 90%
              * @default 0
              */
             total_spo2_time_below_90: number
@@ -5454,6 +5984,43 @@ export interface components {
             enabled_at?: string | null
             /** Recovery Codes Remaining */
             recovery_codes_remaining?: number | null
+        }
+        TrendSeries: [string, number | null][]
+        /**
+         * TrendsResponse
+         * @description Per-period trend series for ``GET /stats/trends``.
+         */
+        TrendsResponse: {
+            /** @description [DERIVED] Average AHI per period */
+            ahi: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average CAI per period */
+            cai: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average EPAP (cmH2O) per period */
+            epap: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average HI per period */
+            hi: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average leak (L/min) per period */
+            leak: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average minute ventilation (L/min) per period */
+            mv: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average OAI per period */
+            oai: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average pressure (cmH2O) per period */
+            pressure: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average pulse (BPM) per period */
+            pulse: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average device-scored RERA index per period */
+            rera: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average respiratory rate (breaths/min) per period */
+            rr: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average sleep efficiency % per night, per period (Apple Health) */
+            sleep_efficiency?: components['schemas']['TrendSeries'] | null
+            /** @description [DERIVED] Average SpO2 (%) per period */
+            spo2: components['schemas']['TrendSeries']
+            /** @description [DERIVED] Average total sleep hours per night, per period (Apple Health) */
+            total_sleep_hours?: components['schemas']['TrendSeries'] | null
+            /** @description [DERIVED] Average therapy hours per day, per period */
+            usage: components['schemas']['TrendSeries']
         }
         /** UserInfo */
         UserInfo: {
@@ -5736,7 +6303,10 @@ export interface components {
             downsampled: boolean
             /** Returned Samples */
             returned_samples: number
-            /** Sample Rate */
+            /**
+             * Sample Rate
+             * @description [DEVICE] Sample rate (Hz)
+             */
             sample_rate: number
             /** Timestamps */
             timestamps: number[]
@@ -5744,7 +6314,10 @@ export interface components {
             total_samples: number
             /** Unit */
             unit: string
-            /** Values */
+            /**
+             * Values
+             * @description [DEVICE] Waveform samples (possibly LTTB-downsampled)
+             */
             values: number[]
         }
         /**
@@ -5752,11 +6325,20 @@ export interface components {
          * @description Waveform metadata for listing.
          */
         WaveformInfo: {
-            /** Duration Hours */
+            /**
+             * Duration Hours
+             * @description [DEVICE] Recorded duration in hours
+             */
             duration_hours: number
-            /** Sample Count */
+            /**
+             * Sample Count
+             * @description [DEVICE] Number of samples
+             */
             sample_count: number
-            /** Sample Rate */
+            /**
+             * Sample Rate
+             * @description [DEVICE] Sample rate (Hz)
+             */
             sample_rate: number
             /** Unit */
             unit?: string | null
@@ -8486,11 +9068,7 @@ export interface operations {
                     [name: string]: unknown
                 }
                 content: {
-                    'application/json': {
-                        [key: string]: {
-                            [key: string]: unknown[][]
-                        }
-                    }
+                    'application/json': components['schemas']['RecordsResponse']
                 }
             }
             /** @description Validation Error */
@@ -8561,9 +9139,7 @@ export interface operations {
                     [name: string]: unknown
                 }
                 content: {
-                    'application/json': {
-                        [key: string]: unknown[][]
-                    }
+                    'application/json': components['schemas']['TrendsResponse']
                 }
             }
             /** @description Validation Error */

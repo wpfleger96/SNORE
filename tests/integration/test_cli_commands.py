@@ -9,20 +9,27 @@ These tests verify the command-line interface functionality including:
 """
 
 import asyncio
+import sys
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from click.testing import CliRunner
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.cli import cli
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
+from snore.provenance import PROVENANCE_NOTES, Provenance
+
+_DERIVED_LEGEND = (
+    f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
+)
 
 
 @pytest.fixture
@@ -1193,13 +1200,26 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert "AHI:" in result.output
-        assert "REI:" in result.output
+        assert "AHI†:" in result.output
+        assert "REI†:" in result.output
         assert "Pressure:" in result.output
         assert "Leak:" in result.output
         assert "SpO₂:" in result.output or "SpO2:" in result.output
         assert "Pulse:" in result.output
         assert "Respiratory:" in result.output or "Respiratory Rate:" in result.output
+
+    def test_session_show_derived_stats_print_legend_once(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(populated_test_db_full)],
+        )
+
+        assert result.exit_code == 0
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
+        assert f"* {Provenance.EXPERIMENTAL.value}:" not in result.output
 
     def test_session_show_displays_waveform_types(
         self, cli_runner, populated_test_db_full
@@ -1252,6 +1272,15 @@ class TestStatsEnhanced:
         assert "Time below 90%:" in result.output or "below 90" in result.output
 
 
+@pytest.fixture
+async def populated_test_db_with_day_stats(populated_test_db_full):
+    """``populated_test_db_full`` with Day roll-ups aggregated (trends/records read Days)."""
+    async with session_scope() as session:
+        for day in (await session.execute(select(models.Day))).scalars():
+            await DayManager.aggregate_day_statistics(day, session)
+    return populated_test_db_full
+
+
 class TestStatsPeriod:
     """Test stats command with period breakdown."""
 
@@ -1264,6 +1293,36 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0
         assert "Oct 2025" in result.output or "2025-10" in result.output
+
+    def test_stats_trend_marks_derived_ahi_trend(
+        self, cli_runner, populated_test_db_with_day_stats
+    ):
+        # The chart itself is out of scope here; stub plotext so only the
+        # surrounding text output is exercised.
+        with patch.dict(sys.modules, {"plotext": MagicMock()}):
+            result = cli_runner.invoke(
+                cli,
+                ["stats", "--db", str(populated_test_db_with_day_stats), "--trend"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "AHI Trend†" in result.output
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
+
+    def test_stats_records_marks_derived_columns(
+        self, cli_runner, populated_test_db_with_day_stats
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_with_day_stats), "--records"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Best AHI†" in result.output
+        assert "Worst AHI†" in result.output
+        assert result.output.count(_DERIVED_LEGEND) == 1
+        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 
 
 @pytest.fixture
@@ -1770,6 +1829,8 @@ class TestImportCorruptTimezone:
         from snore.services.import_service import ImportService
         from snore.services.schemas import ImportSource
 
+        # Patch for when logging is already configured (setup_logging returns
+        # early); --verbose for when this is the process's first CLI run.
         monkeypatch.setattr(logging_config, "verbose_mode", True)
 
         source = ImportSource(parser_name="oscar_binary", root_path=str(tmp_path))
@@ -1777,6 +1838,7 @@ class TestImportCorruptTimezone:
             result = cli_runner.invoke(
                 cli,
                 [
+                    "--verbose",
                     "import",
                     str(tmp_path),
                     "--db",

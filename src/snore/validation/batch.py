@@ -205,10 +205,10 @@ class BatchValidator:
             hypopnea_precision=hypopnea_val.precision,
             hypopnea_f1=hypopnea_val.f1_score,
             notes=notes,
-            device_ahi=stats_row.ahi if stats_row is not None else None,
-            device_oai=stats_row.oai if stats_row is not None else None,
-            device_cai=stats_row.cai if stats_row is not None else None,
-            device_hi=stats_row.hi if stats_row is not None else None,
+            device_ahi=stats_row.ahi_device if stats_row is not None else None,
+            device_oai=stats_row.oai_device if stats_row is not None else None,
+            device_cai=stats_row.cai_device if stats_row is not None else None,
+            device_hi=stats_row.hi_device if stats_row is not None else None,
             device_uai=stats_row.uai if stats_row is not None else None,
         )
 

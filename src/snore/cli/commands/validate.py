@@ -20,13 +20,18 @@ from snore.cli.display import (
     ICON_CHECK,
     ICON_ERROR,
     ICON_WARN,
+    Column,
     console,
     err_console,
+    mark_field,
+    mark_provenance,
     print_footer,
     print_header,
     print_kv,
     print_table,
 )
+from snore.provenance import Provenance
+from snore.validation.report import AggregateMetrics
 
 
 @click.command()
@@ -113,11 +118,14 @@ async def validate(
         )
         console.print(f"Sessions Analyzed: {report.aggregate.total_sessions}")
         console.print(f"Total Machine Events: {report.aggregate.total_machine_events}")
-        console.print(
-            f"Total Programmatic Events: {report.aggregate.total_programmatic_events}"
+        programmatic = mark_field(
+            "Total Programmatic Events", AggregateMetrics, "total_programmatic_events"
         )
+        console.print(f"{programmatic}: {report.aggregate.total_programmatic_events}")
 
-        console.print("\nAggregate Metrics:")
+        console.print(
+            f"\n{mark_provenance('Aggregate Metrics', Provenance.EXPERIMENTAL)}:"
+        )
         console.print(
             f"  Apneas:     "
             f"Avg Sens: {report.aggregate.avg_apnea_sensitivity * 100:.0f}%  "
@@ -144,7 +152,9 @@ async def validate(
                     f"  ... and {len(report.aggregate.low_sensitivity_sessions) - 10} more"
                 )
 
-        console.print("\nPer-Session Results:")
+        console.print(
+            f"\n{mark_provenance('Per-Session Results', Provenance.EXPERIMENTAL)}:"
+        )
         console.print(
             f"{'Date':<12} {'ID':<6} {'Machine':<8} {'Prog':<8} {'Apnea Sens':<11} {'Hypopnea Sens':<13}"
         )
@@ -206,7 +216,7 @@ async def _run_integrity(ctx: CliCtx, device_id: int | None) -> None:
     )
     if report.null_day_id_sessions:
         print_table(
-            columns=[("Session ID", 12)],
+            columns=[Column("Session ID", 12)],
             rows=[[str(sid)] for sid in report.null_day_id_sessions[:20]],
         )
         if len(report.null_day_id_sessions) > 20:
@@ -220,9 +230,9 @@ async def _run_integrity(ctx: CliCtx, device_id: int | None) -> None:
     if report.overlapping_session_pairs:
         print_table(
             columns=[
-                ("Device", 8),
-                ("Session A", 24),
-                ("Session B", 24),
+                Column("Device", 8),
+                Column("Session A", 24),
+                Column("Session B", 24),
             ],
             rows=[
                 [
@@ -245,7 +255,7 @@ async def _run_integrity(ctx: CliCtx, device_id: int | None) -> None:
     )
     if report.cross_parser_same_day:
         print_table(
-            columns=[("Device", 8), ("Date", 12), ("Sources", 0)],
+            columns=[Column("Device", 8), Column("Date", 12), Column("Sources", 0)],
             rows=[
                 [
                     str(cp.device_id),

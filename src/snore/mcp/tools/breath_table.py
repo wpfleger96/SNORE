@@ -32,7 +32,11 @@ from snore.mcp.tools._capabilities import (
     get_device_id_for_session,
 )
 from snore.mcp.tools._helpers import str_or_none
-from snore.mcp.tools._scaffold import _scope_and_run, tool_error_boundary
+from snore.mcp.tools._scaffold import (
+    _scope_and_run,
+    _with_experimental_disclaimer,
+    tool_error_boundary,
+)
 from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
@@ -259,6 +263,7 @@ def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import parse_date  # noqa: PLC0415
 
     @mcp.tool()
+    @_with_experimental_disclaimer
     @tool_error_boundary
     async def get_breath_table(
         ctx: Context,
