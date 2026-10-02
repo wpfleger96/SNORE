@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import snore.cli  # noqa: F401  # load before snore.waveform to avoid an import cycle (#364)
+from rich.console import Console
 
 from snore.waveform.renderer import WaveformRenderer
 
@@ -23,7 +23,7 @@ def _sine_window() -> tuple[np.ndarray, np.ndarray]:
 def test_render_draws_single_waveform_chart(capsys):
     timestamps, values = _sine_window()
 
-    WaveformRenderer(width=60, height=12, show_events=False).render(
+    WaveformRenderer(console=Console(), width=60, height=12, show_events=False).render(
         timestamps, values, session_id=7
     )
 
@@ -33,7 +33,7 @@ def test_render_draws_single_waveform_chart(capsys):
 def test_render_multi_draws_stacked_charts(capsys):
     timestamps, values = _sine_window()
 
-    WaveformRenderer(width=60, height=24).render_multi(
+    WaveformRenderer(console=Console(), width=60, height=24).render_multi(
         [(timestamps, values, "flow"), (timestamps, values + 10, "pressure")],
         session_id=7,
     )
