@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import HealthNightlySummary, HealthSample, Profile, User
-from snore.services.health_service import HealthService
+from snore.services.health_service import HealthService, spo2_display_pct
 
 _SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 _SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
@@ -452,3 +452,25 @@ class TestListNightDatesSorted:
         """list_night_dates returns [] when there are no summaries for the profile."""
         dates = await HealthService(async_db_session, profile_id).list_night_dates()
         assert dates == []
+
+
+# ---------------------------------------------------------------------------
+# spo2_display_pct
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        (0.95, 95.0),  # fraction → percent
+        (95.0, 95.0),  # already percent
+        (0.5, 50.0),  # lower fraction boundary
+        (1.0, 100.0),  # upper fraction boundary
+        (20.0, 20.0),  # implausible: shown as stored
+        (1.5, 1.5),  # implausible: shown as stored
+    ],
+)
+def test_spo2_display_pct_scales_fractions_and_keeps_others(
+    stored: float, expected: float
+) -> None:
+    assert spo2_display_pct(stored) == pytest.approx(expected)
