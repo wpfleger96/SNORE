@@ -60,7 +60,7 @@ Complete project overview showing implemented features and future development pl
 - [x] **Flow limitation** 7-class severity classification
 - [x] **CSR/periodic breathing** programmatic detection
 - [x] **SpO2 drop detection** (3%/4% modes)
-- [x] Feature extraction (shape, spectral, flatness, plateau)
+- [x] Feature extraction (shape, peak, flatness, plateau)
 
 ### CLI Commands
 - [x] `snore import PATH` - Import CPAP data with parallel processing

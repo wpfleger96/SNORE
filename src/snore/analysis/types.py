@@ -62,20 +62,17 @@ class AnalysisEvent(BaseModel):
     )
 
 
-def _machine_ahi_rdi(
+def _machine_ahi(
     machine_events: list[AnalysisEvent], session_duration_hours: float
-) -> tuple[float | None, float | None]:
-    """Recount machine events into AHI/RDI over waveform-coverage hours.
+) -> float | None:
+    """Recount machine events into an AHI over waveform-coverage hours.
 
-    Returns ``(None, None)`` when there are no machine events.  The RDI slot
-    mirrors the AHI (device-flagged RERAs are not added), so it is not a true
-    RDI; it is kept only for the persisted ``machine_rdi`` field.
+    Returns ``None`` when there are no machine events.
     """
     if not machine_events:
-        return None, None
+        return None
     count = sum(1 for e in machine_events if e.event_type in _MACHINE_AHI_EVENT_TYPES)
-    ahi = count / session_duration_hours if session_duration_hours > 0 else 0.0
-    return ahi, ahi
+    return count / session_duration_hours if session_duration_hours > 0 else 0.0
 
 
 class AnalysisResult(BaseModel):
@@ -98,11 +95,12 @@ class AnalysisResult(BaseModel):
     )
     machine_rdi: float | None = provenance_field(
         Provenance.DERIVED,
-        "Mirrors machine_ahi (machine-scored apneas + hypopneas per hour); "
-        "device-flagged RERAs are not added, so this is not a true RDI "
-        "(None if no events)",
+        "Mirrors machine_ahi (machine-scored apneas + hypopneas per "
+        "waveform-coverage hour); device-flagged RERAs are not added, so this is "
+        "not a true RDI (None if no events). Deprecated: read machine_ahi.",
         default=None,
         ge=0,
+        deprecated="machine_rdi mirrors machine_ahi; read machine_ahi instead",
     )
     mode_results: dict[str, ModeResult] = Field(description="Results by detection mode")
     flow_analysis: dict[str, Any] | None = Field(
@@ -142,9 +140,10 @@ class AnalysisResult(BaseModel):
         """
         result = cls.model_validate(data)
         if result.machine_ahi is None and result.machine_events:
-            result.machine_ahi, result.machine_rdi = _machine_ahi_rdi(
+            result.machine_ahi = _machine_ahi(
                 result.machine_events, result.session_duration_hours
             )
+            result.machine_rdi = result.machine_ahi
         return result
 
 

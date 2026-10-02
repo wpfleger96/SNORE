@@ -63,7 +63,7 @@ from snore.analysis.types import (
     AnalysisEvent,
     AnalysisResult,
     ComputedBreath,
-    _machine_ahi_rdi,
+    _machine_ahi,
 )
 from snore.constants import BreathSegmentationConstants as BSC
 from snore.constants import PatternDetectionConstants as PDC
@@ -702,9 +702,7 @@ class AnalysisService:
                 logger.error(f"Failed to run mode '{mode_name}': {e}")
                 continue
 
-        machine_ahi, machine_rdi = _machine_ahi_rdi(
-            inputs.machine_events, session_duration_hours
-        )
+        machine_ahi = _machine_ahi(inputs.machine_events, session_duration_hours)
 
         summary = AnalysisResult(
             session_id=session_id,
@@ -712,7 +710,7 @@ class AnalysisService:
             total_breaths=len(breaths),
             machine_events=inputs.machine_events,
             machine_ahi=machine_ahi,
-            machine_rdi=machine_rdi,
+            machine_rdi=machine_ahi,
             mode_results=mode_results,
             flow_analysis=flow_analysis.model_dump(),
             csr_detection=csr_detection.model_dump() if csr_detection else None,

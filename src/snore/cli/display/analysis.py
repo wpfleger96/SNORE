@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from snore.analysis.modes.types import ModeResult
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import console, mark_field, mark_provenance
 from snore.constants import FLOW_LIMITATION_CLASSES
@@ -19,7 +20,6 @@ from snore.services.schemas import SessionStatistics
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
-    from snore.analysis.modes.types import ModeResult
     from snore.services.schemas import SessionDetail
 
 
@@ -136,14 +136,14 @@ def create_mode_comparison_table(
         table.add_column(mode_name, justify="right")
 
     ahi_values = [mode_results[mode].ahi for mode in mode_results]
-    ahi_row = ["AHI"]
+    ahi_row = [mark_field("AHI", ModeResult, "ahi")]
     for _mode_name, ahi in zip(mode_results.keys(), ahi_values, strict=False):
         color = _get_ahi_color(ahi)
         ahi_row.append(f"[{color}]{ahi:.1f}[/{color}]")
     table.add_row(*ahi_row)
 
     rdi_values = [f"{mode_results[mode].rdi:.1f}" for mode in mode_results]
-    table.add_row("RDI", *rdi_values)
+    table.add_row(mark_field("RDI", ModeResult, "rdi"), *rdi_values)
 
     total_events = [
         str(len(mode_results[mode].apneas) + len(mode_results[mode].hypopneas))

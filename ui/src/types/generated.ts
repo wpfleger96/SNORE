@@ -2231,7 +2231,8 @@ export interface components {
             machine_events: components['schemas']['AnalysisEvent'][]
             /**
              * Machine Rdi
-             * @description [DERIVED] Mirrors machine_ahi (machine-scored apneas + hypopneas per hour); device-flagged RERAs are not added, so this is not a true RDI (None if no events)
+             * @deprecated
+             * @description [DERIVED] Mirrors machine_ahi (machine-scored apneas + hypopneas per waveform-coverage hour); device-flagged RERAs are not added, so this is not a true RDI (None if no events). Deprecated: read machine_ahi.
              */
             machine_rdi?: number | null
             /**

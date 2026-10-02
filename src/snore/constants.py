@@ -92,11 +92,16 @@ class EventDetectionConstants:
     HYPOPNEA_MIN_REDUCTION = 0.3
     HYPOPNEA_MAX_REDUCTION = 0.89
 
-    # Flow-estimated effort boundaries for apnea typing (classification.py):
-    # above OBSTRUCTIVE_MIN -> OA, below CENTRAL_MAX -> CA, between -> MA.
-    APNEA_EFFORT_OBSTRUCTIVE_MIN = 0.15
-    APNEA_EFFORT_CENTRAL_MAX = 0.05
-    APNEA_EFFORT_MIXED_MIDPOINT = 0.10
+    # Flow-estimated effort thresholds for apnea typing (classification.py):
+    # obstructive when strictly above OBSTRUCTIVE_THRESHOLD, central when strictly
+    # below CENTRAL_THRESHOLD, mixed otherwise (inclusive at both thresholds).
+    APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD = 0.15
+    APNEA_EFFORT_CENTRAL_THRESHOLD = 0.05
+    # Effort at which obstructive confidence saturates (central saturates at 0).
+    APNEA_EFFORT_OBSTRUCTIVE_SATURATION = 0.5
+    APNEA_EFFORT_MIXED_MIDPOINT = (
+        APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD + APNEA_EFFORT_CENTRAL_THRESHOLD
+    ) / 2
 
     SPO2_DESATURATION_DROP = 3.0
 
