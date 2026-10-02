@@ -92,8 +92,16 @@ class EventDetectionConstants:
     HYPOPNEA_MIN_REDUCTION = 0.3
     HYPOPNEA_MAX_REDUCTION = 0.89
 
-    APNEA_EFFORT_HIGH_THRESHOLD = 0.5
-    APNEA_EFFORT_LOW_THRESHOLD = 0.1
+    # Flow-estimated effort thresholds for apnea typing (classification.py):
+    # obstructive when strictly above OBSTRUCTIVE_THRESHOLD, central when strictly
+    # below CENTRAL_THRESHOLD, mixed otherwise (inclusive at both thresholds).
+    APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD = 0.15
+    APNEA_EFFORT_CENTRAL_THRESHOLD = 0.05
+    # Effort at which obstructive confidence saturates (central saturates at 0).
+    APNEA_EFFORT_OBSTRUCTIVE_SATURATION = 0.5
+    APNEA_EFFORT_MIXED_MIDPOINT = (
+        APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD + APNEA_EFFORT_CENTRAL_THRESHOLD
+    ) / 2
 
     SPO2_DESATURATION_DROP = 3.0
 
@@ -187,8 +195,6 @@ class PatternDetectionConstants:
 
 class FlowLimitationConstants:
     """Constants for flow limitation classification (flow_limitation.py)."""
-
-    CONFIDENCE_THRESHOLD = 0.6
 
     # Plateau thresholds are fractions of inspiration time (plateau_fraction),
     # not absolute seconds, so slow deep breaths no longer trivially clear them.
