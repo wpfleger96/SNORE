@@ -17,7 +17,12 @@ from snore.services.schemas import (
     HealthSampleRead,
 )
 
-__all__ = ["HealthService", "NightFragmentation"]
+__all__ = [
+    "SPO2_RECORD_TYPE",
+    "HealthService",
+    "NightFragmentation",
+    "spo2_display_pct",
+]
 
 
 class NightFragmentation(NamedTuple):
@@ -30,17 +35,30 @@ class NightFragmentation(NamedTuple):
     sleep_efficiency_pct: float | None
 
 
-_SPO2_RECORD_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
+SPO2_RECORD_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
 _RR_RECORD_TYPE = "HKQuantityTypeIdentifierRespiratoryRate"
 _BREATHING_DISTURBANCE_RECORD_TYPE = (
     "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances"
 )
 
 
-# Plausible SpO₂ range in percent; samples outside it (after fraction→percent
-# conversion) are treated as sensor or encoding errors and dropped.
+# Plausible SpO₂ range in percent. A stored value is a fraction when value*100
+# lands in it, a percent when the value itself does. Night aggregates in
+# ``get_night_detail`` drop samples outside it as sensor or encoding errors;
+# ``spo2_display_pct`` keeps them visible as stored.
 _SPO2_MIN_PCT = 50.0
 _SPO2_MAX_PCT = 100.0
+
+
+def spo2_display_pct(value: float) -> float:
+    """Return a stored SpO2 value on the percent scale for display.
+
+    Apple Health sources store SpO2 as either a fraction (0.95) or a percent
+    (95). Fractions are scaled to percent; anything else is returned as stored
+    so implausible samples stay visible rather than hidden. The fraction test
+    mirrors the first branch of the ``spo2_pct`` case in ``get_night_detail``.
+    """
+    return value * 100 if _SPO2_MIN_PCT <= value * 100 <= _SPO2_MAX_PCT else value
 
 
 class HealthService(ProfileScopedService):
@@ -107,8 +125,9 @@ class HealthService(ProfileScopedService):
             raise NotFoundError(f"No health data found for night {night_date}")
 
         value = models.HealthSample.value_num
-        is_spo2 = models.HealthSample.record_type == _SPO2_RECORD_TYPE
+        is_spo2 = models.HealthSample.record_type == SPO2_RECORD_TYPE
         # Value ranges are disjoint: [0.5, 1] is a fraction, [50, 100] a percent.
+        # Python twin: ``spo2_display_pct`` — keep the two in sync.
         spo2_pct = case(
             (
                 is_spo2 & (value * 100).between(_SPO2_MIN_PCT, _SPO2_MAX_PCT),
@@ -129,7 +148,7 @@ class HealthService(ProfileScopedService):
                     models.HealthSample.profile_id == self.profile_id,
                     models.HealthSample.night_date == night_date,
                     models.HealthSample.record_type.in_(
-                        [_SPO2_RECORD_TYPE, _RR_RECORD_TYPE]
+                        [SPO2_RECORD_TYPE, _RR_RECORD_TYPE]
                     ),
                 )
             )

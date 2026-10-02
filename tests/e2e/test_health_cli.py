@@ -115,3 +115,32 @@ def test_health_show_unknown_date_exits_nonzero(snore, health_db):
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "no health data" in combined.lower()
+
+
+def test_health_show_spo2_samples_on_percent_scale(snore, tmp_path):
+    """SpO2 stored as a fraction prints as percent; percent SpO2 and RR print as stored."""
+    # The fixture already holds a fraction SpO2 (0.962) and an RR (14.5) sample
+    # for FIXTURE_NIGHT; add a percent-scale SpO2 sample from another source.
+    percent_record = (
+        '<Record type="HKQuantityTypeIdentifierOxygenSaturation" '
+        'sourceName="Third-party Oximeter" sourceVersion="1.0" device="Oximeter" '
+        'creationDate="2024-01-16 04:00:00 -0500" startDate="2024-01-16 04:00:00 -0500" '
+        'endDate="2024-01-16 04:00:00 -0500" value="94.25" unit="%"/>\n'
+    )
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    xml = (HEALTH_FIXTURE / "export.xml").read_text()
+    (export_dir / "export.xml").write_text(
+        xml.replace("</HealthData>", percent_record + "</HealthData>")
+    )
+    db = tmp_path / "health.db"
+    imported = snore("health", "import", str(export_dir), db=db)
+    assert imported.returncode == 0, imported.stderr or imported.stdout
+
+    result = snore("health", "show", FIXTURE_NIGHT, db=db)
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "96.2 %" in result.stdout
+    assert "0.962 %" not in result.stdout
+    assert "94.25 %" in result.stdout
+    assert "14.5 count/min" in result.stdout

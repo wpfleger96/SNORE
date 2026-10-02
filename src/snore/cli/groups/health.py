@@ -7,6 +7,7 @@ import re
 
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -37,6 +38,9 @@ from snore.cli.display import (
 )
 from snore.provenance import field_provenance
 from snore.services.schemas import HealthNightDetailRead, HealthNightSummaryRead
+
+if TYPE_CHECKING:
+    from snore.database.models import HealthSample
 
 
 def _fmt_hours(secs: float | None) -> str:
@@ -89,6 +93,22 @@ def _metric_label(record_type: str) -> str:
     if record_type in _METRIC_LABELS:
         return _METRIC_LABELS[record_type]
     return _HK_PREFIX.sub("", record_type)
+
+
+def _fmt_sample_value(sample: HealthSample) -> str:
+    from snore.services.health_service import (  # noqa: PLC0415
+        SPO2_RECORD_TYPE,
+        spo2_display_pct,
+    )
+
+    if sample.value_num is None:
+        return str(sample.value_text or "")
+    if sample.record_type == SPO2_RECORD_TYPE:
+        pct = spo2_display_pct(sample.value_num)
+        # Round only values scaled from a fraction; others print as stored.
+        shown = f"{pct:.1f}" if pct != sample.value_num else f"{pct}"
+        return f"{shown} %"
+    return f"{sample.value_num} {sample.unit}"
 
 
 @click.group()
@@ -340,9 +360,7 @@ async def health_show(ctx: CliCtx, night_date: datetime) -> None:
             (
                 (
                     _metric_label(s.record_type),
-                    f"{s.value_num} {s.unit}"
-                    if s.value_num is not None
-                    else str(s.value_text or ""),
+                    _fmt_sample_value(s),
                     f"{s.start_time:%Y-%m-%d %H:%M}",
                 )
                 for s in quantity_samples
