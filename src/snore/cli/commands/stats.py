@@ -266,8 +266,9 @@ async def stats(
                     fig.title(f"AHI Over Time {direction}")
                     fig.label("Period", axis="x")
                     fig.label("AHI (events/hour)", axis="y")
-                    # fig.show() writes to fd 1 from native code, bypassing sys.stdout.
-                    print(fig.build())
+                    # fig.show() writes to fd 1 from native code, bypassing sys.stdout
+                    # and the console; build() + console.out keeps ordering/capture.
+                    console.out(fig.build().string(colorless=True), highlight=False)
 
                     print_footer(wide=True)
 

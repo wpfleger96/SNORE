@@ -18,7 +18,8 @@ dependencies = [
     "scipy>=1.17.1",
     "packaging>=26.2",
     "rich>=15.0.0",
-    "plotext>=6.1.0",
+    # <7: uv tool install ignores uv.lock; lift once the unmocked chart tests pass on 7.
+    "plotext>=6.1.0,<7",
     # <0.26: mypy segfaults analyzing pint 0.26.x; lift once mypy handles it.
     "pint>=0.26.1,<0.27",
     "fastapi>=0.136.1",

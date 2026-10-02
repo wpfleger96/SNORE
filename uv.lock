@@ -2597,7 +2597,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "packaging", specifier = ">=26.2" },
     { name = "pint", specifier = ">=0.26.1,<0.27" },
-    { name = "plotext", specifier = ">=6.1.0" },
+    { name = "plotext", specifier = ">=6.1.0,<7" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyedflib", specifier = ">=0.1.42" },
     { name = "pyotp", specifier = ">=2.9.0" },
