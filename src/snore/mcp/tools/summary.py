@@ -41,15 +41,14 @@ from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
 )
+from snore.metrics import DAY_INDEX_FIELDS
 
 _DEFAULT_PAGE_SIZE = 30
 _DEFAULT_COMPLIANCE_THRESHOLD_HOURS = 4.0
 MAX_NIGHTLY_RANGE = 90
 # Day columns copied onto NightlyRow: the headline indices and their recounts.
 _NIGHTLY_INDEX_FIELDS = tuple(
-    f"{index}{suffix}"
-    for index in ("ahi", "oai", "cai", "hi")
-    for suffix in ("", "_computed")
+    f"{index}{suffix}" for index in DAY_INDEX_FIELDS for suffix in ("", "_computed")
 )
 
 

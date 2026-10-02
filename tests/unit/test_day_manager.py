@@ -6,6 +6,8 @@ that determines which calendar day sessions belong to and how statistics
 are aggregated across multiple sessions.
 """
 
+import logging
+
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 
@@ -788,13 +790,28 @@ class TestDeviceIndexHeadline:
         assert day.index_source == IndexSource.DERIVED
         assert day.ahi == pytest.approx(5.0)
 
-    async def test_trusted_device_values_without_therapy_hours_headline_device(
-        self, async_db_session, async_test_device, async_test_session_factory
+    @pytest.mark.parametrize(
+        ("usage_hours", "usage_hours_device"),
+        [
+            # No imported mask-on time, device hours within the 5 min floor.
+            (0.0, 0.05),
+            # Device reports no mask-on time, imported time within the floor.
+            (0.02, 0.0),
+        ],
+    )
+    async def test_zero_mask_on_hours_never_headline_device(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        usage_hours,
+        usage_hours_device,
     ):
-        # Zero mask-on time leaves no recount, but the device reported its
-        # daily indices over a mask-on time within tolerance (3 min), so the
-        # headline shows them.
-        device = {**_DEVICE, "usage_hours": 0.0, "usage_hours_device": 0.05}
+        device = {
+            **_DEVICE,
+            "usage_hours": usage_hours,
+            "usage_hours_device": usage_hours_device,
+        }
         day, _, _ = await self._two_session_day(
             async_db_session,
             async_test_device,
@@ -803,17 +820,27 @@ class TestDeviceIndexHeadline:
             second_device=device,
         )
 
-        assert day.total_therapy_hours == 0.0
-        assert day.index_source == IndexSource.DEVICE
-        assert (day.ahi, day.oai, day.cai, day.hi) == (2.5, 1.0, 0.5, 1.0)
-        for field in ("ahi", "oai", "cai", "hi"):
-            assert getattr(day, f"{field}_computed") is None
+        assert day.index_source != IndexSource.DEVICE
+        assert day.ahi == day.ahi_computed
 
-    async def test_imported_hours_within_fraction_tolerance_headline_device(
-        self, async_db_session, async_test_device, async_test_session_factory
+    @pytest.mark.parametrize(
+        ("device_hours", "expected"),
+        [
+            # 24.6 min short, just inside 5% of 8.41 h (25.23 min).
+            (8.41, IndexSource.DEVICE),
+            # 25.8 min short, just beyond 5% of 8.43 h (25.29 min).
+            (8.43, IndexSource.DERIVED),
+        ],
+    )
+    async def test_long_day_uses_fraction_coverage_tolerance(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        device_hours,
+        expected,
     ):
-        # 8.0 h imported vs 8.4 h reported: 24 min short, inside 5% (25.2 min).
-        device = {**_DEVICE, "usage_hours_device": 8.4}
+        device = {**_DEVICE, "usage_hours_device": device_hours}
         day, _, _ = await self._two_session_day(
             async_db_session,
             async_test_device,
@@ -822,8 +849,8 @@ class TestDeviceIndexHeadline:
             second_device=device,
         )
 
-        assert day.index_source == IndexSource.DEVICE
-        assert day.ahi == 2.5
+        assert day.total_therapy_hours == pytest.approx(8.0)
+        assert day.index_source == expected
 
     async def test_imported_hours_short_of_device_headline_derived(
         self, async_db_session, async_test_device, async_test_session_factory
@@ -860,10 +887,10 @@ class TestDeviceIndexHeadline:
     @pytest.mark.parametrize(
         ("device_hours", "expected"),
         [
-            # 4.5 min short: over 5% (3.2 min) but inside the 5 min floor.
-            (1.075, IndexSource.DEVICE),
-            # 6 min short: beyond the 5 min floor and 5% (3.3 min).
-            (1.1, IndexSource.DERIVED),
+            # 4.9 min short: over 5% (3.2 min) but inside the 5 min floor.
+            (1 + 4.9 / 60, IndexSource.DEVICE),
+            # 5.1 min short: beyond the 5 min floor and 5% (3.3 min).
+            (1 + 5.1 / 60, IndexSource.DERIVED),
         ],
     )
     async def test_short_day_uses_minimum_coverage_tolerance(
@@ -947,3 +974,46 @@ class TestDeviceIndexHeadline:
             assert getattr(day, field) is None
             assert getattr(day, f"{field}_computed") is None
         assert day.index_source is None
+
+    async def test_hours_without_any_index_leave_index_source_none(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        device = async_test_device
+        session = await async_test_session_factory(
+            device_id=device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=6.0,
+            usage_hours=6.0,
+        )
+        day = await DayManager.link_session_to_day(session, device.id, async_db_session)
+
+        assert day.total_therapy_hours == pytest.approx(6.0)
+        for field in ("ahi", "oai", "cai", "hi"):
+            assert getattr(day, field) is None
+            assert getattr(day, f"{field}_computed") is None
+        assert day.index_source is None
+
+    @pytest.mark.parametrize(("ahi_device", "warns"), [(2.5, False), (12.0, True)])
+    async def test_device_ahi_far_from_recount_logs_warning(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        caplog,
+        ahi_device,
+        warns,
+    ):
+        # Recount AHI is 5.0: 2.5 is within the warning bound, 12.0 is not.
+        device = {**_DEVICE, "ahi_device": ahi_device}
+        with caplog.at_level(logging.WARNING, logger="snore.database.day_manager"):
+            day, _, _ = await self._two_session_day(
+                async_db_session,
+                async_test_device,
+                async_test_session_factory,
+                first_device=device,
+                second_device=device,
+            )
+
+        assert day.index_source == IndexSource.DEVICE
+        assert day.ahi == ahi_device
+        assert ("differs from SNORE's recount" in caplog.text) is warns

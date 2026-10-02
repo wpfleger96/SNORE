@@ -8,9 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from snore.metrics import COVERAGE_TOLERANCE_FRACTION, COVERAGE_TOLERANCE_HOURS
 from snore.provenance import IndexSource, Provenance, provenance_field
 
 __all__ = [
+    "HEADLINE_INDEX_DESCRIPTION",
+    "INDEX_SOURCE_DESCRIPTION",
     "PeriodStatistics",
     "EventValidationResult",
     "DatabaseStats",
@@ -73,6 +76,21 @@ __all__ = [
     "HealthNightDetailRead",
     "HealthSampleRead",
 ]
+
+# Shared descriptions of the Day headline indices (REST day schemas and the MCP
+# nightly summary), built from the trust-rule constants so they cannot drift.
+HEADLINE_INDEX_DESCRIPTION = (
+    "device-reported daily value when trusted, otherwise SNORE's recount; "
+    "index_source says which. Trusted = no session of the day is disabled, "
+    "every session reports the same device AHI/OAI/CAI/HI and daily mask-on "
+    "hours, both mask-on times are nonzero, and SNORE's imported time is within "
+    f"the larger of {COVERAGE_TOLERANCE_HOURS * 60:g} min or "
+    f"{COVERAGE_TOLERANCE_FRACTION:.0%} of the device's"
+)
+INDEX_SOURCE_DESCRIPTION = (
+    "Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily "
+    "value) or 'derived' (SNORE's recount); null when the day has no index"
+)
 
 
 class PeriodStatistics(BaseModel):
@@ -322,8 +340,8 @@ class SessionStatistics(BaseModel):
     )
     usage_hours_device: float | None = provenance_field(
         Provenance.DEVICE,
-        "Mask-on hours for the day as reported by the device (STR); "
-        "daily value copied onto each session",
+        "Device-reported (STR) mask-on hours for the whole day, not this "
+        "session: the same daily value is repeated on every session of the day",
         default=None,
     )
     oai: float | None = provenance_field(
@@ -949,17 +967,12 @@ class DayListItem(BaseModel):
     )
     ahi: float | None = provenance_field(
         Provenance.DEVICE,
-        "Headline AHI: device-reported daily value when trusted, otherwise "
-        "SNORE's recount; index_source says which. Trusted = every enabled "
-        "session reports the same device AHI/OAI/CAI/HI, none is disabled, "
-        "and the imported mask-on time matches the device's (within 5 min or 5%)",
+        f"Headline AHI (events/hr): {HEADLINE_INDEX_DESCRIPTION}",
         source_field="index_source",
         default=None,
     )
     index_source: IndexSource | None = Field(
-        default=None,
-        description="Source of the headline ahi/oai/cai/hi: 'device' "
-        "(device-reported daily value) or 'derived' (SNORE's recount)",
+        default=None, description=INDEX_SOURCE_DESCRIPTION
     )
     ahi_computed: float | None = provenance_field(
         Provenance.DERIVED,

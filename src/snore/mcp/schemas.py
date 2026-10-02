@@ -35,7 +35,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field
 
 from snore.provenance import IndexSource, Provenance, provenance_field
-from snore.services.schemas import MergedSettingsChange
+from snore.services.schemas import (
+    HEADLINE_INDEX_DESCRIPTION,
+    INDEX_SOURCE_DESCRIPTION,
+    MergedSettingsChange,
+)
 
 
 def tz_fields(source: Any) -> dict[str, Any]:
@@ -175,10 +179,7 @@ class NightlyRow(BaseModel):
     # is in *_computed.
     ahi: float | None = provenance_field(
         Provenance.DEVICE,
-        "AHI (events/hr): device-reported daily value when trusted, otherwise "
-        "SNORE's recount; index_source says which. Trusted = every enabled "
-        "session reports the same device AHI/OAI/CAI/HI, none is disabled, "
-        "and the imported mask-on time matches the device's (within 5 min or 5%).",
+        f"Headline AHI (events/hr): {HEADLINE_INDEX_DESCRIPTION}.",
         source_field="index_source",
         default=None,
     )
@@ -201,9 +202,7 @@ class NightlyRow(BaseModel):
         default=None,
     )
     index_source: IndexSource | None = Field(
-        default=None,
-        description="Source of the headline ahi/oai/cai/hi: 'device' "
-        "(device-reported daily value) or 'derived' (SNORE's recount).",
+        default=None, description=f"{INDEX_SOURCE_DESCRIPTION}."
     )
     ahi_computed: float | None = provenance_field(
         Provenance.DERIVED,

@@ -2931,7 +2931,7 @@ export interface components {
         DayDetail: {
             /**
              * Ahi
-             * @description [DEVICE] Headline AHI: device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = every enabled session reports the same device AHI/OAI/CAI/HI, none is disabled, and the imported mask-on time matches the device's (within 5 min or 5%)
+             * @description [DEVICE] Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
              */
             ahi?: number | null
             /**
@@ -3026,7 +3026,7 @@ export interface components {
              * @default 0
              */
             hypopneas: number
-            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount) */
+            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount); null when the day has no index */
             index_source?: components['schemas']['IndexSource'] | null
             /**
              * Leak 95Th
@@ -3131,7 +3131,7 @@ export interface components {
         DayListItem: {
             /**
              * Ahi
-             * @description [DEVICE] Headline AHI: device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = every enabled session reports the same device AHI/OAI/CAI/HI, none is disabled, and the imported mask-on time matches the device's (within 5 min or 5%)
+             * @description [DEVICE] Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
              */
             ahi?: number | null
             /**
@@ -3146,7 +3146,7 @@ export interface components {
             date: string
             /** Device Id */
             device_id: number
-            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount) */
+            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount); null when the day has no index */
             index_source?: components['schemas']['IndexSource'] | null
             /** Session Count */
             session_count: number
@@ -5730,7 +5730,7 @@ export interface components {
             usage_hours?: number | null
             /**
              * Usage Hours Device
-             * @description [DEVICE] Mask-on hours for the day as reported by the device (STR); daily value copied onto each session
+             * @description [DEVICE] Device-reported (STR) mask-on hours for the whole day, not this session: the same daily value is repeated on every session of the day
              */
             usage_hours_device?: number | null
         }

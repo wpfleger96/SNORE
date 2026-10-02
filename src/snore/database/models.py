@@ -46,8 +46,10 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from snore.database.types import UTCDateTime, ValidatedJSON, ValidatedJSONWithDefault
@@ -651,6 +653,37 @@ class Day(Base):
 
     def __repr__(self) -> str:
         return f"<Day(id={self.id}, device_id={self.device_id}, date={self.date}, ahi={self.ahi})>"
+
+
+# ``Enum(native_enum=False)`` emits no CHECK, and a stray ``days.index_source``
+# string makes every ORM load of that Day raise LookupError.  Adding a CHECK to
+# an existing ``days`` table needs a table rebuild (cascade risk), so SQLite
+# triggers guard the column instead, built from ``IndexSource`` so they cannot
+# drift.  Fresh DBs get them via ``after_create``; migration 018 adds them to
+# existing DBs.  A batch (copy-and-rename) rebuild of ``days`` drops them, so a
+# migration doing one must recreate them.
+_INDEX_SOURCE_VALUES = ", ".join(f"'{source.value}'" for source in IndexSource)
+DAY_INDEX_SOURCE_TRIGGERS: dict[str, str] = {
+    name: (
+        f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {when} ON days FOR EACH ROW "
+        f"WHEN NEW.index_source IS NOT NULL "
+        f"AND NEW.index_source NOT IN ({_INDEX_SOURCE_VALUES}) "
+        "BEGIN SELECT RAISE(ABORT, 'invalid days.index_source'); END"
+    )
+    for name, when in (
+        ("trg_days_index_source_insert", "INSERT"),
+        ("trg_days_index_source_update", "UPDATE OF index_source"),
+    )
+}
+
+
+@event.listens_for(Day.__table__, "after_create")
+def _create_day_index_source_triggers(
+    target: Any, connection: Connection, **kw: Any
+) -> None:
+    if connection.dialect.name == "sqlite":
+        for trigger_sql in DAY_INDEX_SOURCE_TRIGGERS.values():
+            connection.exec_driver_sql(trigger_sql)
 
 
 class Session(Base):

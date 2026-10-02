@@ -194,3 +194,17 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "hi_device",
     "usage_hours_device",
 )
+
+
+# Day respiratory indices that have both a headline column (``Day.<name>``:
+# the device-reported daily value when trusted, else SNORE's recount) and a
+# recount column (``Day.<name>_computed``).
+DAY_INDEX_FIELDS: tuple[str, ...] = ("ahi", "oai", "cai", "hi")
+
+# Allowed gap between SNORE's imported mask-on hours and the device's daily
+# mask-on hours before the device indices stop describing the imported data:
+# the larger of the floor or the fraction of the device's hours.  The floor
+# absorbs per-file rounding of BRP durations, which leaves gaps of up to ~4 min
+# on real nights.
+COVERAGE_TOLERANCE_HOURS = 5 / 60
+COVERAGE_TOLERANCE_FRACTION = 0.05
