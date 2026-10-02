@@ -180,7 +180,7 @@ async function handleExport(): Promise<void> {
             const params: CsvExportParams = { ...baseParams }
             if (includeWaveforms.value) params.include_waveforms = true
             blob = await exportCsv(params)
-            filename = 'snore-export.zip'
+            filename = 'snore-export-csv.zip'
         } else if (format.value === 'json') {
             blob = await exportJson(baseParams)
             filename = 'snore-export.json'
@@ -188,7 +188,7 @@ async function handleExport(): Promise<void> {
             const params: RawExportParams = { ...baseParams, as_zip: true }
             if (trimStr.value && fromDate.value && toDate.value) params.trim_str = true
             blob = await exportRaw(params)
-            filename = 'snore-export.zip'
+            filename = 'snore-export-raw.zip'
         }
 
         downloadBlob(blob, filename)
