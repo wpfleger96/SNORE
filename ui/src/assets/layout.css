@@ -68,6 +68,11 @@
     font-weight: 600;
 }
 
+.ahi-moderate {
+    color: #f97316;
+    font-weight: 600;
+}
+
 .ahi-severe {
     color: var(--color-destructive);
     font-weight: 600;
