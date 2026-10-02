@@ -1,9 +1,9 @@
 <template>
     <div
         role="note"
-        class="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        :class="['flex items-start gap-2 rounded-md border px-3 py-2 text-sm', style.toneClass]"
     >
-        <FlaskConical class="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
+        <component :is="style.icon" class="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
         <p>
             <!-- The space keeps title and body apart; Vue drops whitespace between tags. -->
             <span class="font-medium">{{ title }}</span
@@ -15,7 +15,7 @@
 <script setup lang="ts">
 // Section-level notice that the content below is an experimental SNORE
 // heuristic. Pass `body` (or the default slot) to replace the standard text.
-import { FlaskConical } from '@lucide/vue'
+import { PROVENANCE_MARK_STYLES } from '@/utils/provenance'
 
 withDefaults(
     defineProps<{
@@ -27,4 +27,6 @@ withDefaults(
         body: 'These are internally-consistent trend instruments, not clinically validated absolute measurements. Read them for night-to-night direction, not ground truth.',
     },
 )
+
+const style = PROVENANCE_MARK_STYLES.experimental
 </script>

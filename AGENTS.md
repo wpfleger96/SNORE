@@ -362,6 +362,24 @@ and headers. The legend line prints automatically only for commands wrapped in
 after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
 header and a CSV `columns.csv` sidecar.
 
+**UI provenance marks:** `just ui-generate-types` turns the `x-provenance` tags into
+`ui/src/types/provenance.generated.ts` (never hand-edit; a unit test fails when it is stale).
+Views resolve tiers in `ui/src/utils/provenance.ts`:
+- `provenanceFor(field, { schema, source })` for API fields. `schema` (typed as a
+  `components['schemas']` key) is required for the schema-dependent names (`ahi`, `oai`, `cai`,
+  `hi`, `duration`, `duration_hours`); pass `source` only for fields with a source sibling
+  (`PROVENANCE_SOURCE_FIELDS`, e.g. `DayDetail.ahi` ← `index_source`, `EventComparisonDetail.duration`
+  ← event `source`).
+- `glossaryProvenance(key)` for displayed metrics with no API field (the glossary `provenance` key;
+  set it only where a call site reads it — `glossary.test.ts` enforces this).
+
+A missing schema, untagged field, or unknown source logs a `[provenanceFor]` warning, which fails
+Vitest; deliberately untagged display fields go in `UNTAGGED_DISPLAY_FIELDS` with a reason.
+`<ProvenanceMark :provenance>` is the only tier carrier (`InfoHint` explains terms, not tiers).
+`StatCard` takes `field` for a plain unambiguous lookup, else a call-site-resolved `provenance`.
+Never nest a mark inside a link: on cards only the date is a `RouterLink` (see `SessionCard.vue`).
+Headings and labels are Title Case; prose is sentence case.
+
 **UI:** API types are generated — run `just ui-generate-types` after changing API
 schemas (`ui/src/types/generated.ts`; `types/index.ts` re-exports them). New API
 wrappers use `createApiEndpoint` in `ui/src/api/client.ts`; plain view loaders use

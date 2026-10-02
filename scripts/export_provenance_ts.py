@@ -5,7 +5,9 @@ Usage:
 
 Reads the ``x-provenance`` / ``x-provenance-source`` keys that
 ``snore.provenance.provenance_field`` writes into every tagged field's JSON
-schema and emits field-name-keyed lookup maps for the UI.
+schema and emits field-name-keyed lookup maps for the UI.  The output is
+plain TypeScript; ``pnpm run generate:types`` then formats it with Prettier,
+so compare a fresh render to the committed file with :func:`ts_fingerprint`.
 
 The maps are keyed by bare field name, which only works while a name means
 the same tier everywhere.  A name that carries different tiers (or source
@@ -17,6 +19,7 @@ instead, and the UI must say which schema the value came from.
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 from collections import defaultdict
@@ -52,24 +55,23 @@ class ProvenanceMap(BaseModel):
     """Lookup maps emitted into the generated TypeScript module."""
 
     field_tiers: dict[str, Provenance]
-    field_sources: dict[str, str]
     schema_field_tiers: dict[str, Provenance]
-    schema_field_sources: dict[str, str]
+    # Keyed like the tier maps: bare field name, or ``Schema.field`` for the
+    # names in ``schema_field_tiers``.
+    source_fields: dict[str, str]
 
 
-def _tagged_properties(node: Any) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Every ``(name, property schema)`` in ``node``, including inline nested objects."""
-    if not isinstance(node, dict):
+def _top_level_properties(schema: Any) -> Iterator[tuple[str, dict[str, Any]]]:
+    """The ``(name, property schema)`` pairs of a component schema.
+
+    Only top-level properties are API fields; an inline nested object's
+    properties are not addressable by name from a response, so they are skipped.
+    """
+    if not isinstance(schema, dict):
         return
-    for name, prop in (node.get("properties") or {}).items():
+    for name, prop in (schema.get("properties") or {}).items():
         if isinstance(prop, dict):
             yield name, prop
-            yield from _tagged_properties(prop)
-    for key in ("anyOf", "allOf", "oneOf"):
-        for sub in node.get(key, []):
-            yield from _tagged_properties(sub)
-    for key in ("items", "additionalProperties"):
-        yield from _tagged_properties(node.get(key))
 
 
 def build_provenance_map(
@@ -89,7 +91,7 @@ def build_provenance_map(
     )
     schemas: dict[str, Any] = openapi.get("components", {}).get("schemas", {})
     for schema_name, schema in schemas.items():
-        for name, prop in _tagged_properties(schema):
+        for name, prop in _top_level_properties(schema):
             if "x-provenance" in prop:
                 key = (
                     Provenance(prop["x-provenance"]),
@@ -97,9 +99,7 @@ def build_provenance_map(
                 )
                 seen[name][key].add(schema_name)
 
-    result = ProvenanceMap(
-        field_tiers={}, field_sources={}, schema_field_tiers={}, schema_field_sources={}
-    )
+    result = ProvenanceMap(field_tiers={}, schema_field_tiers={}, source_fields={})
     errors: list[str] = []
     for name in sorted(seen):
         variants = seen[name]
@@ -110,7 +110,7 @@ def build_provenance_map(
             ((tier, source),) = variants
             result.field_tiers[name] = tier
             if source is not None:
-                result.field_sources[name] = source
+                result.source_fields[name] = source
             continue
         if len(variants) == 1:
             errors.append(f"{name}: listed in AMBIGUOUS_FIELDS but no longer conflicts")
@@ -122,7 +122,7 @@ def build_provenance_map(
                     errors.append(f"{qualified}: conflicting tags within one schema")
                 result.schema_field_tiers[qualified] = tier
                 if source is not None:
-                    result.schema_field_sources[qualified] = source
+                    result.source_fields[qualified] = source
     errors += [
         f"{name}: listed in AMBIGUOUS_FIELDS but not tagged in any schema"
         for name in sorted(set(ambiguous) - set(seen))
@@ -135,7 +135,7 @@ def build_provenance_map(
             + "\n  ".join(errors)
         )
     result.schema_field_tiers = dict(sorted(result.schema_field_tiers.items()))
-    result.schema_field_sources = dict(sorted(result.schema_field_sources.items()))
+    result.source_fields = dict(sorted(result.source_fields.items()))
     return result
 
 
@@ -150,41 +150,26 @@ def _describe(variants: dict[tuple[Provenance, str | None], set[str]]) -> str:
     return "; ".join(parts)
 
 
-_PRETTIER_PRINT_WIDTH = 100  # ui/.prettierrc
-
-
 def _ts_string(value: str) -> str:
-    # Prettier's singleQuote: double quotes only when that avoids escaping.
-    if "'" in value and '"' not in value:
-        return json.dumps(value)
-    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
-
-
-def _ts_key(key: str) -> str:
-    return key if key.isidentifier() else _ts_string(key)
-
-
-def _ts_entry(key: str, value: str) -> str:
-    line = f"    {key}: {value},"
-    # Prettier moves an over-long value onto its own line.
-    if len(line) > _PRETTIER_PRINT_WIDTH:
-        return f"    {key}:\n        {value},\n"
-    return line + "\n"
+    # JSON string syntax is valid TS and escapes quotes and control characters;
+    # Prettier (run by `just ui-generate-types`) rewrites the quoting style.
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _ts_record(doc: str, name: str, record_type: str, entries: dict[str, str]) -> str:
-    body = "".join(_ts_entry(_ts_key(k), _ts_string(v)) for k, v in entries.items())
-    literal = f"{{\n{body}}}" if body else "{}"
-    return f"/** {doc} */\nexport const {name}: {record_type} = {literal}\n"
+    body = "".join(f"  {_ts_string(k)}: {_ts_string(v)},\n" for k, v in entries.items())
+    return f"/** {doc} */\nexport const {name}: {record_type} = {{\n{body}}}\n"
 
 
 def render_provenance_ts(provenance_map: ProvenanceMap) -> str:
-    """The prettier-clean TypeScript module for ``provenance_map``."""
-    tiers = " | ".join(f"'{tier.value}'" for tier in Provenance)
+    """The TypeScript module for ``provenance_map`` (valid TS, not yet Prettier-formatted)."""
+    tiers = ", ".join(_ts_string(tier.value) for tier in Provenance)
     sections = [
         "// generated — do not edit. Regenerate with `just ui-generate-types`\n"
         "// (scripts/export_provenance_ts.py reads x-provenance from the OpenAPI schemas).\n",
-        f"export type Provenance = {tiers}\n",
+        "/** Every tier, strongest (device) to weakest (experimental). */\n"
+        f"export const PROVENANCE_TIERS = [{tiers}] as const\n\n"
+        "export type Provenance = (typeof PROVENANCE_TIERS)[number]\n",
         _ts_record(
             "One-line definition of each tier (snore.provenance.PROVENANCE_NOTES).",
             "PROVENANCE_NOTES",
@@ -198,25 +183,29 @@ def render_provenance_ts(provenance_map: ProvenanceMap) -> str:
             {k: v.value for k, v in provenance_map.field_tiers.items()},
         ),
         _ts_record(
-            "Sibling field whose per-value content sets the tier (pass it to provenanceFor).",
-            "FIELD_PROVENANCE_SOURCE",
-            "Record<string, string>",
-            provenance_map.field_sources,
-        ),
-        _ts_record(
             "Tier per `Schema.field` for names whose meaning differs by schema.",
             "SCHEMA_FIELD_PROVENANCE",
             "Record<string, Provenance>",
             {k: v.value for k, v in provenance_map.schema_field_tiers.items()},
         ),
         _ts_record(
-            "Source sibling per `Schema.field` for the names in SCHEMA_FIELD_PROVENANCE.",
-            "SCHEMA_FIELD_PROVENANCE_SOURCE",
+            "Sibling field whose per-value content sets the tier, keyed by field name "
+            "or `Schema.field`.",
+            "PROVENANCE_SOURCE_FIELDS",
             "Record<string, string>",
-            provenance_map.schema_field_sources,
+            provenance_map.source_fields,
         ),
     ]
     return "\n".join(sections)
+
+
+def ts_fingerprint(text: str) -> str:
+    """``text`` minus everything Prettier may change (whitespace, quotes, commas, semicolons).
+
+    Compares a raw render against the committed Prettier-formatted file
+    without running Prettier.
+    """
+    return re.sub(r"[\s'\",;]", "", text)
 
 
 def main() -> int:

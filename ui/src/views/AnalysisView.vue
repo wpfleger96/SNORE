@@ -678,7 +678,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import { formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import { FLOW_LIMITATION_CLASSES } from '@/utils/flowLimitation'
-import { provenanceFor, type Provenance } from '@/utils/provenance'
+import { glossaryProvenance, provenanceFor, type Provenance } from '@/utils/provenance'
 import type { AnalysisResult, EventComparisonDetail, EventComparisonResult } from '@/types'
 
 interface FlowAnalysis {
@@ -690,9 +690,9 @@ interface FlowAnalysis {
 
 // Tiers of the metrics this page labels. Mode results, their event lists, FL class
 // counts, and CSR/PB episodes are all SNORE detections; the bare names `apneas`,
-// `hypopneas`, `reras` map to device counts elsewhere, so those use the literal tier.
+// `hypopneas`, `reras` map to device counts elsewhere, so those use the glossary tier.
 const MARKS = {
-    snoreDetected: 'experimental' as Provenance,
+    snoreDetected: glossaryProvenance('programmatic_events'),
     sessionDuration: provenanceFor('session_duration_hours'),
     totalBreaths: provenanceFor('total_breaths'),
     pulseChanges: provenanceFor('pulse_change_count'),
@@ -701,8 +701,8 @@ const MARKS = {
     snoreEventDuration: provenanceFor('duration', { schema: 'ApneaEvent' }),
     flowReduction: provenanceFor('flow_reduction'),
     confidence: provenanceFor('confidence'),
-    flowLimitationIndex: provenanceFor('flow_limitation_index'),
-    avgConfidence: provenanceFor('avg_confidence'),
+    flowLimitationIndex: glossaryProvenance('flow_limitation_index'),
+    avgConfidence: glossaryProvenance('avg_confidence'),
     programmaticEvents: provenanceFor('programmatic_event_count'),
     falseNegatives: provenanceFor('false_negatives'),
     falsePositives: provenanceFor('false_positives'),

@@ -96,10 +96,7 @@
                     <p class="trend-metric-label">
                         {{ METRIC_CONFIG[key].label }}
                         <ProvenanceMark :provenance="trendProvenance(key)" />
-                        <InfoHint
-                            :glossary-key="METRIC_CONFIG[key].glossaryKey"
-                            :provenance="trendProvenance(key)"
-                        />
+                        <InfoHint :glossary-key="METRIC_CONFIG[key].glossaryKey" />
                     </p>
                     <TrendChart
                         :labels="trendLabels"

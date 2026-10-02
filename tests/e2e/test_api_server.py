@@ -121,11 +121,13 @@ def test_provenance_map_matches_committed_generated_file(running_api, request):
 
     Rebuilds the map from the live OpenAPI spec with the same generator
     ``just ui-generate-types`` runs, so a changed tier, a new tagged field, or a
-    new cross-schema conflict that was never regenerated fails here.
+    new cross-schema conflict that was never regenerated fails here.  The
+    committed file is Prettier-formatted, so the comparison ignores formatting.
     """
     from scripts.export_provenance_ts import (  # noqa: PLC0415
         build_provenance_map,
         render_provenance_ts,
+        ts_fingerprint,
     )
 
     committed = (
@@ -136,6 +138,8 @@ def test_provenance_map_matches_committed_generated_file(running_api, request):
 
     schema = running_api.get("/openapi.json").json()
     expected = render_provenance_ts(build_provenance_map(schema))
-    assert committed.read_text(encoding="utf-8") == expected, (
+    assert ts_fingerprint(committed.read_text(encoding="utf-8")) == ts_fingerprint(
+        expected
+    ), (
         "ui/src/types/provenance.generated.ts is stale; regenerate with `just ui-generate-types`"
     )

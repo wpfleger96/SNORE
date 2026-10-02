@@ -32,9 +32,9 @@
             />
             <StatCard
                 label="AHI"
-                field="ahi"
-                schema="DayDetail"
-                :source="data.index_source"
+                :provenance="
+                    provenanceFor('ahi', { schema: 'DayDetail', source: data.index_source })
+                "
                 :value="data.ahi ?? null"
                 :decimals="1"
                 glossary-key="ahi"
@@ -54,27 +54,27 @@
             <StatCard label="Sessions" :value="data.session_count" :decimals="0" />
             <StatCard
                 label="OAI"
-                field="oai"
-                schema="DayDetail"
-                :source="data.index_source"
+                :provenance="
+                    provenanceFor('oai', { schema: 'DayDetail', source: data.index_source })
+                "
                 :value="data.oai ?? null"
                 :decimals="2"
                 glossary-key="oai"
             />
             <StatCard
                 label="CAI"
-                field="cai"
-                schema="DayDetail"
-                :source="data.index_source"
+                :provenance="
+                    provenanceFor('cai', { schema: 'DayDetail', source: data.index_source })
+                "
                 :value="data.cai ?? null"
                 :decimals="2"
                 glossary-key="cai"
             />
             <StatCard
                 label="HI"
-                field="hi"
-                schema="DayDetail"
-                :source="data.index_source"
+                :provenance="
+                    provenanceFor('hi', { schema: 'DayDetail', source: data.index_source })
+                "
                 :value="data.hi ?? null"
                 :decimals="2"
                 glossary-key="hi"

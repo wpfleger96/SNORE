@@ -4,8 +4,9 @@ export interface GlossaryEntry {
     label: string
     short: string // one-sentence explanation
     long?: string // optional fuller detail
-    // Tier for metrics with no backing API field; tagged API fields take their
-    // tier from the generated map instead (see provenanceFor in utils/provenance).
+    // Tier for a displayed metric with no backing API field, read only through
+    // glossaryProvenance() in utils/provenance (tagged API fields use
+    // provenanceFor). Set it only where a call site reads it.
     provenance?: Provenance
 }
 
@@ -19,28 +20,38 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Number of detected complete breath cycles during the session.',
     },
     machine_events: {
-        label: 'Machine Events',
-        short: 'Respiratory events flagged by the CPAP device firmware in real time.',
-        long: 'Machine events use proprietary device algorithms and may differ from SNORE’s programmatic detections.',
+        label: 'Device-scored Events',
+        short: 'Respiratory events scored by the CPAP device firmware in real time.',
+        long: 'Device-scored events use proprietary device algorithms and may differ from SNORE-detected events.',
     },
     pulse_change_count: {
         label: 'Pulse Changes',
         short: 'Number of pulse-rate change events detected, used as arousal markers.',
     },
     programmatic_events: {
-        label: 'Programmatic Events',
+        label: 'SNORE-detected Events',
         short: "Respiratory events detected by SNORE's own analysis algorithms from the raw flow signal.",
         provenance: 'experimental',
+    },
+    events_per_hour: {
+        label: 'Events/Hour',
+        short: 'Events matching the current filter per hour of session length, computed by SNORE.',
+        provenance: 'derived',
     },
     ahi: {
         label: 'AHI',
         short: 'Apnea-Hypopnea Index: total apneas and hypopneas per hour of therapy.',
-        long: "A night's headline AHI is the device-reported daily value when SNORE can trust it (every session reports the same value and the imported mask-on time matches the device's); otherwise it is SNORE's recount, the device-scored apneas and hypopneas over SNORE's mask-on hours. Session, period, and trend AHIs are SNORE recounts. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.",
+        long: "A night's headline AHI (and OAI, CAI, HI) is the device-reported daily value when SNORE can trust it: the night has no disabled sessions, every enabled session carries the same device indices and device mask-on time, and SNORE's imported hours are within the larger of 5 minutes or 5% of the device's mask-on time. Otherwise it is SNORE's recount: device-scored events divided by SNORE's mask-on hours. A session's AHI is always the recount. Period and trend AHIs are usage-hours-weighted averages of the nightly headline values, so they can mix device-reported and recounted nights. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.",
+    },
+    mode_ahi: {
+        label: 'Mode AHI',
+        short: "SNORE-detected apneas and hypopneas per hour, from this detection mode's own analysis of the flow waveform.",
+        long: "An experimental SNORE heuristic, not the device's AHI; compare it against the device-scored events to judge the mode.",
     },
     rdi: {
         label: 'RDI',
-        short: "Respiratory Disturbance Index: SNORE's recount AHI plus its RERA proxy index (estimated RERAs per hour).",
-        long: "RDI is never below SNORE's recount AHI, but on nights whose headline AHI is the device-reported value it can be below the AHI shown. A large gap over the recount suggests airway effort and arousals without frank apneas.",
+        short: "Respiratory Disturbance Index: this detection mode's SNORE-detected apneas, hypopneas, and RERAs per hour.",
+        long: "RDI is the mode's AHI plus its RERAs per hour, so it is never below that mode's AHI. A large gap suggests airway effort and arousals without frank apneas.",
     },
     rei: {
         label: 'REI',
@@ -96,7 +107,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: "From SNORE's experimental breath analysis, not the device. Useful for night-to-night trends, not a clinically validated measurement.",
     },
     rera_index: {
-        label: 'RERA Index',
+        label: 'RERA Proxy Index',
         short: "Estimated respiratory effort-related arousals per hour, from SNORE's flow-limitation-run RERA proxy.",
         long: "SNORE's experimental breath analysis; useful for night-to-night trends, not a clinically validated measurement. Distinct from the device RERA count and the analysis-time RERA detector.",
     },
@@ -158,7 +169,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     spo2_below_90: {
         label: 'SpO₂ Below 90%',
         short: 'Total time with oxygen saturation under 90%.',
-        provenance: 'derived',
     },
     pulse: {
         label: 'Pulse',
@@ -214,11 +224,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     false_negatives: {
         label: 'False Negatives',
-        short: "Machine-flagged events that SNORE's analysis did not detect.",
+        short: "Device-scored events that SNORE's analysis did not detect.",
     },
     false_positives: {
         label: 'False Positives',
-        short: "SNORE-detected events absent from the machine's event log.",
+        short: "SNORE-detected events absent from the device's event log.",
         long: 'May be real events the device missed, or over-detections by the algorithm.',
     },
     days_with_data: {
@@ -232,22 +242,19 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     ahi_trend: {
         label: 'AHI Trend',
         short: 'Direction of recent AHI change: improving, worsening, or stable.',
-        provenance: 'derived',
     },
     sensitivity: {
         label: 'Sensitivity',
-        short: 'Share of machine-flagged events that SNORE also detected (true-positive rate / recall).',
+        short: 'Share of device-scored events that SNORE also detected (true-positive rate / recall).',
         provenance: 'experimental',
     },
     precision: {
         label: 'Precision',
-        short: 'Share of SNORE-detected events that match a machine-flagged event.',
-        provenance: 'experimental',
+        short: 'Share of SNORE-detected events that match a device-scored event.',
     },
     f1: {
         label: 'F1 Score',
         short: 'Harmonic mean of sensitivity and precision; balances missed events against over-detection.',
-        provenance: 'experimental',
     },
 
     // ── Validation: signal-correlation & experimental-metric axes ─────────────
@@ -260,18 +267,16 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'AUC',
         short: 'Area under the ROC curve: how well a SNORE score separates device-flagged flow-limited breaths from the rest (0.5 = chance, 1.0 = perfect).',
         long: 'AUC25 and AUC50 are the same measure taken at two device FLG operating points — discriminating breaths at device FLG ≥ 0.25 and ≥ 0.50 respectively. Higher thresholds isolate more severely flow-limited breaths.',
-        provenance: 'experimental',
     },
     chance_floor: {
         label: 'Chance Precision Floor',
         short: 'The precision a random detector firing at the same density would reach by chance alone.',
-        long: 'Computed as the pooled machine-RE rate per second × (2 × match tolerance). Measured precision at or below this floor is indistinguishable from chance given how often the proxy fires — it is context, not a signal of failure.',
+        long: 'Computed as the pooled device-scored RE rate per second × (2 × match tolerance). Measured precision at or below this floor is indistinguishable from chance given how often the proxy fires — it is context, not a signal of failure.',
     },
     rera_proxy: {
         label: 'RERA Proxy',
         short: "SNORE's experimental FL-run RERA proxy: runs of ≥2 consecutive flow-limited breaths ending in a recovery breath.",
-        long: 'Fires far more often than the device flags machine RE (which ResMed does very conservatively), so near-zero precision against machine RE is expected. Useful as an internally-consistent trend instrument, not a validated absolute count.',
-        provenance: 'experimental',
+        long: 'Fires far more often than the device scores RE (which ResMed does very conservatively), so near-zero precision against device-scored RE is expected. Useful as an internally-consistent trend instrument, not a validated absolute count.',
     },
     apple_breathing_disturbances: {
         label: 'Apple Breathing Disturbances',
@@ -279,20 +284,19 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: 'Derived from wrist sensors during sleep, independent of the ResMed device. A positive rank correlation with the SNORE RERA/FL indices is weak external evidence they track real respiratory disturbance.',
     },
     cross_night_spearman: {
-        label: 'Cross-night Spearman',
+        label: 'Cross-Night Spearman',
         short: "Rank correlation of SNORE's nightly 95th-percentile FL against the device's nightly 95th-percentile FLG, across nights.",
         long: 'A night-level agreement check: even when per-breath alignment is noisy, nights the device ranks as more flow-limited should rank higher for SNORE too.',
-        provenance: 'experimental',
     },
 
     // ── New device-channel labels ──────────────────────────────────────────
     fl_device: {
-        label: 'Flow Limitation (device)',
+        label: 'Flow Limitation (Device)',
         short: "ResMed's proprietary per-breath severity index for flow limitation, 0 (none) to 1 (severe).",
         long: "This is distinct from SNORE's computed flow-limitation classes. The device reports a continuous 0–1 score derived from its own internal algorithm; SNORE's FL classes are based on inspiratory flow-shape analysis.",
     },
     snore_device: {
-        label: 'Snore (device)',
+        label: 'Snore (Device)',
         short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled once per breath.',
         long: 'A unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.',
     },
@@ -310,7 +314,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: 'Useful for detecting brief snore vibrations and inspiratory flow-limitation shapes that are averaged away in the lower-resolution channel.',
     },
     trigger_cycle: {
-        label: 'Trigger/Cycle (raw codes)',
+        label: 'Trigger/Cycle (Raw Codes)',
         short: 'Raw numeric event codes (0–16) logged by the device firmware for breath trigger and cycle transitions.',
         long: 'These are undecoded manufacturer-internal event codes. They are stored as-is and have not been mapped to named states. Consult ResMed documentation or OSCAR source for code-to-state mappings.',
     },
@@ -388,12 +392,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     time_in_bed: {
         label: 'Time in Bed',
         short: 'Total time in bed, in hours — from recorded InBed samples when present, or derived from the sleep stage session (asleep + awake) on exports where the OS no longer emits InBed records.',
-        provenance: 'derived',
     },
     total_sleep: {
         label: 'Total Sleep',
         short: 'Total time actually asleep (Core + Deep + REM stages combined), in hours.',
-        provenance: 'derived',
     },
     sleep_efficiency: {
         label: 'Sleep Efficiency',
@@ -404,23 +406,19 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Core Sleep',
         short: "Apple Health's Core stage corresponds to NREM N1 and N2 light sleep combined.",
         long: "Core sleep (N1 + N2) is the most common stage and forms the backbone of each sleep cycle. Apple Health labels light non-REM sleep as 'Core'.",
-        provenance: 'derived',
     },
     deep_sleep: {
         label: 'Deep Sleep',
         short: 'NREM N3 slow-wave sleep — the most restorative stage.',
         long: 'Deep sleep supports physical repair and immune function. It is most concentrated in the first half of the night and decreases with age.',
-        provenance: 'derived',
     },
     rem_sleep: {
         label: 'REM Sleep',
         short: 'Rapid Eye Movement sleep, associated with dreaming and memory consolidation.',
-        provenance: 'derived',
     },
     awake_time: {
         label: 'Awake',
         short: 'Time spent awake after initial sleep onset, as detected by Apple Health.',
-        provenance: 'derived',
     },
 
     // ── Primary waveform channels ─────────────────────────────────────────

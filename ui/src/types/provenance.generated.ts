@@ -1,7 +1,10 @@
 // generated — do not edit. Regenerate with `just ui-generate-types`
 // (scripts/export_provenance_ts.py reads x-provenance from the OpenAPI schemas).
 
-export type Provenance = 'device' | 'derived' | 'experimental'
+/** Every tier, strongest (device) to weakest (experimental). */
+export const PROVENANCE_TIERS = ['device', 'derived', 'experimental'] as const
+
+export type Provenance = (typeof PROVENANCE_TIERS)[number]
 
 /** One-line definition of each tier (snore.provenance.PROVENANCE_NOTES). */
 export const PROVENANCE_NOTES: Record<Provenance, string> = {
@@ -268,9 +271,6 @@ export const FIELD_PROVENANCE: Record<string, Provenance> = {
     worst: 'derived',
 }
 
-/** Sibling field whose per-value content sets the tier (pass it to provenanceFor). */
-export const FIELD_PROVENANCE_SOURCE: Record<string, string> = {}
-
 /** Tier per `Schema.field` for names whose meaning differs by schema. */
 export const SCHEMA_FIELD_PROVENANCE: Record<string, Provenance> = {
     'AnalysisEvent.duration': 'device',
@@ -304,8 +304,8 @@ export const SCHEMA_FIELD_PROVENANCE: Record<string, Provenance> = {
     'WaveformInfo.duration_hours': 'device',
 }
 
-/** Source sibling per `Schema.field` for the names in SCHEMA_FIELD_PROVENANCE. */
-export const SCHEMA_FIELD_PROVENANCE_SOURCE: Record<string, string> = {
+/** Sibling field whose per-value content sets the tier, keyed by field name or `Schema.field`. */
+export const PROVENANCE_SOURCE_FIELDS: Record<string, string> = {
     'AnalysisEvent.duration': 'source',
     'DayDetail.ahi': 'index_source',
     'DayDetail.cai': 'index_source',

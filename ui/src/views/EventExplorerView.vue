@@ -20,7 +20,7 @@
                 label="Events/Hour"
                 :value="eventsPerHour"
                 :decimals="1"
-                provenance="derived"
+                :provenance="glossaryProvenance('events_per_hour')"
             />
             <StatCard label="Types" :value="uniqueTypes.length" :decimals="0" />
         </div>
@@ -68,7 +68,7 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="sensitivity"
-                    field="sensitivity"
+                    :provenance="glossaryProvenance('sensitivity')"
                 />
             </div>
         </div>
@@ -215,6 +215,7 @@ import { getSession } from '@/api/sessions'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { formatTimeOffset } from '@/utils/formatting'
+import { glossaryProvenance } from '@/utils/provenance'
 import { EVENT_COLORS } from '@/types'
 import type { EventItem, EventMatchResult } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'

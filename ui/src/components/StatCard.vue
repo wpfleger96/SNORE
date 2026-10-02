@@ -6,7 +6,6 @@
                 ><ProvenanceMark :provenance="resolvedProvenance" /><InfoHint
                     v-if="glossaryKey"
                     :glossary-key="glossaryKey"
-                    :provenance="resolvedProvenance"
             /></span>
         </div>
         <div class="stat-value">
@@ -44,22 +43,17 @@ const props = defineProps<{
     // Null-with-reason code (e.g. 'analysis_not_run'); shown as a tooltip on the
     // em-dash state to explain why a value is absent for this night.
     reason?: string | null
-    // Provenance mark next to the label: `field` is the API field (or glossary
-    // key) the value comes from, resolved via provenanceFor() with the response
-    // `schema` and per-value `source`; `provenance` overrides the lookup.
+    // Provenance mark next to the label. `field` is a plain provenanceFor(field)
+    // lookup for an unambiguous API field; anything needing a schema, a
+    // per-value source, or glossaryProvenance() resolves the tier at the call
+    // site and passes `provenance`, which wins over `field`.
     field?: string
-    schema?: string
-    source?: string | null
     provenance?: Provenance
 }>()
 
 const reasonLabel = computed(() => nullReasonLabel(props.reason))
 const resolvedProvenance = computed<Provenance>(
-    () =>
-        props.provenance ??
-        (props.field
-            ? provenanceFor(props.field, { schema: props.schema, source: props.source })
-            : 'device'),
+    () => props.provenance ?? (props.field ? provenanceFor(props.field) : 'device'),
 )
 </script>
 

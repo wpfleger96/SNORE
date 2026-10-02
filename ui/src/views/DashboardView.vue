@@ -42,9 +42,8 @@
                     class="effectiveness-badge"
                 >
                     {{ summary.effectiveness
-                    }}<InfoHint
+                    }}<ProvenanceMark :provenance="provenanceFor('effectiveness')" /><InfoHint
                         glossary-key="effectiveness"
-                        :provenance="provenanceFor('effectiveness')"
                     />
                 </Badge>
                 <span
@@ -53,9 +52,8 @@
                     :class="'trend-' + summary.ahi_trend_direction"
                 >
                     {{ summary.ahi_trend_direction
-                    }}<InfoHint
+                    }}<ProvenanceMark :provenance="provenanceFor('ahi_trend_direction')" /><InfoHint
                         glossary-key="ahi_trend"
-                        :provenance="provenanceFor('ahi_trend_direction')"
                     />
                 </span>
             </div>

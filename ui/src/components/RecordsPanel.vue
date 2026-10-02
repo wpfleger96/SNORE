@@ -10,7 +10,7 @@
             <h4>
                 {{ metric.label }}
                 <ProvenanceMark :provenance="metric.provenance" />
-                <InfoHint :glossary-key="metric.glossaryKey" :provenance="metric.provenance" />
+                <InfoHint :glossary-key="metric.glossaryKey" />
             </h4>
             <div class="record-columns">
                 <div class="record-col">

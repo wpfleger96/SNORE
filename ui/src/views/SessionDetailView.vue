@@ -179,8 +179,7 @@
                     <div class="stats-grid">
                         <StatCard
                             label="AHI"
-                            field="ahi"
-                            schema="SessionStatistics"
+                            :provenance="provenanceFor('ahi', { schema: 'SessionStatistics' })"
                             :value="session.statistics.ahi"
                             :decimals="1"
                             glossary-key="ahi"
@@ -194,24 +193,21 @@
                         />
                         <StatCard
                             label="OAI"
-                            field="oai"
-                            schema="SessionStatistics"
+                            :provenance="provenanceFor('oai', { schema: 'SessionStatistics' })"
                             :value="session.statistics.oai"
                             :decimals="2"
                             glossary-key="oai"
                         />
                         <StatCard
                             label="CAI"
-                            field="cai"
-                            schema="SessionStatistics"
+                            :provenance="provenanceFor('cai', { schema: 'SessionStatistics' })"
                             :value="session.statistics.cai"
                             :decimals="2"
                             glossary-key="cai"
                         />
                         <StatCard
                             label="HI"
-                            field="hi"
-                            schema="SessionStatistics"
+                            :provenance="provenanceFor('hi', { schema: 'SessionStatistics' })"
                             :value="session.statistics.hi"
                             :decimals="2"
                             glossary-key="hi"

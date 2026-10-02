@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,6 +11,7 @@ from scripts.export_provenance_ts import (
     ProvenanceConflictError,
     build_provenance_map,
     render_provenance_ts,
+    ts_fingerprint,
 )
 from snore.provenance import Provenance
 
@@ -38,18 +40,20 @@ def test_consistent_field_across_schemas_maps_by_bare_name():
     result = build_provenance_map(spec, ambiguous={})
 
     assert result.field_tiers == {"mv": Provenance.DEVICE, "rdi": Provenance.DERIVED}
-    assert result.field_sources == {"mv": "mv_source"}
+    assert result.source_fields == {"mv": "mv_source"}
     assert result.schema_field_tiers == {}
 
 
-def test_nested_inline_and_anyof_properties_are_collected():
+def test_nested_inline_object_properties_are_not_api_fields():
+    # Only top-level properties are addressable fields; a nested inline object's
+    # "x" must not land in the map (nor conflict with a real top-level "x").
     items = {"properties": {"x": _prop("experimental")}}
     inner = {"anyOf": [{"type": "array", "items": items}, {"type": "null"}]}
-    spec = _spec(Outer={"inner": inner})
+    spec = _spec(Outer={"inner": inner}, Other={"x": _prop("device")})
 
     result = build_provenance_map(spec, ambiguous={})
 
-    assert result.field_tiers == {"x": Provenance.EXPERIMENTAL}
+    assert result.field_tiers == {"x": Provenance.DEVICE}
 
 
 def test_tier_conflict_raises_naming_field_and_schemas():
@@ -82,7 +86,7 @@ def test_ambiguous_field_is_emitted_per_schema():
         "A.ahi": Provenance.DEVICE,
         "B.ahi": Provenance.DERIVED,
     }
-    assert result.schema_field_sources == {"A.ahi": "index_source"}
+    assert result.source_fields == {"A.ahi": "index_source"}
 
 
 def test_stale_ambiguous_entries_raise():
@@ -101,7 +105,7 @@ def test_render_is_sorted_and_quotes_qualified_keys():
         A={
             "zeta": _prop("derived"),
             "alpha": _prop("experimental"),
-            "ahi": _prop("device"),
+            "ahi": _prop("device", "index_source"),
         },
         B={"ahi": _prop("derived")},
     )
@@ -109,9 +113,31 @@ def test_render_is_sorted_and_quotes_qualified_keys():
     rendered = render_provenance_ts(build_provenance_map(spec, ambiguous={"ahi": "x"}))
 
     assert rendered.startswith("// generated — do not edit.")
-    assert rendered.index("alpha: 'experimental'") < rendered.index("zeta: 'derived'")
-    assert "'A.ahi': 'device'," in rendered
-    assert "FIELD_PROVENANCE_SOURCE: Record<string, string> = {}" in rendered
+    assert rendered.index('"alpha": "experimental"') < rendered.index(
+        '"zeta": "derived"'
+    )
+    assert '"A.ahi": "device",' in rendered
+    assert '"A.ahi": "index_source",' in rendered
+    assert (
+        'export const PROVENANCE_TIERS = ["device", "derived", "experimental"] as const'
+        in rendered
+    )
+
+
+def test_render_escapes_quotes_and_control_characters():
+    rendered = render_provenance_ts(
+        build_provenance_map(_spec(A={'odd"\n\u0007': _prop("derived")}), ambiguous={})
+    )
+
+    assert '"odd\\"\\n\\u0007": "derived"' in rendered
+
+
+def test_fingerprint_ignores_prettier_reformatting():
+    raw = 'export const X: Record<string, string> = {\n  "a": "it\'s",\n}\n'
+    formatted = 'export const X: Record<string, string> = {\n    a: "it\'s",\n}\n'
+
+    assert ts_fingerprint(raw) == ts_fingerprint(formatted)
+    assert ts_fingerprint(raw) != ts_fingerprint(raw.replace("it's", "its!"))
 
 
 def test_real_api_schema_has_no_unlisted_conflicts():
@@ -120,4 +146,24 @@ def test_real_api_schema_has_no_unlisted_conflicts():
     result = build_provenance_map(create_app().openapi())
 
     assert result.field_tiers
-    assert result.schema_field_sources["DayDetail.ahi"] == "index_source"
+    assert result.source_fields["DayDetail.ahi"] == "index_source"
+
+
+def test_committed_provenance_file_matches_real_api_schema():
+    """Catches a stale ``provenance.generated.ts`` in ``just test`` (no Prettier needed)."""
+    from snore.api.app import create_app
+
+    committed = (
+        Path(__file__).resolve().parents[2]
+        / "ui"
+        / "src"
+        / "types"
+        / "provenance.generated.ts"
+    )
+    expected = render_provenance_ts(build_provenance_map(create_app().openapi()))
+
+    assert ts_fingerprint(committed.read_text(encoding="utf-8")) == ts_fingerprint(
+        expected
+    ), (
+        "ui/src/types/provenance.generated.ts is stale; regenerate with `just ui-generate-types`"
+    )

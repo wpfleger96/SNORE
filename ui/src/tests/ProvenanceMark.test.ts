@@ -21,9 +21,6 @@ vi.mock('@/components/ui/popover', () => ({
         inject: ['popoverRoot'],
         template: '<div v-if="popoverRoot.open" class="popover-content-stub"><slot /></div>',
     },
-    PopoverHeader: { template: '<div><slot /></div>' },
-    PopoverTitle: { template: '<span class="popover-title-stub"><slot /></span>' },
-    PopoverDescription: { template: '<p class="popover-description-stub"><slot /></p>' },
 }))
 
 vi.mock('@lucide/vue', () => ({
@@ -59,28 +56,15 @@ describe('ProvenanceMark', () => {
         expect(button.find('.icon-flask-stub').exists()).toBe(true)
     })
 
-    it('test_badge_variant_shows_tier_text', () => {
-        const experimental = mount(ProvenanceMark, {
-            props: { provenance: 'experimental', variant: 'badge' },
-        })
-        const derived = mount(ProvenanceMark, {
-            props: { provenance: 'derived', variant: 'badge' },
-        })
-
-        expect(experimental.find('button').text()).toBe('Experimental')
-        expect(derived.find('button').text()).toBe('Derived')
-    })
-
     it('test_click_opens_popover_with_tier_and_note', async () => {
         const wrapper = mount(ProvenanceMark, { props: { provenance: 'derived' } })
         expect(wrapper.find('.popover-content-stub').exists()).toBe(false)
 
         await wrapper.find('.popover-trigger-stub').trigger('click')
 
-        expect(wrapper.find('.popover-title-stub').text()).toBe('Derived')
-        expect(wrapper.find('.popover-description-stub').text()).toBe(
-            'Computed by SNORE from device data.',
-        )
+        const content = wrapper.find('.popover-content-stub')
+        expect(content.text()).toBe('Derived — Computed by SNORE from device data.')
+        expect(content.find('.icon-sigma-stub').exists()).toBe(true)
     })
 
     it('test_mouse_hover_opens_popover', async () => {
@@ -88,7 +72,7 @@ describe('ProvenanceMark', () => {
 
         await wrapper.find('button').trigger('pointerenter', { pointerType: 'mouse' })
 
-        expect(wrapper.find('.popover-title-stub').text()).toBe('Experimental')
+        expect(wrapper.find('.popover-content-stub').text()).toMatch(/^Experimental — /)
     })
 })
 
@@ -96,7 +80,7 @@ describe('ProvenanceLegend', () => {
     it('test_lists_marked_tiers_and_unmarked_note', () => {
         const wrapper = mount(ProvenanceLegend)
 
-        const terms = wrapper.findAll('dt').map((dt) => dt.text())
+        const terms = wrapper.findAll('li .font-medium').map((el) => el.text())
         expect(terms).toEqual(['Derived', 'Experimental'])
         expect(wrapper.text()).toContain('Computed by SNORE from device data.')
         expect(wrapper.text()).toContain('Unmarked values are device-reported.')

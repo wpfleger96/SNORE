@@ -3,8 +3,8 @@ import { mount } from '@vue/test-utils'
 
 vi.mock('@/components/InfoHint.vue', () => ({
     default: {
-        props: ['glossaryKey', 'provenance'],
-        template: '<span class="info-hint-stub" :data-provenance="provenance" />',
+        props: ['glossaryKey'],
+        template: '<span class="info-hint-stub" />',
     },
 }))
 
@@ -51,19 +51,6 @@ describe('StatCard provenance mark', () => {
         expect(markLabels(mountCard({}))).toEqual([])
     })
 
-    it('test_schema_selects_tier_for_schema_dependent_field', () => {
-        expect(markLabels(mountCard({ field: 'ahi', schema: 'DayDetail' }))).toEqual([])
-        expect(markLabels(mountCard({ field: 'ahi', schema: 'SessionStatistics' }))[0]).toMatch(
-            /^Derived/,
-        )
-    })
-
-    it('test_source_overrides_schema_tier', () => {
-        const wrapper = mountCard({ field: 'ahi', schema: 'DayDetail', source: 'derived' })
-
-        expect(markLabels(wrapper)[0]).toMatch(/^Derived/)
-    })
-
     it('test_provenance_prop_overrides_field_lookup', () => {
         const wrapper = mountCard({ field: 'leak_mean', provenance: 'experimental' })
 
@@ -71,9 +58,13 @@ describe('StatCard provenance mark', () => {
         expect(markLabels(wrapper)[0]).toMatch(/^Experimental/)
     })
 
-    it('test_info_hint_receives_resolved_tier', () => {
-        const wrapper = mountCard({ field: 'leak_mean', glossaryKey: 'leak' })
+    it('test_glossary_key_without_mark_shows_only_info_hint', () => {
+        const wrapper = mountCard({
+            field: 'obstructive_apneas',
+            glossaryKey: 'obstructive_apneas',
+        })
 
-        expect(wrapper.find('.info-hint-stub').attributes('data-provenance')).toBe('derived')
+        expect(markLabels(wrapper)).toEqual([])
+        expect(wrapper.find('.stat-hints .info-hint-stub').exists()).toBe(true)
     })
 })
