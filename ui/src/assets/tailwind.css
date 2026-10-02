@@ -48,7 +48,7 @@
     --sidebar-ring: oklch(0.708 0 0);
     --success: oklch(0.627 0.194 149.214);
     --warning: oklch(0.769 0.188 70.08);
-    --moderate: oklch(0.553 0.195 38.402);
+    --moderate: oklch(0.655 0.17 49);
 }
 
 .dark {
@@ -85,7 +85,7 @@
     --sidebar-ring: oklch(0.556 0 0);
     --success: oklch(0.792 0.209 151.711);
     --warning: oklch(0.828 0.189 84.429);
-    --moderate: oklch(0.75 0.183 55.934);
+    --moderate: oklch(0.66 0.18 46);
 }
 
 @theme inline {

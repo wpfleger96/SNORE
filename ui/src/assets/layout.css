@@ -68,8 +68,9 @@
     font-weight: 600;
 }
 
-/* Text colour, not the heatmap fill: an orange dark enough for 4.5:1 text on
-   white reads brown-red as a cell, so cells keep the brighter #f97316. */
+/* --moderate is tuned as a text colour per theme: hue between the mild amber
+   and severe red so all four tiers stay distinct, at >=3:1 contrast. Heatmap
+   cells keep the brighter fill palette (#f97316) shared with the other tiers. */
 .ahi-moderate {
     color: var(--color-moderate);
     font-weight: 600;
