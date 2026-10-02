@@ -56,32 +56,6 @@ def format_time_offset(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-# Candidate x-axis tick spacings in seconds, smallest first.
-_TICK_INTERVALS = (10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600)
-# Chars per HH:MM:SS label (8 + gap) and chart width unavailable to labels; the
-# tightest values that plotext 6 never drops a crowded label at (incl. the last).
-_TICK_SLOT_WIDTH = 12
-_TICK_MARGIN = 4
-
-
-def _time_ticks(
-    start_time: float, window_duration: float, width: int
-) -> tuple[list[float], list[str]]:
-    """Pick the smallest tick interval whose HH:MM:SS labels all fit in width."""
-    max_labels = (width - _TICK_MARGIN) // _TICK_SLOT_WIDTH
-    interval = next(
-        (i for i in _TICK_INTERVALS if window_duration // i + 1 <= max_labels),
-        _TICK_INTERVALS[-1],
-    )
-    positions = [float(t) for t in range(0, int(window_duration) + 1, interval)]
-    return positions, [format_time_offset(start_time + t) for t in positions]
-
-
-def _plottable(values: np.ndarray) -> np.ndarray:
-    """Map non-finite values to NaN, which plotext draws as gaps (inf crashes it)."""
-    return np.where(np.isfinite(values), values, np.nan)
-
-
 class WaveformRenderer:
     """Render flow waveform using plotext for high-resolution terminal display."""
 
@@ -130,7 +104,7 @@ class WaveformRenderer:
             waveform_type: Type of waveform (default: "flow")
 
         Note:
-            All output, including the chart, goes to self.console. Returns None.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
         """
         if len(timestamps) < 2 or len(values) < 2 or timestamps[-1] == timestamps[0]:
             self.console.print("No data in window")
@@ -154,27 +128,26 @@ class WaveformRenderer:
         )
         self.console.print()
 
-        fig = plt.figure
-        fig.clear()
+        plt.clear_figure()
+        plt.theme("clear")
 
         start_time = timestamps[0]
         relative_timestamps = timestamps - start_time
+        window_duration = timestamps[-1] - start_time
 
-        fig.draw(
-            fig.signal(
-                relative_timestamps, _plottable(values), marker="braille"
-            ).lines()
-        )
-        fig.title(title)
-        fig.label(unit, axis="y")
-        fig.ruler("x").ticks(
-            *_time_ticks(start_time, timestamps[-1] - start_time, self.width)
-        )
+        plt.plot(relative_timestamps, values, marker="braille")
+        plt.title(title)
+        plt.ylabel(unit)
 
-        fig.plot_size(self.width, self.height)
-        # fig.show() writes to fd 1 from native code, bypassing sys.stdout and the
-        # console; build() + console.out keeps ordering and capture, with no ANSI.
-        self.console.out(fig.build().string(colorless=True), highlight=False)
+        tick_interval = (
+            10 if window_duration <= 60 else (15 if window_duration <= 120 else 30)
+        )
+        tick_positions = list(range(0, int(window_duration) + 1, tick_interval))
+        tick_labels = [format_time_offset(start_time + t) for t in tick_positions]
+        plt.xticks(tick_positions, tick_labels)
+
+        plt.plotsize(self.width, self.height)
+        plt.show()
 
         if self.show_events:
             self.console.print()
@@ -226,16 +199,11 @@ class WaveformRenderer:
             center_time: Center time for title
 
         Note:
-            All output, including the chart, goes to self.console. Returns None.
-            Maximum 4 waveforms supported; empty waveforms are skipped.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
+            Maximum 4 waveforms supported.
         """
         if not waveform_data:
             self.console.print("No waveform data provided")
-            return
-
-        waveform_data = [w for w in waveform_data if len(w[0]) > 0 and len(w[1]) > 0]
-        if not waveform_data:
-            self.console.print("No data in window")
             return
 
         if len(waveform_data) > 4:
@@ -245,13 +213,14 @@ class WaveformRenderer:
         num_plots = len(waveform_data)
         plot_height = max(8, self.height // num_plots)
 
-        fig = plt.figure
-        fig.clear()
-        # plotext 6 treats subplots(1, 1) as "no subplots", so one plot uses fig.
-        if num_plots > 1:
-            fig.subplots(num_plots, 1)
+        plt.clear_figure()
+        plt.theme("clear")
+        plt.subplots(num_plots, 1)
 
         for idx, (timestamps, values, waveform_type) in enumerate(waveform_data):
+            if len(timestamps) == 0 or len(values) == 0:
+                continue
+
             label = WAVEFORM_LABELS.get(waveform_type, waveform_type.capitalize())
             unit = WAVEFORM_UNITS.get(waveform_type, "?")
 
@@ -259,12 +228,8 @@ class WaveformRenderer:
             relative_timestamps = timestamps - start_time
             window_duration = timestamps[-1] - start_time
 
-            subplot = fig.subplot(idx + 1, 1) if num_plots > 1 else fig
-            subplot.draw(
-                subplot.signal(
-                    relative_timestamps, _plottable(values), marker="braille"
-                ).lines()
-            )
+            plt.subplot(idx + 1, 1)
+            plt.plot(relative_timestamps, values, marker="braille")
 
             if idx == 0 and session_id is not None:
                 window_size = timestamps[-1] - timestamps[0]
@@ -272,18 +237,25 @@ class WaveformRenderer:
                     title = f"Session {session_id} - Multi-waveform at {center_time} ({window_size:.0f}s)"
                 else:
                     title = f"Session {session_id} - Multi-waveform"
-                subplot.title(title)
+                plt.title(title)
 
-            subplot.label(f"{label} ({unit})", axis="y")
+            plt.ylabel(f"{label} ({unit})")
 
             if idx == num_plots - 1:
-                subplot.ruler("x").ticks(
-                    *_time_ticks(start_time, window_duration, self.width)
+                tick_interval = (
+                    10
+                    if window_duration <= 60
+                    else (15 if window_duration <= 120 else 30)
                 )
+                tick_positions = list(range(0, int(window_duration) + 1, tick_interval))
+                tick_labels = [
+                    format_time_offset(start_time + t) for t in tick_positions
+                ]
+                plt.xticks(tick_positions, tick_labels)
 
-            subplot.plot_size(self.width, plot_height)
+            plt.plotsize(self.width, plot_height)
 
-        self.console.out(fig.build().string(colorless=True), highlight=False)
+        plt.show()
 
         sample_rates = []
         for timestamps, _values, waveform_type in waveform_data:
