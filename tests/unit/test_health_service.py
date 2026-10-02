@@ -87,7 +87,7 @@ class TestGetNightDetailAggregates:
     async def test_fraction_spo2_normalized_to_percent(
         self, async_db_session, profile_id, night_summary
     ):
-        """SpO2 stored as fractions (avg ≤ 1.5) is multiplied by 100 on read.
+        """SpO2 stored as fractions (≤ 1.5) is multiplied by 100 on read.
 
         Fixture: 0.95 and 0.99 → avg 0.97, min 0.95 → both become × 100.
         """
@@ -117,7 +117,7 @@ class TestGetNightDetailAggregates:
     async def test_percent_spo2_not_re_multiplied(
         self, async_db_session, profile_id, night_summary
     ):
-        """SpO2 stored as percents (avg > 1.5) is left unchanged (just rounded).
+        """SpO2 stored as percents (> 1.5) is left unchanged (just rounded).
 
         Fixture: 95.0 and 99.0 → avg 97.0, min 95.0 — no multiplication.
         """
@@ -170,18 +170,28 @@ class TestGetNightDetailAggregates:
 
         assert detail.avg_rr == pytest.approx(15.0, abs=0.01)
 
-    async def test_mixed_unit_spo2_min_normalized_independently(
-        self, async_db_session, profile_id, night_summary
+    @pytest.mark.parametrize(
+        ("values", "expected_avg", "expected_min"),
+        [
+            ((0.95, 95.0), 95.0, 95.0),
+            ((0.99, 92.0), 95.5, 92.0),
+        ],
+    )
+    async def test_mixed_unit_spo2_normalized_before_aggregating(
+        self,
+        async_db_session,
+        profile_id,
+        night_summary,
+        values,
+        expected_avg,
+        expected_min,
     ):
-        """Mixed fraction+percent SpO2 sources: min is normalized by its own magnitude.
+        """Mixed fraction+percent SpO2 sources: each sample is normalized first.
 
-        avg = (0.95 + 97.0) / 2 = ~48.975 → > 1.5 → rounds to 49.0%
-        min = 0.95 → ≤ 1.5 → multiplied → 95.0%
-
-        The bug: old code used avg's magnitude to decide how to round min, so min
-        stayed fraction-scale (0.9%) when avg exceeded 1.5.
+        Aggregating raw values gives avg 47.975 for 0.95 + 95 and min 0.99 (→ 99%)
+        for 0.99 + 92 — both wrong scales.
         """
-        for val, h in [(0.95, 2), (97.0, 3)]:
+        for val, h in zip(values, (2, 3), strict=True):
             async_db_session.add(
                 HealthSample(
                     profile_id=profile_id,
@@ -201,8 +211,8 @@ class TestGetNightDetailAggregates:
             _NIGHT
         )
 
-        assert detail.avg_spo2_pct == pytest.approx(49.0, abs=0.1)
-        assert detail.min_spo2_pct == pytest.approx(95.0, abs=0.1)
+        assert detail.avg_spo2_pct == pytest.approx(expected_avg, abs=0.1)
+        assert detail.min_spo2_pct == pytest.approx(expected_min, abs=0.1)
 
     async def test_no_spo2_or_rr_returns_none(
         self, async_db_session, profile_id, night_summary

@@ -37,9 +37,8 @@ _BREATHING_DISTURBANCE_RECORD_TYPE = (
 )
 
 
-def _normalize_spo2(v: float) -> float:
-    """Normalize a SpO₂ value to percent scale regardless of source encoding."""
-    return round(v * 100, 1) if v <= 1.5 else round(v, 1)
+# Sources disagree on SpO₂ encoding: some write fractions (0.95), others percents (95).
+_SPO2_FRACTION_MAX = 1.5
 
 
 class HealthService(ProfileScopedService):
@@ -87,7 +86,8 @@ class HealthService(ProfileScopedService):
     async def get_night_detail(self, night_date: date) -> HealthNightDetailRead:
         """Return nightly sleep summary with aggregated SpO2 and respiratory rate.
 
-        SpO2 values stored as fractions (0–1) are normalized to percent on read.
+        SpO2 samples stored as fractions (0–1) are normalized to percent per
+        sample, before aggregation.
 
         Raises NotFoundError when no summary exists for this night.
         """
@@ -103,26 +103,23 @@ class HealthService(ProfileScopedService):
         if summary is None:
             raise NotFoundError(f"No health data found for night {night_date}")
 
+        # Normalize each SpO2 sample to percent before aggregating: nights can mix
+        # fraction and percent sources, so normalizing the aggregate is wrong.
+        is_spo2 = models.HealthSample.record_type == _SPO2_RECORD_TYPE
+        spo2_pct = case(
+            (
+                is_spo2 & (models.HealthSample.value_num <= _SPO2_FRACTION_MAX),
+                models.HealthSample.value_num * 100,
+            ),
+            (is_spo2, models.HealthSample.value_num),
+        )
+
         # Single-pass conditional aggregation for SpO2 avg/min and RR avg.
         agg = (
             await self.db_session.execute(
                 select(
-                    func.avg(
-                        case(
-                            (
-                                models.HealthSample.record_type == _SPO2_RECORD_TYPE,
-                                models.HealthSample.value_num,
-                            )
-                        )
-                    ).label("avg_spo2"),
-                    func.min(
-                        case(
-                            (
-                                models.HealthSample.record_type == _SPO2_RECORD_TYPE,
-                                models.HealthSample.value_num,
-                            )
-                        )
-                    ).label("min_spo2"),
+                    func.avg(spo2_pct).label("avg_spo2"),
+                    func.min(spo2_pct).label("min_spo2"),
                     func.avg(
                         case(
                             (
@@ -145,16 +142,10 @@ class HealthService(ProfileScopedService):
         min_spo2: float | None = agg.min_spo2
         avg_rr: float | None = agg.avg_rr
 
-        # Normalize each SpO2 value to percent independently — using avg's magnitude
-        # to infer both values' scale breaks when sources report mixed units (one
-        # fraction, one percent), leaving min on the wrong scale.
-        avg_spo2 = _normalize_spo2(avg_spo2) if avg_spo2 is not None else None
-        min_spo2 = _normalize_spo2(min_spo2) if min_spo2 is not None else None
-
         return HealthNightDetailRead(
             **HealthNightSummaryRead.model_validate(summary).model_dump(),
-            avg_spo2_pct=avg_spo2,
-            min_spo2_pct=min_spo2,
+            avg_spo2_pct=round(avg_spo2, 1) if avg_spo2 is not None else None,
+            min_spo2_pct=round(min_spo2, 1) if min_spo2 is not None else None,
             avg_rr=round(avg_rr, 2) if avg_rr is not None else None,
         )
 
