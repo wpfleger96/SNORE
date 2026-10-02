@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.constants import EventDetectionConstants as EDC
+from snore.provenance import Provenance, provenance_field
 
 
 class BaselineMethod(StrEnum):
@@ -143,17 +144,20 @@ class ModeResult(BaseModel):
     reras: list[RERAEvent] = Field(
         default_factory=list, description="Detected RERA events"
     )
-    ahi: float = Field(ge=0, description="Apnea-Hypopnea Index")
-    rdi: float = Field(
+    ahi: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Apnea-Hypopnea Index from programmatic detection",
         ge=0,
-        description=(
-            "Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come "
-            "from the analysis-time amplitude-crescendo detector "
-            "(detector.py::_detect_reras). This is a DIFFERENT RERA definition "
-            "from the nightly rdi in NightlyAnalysisSummary, which uses the "
-            "query-time FL-run proxy over stored breath rows; the two indices "
-            "disagree by construction."
-        ),
+    )
+    rdi: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come "
+        "from the analysis-time amplitude-crescendo detector "
+        "(detector.py::_detect_reras). This is a DIFFERENT RERA definition "
+        "from the nightly rdi in NightlyAnalysisSummary, which uses the "
+        "query-time FL-run proxy over stored breath rows; the two indices "
+        "disagree by construction.",
+        ge=0,
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Mode-specific debug info"

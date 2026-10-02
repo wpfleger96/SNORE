@@ -56,6 +56,8 @@ src/snore/
 ├── constants.py        # Channel IDs, mappings, flow limitation classes, unit constants
 ├── completions.py      # Shell completion generation and installation
 ├── exceptions.py       # Domain exceptions (NotFoundError)
+├── metrics.py          # Session metric registry (MetricSpec: day aggregation), export keys
+├── provenance.py       # Provenance tiers + provenance_field / field_provenance / response_provenance
 ├── logging_config.py   # Logging configuration with rotation
 ├── types.py            # Shared type definitions
 ├── analysis/           # Analysis algorithms
@@ -316,6 +318,30 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.
 
+**Provenance tagging:** every reported metric carries one of three tiers (`snore/provenance.py`):
+- **Device**: verbatim device data (device-scored events and their counts, waveforms, STR values, settings).
+- **Derived**: deterministic math on device data (index recounts over SNORE mask-on hours, percentiles, usage, roll-ups).
+- **Experimental**: SNORE's own detection/classification heuristics (FL classes, RERA proxy, breath
+  segmentation features, programmatic event detection, SNORE-vs-device agreement scores).
+
+Aggregates inherit the weakest input: anything built on an experimental input stays Experimental;
+aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
+(across sessions, days, or a validation run) stays Device; rates, means, percentiles and recounts
+are Derived. The declared tier is the preferred source: fields recomputed from the waveform when
+present and falling back to the device's summary value otherwise (ResMed pressure/EPAP/leak
+percentiles) are tagged Derived and say so in their description.
+
+The Pydantic schemas are the single source of tiers. Every metric field in MCP/REST schemas uses
+`provenance_field(Provenance.X, "...")` (adds `x-provenance` + a `[TIER]` description prefix);
+`SessionStatistics` (`services/schemas.py`) is canonical for the Statistics columns. The CLI and
+exports read tiers with `field_provenance(<Model>, "<field>")` from the response model that carries
+the value — never hardcode `Provenance.X` for a value a schema already tags. MCP responses get a
+top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
+`tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean response field (with a
+bookkeeping allowlist `_NON_METRIC_FIELDS`) and on fields holding a model whose tier depends on the
+parent. The CLI marks columns with `provenance_marker` and a legend from `cli/display`;
+exports carry a JSON `provenance` header and a CSV `columns.csv` sidecar.
+
 **UI:** API types are generated — run `just ui-generate-types` after changing API
 schemas (`ui/src/types/generated.ts`; `types/index.ts` re-exports them). New API
 wrappers use `createApiEndpoint` in `ui/src/api/client.ts`; plain view loaders use
@@ -452,7 +478,7 @@ Each tool lives in `src/snore/mcp/tools/<name>.py` and follows a two-part struct
 1. A module-level async function that accepts an `AsyncSession` and returns a Pydantic model — this is what tests call directly.
 2. A `register(mcp: FastMCP) -> None` function at the bottom of the module that defines the `@mcp.tool()` closure and wires it to the common scaffold.
 
-The common scaffold for the eight standard-pattern tools lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+The common scaffold for the eight standard-pattern tools lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools that expose experimental metrics wrap their description with `_with_experimental_disclaimer` (`tools/_scaffold.py`). Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
 
 There is deliberately no per-event-type tool: event-type-specific context (e.g. MV slope/stability/PS before a central apnea) belongs in `get_events`' per-event context block, and night-level metrics (e.g. `periodic_breathing_pct`) belong in `get_nightly_summary` rows.
 

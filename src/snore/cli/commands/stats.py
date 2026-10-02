@@ -9,12 +9,21 @@ import click
 from snore.cli.decorators import CliCtx, profile_scoped_command
 from snore.cli.display import (
     ICON_CHART,
+    Column,
     console,
+    mark_provenance,
     print_footer,
     print_header,
     print_kv,
     print_subsection,
     print_table,
+)
+from snore.provenance import field_provenance
+from snore.services.schemas import (
+    PeriodStatistics,
+    RecordsResponse,
+    TherapySummary,
+    TrendsResponse,
 )
 
 
@@ -38,7 +47,6 @@ async def stats(
     records: bool,
 ) -> None:
     """Show therapy usage and clinical statistics."""
-    from snore.services.schemas import PeriodStatistics  # noqa: PLC0415
     from snore.services.stats_service import StatsService  # noqa: PLC0415
 
     if trend and not period:
@@ -59,55 +67,106 @@ async def stats(
     print_subsection("Date Range")
     print_kv("First session", str(summary.first_date))
     print_kv("Last session", str(summary.last_date))
-    print_kv("Days since last use", str(summary.days_since_last))
+    print_kv(
+        "Days since last use",
+        str(summary.days_since_last),
+        provenance=field_provenance(TherapySummary, "days_since_last"),
+    )
 
     print_subsection("Usage")
-    print_kv("Total therapy hours", f"{summary.total_hours:,.1f} hrs")
-    print_kv("Average per night", f"{summary.avg_hours:.1f} hrs")
-    print_kv("Days with data", str(summary.days_with_data))
+    print_kv(
+        "Total therapy hours",
+        f"{summary.total_hours:,.1f} hrs",
+        provenance=field_provenance(TherapySummary, "total_hours"),
+    )
+    print_kv(
+        "Average per night",
+        f"{summary.avg_hours:.1f} hrs",
+        provenance=field_provenance(TherapySummary, "avg_hours"),
+    )
+    print_kv(
+        "Days with data",
+        str(summary.days_with_data),
+        provenance=field_provenance(TherapySummary, "days_with_data"),
+    )
 
     print_subsection("Clinical")
-    if summary.avg_ahi is not None:
-        print_kv("Average AHI", f"{summary.avg_ahi:.1f}")
-    else:
-        print_kv("Average AHI", "N/A")
-    print_kv("Effectiveness", str(summary.effectiveness))
+    print_kv(
+        "Average AHI",
+        f"{summary.avg_ahi:.1f}" if summary.avg_ahi is not None else "N/A",
+        provenance=field_provenance(TherapySummary, "avg_ahi"),
+    )
+    print_kv(
+        "Effectiveness",
+        str(summary.effectiveness),
+        provenance=field_provenance(TherapySummary, "effectiveness"),
+    )
 
     if summary.avg_rei is not None:
-        print_kv("Average REI", f"{summary.avg_rei:.1f}")
+        print_kv(
+            "Average REI",
+            f"{summary.avg_rei:.1f}",
+            provenance=field_provenance(TherapySummary, "avg_rei"),
+        )
 
     if summary.avg_pressure is not None:
         print_subsection("Pressure")
-        print_kv("Average", f"{summary.avg_pressure:.1f} cmH₂O")
+        print_kv(
+            "Average",
+            f"{summary.avg_pressure:.1f} cmH₂O",
+            provenance=field_provenance(TherapySummary, "avg_pressure"),
+        )
         if summary.min_pressure is not None and summary.max_pressure is not None:
             print_kv(
                 "Range",
                 f"{summary.min_pressure:.1f} - {summary.max_pressure:.1f} cmH₂O",
+                provenance=field_provenance(TherapySummary, "min_pressure"),
             )
 
     if summary.avg_epap is not None:
         print_subsection("EPAP")
-        print_kv("Average", f"{summary.avg_epap:.1f} cmH₂O")
+        print_kv(
+            "Average",
+            f"{summary.avg_epap:.1f} cmH₂O",
+            provenance=field_provenance(TherapySummary, "avg_epap"),
+        )
 
     if summary.avg_leak is not None:
+        leak_provenance = field_provenance(TherapySummary, "avg_leak")
         print_subsection("Leak")
-        print_kv("Average", f"{summary.avg_leak:.1f} L/min")
+        print_kv("Average", f"{summary.avg_leak:.1f} L/min", provenance=leak_provenance)
         leak_assessment = "well controlled" if summary.avg_leak < 24 else "elevated"
-        print_kv("Assessment", leak_assessment)
+        print_kv("Assessment", leak_assessment, provenance=leak_provenance)
 
     if summary.avg_spo2 is not None:
         print_subsection("SpO₂")
-        print_kv("Average", f"{summary.avg_spo2:.1f}%")
+        print_kv(
+            "Average",
+            f"{summary.avg_spo2:.1f}%",
+            provenance=field_provenance(TherapySummary, "avg_spo2"),
+        )
         if summary.min_spo2 is not None:
-            print_kv("Minimum recorded", f"{summary.min_spo2:.0f}%")
+            print_kv(
+                "Minimum recorded",
+                f"{summary.min_spo2:.0f}%",
+                provenance=field_provenance(TherapySummary, "min_spo2"),
+            )
 
     if summary.total_spo2_time_below_90 > 0:
         minutes_below_90 = summary.total_spo2_time_below_90 / 60
-        print_kv("Time below 90%", f"{minutes_below_90:.1f} minutes")
+        print_kv(
+            "Time below 90%",
+            f"{minutes_below_90:.1f} minutes",
+            provenance=field_provenance(TherapySummary, "total_spo2_time_below_90"),
+        )
 
     if summary.avg_pulse is not None:
         print_subsection("Pulse")
-        print_kv("Average", f"{summary.avg_pulse:.1f} BPM")
+        print_kv(
+            "Average",
+            f"{summary.avg_pulse:.1f} BPM",
+            provenance=field_provenance(TherapySummary, "avg_pulse"),
+        )
 
     if (
         summary.avg_respiratory_rate is not None
@@ -119,13 +178,19 @@ async def stats(
             print_kv(
                 "Respiratory Rate",
                 f"{summary.avg_respiratory_rate:.1f} breaths/min",
+                provenance=field_provenance(TherapySummary, "avg_respiratory_rate"),
             )
         if summary.avg_tidal_volume is not None:
-            print_kv("Tidal Volume", f"{summary.avg_tidal_volume:.0f} mL")
+            print_kv(
+                "Tidal Volume",
+                f"{summary.avg_tidal_volume:.0f} mL",
+                provenance=field_provenance(TherapySummary, "avg_tidal_volume"),
+            )
         if summary.avg_minute_ventilation is not None:
             print_kv(
                 "Minute Ventilation",
                 f"{summary.avg_minute_ventilation:.1f} L/min",
+                provenance=field_provenance(TherapySummary, "avg_minute_ventilation"),
             )
 
     if summary.event_counts:
@@ -198,11 +263,21 @@ async def stats(
 
             print_table(
                 [
-                    ("Period", 20),
-                    ("Days", 6),
-                    ("Avg Hours", 11),
-                    ("Avg AHI", 9),
-                    ("Med AHI", 9),
+                    Column("Period", 20),
+                    Column(
+                        "Days",
+                        6,
+                        field_provenance(PeriodStatistics, "days_used"),
+                    ),
+                    Column(
+                        "Avg Hours",
+                        11,
+                        field_provenance(PeriodStatistics, "avg_hours_per_day"),
+                    ),
+                    Column("Avg AHI", 9, field_provenance(PeriodStatistics, "avg_ahi")),
+                    Column(
+                        "Med AHI", 9, field_provenance(PeriodStatistics, "median_ahi")
+                    ),
                 ],
                 period_rows,
             )
@@ -228,7 +303,12 @@ async def stats(
                     direction_str = calculate_ahi_trend_direction(ahi_values)
                     direction = f"({direction_str})" if direction_str else ""
 
-                    print_header("AHI Trend", wide=True)
+                    print_header(
+                        mark_provenance(
+                            "AHI Trend", field_provenance(TrendsResponse, "ahi")
+                        ),
+                        wide=True,
+                    )
 
                     plt.clf()
                     plt.plot(x_indices, ahi_values, marker="braille")
@@ -256,6 +336,7 @@ async def stats(
             for metric, (best_label, worst_label) in metric_labels.items():
                 if metric not in records_data:
                     continue
+                metric_provenance = field_provenance(RecordsResponse, metric)
 
                 best_records = records_data[metric]["best"]
                 worst_records = records_data[metric]["worst"]
@@ -283,7 +364,13 @@ async def stats(
                     record_rows.append((best_str, worst_str))
 
                 console.print()
-                print_table([(best_label, 35), (worst_label, 0)], record_rows)
+                print_table(
+                    [
+                        Column(best_label, 35, metric_provenance),
+                        Column(worst_label, 0, metric_provenance),
+                    ],
+                    record_rows,
+                )
 
             print_footer(wide=True)
 

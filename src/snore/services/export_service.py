@@ -2,7 +2,8 @@
 
 Supports:
 - raw: OSCAR-compatible SD card directory reconstruction from backups
-- csv: Parsed data as CSV files (sessions, events, settings, optional waveforms)
+- csv: Parsed data as CSV files (sessions, events, settings, columns provenance
+  sidecar, optional waveforms)
 - json: Parsed data as a single JSON document
 """
 
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from pydantic import BaseModel
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,11 +31,51 @@ from snore.constants import DEFAULT_RAW_BACKUP_DIR
 from snore.database import models
 from snore.metrics import EXPORT_STAT_KEYS
 from snore.parsers.base import RawFileManifest
+from snore.provenance import Provenance, field_provenance
+from snore.services.schemas import SessionDetail, SessionStatistics
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+# Exported session measurement columns, each read from the response-schema
+# field that carries the same value.  Identifier columns (session id, dates,
+# device serial/model, therapy mode, timezone) carry no tier.
+_EXPORT_COLUMN_FIELDS: dict[str, type[BaseModel]] = {
+    "duration_hours": SessionDetail,
+    **dict.fromkeys(EXPORT_STAT_KEYS, SessionStatistics),
+}
+
+EXPORT_COLUMN_PROVENANCE: dict[str, Provenance] = {
+    name: field_provenance(model, name) for name, model in _EXPORT_COLUMN_FIELDS.items()
+}
+
+
+def _column_description(name: str) -> str:
+    """Schema description of an export column without its ``[TIER] `` prefix."""
+    description = _EXPORT_COLUMN_FIELDS[name].model_fields[name].description or ""
+    return description.removeprefix(
+        f"[{EXPORT_COLUMN_PROVENANCE[name].value.upper()}] "
+    )
+
+
+def _columns_csv_rows() -> list[list[str]]:
+    """Rows of the ``columns.csv`` provenance sidecar.
+
+    One row per ``sessions.csv`` measurement column; ``events.csv`` and
+    ``settings.csv`` get one whole-file row each since every value in them is
+    device data.
+    """
+    return [
+        ["name", "provenance", "description"],
+        *(
+            [name, tier, _column_description(name)]
+            for name, tier in EXPORT_COLUMN_PROVENANCE.items()
+        ),
+        ["events.csv", Provenance.DEVICE, "Device-scored events, verbatim."],
+        ["settings.csv", Provenance.DEVICE, "Device settings, verbatim."],
+    ]
 
 
 @dataclass
@@ -263,6 +305,9 @@ class ExportService:
         events_path = output / "events.csv"
         settings_path = output / "settings.csv"
 
+        with open(output / "columns.csv", "w", newline="") as cf:
+            csv.writer(cf).writerows(_columns_csv_rows())
+
         found_any = False
         with (
             open(sessions_path, "w", newline="") as sf,
@@ -363,7 +408,7 @@ class ExportService:
             warnings.append("No sessions found for the specified filters.")
             return ExportResult(format="csv", output_path=output, warnings=warnings)
 
-        files_written += 3
+        files_written += 4
 
         return ExportResult(
             format="csv",
@@ -431,10 +476,17 @@ class ExportService:
         with open(output, "w") as f:
             header = {
                 "exported_at": datetime.now().isoformat(),
-                "snore_export_format": "1.0",
+                "snore_export_format": "1.1",
                 "date_range": {
                     "from": date_from.isoformat() if date_from else None,
                     "to": date_to.isoformat() if date_to else None,
+                },
+                "provenance": {
+                    "columns": EXPORT_COLUMN_PROVENANCE,
+                    "sections": {
+                        "events": Provenance.DEVICE,
+                        "settings": Provenance.DEVICE,
+                    },
                 },
             }
             f.write("{\n")

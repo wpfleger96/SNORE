@@ -1,11 +1,18 @@
-from typing import Annotated, Any
+from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 
 from snore.analysis.calculations import PeriodType
 from snore.api.deps import service_dep
 from snore.services import StatsService
-from snore.services.schemas import DataRange, PeriodStatistics, TherapySummary
+from snore.services.schemas import (
+    DataRange,
+    PeriodStatistics,
+    RecordsResponse,
+    TherapySummary,
+    TrendsResponse,
+)
 
 router = APIRouter()
 
@@ -39,7 +46,7 @@ async def get_periods(
     return await service.get_period_statistics(period_type, days_limit)
 
 
-@router.get("/trends", response_model=dict[str, list[list[Any]]])
+@router.get("/trends", response_model=TrendsResponse, response_model_exclude_unset=True)
 async def get_trends(
     service: StatsServiceDep,
     period_type: PeriodType = Query(default="month"),
@@ -50,9 +57,9 @@ async def get_trends(
             "to keep the response size reasonable."
         ),
     ),
-) -> Any:
-    # Service returns dict[str, list[tuple[date, float | None]]]; tuples serialize as
-    # JSON arrays, so response_model=dict[str, list[list[Any]]] reflects the wire shape.
+) -> dict[str, list[tuple[date, float | None]]]:
+    # The service returns a plain dict; exclude_unset keeps absent optional series
+    # (Apple Health) omitted rather than null, matching the service's wire shape.
     if period_type == "day" and days_limit is None:
         days_limit = 180
     return await service.get_trends(period_type, days_limit)
@@ -63,13 +70,13 @@ async def get_data_range(service: StatsServiceDep) -> DataRange:
     return await service.get_data_range()
 
 
-@router.get("/records", response_model=dict[str, dict[str, list[list[Any]]]])
+@router.get(
+    "/records", response_model=RecordsResponse, response_model_exclude_unset=True
+)
 async def get_records(
     service: StatsServiceDep,
     days_limit: int | None = Query(default=None),
     top_n: int = Query(default=5),
-) -> Any:
-    # Service returns dict[str, dict[str, list[tuple[date, float]]]]; tuples serialize
-    # as JSON arrays, so response_model=dict[str, dict[str, list[list[Any]]]] reflects
-    # the wire shape.
+) -> dict[str, dict[str, list[tuple[date, float]]]]:
+    # exclude_unset keeps metrics with no qualifying day omitted rather than null.
     return await service.get_records(days_limit, top_n)

@@ -97,7 +97,25 @@ def test_scored_table_shows_all_when_within_cap():
     assert result.exit_code == 0, result.output
     assert "top 20 of" not in result.output
     assert "more scored sessions not shown" not in result.output
-    assert "Scored sessions (3;" in result.output
+    assert "Scored sessions* (3;" in result.output
+
+
+def test_report_marks_snore_scores_and_prints_legend_once():
+    result = _invoke(_report(3))
+    assert result.exit_code == 0, result.output
+    assert "Amplitude*:" in result.output
+    # Device-scored RE count is unmarked; only its per-hour density is derived.
+    machine_line = next(
+        line for line in result.output.splitlines() if "Machine RE" in line
+    )
+    assert "Machine RE:" in machine_line
+    assert machine_line.rstrip().endswith("/h†)")
+    legend = result.output.splitlines()[-1]
+    assert legend == (
+        "* experimental (SNORE heuristic)  "
+        "† derived (computed by SNORE from device data)"
+    )
+    assert result.output.count("* experimental") == 1
 
 
 def test_export_json_dispatch_writes_file(tmp_path):

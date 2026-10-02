@@ -20,6 +20,7 @@ from snore.cli.decorators import (
 )
 from snore.cli.display import (
     ICON_STATS,
+    Column,
     console,
     err_console,
     print_dry_run_complete,
@@ -319,11 +320,11 @@ async def analysis_delete(
 
     print_table(
         [
-            ("Sess ID", 8),
-            ("Date", 12),
-            ("Time", 8),
-            ("Versions", 10),
-            ("Device", 25),
+            Column("Sess ID", 8),
+            Column("Date", 12),
+            Column("Time", 8),
+            Column("Versions", 10),
+            Column("Device", 25),
         ],
         rows,
     )
@@ -567,11 +568,11 @@ async def _list_sessions(
 
     print_table(
         [
-            ("Date", 12),
-            ("ID", 6),
-            ("Duration", 10),
-            ("Analyzed", 10),
-            ("Analysis ID", 12),
+            Column("Date", 12),
+            Column("ID", 6),
+            Column("Duration", 10),
+            Column("Analyzed", 10),
+            Column("Analysis ID", 12),
         ],
         (
             (

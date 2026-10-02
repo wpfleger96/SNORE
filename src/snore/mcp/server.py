@@ -64,6 +64,7 @@ from snore.mcp.tools._scaffold import (  # noqa: F401  (re-exported; tests impor
     tool_error_boundary,
 )
 from snore.mcp.validation import parse_date
+from snore.provenance import PROVENANCE_NOTES, response_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,16 @@ DATA TIERS (progressive disclosure):
 NULL FIELDS: When data is absent, fields are null + a companion *_reason field
 explains why (e.g. rera_index_reason: "analysis_not_run"). Never infer from null.
 
+PROVENANCE: every metric has one provenance class — DEVICE (reported by the
+recording device), DERIVED (SNORE math on device data), or EXPERIMENTAL
+(SNORE's own heuristics; not validated). Field descriptions in docs://schemas
+start with [DEVICE] / [DERIVED] / [EXPERIMENTAL]. Responses with derived or
+experimental fields carry a top-level `provenance` block listing those field
+paths; metric fields it does not list are device data, counts/identifiers/
+bookkeeping are not classified, and responses with only device data carry no
+block. Device-scored events are the reference standard; never present
+experimental metrics as device-scored or clinically validated.
+
 See docs://capabilities for dataset-specific channel availability.
 """
 
@@ -286,6 +297,9 @@ async def _lifespan(
         # Register vendor parsers once at startup (idempotent; tools must not call
         # ensure_registered_parsers() themselves — this is the single call site).
         ensure_registered_parsers()
+        # Warm the per-model provenance cache so first tool calls skip schema generation.
+        for model in SCHEMA_MODEL_MAP.values():
+            response_provenance(model)
 
         db_location = target.location if manage_database else "embedded"
         runtime: SNORERuntime
@@ -510,9 +524,12 @@ def _register_resources(mcp: FastMCP) -> None:
                     "Run 'snore analysis run' or re-import with analysis enabled "
                     "to populate analysis-derived fields (RERA index, RDI, breath table)."
                     if not overview.analysis_run
-                    else "Analysis results are available. RERA index and RDI fields are populated."
+                    else "Analysis results are available. RERA index and RDI fields "
+                    "are populated; both are experimental (RERA proxy from SNORE's "
+                    "flow-limitation classifier), not device-scored."
                 ),
             },
+            "provenance": {str(tier): note for tier, note in PROVENANCE_NOTES.items()},
             "supported_parsers": supported_parsers,
         }
 

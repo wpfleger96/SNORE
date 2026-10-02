@@ -43,7 +43,8 @@ _PROFILES: dict[str, ClinicalProfile] = {
             "RERA count/RDI) and inspiratory effort markers. Treat RDI > threshold as "
             "the primary burden index; treat AHI < 5 as consistent with UARS phenotype, "
             "not as 'normal'. Pressure tuning goal: eliminate flow-limited breaths while "
-            "minimising leak."
+            "minimising leak. The RERA proxy and the RDI built on it are experimental "
+            "SNORE heuristics, not device-scored events: present them as trends."
         ),
         clinical_context=(
             "UARS phenotype: RDI > 30, AHI < 5, inspiratory flow morphology is the "

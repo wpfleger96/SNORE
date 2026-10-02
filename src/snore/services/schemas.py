@@ -4,8 +4,11 @@ These models define the contract between services and consumers (CLI/API).
 """
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from snore.provenance import PROVENANCE_NOTES, Provenance, provenance_field
 
 __all__ = [
     "PeriodStatistics",
@@ -59,6 +62,10 @@ __all__ = [
     "DeleteDataResult",
     # Stats range schema
     "DataRange",
+    # Stats trends/records schemas
+    "TrendsResponse",
+    "RecordExtremes",
+    "RecordsResponse",
     # Apple Health import schema
     "HealthImportResult",
     # Apple Health read schemas
@@ -75,36 +82,58 @@ class PeriodStatistics(BaseModel):
     period_start: date
     period_end: date
 
-    days_used: int = Field(default=0, description="Number of days with therapy")
+    days_used: int = provenance_field(
+        Provenance.DERIVED, "Number of days with therapy", default=0
+    )
     days_in_period: int = Field(default=0, description="Total days in period")
-    avg_hours_per_day: float | None = Field(
-        default=None, description="Average hours per day used"
+    avg_hours_per_day: float | None = provenance_field(
+        Provenance.DERIVED, "Average hours per day used", default=None
     )
 
-    avg_ahi: float | None = Field(default=None, description="Average AHI")
-    median_ahi: float | None = Field(default=None, description="Median AHI")
-    avg_pressure: float | None = Field(
-        default=None, description="Average pressure (cmH₂O)"
+    avg_ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Average AHI", default=None
     )
-    avg_leak: float | None = Field(
-        default=None, description="Average leak rate (L/min)"
+    median_ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Median AHI", default=None
     )
-
-    avg_spo2: float | None = Field(default=None, description="Average SpO₂ (%)")
-    min_spo2: float | None = Field(default=None, description="Minimum SpO₂ (%)")
-
-    avg_total_sleep_hours: float | None = Field(
-        default=None, description="Average total sleep hours per night (Apple Health)"
+    avg_pressure: float | None = provenance_field(
+        Provenance.DERIVED, "Average pressure (cmH₂O)", default=None
     )
-    avg_sleep_efficiency_pct: float | None = Field(
-        default=None, description="Average sleep efficiency % per night (Apple Health)"
+    avg_leak: float | None = provenance_field(
+        Provenance.DERIVED, "Average leak rate (L/min)", default=None
     )
 
-    avg_oai: float | None = Field(default=None, description="Average OAI (events/hour)")
-    avg_cai: float | None = Field(default=None, description="Average CAI (events/hour)")
-    avg_hi: float | None = Field(default=None, description="Average HI (events/hour)")
-    avg_rera: float | None = Field(
-        default=None, description="Average RERA index (events/hour)"
+    avg_spo2: float | None = provenance_field(
+        Provenance.DERIVED, "Average SpO₂ (%)", default=None
+    )
+    min_spo2: float | None = provenance_field(
+        Provenance.DERIVED, "Minimum SpO₂ (%)", default=None
+    )
+
+    avg_total_sleep_hours: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Average total sleep hours per night (Apple Health)",
+        default=None,
+    )
+    avg_sleep_efficiency_pct: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Average sleep efficiency % per night (Apple Health)",
+        default=None,
+    )
+
+    avg_oai: float | None = provenance_field(
+        Provenance.DERIVED, "Average OAI (events/hour)", default=None
+    )
+    avg_cai: float | None = provenance_field(
+        Provenance.DERIVED, "Average CAI (events/hour)", default=None
+    )
+    avg_hi: float | None = provenance_field(
+        Provenance.DERIVED, "Average HI (events/hour)", default=None
+    )
+    avg_rera: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Average device-scored RERA index (events/hour)",
+        default=None,
     )
 
     model_config = ConfigDict(
@@ -134,34 +163,45 @@ class EventValidationResult(BaseModel):
     Useful for tuning detection thresholds and assessing algorithm accuracy.
     """
 
-    machine_event_count: int = Field(description="Events detected by CPAP machine")
-    programmatic_event_count: int = Field(
-        description="Events detected programmatically"
+    machine_event_count: int = provenance_field(
+        Provenance.DEVICE, "Events detected by CPAP machine"
     )
-    matched_events: int = Field(
-        description="Events matched between machine and programmatic (within 5s)"
+    programmatic_event_count: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Events detected programmatically"
     )
-    false_positives: int = Field(
-        description="Programmatic events not matched to machine events"
+    matched_events: int = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Events matched between machine and programmatic (within 5s)",
     )
-    false_negatives: int = Field(
-        description="Machine events not matched to programmatic events"
+    false_positives: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Programmatic events not matched to machine events"
     )
-    sensitivity: float = Field(
-        ge=0, le=1, description="Recall: matched / (matched + false_negatives)"
+    false_negatives: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Machine events not matched to programmatic events"
     )
-    precision: float = Field(
-        ge=0, le=1, description="Precision: matched / (matched + false_positives)"
-    )
-    f1_score: float = Field(
+    sensitivity: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Recall: matched / (matched + false_negatives)",
         ge=0,
         le=1,
-        description="F1 score: 2 * (precision * sensitivity) / (precision + sensitivity)",
     )
-    agreement_percentage: float = Field(
+    precision: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Precision: matched / (matched + false_positives)",
+        ge=0,
+        le=1,
+    )
+    f1_score: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "F1 score: 2 * (precision * sensitivity) / (precision + sensitivity)",
+        ge=0,
+        le=1,
+    )
+    agreement_percentage: float = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Overall agreement: matched / max(machine, programmatic) * 100",
         ge=0,
         le=100,
-        description="Overall agreement: matched / max(machine, programmatic) * 100",
     )
 
 
@@ -212,12 +252,18 @@ class SessionListItem(BaseModel):
         description="Therapy day (noon-cutoff date): sessions before 12:00 belong to the previous calendar day"
     )
     start_time: datetime = Field(description="Session start timestamp")
-    duration_hours: float = Field(description="Session duration in hours")
+    duration_hours: float = provenance_field(
+        Provenance.DEVICE, "Session duration in hours"
+    )
     enabled: bool = Field(description="Whether session is enabled for stats")
     manufacturer: str = Field(description="Device manufacturer")
     model: str = Field(description="Device model")
     serial_number: str = Field(description="Device serial number")
-    ahi: float | None = Field(default=None, description="Apnea-Hypopnea Index")
+    ahi: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Apnea-Hypopnea Index (device events / mask-on hours)",
+        default=None,
+    )
 
 
 class SessionListResult(BaseModel):
@@ -233,84 +279,288 @@ class SessionStatistics(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    usage_hours: float | None = None
-    ahi: float | None = None
-    rei: float | None = None
-    ahi_device: float | None = None
-    oai_device: float | None = None
-    cai_device: float | None = None
-    hi_device: float | None = None
-    oai: float | None = None
-    cai: float | None = None
-    hi: float | None = None
-    obstructive_apneas: int | None = None
-    central_apneas: int | None = None
-    mixed_apneas: int | None = None
-    hypopneas: int | None = None
-    reras: int | None = None
-    flow_limitations: int | None = None
-    pressure_mean: float | None = None
-    pressure_min: float | None = None
-    pressure_max: float | None = None
-    pressure_median: float | None = None
-    pressure_95th: float | None = None
-    epap_mean: float | None = None
-    epap_min: float | None = None
-    epap_max: float | None = None
-    epap_median: float | None = None
-    epap_95th: float | None = None
-    ipap_median: float | None = None
-    ipap_95th: float | None = None
-    ipap_max: float | None = None
-    leak_mean: float | None = None
-    leak_min: float | None = None
-    leak_max: float | None = None
-    leak_median: float | None = None
-    leak_percentile_70: float | None = None
-    leak_95th: float | None = None
-    spo2_mean: float | None = None
-    spo2_min: float | None = None
-    spo2_max: float | None = None
-    spo2_median: float | None = None
-    spo2_95th: float | None = None
-    spo2_time_below_90: int | None = None
-    pulse_mean: float | None = None
-    pulse_min: float | None = None
-    pulse_max: float | None = None
-    respiratory_rate_mean: float | None = None
-    respiratory_rate_min: float | None = None
-    respiratory_rate_max: float | None = None
-    respiratory_rate_95th: float | None = None
-    tidal_volume_mean: float | None = None
-    tidal_volume_min: float | None = None
-    tidal_volume_max: float | None = None
-    tidal_volume_95th: float | None = None
-    minute_ventilation_mean: float | None = None
-    minute_ventilation_min: float | None = None
-    minute_ventilation_max: float | None = None
-    minute_ventilation_95th: float | None = None
-    uai: float | None = None
-    ai: float | None = None
-    rin: float | None = None
-    csr_pct: float | None = None
-    spont_cyc_pct: float | None = None
-    ie_ratio_median: float | None = None
-    ie_ratio_95th: float | None = None
-    ie_ratio_max: float | None = None
-    ti_median: float | None = None
-    ti_95th: float | None = None
-    ti_max: float | None = None
-    flow_5th: float | None = None
-    flow_95th: float | None = None
-    blow_press_5th: float | None = None
-    blow_press_95th: float | None = None
-    blow_flow_median: float | None = None
-    amb_humidity_median: float | None = None
-    hum_temp_median: float | None = None
-    htube_temp_median: float | None = None
-    htube_pow_median: float | None = None
-    hum_pow_median: float | None = None
-    mask_events: float | None = None
+    usage_hours: float | None = provenance_field(
+        Provenance.DERIVED, "Mask-on therapy hours", default=None
+    )
+    ahi: float | None = provenance_field(
+        Provenance.DERIVED, "AHI: device-scored OA+CA+H per mask-on hour", default=None
+    )
+    rei: float | None = provenance_field(
+        Provenance.DERIVED, "Respiratory Event Index", default=None
+    )
+    ahi_device: float | None = provenance_field(
+        Provenance.DEVICE, "AHI as reported by the device (STR)", default=None
+    )
+    oai_device: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Obstructive apnea index as reported by the device (STR)",
+        default=None,
+    )
+    cai_device: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Central apnea index as reported by the device (STR)",
+        default=None,
+    )
+    hi_device: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Hypopnea index as reported by the device (STR)",
+        default=None,
+    )
+    oai: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Device-scored obstructive apneas per mask-on hour",
+        default=None,
+    )
+    cai: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Device-scored central apneas per mask-on hour",
+        default=None,
+    )
+    hi: float | None = provenance_field(
+        Provenance.DERIVED, "Device-scored hypopneas per mask-on hour", default=None
+    )
+    obstructive_apneas: int | None = provenance_field(
+        Provenance.DEVICE, "Device-scored obstructive apnea count", default=None
+    )
+    central_apneas: int | None = provenance_field(
+        Provenance.DEVICE, "Device-scored central apnea count", default=None
+    )
+    mixed_apneas: int | None = provenance_field(
+        Provenance.DEVICE, "Device-scored mixed apnea count", default=None
+    )
+    hypopneas: int | None = provenance_field(
+        Provenance.DEVICE, "Device-scored hypopnea count", default=None
+    )
+    reras: int | None = provenance_field(
+        Provenance.DEVICE, "Device-scored RERA count", default=None
+    )
+    flow_limitations: int | None = provenance_field(
+        Provenance.DEVICE, "Device-flagged flow limitation count", default=None
+    )
+    pressure_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Mean pressure (cmH2O)", default=None
+    )
+    pressure_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min pressure (cmH2O)", default=None
+    )
+    pressure_max: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    pressure_median: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    pressure_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    epap_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Mean EPAP (cmH2O)", default=None
+    )
+    epap_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min EPAP (cmH2O)", default=None
+    )
+    epap_max: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    epap_median: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    epap_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    ipap_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median IPAP (cmH2O)", default=None
+    )
+    ipap_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile IPAP (cmH2O)", default=None
+    )
+    ipap_max: float | None = provenance_field(
+        Provenance.DEVICE, "Max IPAP (cmH2O)", default=None
+    )
+    leak_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Mean leak (L/min)", default=None
+    )
+    leak_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min leak (L/min)", default=None
+    )
+    leak_max: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Max leak (L/min); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    leak_median: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Median leak (L/min); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    leak_percentile_70: float | None = provenance_field(
+        Provenance.DEVICE, "70th percentile leak (L/min)", default=None
+    )
+    leak_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    spo2_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Mean SpO2 (%)", default=None
+    )
+    spo2_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min SpO2 (%)", default=None
+    )
+    spo2_max: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Max SpO2 (%); recomputed from the waveform when available, otherwise the device's value",
+        default=None,
+    )
+    spo2_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median SpO2 (%)", default=None
+    )
+    spo2_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile SpO2 (%)", default=None
+    )
+    spo2_time_below_90: int | None = provenance_field(
+        Provenance.DERIVED, "Seconds with SpO2 below 90%", default=None
+    )
+    pulse_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Mean pulse (BPM)", default=None
+    )
+    pulse_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min pulse (BPM)", default=None
+    )
+    pulse_max: float | None = provenance_field(
+        Provenance.DERIVED, "Max pulse (BPM)", default=None
+    )
+    respiratory_rate_mean: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Respiratory rate (breaths/min); device STR median on ResMed, OSCAR session average on OSCAR imports",
+        default=None,
+    )
+    respiratory_rate_min: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Min respiratory rate (breaths/min); OSCAR session summary (OSCAR imports only)",
+        default=None,
+    )
+    respiratory_rate_max: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Max respiratory rate (breaths/min); device STR value on ResMed, OSCAR session summary on OSCAR imports",
+        default=None,
+    )
+    respiratory_rate_95th: float | None = provenance_field(
+        Provenance.DEVICE,
+        "95th percentile respiratory rate (breaths/min)",
+        default=None,
+    )
+    tidal_volume_mean: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports",
+        default=None,
+    )
+    tidal_volume_min: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Min tidal volume (mL); OSCAR session summary (OSCAR imports only)",
+        default=None,
+    )
+    tidal_volume_max: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports",
+        default=None,
+    )
+    tidal_volume_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile tidal volume (mL)", default=None
+    )
+    minute_ventilation_mean: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Minute ventilation (L/min); device STR median on ResMed, OSCAR session average on OSCAR imports",
+        default=None,
+    )
+    minute_ventilation_min: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Min minute ventilation (L/min); OSCAR session summary (OSCAR imports only)",
+        default=None,
+    )
+    minute_ventilation_max: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Max minute ventilation (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports",
+        default=None,
+    )
+    minute_ventilation_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile minute ventilation (L/min)", default=None
+    )
+    uai: float | None = provenance_field(
+        Provenance.DEVICE, "Unknown apnea index", default=None
+    )
+    ai: float | None = provenance_field(Provenance.DEVICE, "Apnea index", default=None)
+    rin: float | None = provenance_field(Provenance.DEVICE, "RERA index", default=None)
+    csr_pct: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Percent of session in Cheyne-Stokes respiration",
+        default=None,
+    )
+    spont_cyc_pct: float | None = provenance_field(
+        Provenance.DEVICE, "Percent of breaths spontaneously cycled", default=None
+    )
+    ie_ratio_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median I:E ratio", default=None
+    )
+    ie_ratio_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile I:E ratio", default=None
+    )
+    ie_ratio_max: float | None = provenance_field(
+        Provenance.DEVICE, "Max I:E ratio", default=None
+    )
+    ti_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median inspiratory time (s)", default=None
+    )
+    ti_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile inspiratory time (s)", default=None
+    )
+    ti_max: float | None = provenance_field(
+        Provenance.DEVICE, "Max inspiratory time (s)", default=None
+    )
+    flow_5th: float | None = provenance_field(
+        Provenance.DEVICE, "5th percentile flow (L/min)", default=None
+    )
+    flow_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile flow (L/min)", default=None
+    )
+    blow_press_5th: float | None = provenance_field(
+        Provenance.DEVICE, "5th percentile blower pressure (cmH2O)", default=None
+    )
+    blow_press_95th: float | None = provenance_field(
+        Provenance.DEVICE, "95th percentile blower pressure (cmH2O)", default=None
+    )
+    blow_flow_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median blower flow (L/min)", default=None
+    )
+    amb_humidity_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median ambient humidity (%)", default=None
+    )
+    hum_temp_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median humidifier temperature (C)", default=None
+    )
+    htube_temp_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median heated-tube temperature (C)", default=None
+    )
+    htube_pow_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median heated-tube power (%)", default=None
+    )
+    hum_pow_median: float | None = provenance_field(
+        Provenance.DEVICE, "Median humidifier power (%)", default=None
+    )
+    mask_events: float | None = provenance_field(
+        Provenance.DEVICE, "Mask-on events", default=None
+    )
 
 
 class MaskLogEntryResponse(BaseModel):
@@ -364,8 +614,12 @@ class SessionDetail(BaseModel):
     )
     start_time: datetime
     end_time: datetime
-    duration_hours: float
-    duration_seconds: float
+    duration_hours: float = provenance_field(
+        Provenance.DEVICE, "Session duration in hours"
+    )
+    duration_seconds: float = provenance_field(
+        Provenance.DEVICE, "Session duration in seconds"
+    )
     therapy_mode: str | None
     enabled: bool
     event_count: int
@@ -394,8 +648,12 @@ class EventTypeCount(BaseModel):
     """Event type with count and percentage."""
 
     event_type: str
-    count: int
-    percentage: float
+    count: int = provenance_field(
+        Provenance.DEVICE, "Device-scored events of this type"
+    )
+    percentage: float = provenance_field(
+        Provenance.DERIVED, "Share of all device-scored events (%)"
+    )
 
 
 class TherapySummary(BaseModel):
@@ -403,26 +661,64 @@ class TherapySummary(BaseModel):
 
     first_date: date
     last_date: date
-    days_since_last: int
-    total_hours: float
-    avg_hours: float
-    days_with_data: int
-    avg_ahi: float | None = None
-    effectiveness: str = "unknown"
-    avg_rei: float | None = None
-    avg_pressure: float | None = None
-    min_pressure: float | None = None
-    max_pressure: float | None = None
-    avg_epap: float | None = None
-    avg_leak: float | None = None
-    avg_spo2: float | None = None
-    min_spo2: float | None = None
-    total_spo2_time_below_90: int = 0
-    avg_pulse: float | None = None
-    avg_respiratory_rate: float | None = None
-    avg_tidal_volume: float | None = None
-    avg_minute_ventilation: float | None = None
-    ahi_trend_direction: str | None = None
+    days_since_last: int = provenance_field(
+        Provenance.DERIVED, "Days since the last therapy day"
+    )
+    total_hours: float = provenance_field(Provenance.DERIVED, "Total therapy hours")
+    avg_hours: float = provenance_field(
+        Provenance.DERIVED, "Average therapy hours per day"
+    )
+    days_with_data: int = provenance_field(Provenance.DERIVED, "Days with therapy data")
+    avg_ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Average AHI", default=None
+    )
+    effectiveness: str = provenance_field(
+        Provenance.DERIVED,
+        "Therapy effectiveness band from average AHI",
+        default="unknown",
+    )
+    avg_rei: float | None = provenance_field(
+        Provenance.DERIVED, "Average REI", default=None
+    )
+    avg_pressure: float | None = provenance_field(
+        Provenance.DERIVED, "Average pressure (cmH2O)", default=None
+    )
+    min_pressure: float | None = provenance_field(
+        Provenance.DERIVED, "Minimum pressure (cmH2O)", default=None
+    )
+    max_pressure: float | None = provenance_field(
+        Provenance.DERIVED, "Maximum pressure (cmH2O)", default=None
+    )
+    avg_epap: float | None = provenance_field(
+        Provenance.DERIVED, "Average EPAP (cmH2O)", default=None
+    )
+    avg_leak: float | None = provenance_field(
+        Provenance.DERIVED, "Average leak (L/min)", default=None
+    )
+    avg_spo2: float | None = provenance_field(
+        Provenance.DERIVED, "Average SpO2 (%)", default=None
+    )
+    min_spo2: float | None = provenance_field(
+        Provenance.DERIVED, "Minimum SpO2 (%)", default=None
+    )
+    total_spo2_time_below_90: int = provenance_field(
+        Provenance.DERIVED, "Total seconds with SpO2 below 90%", default=0
+    )
+    avg_pulse: float | None = provenance_field(
+        Provenance.DERIVED, "Average pulse (BPM)", default=None
+    )
+    avg_respiratory_rate: float | None = provenance_field(
+        Provenance.DERIVED, "Average respiratory rate (breaths/min)", default=None
+    )
+    avg_tidal_volume: float | None = provenance_field(
+        Provenance.DERIVED, "Average tidal volume (mL)", default=None
+    )
+    avg_minute_ventilation: float | None = provenance_field(
+        Provenance.DERIVED, "Average minute ventilation (L/min)", default=None
+    )
+    ahi_trend_direction: str | None = provenance_field(
+        Provenance.DERIVED, "AHI trend direction over the range", default=None
+    )
     event_counts: list[EventTypeCount] = Field(default_factory=list)
 
 
@@ -430,20 +726,30 @@ class WaveformInfo(BaseModel):
     """Waveform metadata for listing."""
 
     waveform_type: str
-    sample_rate: float
-    sample_count: int
+    sample_rate: float = provenance_field(Provenance.DEVICE, "Sample rate (Hz)")
+    sample_count: int = provenance_field(Provenance.DEVICE, "Number of samples")
     unit: str | None = None
-    duration_hours: float
+    duration_hours: float = provenance_field(
+        Provenance.DEVICE, "Recorded duration in hours"
+    )
 
 
 class EventMatchResult(BaseModel):
     """Result of matching machine vs programmatic events."""
 
-    machine_count: int
-    programmatic_count: int
-    matched: int
-    false_positives: int
-    false_negatives: int
+    machine_count: int = provenance_field(Provenance.DEVICE, "Machine-scored events")
+    programmatic_count: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Programmatically detected events"
+    )
+    matched: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Events matched within tolerance"
+    )
+    false_positives: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Programmatic events unmatched"
+    )
+    false_negatives: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Machine events unmatched"
+    )
 
 
 class AnalysisListItem(BaseModel):
@@ -451,7 +757,9 @@ class AnalysisListItem(BaseModel):
 
     session_id: int
     session_date: date
-    duration_hours: float | None = None
+    duration_hours: float | None = provenance_field(
+        Provenance.DEVICE, "Session duration in hours", default=None
+    )
     has_analysis: bool
     analysis_id: int | None = None
 
@@ -514,7 +822,9 @@ class DeviceUsageSummary(BaseModel):
     session_count: int
     first_session_date: date | None
     last_session_date: date | None
-    total_therapy_hours: float
+    total_therapy_hours: float = provenance_field(
+        Provenance.DERIVED, "Total therapy hours"
+    )
     therapy_modes: list[str]
 
 
@@ -533,24 +843,48 @@ class HealthNightSummaryRead(BaseModel):
 
     night_date: date
     preferred_source: str | None = None
-    time_in_bed_seconds: float | None = None
-    total_sleep_seconds: float | None = None
-    core_seconds: float | None = None
-    deep_seconds: float | None = None
-    rem_seconds: float | None = None
-    awake_seconds: float | None = None
-    unspecified_seconds: float | None = None
-    sleep_efficiency_pct: float | None = None
-    stage_coverage_pct: float | None = None
+    time_in_bed_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Time in bed (s)", default=None
+    )
+    total_sleep_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Total sleep (s)", default=None
+    )
+    core_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Core sleep (s)", default=None
+    )
+    deep_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Deep sleep (s)", default=None
+    )
+    rem_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "REM sleep (s)", default=None
+    )
+    awake_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Awake time (s)", default=None
+    )
+    unspecified_seconds: float | None = provenance_field(
+        Provenance.DERIVED, "Asleep, unspecified stage (s)", default=None
+    )
+    sleep_efficiency_pct: float | None = provenance_field(
+        Provenance.DERIVED, "Total sleep / time in bed (%)", default=None
+    )
+    stage_coverage_pct: float | None = provenance_field(
+        Provenance.DERIVED, "Share of sleep with a known stage (%)", default=None
+    )
     computed_at: datetime
 
 
 class HealthNightDetailRead(HealthNightSummaryRead):
     """Nightly sleep summary with aggregated oximetry and respiratory rate metrics."""
 
-    avg_spo2_pct: float | None = None
-    min_spo2_pct: float | None = None
-    avg_rr: float | None = None
+    avg_spo2_pct: float | None = provenance_field(
+        Provenance.DERIVED, "Average SpO2 (%)", default=None
+    )
+    min_spo2_pct: float | None = provenance_field(
+        Provenance.DERIVED, "Minimum SpO2 (%)", default=None
+    )
+    avg_rr: float | None = provenance_field(
+        Provenance.DERIVED, "Average respiratory rate (breaths/min)", default=None
+    )
 
 
 class HealthSampleRead(BaseModel):
@@ -564,7 +898,9 @@ class HealthSampleRead(BaseModel):
     start_time: datetime
     end_time: datetime
     value_text: str | None = None
-    value_num: float | None = None
+    value_num: float | None = provenance_field(
+        Provenance.DEVICE, "Numeric sample value as recorded", default=None
+    )
     unit: str | None = None
     night_date: date
 
@@ -577,8 +913,14 @@ class DayListItem(BaseModel):
     date: date
     device_id: int
     session_count: int
-    total_therapy_hours: float | None = None
-    ahi: float | None = None
+    total_therapy_hours: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Total mask-on hours across the day's sessions",
+        default=None,
+    )
+    ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean of session AHI", default=None
+    )
 
 
 class DayDetail(DayListItem):
@@ -590,38 +932,89 @@ class DayDetail(DayListItem):
     MCP nightly-summary null-with-reason convention.
     """
 
-    oai: float | None = None
-    cai: float | None = None
-    hi: float | None = None
-    avg_pressure: float | None = None
-    avg_leak: float | None = None
-    avg_spo2: float | None = None
+    oai: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean of session OAI", default=None
+    )
+    cai: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean of session CAI", default=None
+    )
+    hi: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean of session HI", default=None
+    )
+    avg_pressure: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean pressure (cmH2O)", default=None
+    )
+    avg_leak: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean leak (L/min)", default=None
+    )
+    avg_spo2: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean SpO2 (%)", default=None
+    )
     # Pressure detail
-    pressure_min: float | None = None
-    pressure_max: float | None = None
-    pressure_median: float | None = None
-    pressure_95th: float | None = None
+    pressure_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min pressure (cmH2O)", default=None
+    )
+    pressure_max: float | None = provenance_field(
+        Provenance.DERIVED, "Max pressure (cmH2O)", default=None
+    )
+    pressure_median: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted median pressure (cmH2O)", default=None
+    )
+    pressure_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Usage-weighted 95th percentile pressure (cmH2O)",
+        default=None,
+    )
     # EPAP detail
-    epap_min: float | None = None
-    epap_max: float | None = None
-    epap_median: float | None = None
-    epap_mean: float | None = None
-    epap_95th: float | None = None
+    epap_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min EPAP (cmH2O)", default=None
+    )
+    epap_max: float | None = provenance_field(
+        Provenance.DERIVED, "Max EPAP (cmH2O)", default=None
+    )
+    epap_median: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted median EPAP (cmH2O)", default=None
+    )
+    epap_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean EPAP (cmH2O)", default=None
+    )
+    epap_95th: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted 95th percentile EPAP (cmH2O)", default=None
+    )
     # Leak detail
-    leak_min: float | None = None
-    leak_max: float | None = None
-    leak_mean: float | None = None
-    leak_95th: float | None = None
+    leak_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min leak (L/min)", default=None
+    )
+    leak_max: float | None = provenance_field(
+        Provenance.DERIVED, "Max leak (L/min)", default=None
+    )
+    leak_mean: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted mean leak (L/min)", default=None
+    )
+    leak_95th: float | None = provenance_field(
+        Provenance.DERIVED, "Usage-weighted 95th percentile leak (L/min)", default=None
+    )
     # SpO2 detail
-    spo2_min: float | None = None
-    spo2_max: float | None = None
+    spo2_min: float | None = provenance_field(
+        Provenance.DERIVED, "Min SpO2 (%)", default=None
+    )
+    spo2_max: float | None = provenance_field(
+        Provenance.DERIVED, "Max SpO2 (%)", default=None
+    )
     # Raw event counts
-    obstructive_apneas: int = 0
-    central_apneas: int = 0
-    hypopneas: int = 0
-    reras: int = Field(
+    obstructive_apneas: int = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored obstructive apnea count for the night",
         default=0,
-        description="Device-reported RERA count for the night (from the machine).",
+    )
+    central_apneas: int = provenance_field(
+        Provenance.DEVICE, "Device-scored central apnea count for the night", default=0
+    )
+    hypopneas: int = provenance_field(
+        Provenance.DEVICE, "Device-scored hypopnea count for the night", default=0
+    )
+    reras: int = provenance_field(
+        Provenance.DEVICE, "Device-scored RERA count for the night", default=0
     )
     # Nightly breath-analysis proxy metrics, sourced read-time from
     # BreathService (same path as the MCP nightly summary).  Reason semantics:
@@ -629,28 +1022,25 @@ class DayDetail(DayListItem):
     # is null with "not_available"; a lookup failure (no sessions for the
     # device, breath-table DB error, device resolution declining) is null with
     # "analysis_not_run".  Day detail never fails on missing breath analysis.
-    fl_class_ge4_pct: float | None = Field(
+    fl_class_ge4_pct: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Percent of rule-classified breaths flagged flow-class >= 4 "
+        f"(flow-limitation proxy). {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
         default=None,
-        description=(
-            "Percent of rule-classified breaths flagged flow-class >= 4 "
-            "(experimental SNORE flow-limitation proxy)."
-        ),
     )
     fl_class_ge4_pct_reason: str | None = None
-    rera_index: float | None = Field(
+    rera_index: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "RERA-proxy events per therapy hour (FL-run proxy, not device-scored). "
+        f"{PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
         default=None,
-        description=(
-            "Experimental SNORE RERA-proxy events per therapy hour "
-            "(FL-run proxy, not device-reported)."
-        ),
     )
     rera_index_reason: str | None = None
-    rera_count: int | None = Field(
+    rera_count: int | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "RERA-proxy count from flow-limitation runs ending in a recovery breath; "
+        f"distinct from device-scored `reras`. {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}",
         default=None,
-        description=(
-            "Experimental SNORE RERA-proxy count from flow-limitation runs "
-            "ending in a recovery breath — distinct from device-reported `reras`."
-        ),
     )
     rera_count_reason: str | None = None
     session_ids: list[int] = Field(default_factory=list)
@@ -664,11 +1054,21 @@ class RxPeriodResponse(BaseModel):
     start_date: date
     end_date: date
     days_count: int
-    avg_ahi: float | None = None
-    median_ahi: float | None = None
-    avg_hours: float | None = None
-    total_hours: float = 0.0
-    avg_leak: float | None = None
+    avg_ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Average AHI over the period", default=None
+    )
+    median_ahi: float | None = provenance_field(
+        Provenance.DERIVED, "Median AHI over the period", default=None
+    )
+    avg_hours: float | None = provenance_field(
+        Provenance.DERIVED, "Average therapy hours per day", default=None
+    )
+    total_hours: float = provenance_field(
+        Provenance.DERIVED, "Total therapy hours", default=0.0
+    )
+    avg_leak: float | None = provenance_field(
+        Provenance.DERIVED, "Average leak (L/min)", default=None
+    )
     device_id: int | None = None
     device_name: str | None = None
 
@@ -802,12 +1202,23 @@ class EventComparisonDetail(BaseModel):
     start_time: float = Field(
         description="Event start time in seconds from session start"
     )
-    duration: float = Field(description="Event duration in seconds")
-    confidence: float | None = Field(
-        default=None, description="Detection confidence (programmatic events only)"
+    duration: float = provenance_field(
+        Provenance.DEVICE,
+        "Event duration (seconds); experimental for programmatic events",
+        source_field="source",
     )
-    flow_reduction: float | None = Field(
-        default=None, description="Flow reduction fraction (programmatic events only)"
+    source: Literal["machine", "programmatic"] = Field(
+        description="Event source (machine/programmatic)"
+    )
+    confidence: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Detection confidence (programmatic events only)",
+        default=None,
+    )
+    flow_reduction: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Flow reduction fraction (programmatic events only)",
+        default=None,
     )
 
 
@@ -816,9 +1227,11 @@ class EventComparisonResult(BaseModel):
 
     session_id: int = Field(description="Session database ID")
     mode: str = Field(description="Detection mode used (e.g., 'aasm')")
-    machine_event_count: int = Field(description="Total machine-detected events")
-    programmatic_event_count: int = Field(
-        description="Total programmatically-detected events"
+    machine_event_count: int = provenance_field(
+        Provenance.DEVICE, "Total machine-detected events"
+    )
+    programmatic_event_count: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Total programmatically-detected events"
     )
     false_negatives: list[EventComparisonDetail] = Field(
         default_factory=list,
@@ -877,6 +1290,92 @@ class DataRange(BaseModel):
 
     earliest_date: date | None = None
     latest_date: date | None = None
+
+
+# ``[period_start, value]`` pairs, one per period (value null when absent).
+type TrendSeries = list[tuple[date, float | None]]
+
+
+class TrendsResponse(BaseModel):
+    """Per-period trend series for ``GET /stats/trends``."""
+
+    ahi: TrendSeries = provenance_field(Provenance.DERIVED, "Average AHI per period")
+    usage: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average therapy hours per day, per period"
+    )
+    spo2: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average SpO2 (%) per period"
+    )
+    leak: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average leak (L/min) per period"
+    )
+    pressure: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average pressure (cmH2O) per period"
+    )
+    oai: TrendSeries = provenance_field(Provenance.DERIVED, "Average OAI per period")
+    cai: TrendSeries = provenance_field(Provenance.DERIVED, "Average CAI per period")
+    hi: TrendSeries = provenance_field(Provenance.DERIVED, "Average HI per period")
+    rera: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average device-scored RERA index per period"
+    )
+    epap: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average EPAP (cmH2O) per period"
+    )
+    rr: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average respiratory rate (breaths/min) per period"
+    )
+    pulse: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average pulse (BPM) per period"
+    )
+    mv: TrendSeries = provenance_field(
+        Provenance.DERIVED, "Average minute ventilation (L/min) per period"
+    )
+    # Apple Health series: keys are omitted (not null) when no night has data.
+    total_sleep_hours: TrendSeries | None = provenance_field(
+        Provenance.DERIVED,
+        "Average total sleep hours per night, per period (Apple Health)",
+        default=None,
+    )
+    sleep_efficiency: TrendSeries | None = provenance_field(
+        Provenance.DERIVED,
+        "Average sleep efficiency % per night, per period (Apple Health)",
+        default=None,
+    )
+
+
+class RecordExtremes(BaseModel):
+    """Top-N best and worst ``[date, value]`` days for one metric."""
+
+    best: list[tuple[date, float]] = provenance_field(
+        Provenance.DERIVED, "Best days, best first"
+    )
+    worst: list[tuple[date, float]] = provenance_field(
+        Provenance.DERIVED, "Worst days, worst first"
+    )
+
+
+class RecordsResponse(BaseModel):
+    """Best/worst days for ``GET /stats/records``.
+
+    Keys are omitted (not null) when no qualifying day (>= 1 h therapy) has the
+    metric.
+    """
+
+    ahi: RecordExtremes | None = provenance_field(
+        Provenance.DERIVED, "Nightly AHI", default=None
+    )
+    leak: RecordExtremes | None = provenance_field(
+        Provenance.DERIVED, "Nightly median leak (L/min)", default=None
+    )
+    therapy_hours: RecordExtremes | None = provenance_field(
+        Provenance.DERIVED, "Nightly therapy hours", default=None
+    )
+    spo2_min: RecordExtremes | None = provenance_field(
+        Provenance.DERIVED, "Nightly minimum SpO2 (%)", default=None
+    )
+    total_sleep_hours: RecordExtremes | None = provenance_field(
+        Provenance.DERIVED, "Nightly total sleep hours (Apple Health)", default=None
+    )
 
 
 class HealthImportResult(BaseModel):

@@ -13,7 +13,8 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, print_footer, print_header
+from snore.cli.display import console, mark_provenance, print_footer, print_header
+from snore.provenance import Provenance
 
 
 @click.command()
@@ -77,7 +78,9 @@ async def validate_fl(
         )
 
         if agg.sessions_compared > 0:
-            console.print("\nAggregate Metrics (over compared sessions):")
+            console.print(
+                f"\n{mark_provenance('Aggregate Metrics', Provenance.EXPERIMENTAL)} (over compared sessions):"
+            )
 
             def _fmt_r(v: float | None) -> str:
                 return f"{v:.3f}" if v is not None else "N/A"
@@ -113,7 +116,9 @@ async def validate_fl(
         skipped_sessions = [s for s in report.sessions if s.skipped_reason is not None]
 
         if compared_sessions:
-            console.print("\nPer-Session Results:")
+            console.print(
+                f"\n{mark_provenance('Per-Session Results', Provenance.EXPERIMENTAL)}:"
+            )
             console.print(
                 f"{'Date':<12} {'ID':<6} {'N':<6} {'Spear-flat':<12} {'Spear-fi':<10} {'AUC25':<8} {'AUC50':<8} {'Nc':<6} {'Spear-cw':<10} {'cwAUC25':<9} {'cwAUC50':<9}"
             )
@@ -124,7 +129,7 @@ async def validate_fl(
                 def _fv(v: float | None) -> str:
                     return f"{v:.3f}" if v is not None else " N/A"
 
-                warn = "*" if s.low_sample_warning else " "
+                warn = "!" if s.low_sample_warning else " "
                 console.print(
                     f"{s.date:<12} "
                     f"{s.session_id:<6} "

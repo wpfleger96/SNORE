@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import NamedTuple
 
 from rich.console import Console
 from rich.markup import escape
+
+from snore.provenance import Provenance
 
 console = Console()
 err_console = Console(stderr=True)
@@ -25,6 +30,46 @@ ICON_BACKUP = "\U0001f4e6"
 ICON_FILTERS = "\U0001f4cb"
 ICON_TIP = "[yellow]\U0001f4a1[/yellow]"
 ICON_CHART = "\U0001f4c8"
+
+
+_PROVENANCE_MARKERS: dict[Provenance, str] = {
+    Provenance.EXPERIMENTAL: "*",
+    Provenance.DERIVED: "†",
+    Provenance.DEVICE: "",
+}
+_PROVENANCE_LEGEND: dict[Provenance, str] = {
+    Provenance.EXPERIMENTAL: "* experimental (SNORE heuristic)",
+    Provenance.DERIVED: "† derived (computed by SNORE from device data)",
+}
+
+# Tiers marked during the current command; None outside provenance_legend().
+_used_provenance: ContextVar[set[Provenance] | None] = ContextVar(
+    "_used_provenance", default=None
+)
+
+
+def mark_provenance(label: str, provenance: Provenance | None) -> str:
+    """Append the tier's marker to ``label`` and record it for the legend."""
+    if provenance is None or provenance is Provenance.DEVICE:
+        return label
+    used = _used_provenance.get()
+    if used is not None:
+        used.add(provenance)
+    return f"{label}{_PROVENANCE_MARKERS[provenance]}"
+
+
+@contextmanager
+def provenance_legend() -> Iterator[None]:
+    """Collect markers emitted inside the block; print their legend on clean exit."""
+    used: set[Provenance] = set()
+    token = _used_provenance.set(used)
+    try:
+        yield
+    finally:
+        _used_provenance.reset(token)
+    parts = [text for tier, text in _PROVENANCE_LEGEND.items() if tier in used]
+    if parts:
+        console.print(f"[dim]{'  '.join(parts)}[/dim]", highlight=False)
 
 
 def fmt_sig(v: float | None, *, na: str = "N/A") -> str:
@@ -97,8 +142,16 @@ def print_separator(*, wide: bool = False) -> None:
     console.print("-" * width)
 
 
+class Column(NamedTuple):
+    """A ``print_table`` column; a width of 0 leaves the cell unpadded."""
+
+    header: str
+    width: int
+    provenance: Provenance | None = None
+
+
 def print_table(
-    columns: Sequence[tuple[str, int]],
+    columns: Sequence[Column],
     rows: Iterable[Sequence[str]],
     *,
     header_separator: bool = True,
@@ -107,21 +160,20 @@ def print_table(
 ) -> None:
     """Print a plain-text table of left-aligned, space-separated columns.
 
-    Each column is a ``(header, width)`` pair; a width of 0 leaves the cell
-    unpadded (useful for a ragged last column). Cells longer than their
-    column width are not truncated.
+    A column's provenance marks its header; a width of 0 suits a ragged last
+    column. Cells longer than their column width are not truncated.
     """
     prefix = _indent_prefix(indent)
+    widths = [col.width for col in columns]
+    headers = [mark_provenance(col.header, col.provenance) for col in columns]
 
     def _format_row(cells: Sequence[str]) -> str:
         return prefix + " ".join(
             f"{cell:<{width}}" if width else cell
-            for cell, (_, width) in zip(cells, columns, strict=True)
+            for cell, width in zip(cells, widths, strict=True)
         )
 
-    console.print(
-        _format_row([name for name, _ in columns]), markup=False, highlight=False
-    )
+    console.print(_format_row(headers), markup=False, highlight=False)
     if header_separator:
         print_separator(wide=wide)
     for row in rows:
@@ -132,7 +184,14 @@ def print_subsection(title: str) -> None:
     console.print(f"\n{title}")
 
 
-def print_kv(key: str, value: str, *, indent: int = 1) -> None:
+def print_kv(
+    key: str,
+    value: str,
+    *,
+    indent: int = 1,
+    provenance: Provenance | None = None,
+) -> None:
+    key = mark_provenance(key, provenance)
     console.print(f"{_indent_prefix(indent)}[dim]{escape(key)}:[/dim] {escape(value)}")
 
 

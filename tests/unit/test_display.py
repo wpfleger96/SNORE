@@ -10,15 +10,20 @@ from rich.console import Console
 from snore.cli.display import (
     SEP_NARROW,
     SEP_WIDE,
+    Column,
     _indent_prefix,
+    mark_provenance,
     print_dry_run_complete,
     print_dry_run_header,
     print_header,
     print_kv,
     print_raw,
     print_success,
+    print_table,
     print_warning,
+    provenance_legend,
 )
+from snore.provenance import Provenance
 
 
 @pytest.fixture()
@@ -94,6 +99,69 @@ class TestKeyValue:
         output = capture_stdout.getvalue()
         assert "Name" in output
         assert "Alice" in output
+
+    def test_kv_with_derived_provenance_marks_key(self, capture_stdout):
+        print_kv("Avg AHI", "2.1", provenance=Provenance.DERIVED)
+        assert "Avg AHI†:" in capture_stdout.getvalue()
+
+    def test_kv_with_device_provenance_is_unmarked(self, capture_stdout):
+        print_kv("OA", "3", provenance=Provenance.DEVICE)
+        assert "OA:" in capture_stdout.getvalue()
+
+
+class TestProvenance:
+    def test_marker_per_tier(self):
+        assert mark_provenance("x", Provenance.EXPERIMENTAL) == "x*"
+        assert mark_provenance("x", Provenance.DERIVED) == "x†"
+        assert mark_provenance("x", Provenance.DEVICE) == "x"
+        assert mark_provenance("x", None) == "x"
+
+    def test_table_column_provenance_marks_only_that_header(self, capture_stdout):
+        print_table(
+            [Column("Day", 6), Column("AHI", 6, Provenance.DERIVED), Column("FLI", 0)],
+            [("d1", "1.0", "0.2")],
+        )
+        header = capture_stdout.getvalue().splitlines()[0]
+        assert header.split() == ["Day", "AHI†", "FLI"]
+
+    def test_legend_lists_only_used_markers_once(self, capture_stdout):
+        with provenance_legend():
+            print_kv("A", "1", provenance=Provenance.DERIVED)
+            print_kv("B", "2", provenance=Provenance.DERIVED)
+            print_kv("C", "3", provenance=Provenance.DEVICE)
+        output = capture_stdout.getvalue()
+        assert output.count("† derived") == 1
+        assert "* experimental" not in output
+        assert (
+            "† derived (computed by SNORE from device data)" in output.splitlines()[-1]
+        )
+
+    def test_legend_lists_experimental_before_derived(self, capture_stdout):
+        with provenance_legend():
+            mark_provenance("x", Provenance.DERIVED)
+            mark_provenance("y", Provenance.EXPERIMENTAL)
+        legend = capture_stdout.getvalue().strip()
+        assert legend.index("* experimental") < legend.index("† derived")
+
+    def test_legend_without_markers_prints_nothing(self, capture_stdout):
+        with provenance_legend():
+            print_kv("OA", "3", provenance=Provenance.DEVICE)
+        assert "derived" not in capture_stdout.getvalue()
+
+    def test_legend_skipped_when_block_raises(self, capture_stdout):
+        with pytest.raises(RuntimeError), provenance_legend():
+            mark_provenance("x", Provenance.EXPERIMENTAL)
+            raise RuntimeError
+        assert capture_stdout.getvalue() == ""
+
+    def test_markers_do_not_leak_into_next_legend(self, capture_stdout):
+        with provenance_legend():
+            mark_provenance("x", Provenance.EXPERIMENTAL)
+        mark_provenance("outside", Provenance.DERIVED)
+        with provenance_legend():
+            pass
+        assert capture_stdout.getvalue().count("experimental") == 1
+        assert "derived" not in capture_stdout.getvalue()
 
 
 class TestDryRun:
