@@ -870,7 +870,9 @@ class DeviceUsageSummary(BaseModel):
     first_session_date: date | None
     last_session_date: date | None
     total_therapy_hours: float = provenance_field(
-        Provenance.DERIVED, "Total therapy hours"
+        Provenance.DERIVED,
+        "Total therapy hours from enabled sessions, summed over the device's days "
+        "(mask-on time, falling back to session span)",
     )
     therapy_modes: list[str]
 
