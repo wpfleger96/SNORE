@@ -6,6 +6,7 @@
  * delta and identity-diff functions below are pure so they can be unit-tested. */
 import type { ValidatorType } from '@/types'
 import { formatPercent, formatPercentPointsDelta } from '@/utils/formatting'
+import { provenanceFor, type Provenance } from '@/utils/provenance'
 
 export const VALIDATOR_LABELS: Record<ValidatorType, string> = {
     events: 'Events',
@@ -27,9 +28,26 @@ export interface MetricDescriptor {
     glossaryKey?: string
     // Direction that counts as an improvement; omitted when neutral (counts).
     higherIsBetter?: boolean
+    // Tier of the value, resolved from the backend's tag for the path's leaf field.
+    provenance: Provenance
 }
 
-export const AGGREGATE_METRICS: Record<ValidatorType, MetricDescriptor[]> = {
+type MetricSpec = Omit<MetricDescriptor, 'provenance'>
+
+function withProvenance(
+    specs: Record<ValidatorType, MetricSpec[]>,
+): Record<ValidatorType, MetricDescriptor[]> {
+    const out = {} as Record<ValidatorType, MetricDescriptor[]>
+    for (const [type, metrics] of Object.entries(specs) as [ValidatorType, MetricSpec[]][]) {
+        out[type] = metrics.map((m) => ({
+            ...m,
+            provenance: provenanceFor(m.path.slice(m.path.lastIndexOf('.') + 1)),
+        }))
+    }
+    return out
+}
+
+export const AGGREGATE_METRICS = withProvenance({
     events: [
         {
             path: 'avg_apnea_sensitivity',
@@ -228,7 +246,7 @@ export const AGGREGATE_METRICS: Record<ValidatorType, MetricDescriptor[]> = {
         { path: 'n_with_apple_bd', label: 'Nights with Apple BD', kind: 'count' },
         { path: 'total_nights', label: 'Total nights', kind: 'count' },
     ],
-}
+})
 
 /** Read a possibly-nested numeric field by dotted path; null when absent/non-numeric. */
 export function getByPath(obj: unknown, path: string): number | null {

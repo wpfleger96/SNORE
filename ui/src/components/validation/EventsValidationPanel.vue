@@ -3,6 +3,8 @@
         validator-type="events"
         :params="{ mode }"
         :load-run-id="loadRunId"
+        experimental
+        experimental-note="SNORE's event detection is scored against the device's own scored events. Agreement shows how closely the heuristic tracks the device, not clinical accuracy."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"
@@ -31,6 +33,7 @@
                         :value="ratioPct(report.aggregate.avg_apnea_sensitivity)"
                         unit="%"
                         :decimals="1"
+                        field="avg_apnea_sensitivity"
                         glossary-key="sensitivity"
                     />
                     <StatCard
@@ -38,6 +41,7 @@
                         :value="ratioPct(report.aggregate.avg_apnea_f1)"
                         unit="%"
                         :decimals="1"
+                        field="avg_apnea_f1"
                         glossary-key="f1"
                     />
                     <StatCard
@@ -45,6 +49,7 @@
                         :value="ratioPct(report.aggregate.avg_hypopnea_sensitivity)"
                         unit="%"
                         :decimals="1"
+                        field="avg_hypopnea_sensitivity"
                         glossary-key="sensitivity"
                     />
                     <StatCard
@@ -52,6 +57,7 @@
                         :value="ratioPct(report.aggregate.avg_hypopnea_f1)"
                         unit="%"
                         :decimals="1"
+                        field="avg_hypopnea_f1"
                         glossary-key="f1"
                     />
                     <StatCard
@@ -67,24 +73,48 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Duration</TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea Sens <InfoHint glossary-key="sensitivity"
+                                    >Duration
+                                    <ProvenanceMark
+                                        :provenance="
+                                            provenanceFor('duration_hours', {
+                                                schema: 'SessionValidation',
+                                            })
+                                        "
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea Prec <InfoHint glossary-key="precision"
+                                    >Apnea Sens
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('apnea_sensitivity')" />
+                                    <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea F1 <InfoHint glossary-key="f1"
+                                    >Apnea Prec
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('apnea_precision')" />
+                                    <InfoHint glossary-key="precision"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Hypopnea Sens <InfoHint glossary-key="sensitivity"
+                                    >Apnea F1
+                                    <ProvenanceMark :provenance="provenanceFor('apnea_f1')" />
+                                    <InfoHint glossary-key="f1"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Hypopnea Prec <InfoHint glossary-key="precision"
+                                    >Hypopnea Sens
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('hypopnea_sensitivity')" />
+                                    <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Hypopnea F1 <InfoHint glossary-key="f1"
+                                    >Hypopnea Prec
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('hypopnea_precision')" />
+                                    <InfoHint glossary-key="precision"
+                                /></TableHead>
+                                <TableHead class="whitespace-nowrap"
+                                    >Hypopnea F1
+                                    <ProvenanceMark :provenance="provenanceFor('hypopnea_f1')" />
+                                    <InfoHint glossary-key="f1"
                                 /></TableHead>
                             </TableRow>
                         </TableHeader>
@@ -135,6 +165,7 @@ import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import {
     Select,
@@ -153,6 +184,7 @@ import {
 } from '@/components/ui/table'
 import { formatDateShort } from '@/utils/formatting'
 import { downloadCsv } from '@/utils/download'
+import { provenanceFor } from '@/utils/provenance'
 import type { ValidationReport, SessionValidation } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

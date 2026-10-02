@@ -7,7 +7,11 @@
     </div>
     <div v-else class="records-grid">
         <div v-for="(metric, key) in displayMetrics" :key="key" class="record-card">
-            <h4>{{ metric.label }} <InfoHint :glossary-key="metric.glossaryKey" /></h4>
+            <h4>
+                {{ metric.label }}
+                <ProvenanceMark :provenance="metric.provenance" />
+                <InfoHint :glossary-key="metric.glossaryKey" :provenance="metric.provenance" />
+            </h4>
             <div class="record-columns">
                 <div class="record-col">
                     <span class="col-header best-header">Best</span>
@@ -39,6 +43,8 @@ import { computed } from 'vue'
 import { Loader2 } from '@lucide/vue'
 import { formatDateMonthDay } from '@/utils/formatting'
 import InfoHint from '@/components/InfoHint.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
+import { provenanceFor } from '@/utils/provenance'
 import type { RecordsData } from '@/types'
 
 const props = defineProps<{
@@ -63,6 +69,7 @@ const displayMetrics = computed(() => {
             label: cfg.label,
             decimals: cfg.decimals,
             glossaryKey: cfg.glossaryKey,
+            provenance: provenanceFor(key, { schema: 'RecordsResponse' }),
             best: props.records![key]?.best ?? [],
             worst: props.records![key]?.worst ?? [],
         }))

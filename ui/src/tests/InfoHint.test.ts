@@ -28,9 +28,11 @@ vi.mock('@/components/ui/popover', () => ({
     PopoverDescription: { template: '<p class="popover-description-stub"><slot /></p>' },
 }))
 
-// Stub the lucide icon to avoid SVG rendering issues.
+// Stub the lucide icons to avoid SVG rendering issues.
 vi.mock('@lucide/vue', () => ({
     Info: { template: '<svg class="icon-info-stub" />' },
+    Sigma: { template: '<svg class="icon-sigma-stub" />' },
+    FlaskConical: { template: '<svg class="icon-flask-stub" />' },
 }))
 
 import InfoHint from '@/components/InfoHint.vue'
@@ -88,6 +90,36 @@ describe('InfoHint content resolution', () => {
             .trigger('pointerenter', { pointerType: 'mouse' })
 
         expect(wrapper.find('.popover-description-stub').text()).toBe('Custom short text.')
+    })
+})
+
+describe('InfoHint provenance tier line', () => {
+    async function openHint(provenance?: 'device' | 'derived' | 'experimental') {
+        const wrapper = mount(InfoHint, { props: { glossaryKey: 'leak', provenance } })
+        await wrapper.find('.popover-trigger-stub').trigger('click')
+        return wrapper
+    }
+
+    it('test_derived_provenance_adds_tier_line', async () => {
+        const wrapper = await openHint('derived')
+
+        const line = wrapper.find('.info-hint-tier')
+        expect(line.text()).toContain('Derived')
+        expect(line.text()).toContain('Computed by SNORE from device data.')
+        expect(line.find('.icon-sigma-stub').exists()).toBe(true)
+    })
+
+    it('test_experimental_provenance_adds_flask_tier_line', async () => {
+        const wrapper = await openHint('experimental')
+
+        const line = wrapper.find('.info-hint-tier')
+        expect(line.text()).toContain('Experimental')
+        expect(line.find('.icon-flask-stub').exists()).toBe(true)
+    })
+
+    it('test_device_or_missing_provenance_has_no_tier_line', async () => {
+        expect((await openHint('device')).find('.info-hint-tier').exists()).toBe(false)
+        expect((await openHint()).find('.info-hint-tier').exists()).toBe(false)
     })
 })
 

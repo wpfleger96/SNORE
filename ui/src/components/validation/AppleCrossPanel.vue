@@ -16,6 +16,7 @@
                         :key="corr.key"
                         :label="corr.label"
                         :value="report.aggregate[corr.key]?.rho"
+                        field="rho"
                         :decimals="3"
                         :reason="report.aggregate[corr.key]?.reason"
                         :glossary-key="corr.glossaryKey"
@@ -52,16 +53,28 @@
                             <TableRow>
                                 <TableHead>Night</TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >RERA Index <InfoHint glossary-key="rera_index"
+                                    >RERA Index
+                                    <ProvenanceMark :provenance="provenanceFor('rera_index')" />
+                                    <InfoHint glossary-key="rera_index"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >FL Class ≥4 <InfoHint glossary-key="fl_class_ge4_pct"
+                                    >FL Class ≥4
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('fl_class_ge4_pct')" />
+                                    <InfoHint glossary-key="fl_class_ge4_pct"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Apple BD <InfoHint glossary-key="apple_breathing_disturbances"
                                 /></TableHead>
-                                <TableHead class="whitespace-nowrap">Awake (s)</TableHead>
-                                <TableHead class="whitespace-nowrap">Sleep Eff %</TableHead>
+                                <TableHead class="whitespace-nowrap"
+                                    >Awake (s)
+                                    <ProvenanceMark :provenance="provenanceFor('awake_seconds')"
+                                /></TableHead>
+                                <TableHead class="whitespace-nowrap"
+                                    >Sleep Eff %
+                                    <ProvenanceMark
+                                        :provenance="provenanceFor('sleep_efficiency_pct')"
+                                /></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -108,6 +121,7 @@
 import { ref, computed } from 'vue'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import {
     Table,
@@ -119,6 +133,7 @@ import {
 } from '@/components/ui/table'
 import { formatDateMonthDay, nullReasonLabel } from '@/utils/formatting'
 import { downloadCsv } from '@/utils/download'
+import { provenanceFor } from '@/utils/provenance'
 import type { AppleCrossValidationReport } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

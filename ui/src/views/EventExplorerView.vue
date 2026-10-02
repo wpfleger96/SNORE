@@ -15,38 +15,52 @@
         <!-- Summary -->
         <div class="summary-row">
             <StatCard label="Total Events" :value="filteredEvents.length" :decimals="0" />
-            <StatCard label="Events/Hour" :value="eventsPerHour" :decimals="1" />
+            <!-- Computed here from device-scored events and session length. -->
+            <StatCard
+                label="Events/Hour"
+                :value="eventsPerHour"
+                :decimals="1"
+                provenance="derived"
+            />
             <StatCard label="Types" :value="uniqueTypes.length" :decimals="0" />
         </div>
 
         <!-- Event Match (if analysis exists) -->
         <div v-if="matchResult" class="section-card">
-            <h2>Machine vs Programmatic</h2>
+            <h2>Device-scored vs SNORE-detected</h2>
             <div class="match-grid">
                 <StatCard
-                    label="Machine Events"
+                    label="Device-scored"
                     :value="matchResult.machine_count"
                     :decimals="0"
                     glossary-key="machine_events"
                 />
                 <StatCard
-                    label="Programmatic"
+                    label="SNORE-detected"
                     :value="matchResult.programmatic_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
+                    field="programmatic_count"
                 />
-                <StatCard label="Matched" :value="matchResult.matched" :decimals="0" />
+                <StatCard
+                    label="Matched"
+                    :value="matchResult.matched"
+                    :decimals="0"
+                    field="matched"
+                />
                 <StatCard
                     label="False Positives"
                     :value="matchResult.false_positives"
                     :decimals="0"
                     glossary-key="false_positives"
+                    field="false_positives"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="matchResult.false_negatives"
                     :decimals="0"
                     glossary-key="false_negatives"
+                    field="false_negatives"
                 />
                 <StatCard
                     label="Sensitivity"
@@ -54,9 +68,12 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="sensitivity"
+                    field="sensitivity"
                 />
             </div>
         </div>
+
+        <h2 class="events-heading">Device-scored events</h2>
 
         <!-- Filters -->
         <div class="filter-bar">
@@ -281,6 +298,13 @@ function jumpToWaveform(offsetSec: number): void {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.25rem;
+}
+
+/* Matches the shared .section-card h2 heading style. */
+.events-heading {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
 }
 
 .match-grid {

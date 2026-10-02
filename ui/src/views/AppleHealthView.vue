@@ -11,6 +11,7 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Avg Sleep"
+                field="total_sleep_seconds"
                 :value="avgTotalSleep"
                 unit="hr"
                 :decimals="1"
@@ -18,6 +19,7 @@
             />
             <StatCard
                 label="Avg Efficiency"
+                field="sleep_efficiency_pct"
                 :value="avgEfficiency"
                 unit="%"
                 :decimals="1"
@@ -25,6 +27,7 @@
             />
             <StatCard
                 label="Avg Deep"
+                field="deep_seconds"
                 :value="avgDeep"
                 unit="hr"
                 :decimals="1"
@@ -32,6 +35,7 @@
             />
             <StatCard
                 label="Avg REM"
+                field="rem_seconds"
                 :value="avgRem"
                 unit="hr"
                 :decimals="1"
@@ -48,6 +52,8 @@
         </div>
 
         <template v-else>
+            <!-- Card labels wrap their marks in @click.stop.prevent so tapping a
+                 mark opens its popover instead of following the card link. -->
             <div v-if="isMobile" class="card-list">
                 <RouterLink
                     v-for="night in data.items"
@@ -57,27 +63,51 @@
                 >
                     <div class="data-card-header">{{ formatDateFull(night.night_date) }}</div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Total Sleep (hr)</span>
+                        <span class="data-card-label"
+                            >Total Sleep (hr)
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark
+                                    :provenance="provenanceFor('total_sleep_seconds')" /></span
+                        ></span>
                         <span class="data-card-value">{{
                             fmtHours(night.total_sleep_seconds)
                         }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Efficiency (%)</span>
+                        <span class="data-card-label"
+                            >Efficiency (%)
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark
+                                    :provenance="provenanceFor('sleep_efficiency_pct')" /></span
+                        ></span>
                         <span class="data-card-value">{{
                             fmtPct(night.sleep_efficiency_pct)
                         }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Core (hr)</span>
+                        <span class="data-card-label"
+                            >Core (hr)
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark
+                                    :provenance="provenanceFor('core_seconds')" /></span
+                        ></span>
                         <span class="data-card-value">{{ fmtHours(night.core_seconds) }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Deep (hr)</span>
+                        <span class="data-card-label"
+                            >Deep (hr)
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark
+                                    :provenance="provenanceFor('deep_seconds')" /></span
+                        ></span>
                         <span class="data-card-value">{{ fmtHours(night.deep_seconds) }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">REM (hr)</span>
+                        <span class="data-card-label"
+                            >REM (hr)
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark :provenance="provenanceFor('rem_seconds')" /></span
+                        ></span>
                         <span class="data-card-value">{{ fmtHours(night.rem_seconds) }}</span>
                     </div>
                     <div class="data-card-row">
@@ -90,11 +120,23 @@
                 <TableHeader>
                     <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead class="text-right">Total Sleep</TableHead>
-                        <TableHead class="text-right">Efficiency</TableHead>
-                        <TableHead class="text-right">Core</TableHead>
-                        <TableHead class="text-right">Deep</TableHead>
-                        <TableHead class="text-right">REM</TableHead>
+                        <TableHead class="text-right"
+                            >Total Sleep
+                            <ProvenanceMark :provenance="provenanceFor('total_sleep_seconds')"
+                        /></TableHead>
+                        <TableHead class="text-right"
+                            >Efficiency
+                            <ProvenanceMark :provenance="provenanceFor('sleep_efficiency_pct')"
+                        /></TableHead>
+                        <TableHead class="text-right"
+                            >Core <ProvenanceMark :provenance="provenanceFor('core_seconds')"
+                        /></TableHead>
+                        <TableHead class="text-right"
+                            >Deep <ProvenanceMark :provenance="provenanceFor('deep_seconds')"
+                        /></TableHead>
+                        <TableHead class="text-right"
+                            >REM <ProvenanceMark :provenance="provenanceFor('rem_seconds')"
+                        /></TableHead>
                         <TableHead>Source</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -164,6 +206,8 @@ import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { getHealthNights } from '@/api/health'
 import { avg, formatDateFull } from '@/utils/formatting'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
+import { provenanceFor } from '@/utils/provenance'
 
 const router = useRouter()
 const { isMobile } = useIsMobile()

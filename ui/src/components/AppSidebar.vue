@@ -132,6 +132,30 @@
             <!-- Status unknown (status is null, so isLocal is necessarily false): show muted placeholder -->
             <div v-else-if="statusUnknown" class="reconnecting">Reconnecting…</div>
 
+            <!-- Key for the provenance marks; collapsed by default to keep the footer compact. -->
+            <Collapsible v-model:open="legendOpen">
+                <CollapsibleTrigger as-child>
+                    <button type="button" class="nav-item">
+                        <span class="legend-icons" aria-hidden="true">
+                            <component
+                                :is="style.icon"
+                                v-for="(style, tier) in PROVENANCE_MARK_STYLES"
+                                :key="tier"
+                                :class="['h-3.5 w-3.5', style.iconClass]"
+                            />
+                        </span>
+                        <span>Data provenance</span>
+                        <ChevronDown
+                            class="h-3 w-3 shrink-0 ml-auto transition-transform"
+                            :class="{ 'rotate-180': legendOpen }"
+                        />
+                    </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                    <ProvenanceLegend class="legend-body" />
+                </CollapsibleContent>
+            </Collapsible>
+
             <RouterLink to="/about" class="nav-item">
                 <Info class="h-4 w-4" />
                 <span>About</span>
@@ -153,6 +177,7 @@ import {
     Brain,
     Check,
     CheckCircle,
+    ChevronDown,
     ChevronUp,
     Database,
     Download,
@@ -180,6 +205,9 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import ProvenanceLegend from '@/components/ProvenanceLegend.vue'
+import { PROVENANCE_MARK_STYLES } from '@/utils/provenance'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useAuth } from '@/composables/useAuth'
 import { getMe } from '@/api/me'
@@ -198,6 +226,8 @@ const {
     setActiveProfile,
     logout,
 } = useAuth()
+
+const legendOpen = ref(false)
 
 const displayName = computed(() => user.value?.display_name || user.value?.email || 'Account')
 
@@ -354,6 +384,15 @@ async function handleLogout() {
     width: 100%;
     text-decoration: none;
     color: inherit;
+}
+
+.legend-icons {
+    display: inline-flex;
+    gap: 0.125rem;
+}
+
+.legend-body {
+    padding: 0.25rem 0.75rem 0.5rem;
 }
 
 .reconnecting {

@@ -23,6 +23,7 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Days with Data"
+                field="days_with_data"
                 :value="summary.days_with_data"
                 :decimals="0"
                 glossary-key="days_with_data"
@@ -30,6 +31,7 @@
             <div class="stat-card-ahi">
                 <StatCard
                     label="Avg AHI"
+                    field="avg_ahi"
                     :value="summary.avg_ahi"
                     :decimals="1"
                     glossary-key="ahi"
@@ -39,18 +41,27 @@
                     v-bind="effectivenessBadgeAttrs(summary.effectiveness)"
                     class="effectiveness-badge"
                 >
-                    {{ summary.effectiveness }}<InfoHint glossary-key="effectiveness" />
+                    {{ summary.effectiveness
+                    }}<InfoHint
+                        glossary-key="effectiveness"
+                        :provenance="provenanceFor('effectiveness')"
+                    />
                 </Badge>
                 <span
                     v-if="summary.ahi_trend_direction"
                     class="trend-badge"
                     :class="'trend-' + summary.ahi_trend_direction"
                 >
-                    {{ summary.ahi_trend_direction }}<InfoHint glossary-key="ahi_trend" />
+                    {{ summary.ahi_trend_direction
+                    }}<InfoHint
+                        glossary-key="ahi_trend"
+                        :provenance="provenanceFor('ahi_trend_direction')"
+                    />
                 </span>
             </div>
             <StatCard
                 label="Avg Hours"
+                field="avg_hours"
                 :value="summary.avg_hours"
                 unit="hrs"
                 :decimals="1"
@@ -58,6 +69,7 @@
             />
             <StatCard
                 label="Avg Leak"
+                field="avg_leak"
                 :value="summary.avg_leak"
                 unit="L/min"
                 :decimals="1"
@@ -67,6 +79,7 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Avg SpO₂"
+                field="avg_spo2"
                 :value="summary.avg_spo2"
                 unit="%"
                 :decimals="1"
@@ -74,6 +87,7 @@
             />
             <StatCard
                 label="Avg Pulse"
+                field="avg_pulse"
                 :value="summary.avg_pulse"
                 unit="bpm"
                 :decimals="0"
@@ -81,6 +95,7 @@
             />
             <StatCard
                 label="Avg Pressure"
+                field="avg_pressure"
                 :value="summary.avg_pressure"
                 unit="cmH₂O"
                 :decimals="1"
@@ -88,6 +103,7 @@
             />
             <StatCard
                 label="Avg Resp Rate"
+                field="avg_respiratory_rate"
                 :value="summary.avg_respiratory_rate"
                 unit="br/min"
                 :decimals="1"
@@ -102,6 +118,7 @@
         >
             <StatCard
                 label="Avg Sleep"
+                field="total_sleep_seconds"
                 :value="avgTotalSleepHours"
                 unit="hrs"
                 :decimals="1"
@@ -109,6 +126,7 @@
             />
             <StatCard
                 label="Avg Sleep Efficiency"
+                field="sleep_efficiency_pct"
                 :value="avgSleepEfficiency"
                 unit="%"
                 :decimals="1"
@@ -140,7 +158,10 @@
 
         <!-- AHI Trend Chart -->
         <div v-if="trendLabels.length" class="section-card">
-            <h2>AHI Trend (Weekly)</h2>
+            <h2>
+                AHI Trend (Weekly)
+                <ProvenanceMark :provenance="provenanceFor('ahi', { schema: 'TrendsResponse' })" />
+            </h2>
             <TrendChart :labels="trendLabels" :datasets="trendDatasets" />
         </div>
 
@@ -166,6 +187,10 @@
                             <span class="text-muted-foreground">No data</span>
                         </li>
                     </ul>
+                    <p class="text-xs text-muted-foreground mt-2">
+                        Each day's AHI is the device-reported value when SNORE can trust it,
+                        otherwise SNORE's recount; the day view marks which.
+                    </p>
                     <p class="text-xs text-muted-foreground mt-2">
                         Note: this display scale is stricter than the common clinical convention
                         (&lt;5 normal, 5–15 mild, 15–30 moderate, &gt;30 severe).
@@ -193,7 +218,16 @@
                         >
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">AHI</span>
+                        <!-- @click.stop.prevent: tapping the mark opens its popover
+                             instead of following the card link. -->
+                        <span class="data-card-label"
+                            >AHI
+                            <span class="contents" @click.stop.prevent
+                                ><ProvenanceMark
+                                    :provenance="
+                                        provenanceFor('ahi', { schema: 'SessionListItem' })
+                                    " /></span
+                        ></span>
                         <span class="data-card-value">{{ session.ahi?.toFixed(1) ?? '---' }}</span>
                     </div>
                 </RouterLink>
@@ -204,7 +238,10 @@
                         <TableHead>Date</TableHead>
                         <TableHead class="w-[90px]">Duration</TableHead>
                         <TableHead class="w-[80px] whitespace-nowrap"
-                            >AHI <InfoHint glossary-key="ahi"
+                            >AHI
+                            <ProvenanceMark
+                                :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })" />
+                            <InfoHint glossary-key="ahi"
                         /></TableHead>
                     </TableRow>
                 </TableHeader>
@@ -253,6 +290,8 @@ import { formatDateFull } from '@/utils/formatting'
 import { AHI_COLOR_SCALE } from '@/utils/ahiScale'
 import { EVENT_COLORS } from '@/types'
 import type { HealthNightSummaryRead, SessionListItem } from '@/types'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
+import { provenanceFor } from '@/utils/provenance'
 
 function thirtyDaysAgo(): string {
     const d = new Date()

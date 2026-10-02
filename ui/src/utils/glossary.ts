@@ -35,12 +35,12 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     ahi: {
         label: 'AHI',
         short: 'Apnea-Hypopnea Index: total apneas and hypopneas per hour of therapy.',
-        long: 'AHI = (apneas + hypopneas) / hours. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.',
+        long: "A night's headline AHI is the device-reported daily value when SNORE can trust it (every session reports the same value and the imported mask-on time matches the device's); otherwise it is SNORE's recount, the device-scored apneas and hypopneas over SNORE's mask-on hours. Session, period, and trend AHIs are SNORE recounts. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.",
     },
     rdi: {
         label: 'RDI',
-        short: 'Respiratory Disturbance Index: AHI plus RERAs per hour.',
-        long: 'RDI is always ≥ AHI; a large gap suggests airway effort and arousals without frank apneas.',
+        short: "Respiratory Disturbance Index: SNORE's recount AHI plus its RERA proxy index (estimated RERAs per hour).",
+        long: "RDI is never below SNORE's recount AHI, but on nights whose headline AHI is the device-reported value it can be below the AHI shown. A large gap over the recount suggests airway effort and arousals without frank apneas.",
     },
     rei: {
         label: 'REI',
@@ -96,7 +96,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: "From SNORE's experimental breath analysis, not the device. Useful for night-to-night trends, not a clinically validated measurement.",
     },
     rera_index: {
-        label: 'RERA Index (proxy)',
+        label: 'RERA Index',
         short: "Estimated respiratory effort-related arousals per hour, from SNORE's flow-limitation-run RERA proxy.",
         long: "SNORE's experimental breath analysis; useful for night-to-night trends, not a clinically validated measurement. Distinct from the device RERA count and the analysis-time RERA detector.",
     },
@@ -158,6 +158,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     spo2_below_90: {
         label: 'SpO₂ Below 90%',
         short: 'Total time with oxygen saturation under 90%.',
+        provenance: 'derived',
     },
     pulse: {
         label: 'Pulse',
@@ -231,6 +232,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     ahi_trend: {
         label: 'AHI Trend',
         short: 'Direction of recent AHI change: improving, worsening, or stable.',
+        provenance: 'derived',
     },
     sensitivity: {
         label: 'Sensitivity',
@@ -386,10 +388,12 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     time_in_bed: {
         label: 'Time in Bed',
         short: 'Total time in bed, in hours — from recorded InBed samples when present, or derived from the sleep stage session (asleep + awake) on exports where the OS no longer emits InBed records.',
+        provenance: 'derived',
     },
     total_sleep: {
         label: 'Total Sleep',
         short: 'Total time actually asleep (Core + Deep + REM stages combined), in hours.',
+        provenance: 'derived',
     },
     sleep_efficiency: {
         label: 'Sleep Efficiency',
@@ -400,19 +404,23 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Core Sleep',
         short: "Apple Health's Core stage corresponds to NREM N1 and N2 light sleep combined.",
         long: "Core sleep (N1 + N2) is the most common stage and forms the backbone of each sleep cycle. Apple Health labels light non-REM sleep as 'Core'.",
+        provenance: 'derived',
     },
     deep_sleep: {
         label: 'Deep Sleep',
         short: 'NREM N3 slow-wave sleep — the most restorative stage.',
         long: 'Deep sleep supports physical repair and immune function. It is most concentrated in the first half of the night and decreases with age.',
+        provenance: 'derived',
     },
     rem_sleep: {
         label: 'REM Sleep',
         short: 'Rapid Eye Movement sleep, associated with dreaming and memory consolidation.',
+        provenance: 'derived',
     },
     awake_time: {
         label: 'Awake',
         short: 'Time spent awake after initial sleep onset, as detected by Apple Health.',
+        provenance: 'derived',
     },
 
     // ── Primary waveform channels ─────────────────────────────────────────

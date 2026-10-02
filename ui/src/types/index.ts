@@ -50,19 +50,7 @@ export type DataRange = Schemas['DataRange']
 
 // Days
 export type DayListItem = Schemas['DayListItem']
-// Experimental breath-analysis nightly metrics (SNORE's flow-limitation and
-// FL-run RERA proxy) computed by the breath services. Optional, following the
-// repo's null-with-reason convention: a null value carries a companion *_reason
-// code. Hand-aliased here because they are omitted for nights whose breath
-// analysis has not run and only appear on newer responses.
-export type DayDetail = Schemas['DayDetail'] & {
-    fl_class_ge4_pct?: number | null
-    fl_class_ge4_pct_reason?: string | null
-    rera_index?: number | null
-    rera_index_reason?: string | null
-    rera_count?: number | null
-    rera_count_reason?: string | null
-}
+export type DayDetail = Schemas['DayDetail']
 export type DateListResponse = Schemas['DateListResponse']
 
 // Equipment

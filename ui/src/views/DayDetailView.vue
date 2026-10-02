@@ -24,38 +24,93 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Total Hours"
+                field="total_therapy_hours"
                 :value="data.total_therapy_hours ?? null"
                 unit="hr"
                 :decimals="1"
                 glossary-key="usage"
             />
-            <StatCard label="AHI" :value="data.ahi ?? null" :decimals="1" glossary-key="ahi" />
+            <StatCard
+                label="AHI"
+                field="ahi"
+                schema="DayDetail"
+                :source="data.index_source"
+                :value="data.ahi ?? null"
+                :decimals="1"
+                glossary-key="ahi"
+            >
+                <!-- The headline is the device's own AHI; SNORE's recount is shown
+                     alongside so the two can be compared. -->
+                <template
+                    v-if="data.index_source === 'device' && data.ahi_computed != null"
+                    #default
+                >
+                    <span class="ahi-recount">
+                        SNORE recount: {{ data.ahi_computed.toFixed(1)
+                        }}<ProvenanceMark :provenance="provenanceFor('ahi_computed')" />
+                    </span>
+                </template>
+            </StatCard>
             <StatCard label="Sessions" :value="data.session_count" :decimals="0" />
-            <StatCard label="OAI" :value="data.oai ?? null" :decimals="2" glossary-key="oai" />
-            <StatCard label="CAI" :value="data.cai ?? null" :decimals="2" glossary-key="cai" />
-            <StatCard label="HI" :value="data.hi ?? null" :decimals="2" glossary-key="hi" />
+            <StatCard
+                label="OAI"
+                field="oai"
+                schema="DayDetail"
+                :source="data.index_source"
+                :value="data.oai ?? null"
+                :decimals="2"
+                glossary-key="oai"
+            />
+            <StatCard
+                label="CAI"
+                field="cai"
+                schema="DayDetail"
+                :source="data.index_source"
+                :value="data.cai ?? null"
+                :decimals="2"
+                glossary-key="cai"
+            />
+            <StatCard
+                label="HI"
+                field="hi"
+                schema="DayDetail"
+                :source="data.index_source"
+                :value="data.hi ?? null"
+                :decimals="2"
+                glossary-key="hi"
+            />
             <StatCard
                 label="Obstructive Apneas"
+                field="obstructive_apneas"
                 :value="data.obstructive_apneas"
                 :decimals="0"
                 glossary-key="obstructive_apneas"
             />
             <StatCard
                 label="Central Apneas"
+                field="central_apneas"
                 :value="data.central_apneas"
                 :decimals="0"
                 glossary-key="central_apneas"
             />
             <StatCard
                 label="Hypopneas"
+                field="hypopneas"
                 :value="data.hypopneas"
                 :decimals="0"
                 glossary-key="hypopneas"
             />
-            <StatCard label="RERAs" :value="data.reras" :decimals="0" glossary-key="reras" />
+            <StatCard
+                label="RERAs"
+                field="reras"
+                :value="data.reras"
+                :decimals="0"
+                glossary-key="reras"
+            />
             <StatCard
                 v-if="data.fl_class_ge4_pct != null || data.fl_class_ge4_pct_reason != null"
                 label="FL Class ≥4"
+                field="fl_class_ge4_pct"
                 :value="data.fl_class_ge4_pct ?? null"
                 :reason="data.fl_class_ge4_pct_reason"
                 unit="%"
@@ -64,7 +119,8 @@
             />
             <StatCard
                 v-if="data.rera_index != null || data.rera_index_reason != null"
-                label="RERA Index (proxy)"
+                label="RERA Index"
+                field="rera_index"
                 :value="data.rera_index ?? null"
                 :reason="data.rera_index_reason"
                 :decimals="2"
@@ -73,6 +129,7 @@
             <StatCard
                 v-if="data.rera_count != null || data.rera_count_reason != null"
                 label="RERA Proxy Count"
+                field="rera_count"
                 :value="data.rera_count ?? null"
                 :reason="data.rera_count_reason"
                 :decimals="0"
@@ -90,6 +147,7 @@
             <StatCard
                 v-if="data.avg_pressure != null"
                 label="Pressure Mean"
+                field="avg_pressure"
                 :value="data.avg_pressure"
                 unit="cmH₂O"
                 :decimals="1"
@@ -98,6 +156,7 @@
             <StatCard
                 v-if="data.pressure_min != null"
                 label="Pressure Min"
+                field="pressure_min"
                 :value="data.pressure_min"
                 unit="cmH₂O"
                 :decimals="1"
@@ -105,6 +164,7 @@
             <StatCard
                 v-if="data.pressure_max != null"
                 label="Pressure Max"
+                field="pressure_max"
                 :value="data.pressure_max"
                 unit="cmH₂O"
                 :decimals="1"
@@ -112,6 +172,7 @@
             <StatCard
                 v-if="data.pressure_median != null"
                 label="Pressure Median"
+                field="pressure_median"
                 :value="data.pressure_median"
                 unit="cmH₂O"
                 :decimals="1"
@@ -119,6 +180,7 @@
             <StatCard
                 v-if="data.pressure_95th != null"
                 label="Pressure 95th"
+                field="pressure_95th"
                 :value="data.pressure_95th"
                 unit="cmH₂O"
                 :decimals="1"
@@ -133,6 +195,7 @@
             <StatCard
                 v-if="data.epap_mean != null"
                 label="EPAP Mean"
+                field="epap_mean"
                 :value="data.epap_mean"
                 unit="cmH₂O"
                 :decimals="1"
@@ -141,6 +204,7 @@
             <StatCard
                 v-if="data.epap_min != null"
                 label="EPAP Min"
+                field="epap_min"
                 :value="data.epap_min"
                 unit="cmH₂O"
                 :decimals="1"
@@ -148,6 +212,7 @@
             <StatCard
                 v-if="data.epap_max != null"
                 label="EPAP Max"
+                field="epap_max"
                 :value="data.epap_max"
                 unit="cmH₂O"
                 :decimals="1"
@@ -155,6 +220,7 @@
             <StatCard
                 v-if="data.epap_median != null"
                 label="EPAP Median"
+                field="epap_median"
                 :value="data.epap_median"
                 unit="cmH₂O"
                 :decimals="1"
@@ -162,6 +228,7 @@
             <StatCard
                 v-if="data.epap_95th != null"
                 label="EPAP 95th"
+                field="epap_95th"
                 :value="data.epap_95th"
                 unit="cmH₂O"
                 :decimals="1"
@@ -176,6 +243,7 @@
             <StatCard
                 v-if="data.avg_leak != null"
                 label="Leak Mean"
+                field="avg_leak"
                 :value="data.avg_leak"
                 unit="L/min"
                 :decimals="1"
@@ -184,6 +252,7 @@
             <StatCard
                 v-if="data.leak_min != null"
                 label="Leak Min"
+                field="leak_min"
                 :value="data.leak_min"
                 unit="L/min"
                 :decimals="1"
@@ -191,6 +260,7 @@
             <StatCard
                 v-if="data.leak_max != null"
                 label="Leak Max"
+                field="leak_max"
                 :value="data.leak_max"
                 unit="L/min"
                 :decimals="1"
@@ -198,6 +268,7 @@
             <StatCard
                 v-if="data.leak_95th != null"
                 label="Leak 95th"
+                field="leak_95th"
                 :value="data.leak_95th"
                 unit="L/min"
                 :decimals="1"
@@ -212,6 +283,7 @@
             <StatCard
                 v-if="data.avg_spo2 != null"
                 label="SpO₂ Mean"
+                field="avg_spo2"
                 :value="data.avg_spo2"
                 unit="%"
                 :decimals="1"
@@ -220,6 +292,7 @@
             <StatCard
                 v-if="data.spo2_min != null"
                 label="SpO₂ Min"
+                field="spo2_min"
                 :value="data.spo2_min"
                 unit="%"
                 :decimals="1"
@@ -227,6 +300,7 @@
             <StatCard
                 v-if="data.spo2_max != null"
                 label="SpO₂ Max"
+                field="spo2_max"
                 :value="data.spo2_max"
                 unit="%"
                 :decimals="1"
@@ -240,6 +314,7 @@
                 <div class="stats-grid mb-4">
                     <StatCard
                         label="Time in Bed"
+                        field="time_in_bed_seconds"
                         :value="secToHours(data.health_sleep.time_in_bed_seconds)"
                         unit="hr"
                         :decimals="1"
@@ -247,6 +322,7 @@
                     />
                     <StatCard
                         label="Total Sleep"
+                        field="total_sleep_seconds"
                         :value="secToHours(data.health_sleep.total_sleep_seconds)"
                         unit="hr"
                         :decimals="1"
@@ -254,6 +330,7 @@
                     />
                     <StatCard
                         label="Efficiency"
+                        field="sleep_efficiency_pct"
                         :value="data.health_sleep.sleep_efficiency_pct ?? null"
                         unit="%"
                         :decimals="1"
@@ -261,6 +338,7 @@
                     />
                     <StatCard
                         label="Core"
+                        field="core_seconds"
                         :value="secToHours(data.health_sleep.core_seconds)"
                         unit="hr"
                         :decimals="1"
@@ -268,6 +346,7 @@
                     />
                     <StatCard
                         label="Deep"
+                        field="deep_seconds"
                         :value="secToHours(data.health_sleep.deep_seconds)"
                         unit="hr"
                         :decimals="1"
@@ -275,6 +354,7 @@
                     />
                     <StatCard
                         label="REM"
+                        field="rem_seconds"
                         :value="secToHours(data.health_sleep.rem_seconds)"
                         unit="hr"
                         :decimals="1"
@@ -315,6 +395,7 @@
 import { onMounted, ref, shallowRef } from 'vue'
 import { isAxiosError } from 'axios'
 import StatCard from '@/components/StatCard.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import {
     Table,
     TableBody,
@@ -327,6 +408,7 @@ import { Loader2, ArrowLeft } from '@lucide/vue'
 import { getDay } from '@/api/days'
 import { formatDateWithWeekday, secToHours } from '@/utils/formatting'
 import ErrorState from '@/components/ErrorState.vue'
+import { provenanceFor } from '@/utils/provenance'
 import type { DayDetail } from '@/types'
 
 const props = defineProps<{ dayDate: string }>()
@@ -374,6 +456,12 @@ onMounted(() => void reload())
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 0.75rem;
+}
+
+.ahi-recount {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
 }
 
 .apple-health-section {

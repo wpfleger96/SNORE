@@ -28,6 +28,7 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Time in Bed"
+                field="time_in_bed_seconds"
                 :value="secToHours(night.time_in_bed_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -35,6 +36,7 @@
             />
             <StatCard
                 label="Total Sleep"
+                field="total_sleep_seconds"
                 :value="secToHours(night.total_sleep_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -42,6 +44,7 @@
             />
             <StatCard
                 label="Efficiency"
+                field="sleep_efficiency_pct"
                 :value="night.sleep_efficiency_pct ?? null"
                 unit="%"
                 :decimals="1"
@@ -49,6 +52,7 @@
             />
             <StatCard
                 label="Core"
+                field="core_seconds"
                 :value="secToHours(night.core_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -56,6 +60,7 @@
             />
             <StatCard
                 label="Deep"
+                field="deep_seconds"
                 :value="secToHours(night.deep_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -63,6 +68,7 @@
             />
             <StatCard
                 label="REM"
+                field="rem_seconds"
                 :value="secToHours(night.rem_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -70,6 +76,7 @@
             />
             <StatCard
                 label="Awake"
+                field="awake_seconds"
                 :value="secToHours(night.awake_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -77,6 +84,7 @@
             />
             <StatCard
                 label="Stage Coverage"
+                field="stage_coverage_pct"
                 :value="night.stage_coverage_pct ?? null"
                 unit="%"
                 :decimals="1"
@@ -91,6 +99,7 @@
             <StatCard
                 v-if="night.avg_spo2_pct != null"
                 label="SpO₂ Avg"
+                field="avg_spo2_pct"
                 :value="night.avg_spo2_pct"
                 unit="%"
                 :decimals="1"
@@ -99,6 +108,7 @@
             <StatCard
                 v-if="night.min_spo2_pct != null"
                 label="SpO₂ Min"
+                field="min_spo2_pct"
                 :value="night.min_spo2_pct"
                 unit="%"
                 :decimals="1"
@@ -107,6 +117,7 @@
             <StatCard
                 v-if="night.avg_rr != null"
                 label="Resp Rate"
+                field="avg_rr"
                 :value="night.avg_rr"
                 unit="br/min"
                 :decimals="1"

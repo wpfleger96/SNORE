@@ -2,6 +2,8 @@
     <ValidationPanelShell
         validator-type="breaths"
         :load-run-id="loadRunId"
+        experimental
+        experimental-note="SNORE's own breath segmentation is compared against the device's breath-level channels. Correlations show whether it tracks the device night to night, not absolute accuracy."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"
@@ -16,6 +18,7 @@
                         :value="report.aggregate[ch.key].mean_spearman_r"
                         :decimals="3"
                         glossary-key="spearman_r"
+                        field="mean_spearman_r"
                     />
                     <StatCard
                         label="Sessions Compared"
@@ -29,13 +32,18 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Breaths</TableHead>
+                                <TableHead class="whitespace-nowrap"
+                                    >Breaths
+                                    <ProvenanceMark :provenance="provenanceFor('n_breaths')"
+                                /></TableHead>
                                 <TableHead
                                     v-for="ch in CHANNELS"
                                     :key="ch.key"
                                     class="whitespace-nowrap"
                                 >
-                                    {{ ch.label }} <InfoHint glossary-key="spearman_r" />
+                                    {{ ch.label }}
+                                    <ProvenanceMark :provenance="provenanceFor('spearman_r')" />
+                                    <InfoHint glossary-key="spearman_r" />
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
@@ -78,6 +86,7 @@
 import { ref, computed } from 'vue'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import SessionDateCell from '@/components/validation/SessionDateCell.vue'
 import {
@@ -89,6 +98,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { downloadCsv } from '@/utils/download'
+import { provenanceFor } from '@/utils/provenance'
 import type { BreathTrendsValidationReport, BreathTrendsSessionValidation } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

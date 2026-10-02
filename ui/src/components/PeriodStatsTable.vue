@@ -19,32 +19,43 @@
                         </template>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Days Used</span>
+                        <span class="data-card-label"
+                            >Days Used <ProvenanceMark :provenance="provenanceFor('days_used')"
+                        /></span>
                         <span class="data-card-value">{{ row.days_used }}</span>
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Avg Hours <InfoHint glossary-key="usage"
+                            >Avg Hours
+                            <ProvenanceMark :provenance="provenanceFor('avg_hours_per_day')" />
+                            <InfoHint glossary-key="usage"
                         /></span>
                         <span class="data-card-value">{{
                             row.avg_hours_per_day?.toFixed(1) ?? '---'
                         }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Avg AHI <InfoHint glossary-key="ahi" /></span>
+                        <span class="data-card-label"
+                            >Avg AHI <ProvenanceMark :provenance="provenanceFor('avg_ahi')" />
+                            <InfoHint glossary-key="ahi"
+                        /></span>
                         <span class="data-card-value" :class="ahiClass(row.avg_ahi)">
                             {{ row.avg_ahi?.toFixed(1) ?? '---' }}
                         </span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label">Median AHI</span>
+                        <span class="data-card-label"
+                            >Median AHI <ProvenanceMark :provenance="provenanceFor('median_ahi')"
+                        /></span>
                         <span class="data-card-value">{{
                             row.median_ahi?.toFixed(1) ?? '---'
                         }}</span>
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Avg Pressure <InfoHint glossary-key="pressure"
+                            >Avg Pressure
+                            <ProvenanceMark :provenance="provenanceFor('avg_pressure')" />
+                            <InfoHint glossary-key="pressure"
                         /></span>
                         <span class="data-card-value">{{
                             row.avg_pressure?.toFixed(1) ?? '---'
@@ -52,19 +63,23 @@
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Avg Leak <InfoHint glossary-key="leak"
+                            >Avg Leak <ProvenanceMark :provenance="provenanceFor('avg_leak')" />
+                            <InfoHint glossary-key="leak"
                         /></span>
                         <span class="data-card-value">{{ row.avg_leak?.toFixed(1) ?? '---' }}</span>
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Avg SpO₂ <InfoHint glossary-key="spo2"
+                            >Avg SpO₂ <ProvenanceMark :provenance="provenanceFor('avg_spo2')" />
+                            <InfoHint glossary-key="spo2"
                         /></span>
                         <span class="data-card-value">{{ row.avg_spo2?.toFixed(1) ?? '---' }}</span>
                     </div>
                     <div v-if="showSleepColumns" class="data-card-row">
                         <span class="data-card-label"
-                            >Avg Sleep <InfoHint glossary-key="total_sleep"
+                            >Avg Sleep
+                            <ProvenanceMark :provenance="provenanceFor('avg_total_sleep_hours')" />
+                            <InfoHint glossary-key="total_sleep"
                         /></span>
                         <span class="data-card-value">{{
                             row.avg_total_sleep_hours?.toFixed(1) ?? '---'
@@ -72,7 +87,10 @@
                     </div>
                     <div v-if="showSleepColumns" class="data-card-row">
                         <span class="data-card-label"
-                            >Avg Eff <InfoHint glossary-key="sleep_efficiency"
+                            >Avg Eff
+                            <ProvenanceMark
+                                :provenance="provenanceFor('avg_sleep_efficiency_pct')" />
+                            <InfoHint glossary-key="sleep_efficiency"
                         /></span>
                         <span class="data-card-value">{{
                             row.avg_sleep_efficiency_pct?.toFixed(1) ?? '---'
@@ -91,28 +109,42 @@
             <TableHeader>
                 <TableRow>
                     <TableHead>Period</TableHead>
-                    <TableHead class="w-[90px]">Days Used</TableHead>
                     <TableHead class="w-[90px] whitespace-nowrap"
-                        >Avg Hours <InfoHint glossary-key="usage"
+                        >Days Used <ProvenanceMark :provenance="provenanceFor('days_used')"
                     /></TableHead>
                     <TableHead class="w-[90px] whitespace-nowrap"
-                        >Avg AHI <InfoHint glossary-key="ahi"
+                        >Avg Hours
+                        <ProvenanceMark :provenance="provenanceFor('avg_hours_per_day')" />
+                        <InfoHint glossary-key="usage"
                     /></TableHead>
-                    <TableHead class="w-[100px]">Median AHI</TableHead>
+                    <TableHead class="w-[90px] whitespace-nowrap"
+                        >Avg AHI <ProvenanceMark :provenance="provenanceFor('avg_ahi')" />
+                        <InfoHint glossary-key="ahi"
+                    /></TableHead>
+                    <TableHead class="w-[100px] whitespace-nowrap"
+                        >Median AHI <ProvenanceMark :provenance="provenanceFor('median_ahi')"
+                    /></TableHead>
                     <TableHead class="w-[110px] whitespace-nowrap"
-                        >Avg Pressure <InfoHint glossary-key="pressure"
+                        >Avg Pressure <ProvenanceMark :provenance="provenanceFor('avg_pressure')" />
+                        <InfoHint glossary-key="pressure"
                     /></TableHead>
                     <TableHead class="w-[90px] whitespace-nowrap"
-                        >Avg Leak <InfoHint glossary-key="leak"
+                        >Avg Leak <ProvenanceMark :provenance="provenanceFor('avg_leak')" />
+                        <InfoHint glossary-key="leak"
                     /></TableHead>
                     <TableHead class="w-[90px] whitespace-nowrap"
-                        >Avg SpO₂ <InfoHint glossary-key="spo2"
+                        >Avg SpO₂ <ProvenanceMark :provenance="provenanceFor('avg_spo2')" />
+                        <InfoHint glossary-key="spo2"
                     /></TableHead>
                     <TableHead v-if="showSleepColumns" class="w-[100px] whitespace-nowrap"
-                        >Avg Sleep <InfoHint glossary-key="total_sleep"
+                        >Avg Sleep
+                        <ProvenanceMark :provenance="provenanceFor('avg_total_sleep_hours')" />
+                        <InfoHint glossary-key="total_sleep"
                     /></TableHead>
                     <TableHead v-if="showSleepColumns" class="w-[90px] whitespace-nowrap"
-                        >Avg Eff <InfoHint glossary-key="sleep_efficiency"
+                        >Avg Eff
+                        <ProvenanceMark :provenance="provenanceFor('avg_sleep_efficiency_pct')" />
+                        <InfoHint glossary-key="sleep_efficiency"
                     /></TableHead>
                 </TableRow>
             </TableHeader>
@@ -178,6 +210,8 @@ import InfoHint from '@/components/InfoHint.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 import type { PeriodStatistics } from '@/types'
 import { ahiClass, formatDateMonthDay } from '@/utils/formatting'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
+import { provenanceFor } from '@/utils/provenance'
 
 defineProps<{
     periods: PeriodStatistics[]

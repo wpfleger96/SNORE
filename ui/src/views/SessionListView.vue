@@ -155,7 +155,11 @@
                             <ArrowUpDown v-else class="h-3 w-3 opacity-30" />
                         </span>
                     </TableHead>
-                    <TableHead style="width: 80px">AHI</TableHead>
+                    <TableHead style="width: 80px"
+                        >AHI
+                        <ProvenanceMark
+                            :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })"
+                    /></TableHead>
                     <TableHead>Device</TableHead>
                     <TableHead style="width: 90px">Status</TableHead>
                     <TableHead style="width: 180px">Actions</TableHead>
@@ -341,6 +345,8 @@ import { useAuth } from '@/composables/useAuth'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useAvailableDates } from '@/composables/useAvailableDates'
 import DatePickerInput from '@/components/DatePickerInput.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
+import { provenanceFor } from '@/utils/provenance'
 
 const { canWrite } = useAuth()
 const { isMobile } = useIsMobile()

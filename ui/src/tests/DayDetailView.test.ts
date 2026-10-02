@@ -15,6 +15,8 @@ vi.mock('@/components/InfoHint.vue', () => ({
 vi.mock('@lucide/vue', () => ({
     Loader2: { template: '<svg class="loader-stub" />' },
     ArrowLeft: { template: '<svg class="arrow-stub" />' },
+    Sigma: { template: '<svg class="icon-sigma-stub" />' },
+    FlaskConical: { template: '<svg class="icon-flask-stub" />' },
 }))
 
 import { getDay } from '@/api/days'
@@ -56,7 +58,7 @@ describe('DayDetailView FL/RERA cards', () => {
         const wrapper = await mountDay(makeDay())
 
         expect(findCard(wrapper, 'FL Class ≥4')).toBeUndefined()
-        expect(findCard(wrapper, 'RERA Index (proxy)')).toBeUndefined()
+        expect(findCard(wrapper, 'RERA Index')).toBeUndefined()
         expect(findCard(wrapper, 'RERA Proxy Count')).toBeUndefined()
     })
 
@@ -82,7 +84,7 @@ describe('DayDetailView FL/RERA cards', () => {
 
         // Siblings behave identically so the count card is not a special case.
         expect(findCard(wrapper, 'FL Class ≥4')!.find('.stat-empty').text()).toBe('---')
-        expect(findCard(wrapper, 'RERA Index (proxy)')!.find('.stat-empty').text()).toBe('---')
+        expect(findCard(wrapper, 'RERA Index')!.find('.stat-empty').text()).toBe('---')
     })
 
     it('test_numeric_values_render_including_zero', async () => {
@@ -101,6 +103,72 @@ describe('DayDetailView FL/RERA cards', () => {
         expect(countCard!.find('.stat-value').text()).toBe('0')
 
         expect(findCard(wrapper, 'FL Class ≥4')!.find('.stat-value').text()).toContain('0.0')
-        expect(findCard(wrapper, 'RERA Index (proxy)')!.find('.stat-value').text()).toBe('5.50')
+        expect(findCard(wrapper, 'RERA Index')!.find('.stat-value').text()).toBe('5.50')
+    })
+})
+
+/** aria-labels of the provenance marks on a card's label line. */
+function cardMarks(wrapper: VueWrapper, label: string): string[] {
+    return findCard(wrapper, label)!
+        .find('.stat-label')
+        .findAll('.provenance-mark')
+        .map((m) => m.attributes('aria-label') ?? '')
+}
+
+describe('DayDetailView provenance marks', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('test_device_index_source_leaves_headline_indices_unmarked', async () => {
+        const wrapper = await mountDay(
+            makeDay({ ahi: 2.1, oai: 0.5, cai: 0.2, hi: 1.4, index_source: 'device' }),
+        )
+
+        for (const label of ['AHI', 'OAI', 'CAI', 'HI']) {
+            expect(cardMarks(wrapper, label)).toEqual([])
+        }
+    })
+
+    it('test_derived_index_source_marks_headline_indices_derived', async () => {
+        const wrapper = await mountDay(
+            makeDay({ ahi: 2.1, oai: 0.5, cai: 0.2, hi: 1.4, index_source: 'derived' }),
+        )
+
+        for (const label of ['AHI', 'OAI', 'CAI', 'HI']) {
+            const marks = cardMarks(wrapper, label)
+            expect(marks).toHaveLength(1)
+            expect(marks[0]).toMatch(/^Derived/)
+        }
+        expect(findCard(wrapper, 'AHI')!.find('.icon-sigma-stub').exists()).toBe(true)
+    })
+
+    it('test_device_headline_shows_derived_recount_line', async () => {
+        const wrapper = await mountDay(
+            makeDay({ ahi: 2.1, ahi_computed: 2.64, index_source: 'device' }),
+        )
+
+        const recount = findCard(wrapper, 'AHI')!.find('.stat-footnote')
+        expect(recount.text()).toBe('SNORE recount: 2.6')
+        expect(recount.find('.provenance-mark').attributes('aria-label')).toMatch(/^Derived/)
+    })
+
+    it('test_derived_headline_has_no_recount_line', async () => {
+        // The headline already is the recount; repeating it would be noise.
+        const wrapper = await mountDay(
+            makeDay({ ahi: 2.64, ahi_computed: 2.64, index_source: 'derived' }),
+        )
+
+        expect(findCard(wrapper, 'AHI')!.find('.stat-footnote').exists()).toBe(false)
+    })
+
+    it('test_rera_index_card_is_marked_experimental', async () => {
+        const wrapper = await mountDay(makeDay({ rera_index: 5.5, reras: 3 }))
+
+        const marks = cardMarks(wrapper, 'RERA Index')
+        expect(marks).toHaveLength(1)
+        expect(marks[0]).toMatch(/^Experimental/)
+        // The device-scored RERA count stays unmarked.
+        expect(cardMarks(wrapper, 'RERAs')).toEqual([])
     })
 })

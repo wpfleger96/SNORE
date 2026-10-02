@@ -8,6 +8,7 @@
                 :class="'trend-' + summary.ahi_trend_direction"
             >
                 AHI {{ summary.ahi_trend_direction }}
+                <ProvenanceMark :provenance="provenanceFor('ahi_trend_direction')" />
             </span>
         </div>
 
@@ -94,7 +95,11 @@
                 <div v-if="hasData(key)" class="trend-metric">
                     <p class="trend-metric-label">
                         {{ METRIC_CONFIG[key].label }}
-                        <InfoHint :glossary-key="METRIC_CONFIG[key].glossaryKey" />
+                        <ProvenanceMark :provenance="trendProvenance(key)" />
+                        <InfoHint
+                            :glossary-key="METRIC_CONFIG[key].glossaryKey"
+                            :provenance="trendProvenance(key)"
+                        />
                     </p>
                     <TrendChart
                         :labels="trendLabels"
@@ -132,10 +137,12 @@ import TrendChart from '@/components/TrendChart.vue'
 import RecordsPanel from '@/components/RecordsPanel.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import { getSummary, getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { formatDateFull } from '@/utils/formatting'
 import { GLOSSARY } from '@/utils/glossary'
+import { provenanceFor, type Provenance } from '@/utils/provenance'
 import type { PeriodStatistics, TrendData } from '@/types'
 
 // ────────────────────────────── Metric config ──────────────────────────────
@@ -371,6 +378,10 @@ function metricDataset(key: string): { label: string; values: (number | null)[];
         values: series.map((t) => t[1]),
         color: cfg.color,
     }
+}
+
+function trendProvenance(key: string): Provenance {
+    return provenanceFor(METRIC_CONFIG[key].key, { schema: 'TrendsResponse' })
 }
 
 const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasData(key)))
