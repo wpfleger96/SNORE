@@ -23,7 +23,6 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Days with Data"
-                field="TherapySummary.days_with_data"
                 :value="summary.days_with_data"
                 :decimals="0"
                 glossary-key="days_with_data"
@@ -31,7 +30,6 @@
             <div class="stat-card-ahi">
                 <StatCard
                     label="Avg AHI"
-                    field="TherapySummary.avg_ahi"
                     :value="summary.avg_ahi"
                     :decimals="1"
                     glossary-key="ahi"
@@ -41,25 +39,18 @@
                     v-bind="effectivenessBadgeAttrs(summary.effectiveness)"
                     class="effectiveness-badge"
                 >
-                    {{ summary.effectiveness
-                    }}<ProvenanceMark
-                        :provenance="provenanceFor('TherapySummary.effectiveness')"
-                    /><InfoHint glossary-key="effectiveness" />
+                    {{ summary.effectiveness }}<InfoHint glossary-key="effectiveness" />
                 </Badge>
                 <span
                     v-if="summary.ahi_trend_direction"
                     class="trend-badge"
                     :class="'trend-' + summary.ahi_trend_direction"
                 >
-                    {{ summary.ahi_trend_direction
-                    }}<ProvenanceMark
-                        :provenance="provenanceFor('TherapySummary.ahi_trend_direction')"
-                    /><InfoHint glossary-key="ahi_trend" />
+                    {{ summary.ahi_trend_direction }}<InfoHint glossary-key="ahi_trend" />
                 </span>
             </div>
             <StatCard
                 label="Avg Hours"
-                field="TherapySummary.avg_hours"
                 :value="summary.avg_hours"
                 unit="hrs"
                 :decimals="1"
@@ -67,7 +58,6 @@
             />
             <StatCard
                 label="Avg Leak"
-                field="TherapySummary.avg_leak"
                 :value="summary.avg_leak"
                 unit="L/min"
                 :decimals="1"
@@ -77,7 +67,6 @@
         <div v-if="summary && !loading" class="summary-row">
             <StatCard
                 label="Avg SpO₂"
-                field="TherapySummary.avg_spo2"
                 :value="summary.avg_spo2"
                 unit="%"
                 :decimals="1"
@@ -85,7 +74,6 @@
             />
             <StatCard
                 label="Avg Pulse"
-                field="TherapySummary.avg_pulse"
                 :value="summary.avg_pulse"
                 unit="bpm"
                 :decimals="0"
@@ -93,7 +81,6 @@
             />
             <StatCard
                 label="Avg Pressure"
-                field="TherapySummary.avg_pressure"
                 :value="summary.avg_pressure"
                 unit="cmH₂O"
                 :decimals="1"
@@ -101,7 +88,6 @@
             />
             <StatCard
                 label="Avg Resp Rate"
-                field="TherapySummary.avg_respiratory_rate"
                 :value="summary.avg_respiratory_rate"
                 unit="br/min"
                 :decimals="1"
@@ -116,7 +102,6 @@
         >
             <StatCard
                 label="Avg Sleep"
-                field="PeriodStatistics.avg_total_sleep_hours"
                 :value="avgTotalSleepHours"
                 unit="hrs"
                 :decimals="1"
@@ -124,7 +109,6 @@
             />
             <StatCard
                 label="Avg Sleep Efficiency"
-                field="PeriodStatistics.avg_sleep_efficiency_pct"
                 :value="avgSleepEfficiency"
                 unit="%"
                 :decimals="1"
@@ -156,10 +140,7 @@
 
         <!-- AHI Trend Chart -->
         <div v-if="trendLabels.length" class="section-card">
-            <h2>
-                AHI Trend (Weekly)
-                <ProvenanceMark :provenance="provenanceFor('TrendsResponse.ahi')" />
-            </h2>
+            <h2>AHI Trend (Weekly)</h2>
             <TrendChart :labels="trendLabels" :datasets="trendDatasets" />
         </div>
 
@@ -198,14 +179,13 @@
         <div v-if="recentSessions.length" class="section-card">
             <h2>Recent Sessions</h2>
             <div v-if="isMobile" class="card-list">
-                <div v-for="session in recentSessions" :key="session.id" class="data-card">
-                    <div class="data-card-header">
-                        <RouterLink
-                            class="text-primary no-underline hover:underline"
-                            :to="{ name: 'session-detail', params: { id: session.id } }"
-                            >{{ formatDateFull(session.therapy_day) }}</RouterLink
-                        >
-                    </div>
+                <RouterLink
+                    v-for="session in recentSessions"
+                    :key="session.id"
+                    class="data-card"
+                    :to="{ name: 'session-detail', params: { id: session.id } }"
+                >
+                    <div class="data-card-header">{{ formatDateFull(session.therapy_day) }}</div>
                     <div class="data-card-row">
                         <span class="data-card-label">Duration</span>
                         <span class="data-card-value"
@@ -213,12 +193,10 @@
                         >
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label"
-                            >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
-                        /></span>
+                        <span class="data-card-label">AHI</span>
                         <span class="data-card-value">{{ session.ahi?.toFixed(1) ?? '---' }}</span>
                     </div>
-                </div>
+                </RouterLink>
             </div>
             <Table v-else>
                 <TableHeader>
@@ -226,9 +204,7 @@
                         <TableHead>Date</TableHead>
                         <TableHead class="w-[90px]">Duration</TableHead>
                         <TableHead class="w-[80px] whitespace-nowrap"
-                            >AHI
-                            <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')" />
-                            <InfoHint glossary-key="ahi"
+                            >AHI <InfoHint glossary-key="ahi"
                         /></TableHead>
                     </TableRow>
                 </TableHeader>
@@ -277,8 +253,6 @@ import { formatDateFull } from '@/utils/formatting'
 import { AHI_COLOR_SCALE } from '@/utils/ahiScale'
 import { EVENT_COLORS } from '@/types'
 import type { HealthNightSummaryRead, SessionListItem } from '@/types'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor } from '@/utils/provenance'
 
 function thirtyDaysAgo(): string {
     const d = new Date()

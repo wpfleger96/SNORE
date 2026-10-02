@@ -18,7 +18,6 @@
                         :value="report.aggregate[ch.key].mean_spearman_r"
                         :decimals="3"
                         glossary-key="spearman_r"
-                        field="ChannelAggregateMetrics.mean_spearman_r"
                     />
                     <StatCard
                         label="Sessions Compared"
@@ -32,23 +31,13 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >Breaths
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('BreathTrendsSessionValidation.n_breaths')
-                                        "
-                                /></TableHead>
+                                <TableHead>Breaths</TableHead>
                                 <TableHead
                                     v-for="ch in CHANNELS"
                                     :key="ch.key"
                                     class="whitespace-nowrap"
                                 >
-                                    {{ ch.label }}
-                                    <ProvenanceMark
-                                        :provenance="provenanceFor('ChannelComparison.spearman_r')"
-                                    />
-                                    <InfoHint glossary-key="spearman_r" />
+                                    {{ ch.label }} <InfoHint glossary-key="spearman_r" />
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
@@ -91,7 +80,6 @@
 import { ref, computed } from 'vue'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import SessionDateCell from '@/components/validation/SessionDateCell.vue'
 import {
@@ -103,7 +91,6 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { downloadCsv } from '@/utils/download'
-import { provenanceFor } from '@/utils/provenance'
 import type { BreathTrendsValidationReport, BreathTrendsSessionValidation } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

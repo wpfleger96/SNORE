@@ -37,12 +37,6 @@ const COMPARISON = {
     false_positives_hypopnea: [],
 }
 
-function experimentalMarks(el: Element): Element[] {
-    return [...el.querySelectorAll('button.provenance-mark')].filter((b) =>
-        b.getAttribute('aria-label')?.startsWith('Experimental'),
-    )
-}
-
 async function mountView() {
     const wrapper = mount(AnalysisView, {
         props: { sessionId: 7 },
@@ -52,7 +46,7 @@ async function mountView() {
     return wrapper
 }
 
-describe('AnalysisView provenance', () => {
+describe('AnalysisView', () => {
     beforeEach(() => {
         vi.mocked(useAuth).mockReturnValue(makeAuthMock({ canWrite: ref(true) }) as never)
         vi.mocked(getAnalysis).mockResolvedValue(ANALYSIS as never)
@@ -63,71 +57,44 @@ describe('AnalysisView provenance', () => {
         setMediaMatches(false)
     })
 
-    it('test_page_shows_experimental_banner', async () => {
-        const wrapper = await mountView()
-        const banner = wrapper.find('[role="note"]')
-        expect(banner.exists()).toBe(true)
-        expect(banner.text()).toContain('Experimental analysis.')
-    })
+    const MODE_AHI_HINT = 'button[aria-label="More information about Mode AHI"]'
 
-    it('test_mode_comparison_ahi_header_is_marked_experimental', async () => {
+    it('test_page_shows_one_experimental_banner', async () => {
         const wrapper = await mountView()
-        const ahiHeader = wrapper.findAll('th').find((th) => th.text().startsWith('AHI'))
-        expect(ahiHeader).toBeDefined()
-        expect(experimentalMarks(ahiHeader!.element)).toHaveLength(1)
+        const banners = wrapper.findAll('[role="note"]')
+        expect(banners).toHaveLength(1)
+        expect(banners[0]!.text()).toContain('Experimental analysis.')
     })
 
     it('test_mode_comparison_ahi_hint_explains_mode_ahi', async () => {
         const wrapper = await mountView()
         const ahiHeader = wrapper.findAll('th').find((th) => th.text().startsWith('AHI'))!
-        expect(ahiHeader.find('button.info-hint').attributes('aria-label')).toBe(
-            'More information about Mode AHI',
-        )
+        expect(ahiHeader.find(MODE_AHI_HINT).exists()).toBe(true)
     })
 
-    it('test_mobile_mode_card_marks_ahi_and_event_counts_experimental', async () => {
+    it('test_mobile_mode_card_ahi_hint_explains_mode_ahi', async () => {
         setMediaMatches(true)
         const wrapper = await mountView()
         expect(wrapper.find('table').exists()).toBe(false)
 
-        const labels = wrapper.findAll('.data-card .data-card-label')
-        const label = (name: string) => labels.find((l) => l.text().startsWith(name))!
-        expect(experimentalMarks(label('AHI').element)).toHaveLength(1)
-        expect(label('AHI').find('button.info-hint').attributes('aria-label')).toBe(
-            'More information about Mode AHI',
-        )
-        expect(experimentalMarks(label('Apneas').element)).toHaveLength(1)
+        const ahiLabel = wrapper
+            .findAll('.data-card .data-card-label')
+            .find((l) => l.text().startsWith('AHI'))!
+        expect(ahiLabel.find(MODE_AHI_HINT).exists()).toBe(true)
     })
 
-    it('test_comparison_duration_mark_follows_event_source', async () => {
-        const wrapper = await mountView()
-        const sections = wrapper.findAll('.compare-table-section')
-        const fnSection = sections.find((s) => s.text().includes('False Negatives'))!
-        const fpSection = sections.find((s) => s.text().includes('False Positives'))!
-
-        // Device-scored (machine) event durations stay unmarked.
-        const fnDuration = fnSection.findAll('td').find((td) => td.text().startsWith('12.0s'))!
-        expect(fnDuration.find('button.provenance-mark').exists()).toBe(false)
-
-        // SNORE-detected (programmatic) event durations carry the experimental mark.
-        const fpDuration = fpSection.findAll('td').find((td) => td.text().startsWith('15.0s'))!
-        expect(experimentalMarks(fpDuration.element)).toHaveLength(1)
-    })
-
-    it('test_event_comparison_cards_mark_snore_counts_not_device_counts', async () => {
+    it('test_event_comparison_names_device_scored_and_snore_detected', async () => {
         const wrapper = await mountView()
         const section = wrapper
             .findAll('.section-card')
             .find((s) => s.find('h2').text() === 'Event Comparison')!
-        const card = (label: string) =>
-            section.findAll('.stat-card').find((c) => c.find('.stat-label').text() === label)!
-        expect(experimentalMarks(card('SNORE-detected Events').element)).toHaveLength(1)
-        expect(experimentalMarks(card('False Positives').element)).toHaveLength(1)
-        expect(card('Device-scored Events').find('button.provenance-mark').exists()).toBe(false)
-    })
-
-    it('test_false_negatives_heading_names_device_scored_events', async () => {
-        const wrapper = await mountView()
-        expect(wrapper.text()).toContain('False Negatives: Device-scored Events SNORE Missed')
+        const labels = section.findAll('.stat-card .stat-label').map((l) => l.text())
+        expect(labels).toEqual(
+            expect.arrayContaining(['Device-scored Events', 'SNORE-detected Events']),
+        )
+        expect(section.text()).toContain('False Negatives: Device-scored Events SNORE Missed')
+        expect(section.text()).toContain(
+            'False Positives: SNORE-detected Events the Device Did Not Score',
+        )
     })
 })

@@ -56,10 +56,9 @@ reset:
 docker-build:
     docker build -t snore .
 
-# Regenerate ui/src/types/generated.ts (API types) and
-# ui/src/types/provenance.json (Schema.field provenance tiers) from the
-# FastAPI OpenAPI spec. Local auth mode: building the app requires no session
-# secret, and all routers/schemas are mounted regardless of mode.
+# Regenerate ui/src/types/generated.ts from the FastAPI OpenAPI spec.
+# Local auth mode: building the app requires no session secret, and all
+# routers/schemas are mounted regardless of mode.
 ui-generate-types:
-    SNORE_AUTH_MODE=local uv run python scripts/export_openapi.py ui/openapi.json ui/src/types/provenance.json
+    SNORE_AUTH_MODE=local uv run python scripts/export_openapi.py ui/openapi.json
     cd ui && pnpm run generate:types

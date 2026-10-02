@@ -71,17 +71,13 @@
                 <div class="session-meta text-muted-foreground">
                     <Badge v-if="session.therapy_mode">{{ session.therapy_mode }}</Badge>
                     <span>{{ session.device_manufacturer }} {{ session.device_model }}</span>
-                    <span
-                        >{{ session.duration_hours.toFixed(1) }} hours
-                        <ProvenanceMark :provenance="provenanceFor('SessionDetail.duration_hours')"
-                    /></span>
+                    <span>{{ session.duration_hours.toFixed(1) }} hours</span>
                     <span>Started: {{ formatDateTime(session.start_time) }}</span>
                     <span v-if="session.statistics?.ahi != null">
                         AHI:
                         <strong :class="ahiClass(session.statistics.ahi)">{{
                             session.statistics.ahi.toFixed(1)
                         }}</strong>
-                        <ProvenanceMark :provenance="provenanceFor('SessionStatistics.ahi')" />
                     </span>
                     <span>{{ session.event_count }} events</span>
                 </div>
@@ -95,7 +91,7 @@
         >
             <span v-if="session.active_mask">Mask: {{ maskInfoLine }}</span>
             <span v-if="session.active_mask && maskTypeFromSettings">·</span>
-            <span v-if="maskTypeFromSettings">Device Type: {{ maskTypeFromSettings }}</span>
+            <span v-if="maskTypeFromSettings">Device type: {{ maskTypeFromSettings }}</span>
         </div>
 
         <!-- Waveform section -->
@@ -180,77 +176,66 @@
                     <div class="stats-grid">
                         <StatCard
                             label="AHI"
-                            :provenance="provenanceFor('SessionStatistics.ahi')"
                             :value="session.statistics.ahi"
                             :decimals="1"
                             glossary-key="ahi"
                         />
                         <StatCard
                             label="REI"
-                            field="SessionStatistics.rei"
                             :value="session.statistics.rei"
                             :decimals="1"
                             glossary-key="rei"
                         />
                         <StatCard
                             label="OAI"
-                            :provenance="provenanceFor('SessionStatistics.oai')"
                             :value="session.statistics.oai"
                             :decimals="2"
                             glossary-key="oai"
                         />
                         <StatCard
                             label="CAI"
-                            :provenance="provenanceFor('SessionStatistics.cai')"
                             :value="session.statistics.cai"
                             :decimals="2"
                             glossary-key="cai"
                         />
                         <StatCard
                             label="HI"
-                            :provenance="provenanceFor('SessionStatistics.hi')"
                             :value="session.statistics.hi"
                             :decimals="2"
                             glossary-key="hi"
                         />
                         <StatCard
                             label="Obstructive Apneas"
-                            field="SessionStatistics.obstructive_apneas"
                             :value="session.statistics.obstructive_apneas"
                             :decimals="0"
                             glossary-key="obstructive_apneas"
                         />
                         <StatCard
                             label="Central Apneas"
-                            field="SessionStatistics.central_apneas"
                             :value="session.statistics.central_apneas"
                             :decimals="0"
                             glossary-key="central_apneas"
                         />
                         <StatCard
                             label="Mixed Apneas"
-                            field="SessionStatistics.mixed_apneas"
                             :value="session.statistics.mixed_apneas"
                             :decimals="0"
                             glossary-key="mixed_apneas"
                         />
                         <StatCard
                             label="Hypopneas"
-                            field="SessionStatistics.hypopneas"
                             :value="session.statistics.hypopneas"
                             :decimals="0"
                             glossary-key="hypopneas"
                         />
                         <StatCard
                             label="RERAs"
-                            field="SessionStatistics.reras"
                             :value="session.statistics.reras"
                             :decimals="0"
                             glossary-key="reras"
                         />
                         <StatCard
                             label="Flow Limitations"
-                            field="SessionStatistics.flow_limitations"
                             :value="session.statistics.flow_limitations"
                             :decimals="0"
                             glossary-key="flow_limitations"
@@ -273,7 +258,6 @@
                     <div class="stats-grid">
                         <StatCard
                             label="Pressure Mean"
-                            field="SessionStatistics.pressure_mean"
                             :value="session.statistics.pressure_mean"
                             unit="cmH₂O"
                             :decimals="1"
@@ -281,35 +265,30 @@
                         />
                         <StatCard
                             label="Pressure Min"
-                            field="SessionStatistics.pressure_min"
                             :value="session.statistics.pressure_min"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="Pressure Max"
-                            field="SessionStatistics.pressure_max"
                             :value="session.statistics.pressure_max"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="Pressure Median"
-                            field="SessionStatistics.pressure_median"
                             :value="session.statistics.pressure_median"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="Pressure 95th"
-                            field="SessionStatistics.pressure_95th"
                             :value="session.statistics.pressure_95th"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="EPAP Mean"
-                            field="SessionStatistics.epap_mean"
                             :value="session.statistics.epap_mean"
                             unit="cmH₂O"
                             :decimals="1"
@@ -317,28 +296,24 @@
                         />
                         <StatCard
                             label="EPAP Min"
-                            field="SessionStatistics.epap_min"
                             :value="session.statistics.epap_min"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="EPAP Max"
-                            field="SessionStatistics.epap_max"
                             :value="session.statistics.epap_max"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="EPAP Median"
-                            field="SessionStatistics.epap_median"
                             :value="session.statistics.epap_median"
                             unit="cmH₂O"
                             :decimals="1"
                         />
                         <StatCard
                             label="EPAP 95th"
-                            field="SessionStatistics.epap_95th"
                             :value="session.statistics.epap_95th"
                             unit="cmH₂O"
                             :decimals="1"
@@ -353,7 +328,6 @@
                             <StatCard
                                 v-if="session.statistics.ipap_median != null"
                                 label="IPAP Median"
-                                field="SessionStatistics.ipap_median"
                                 :value="session.statistics.ipap_median"
                                 unit="cmH₂O"
                                 :decimals="1"
@@ -362,7 +336,6 @@
                             <StatCard
                                 v-if="session.statistics.ipap_95th != null"
                                 label="IPAP 95th"
-                                field="SessionStatistics.ipap_95th"
                                 :value="session.statistics.ipap_95th"
                                 unit="cmH₂O"
                                 :decimals="1"
@@ -370,7 +343,6 @@
                             <StatCard
                                 v-if="session.statistics.ipap_max != null"
                                 label="IPAP Max"
-                                field="SessionStatistics.ipap_max"
                                 :value="session.statistics.ipap_max"
                                 unit="cmH₂O"
                                 :decimals="1"
@@ -394,7 +366,6 @@
                     <div class="stats-grid">
                         <StatCard
                             label="Leak Mean"
-                            field="SessionStatistics.leak_mean"
                             :value="session.statistics.leak_mean"
                             unit="L/min"
                             :decimals="1"
@@ -402,35 +373,30 @@
                         />
                         <StatCard
                             label="Leak Min"
-                            field="SessionStatistics.leak_min"
                             :value="session.statistics.leak_min"
                             unit="L/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Leak Max"
-                            field="SessionStatistics.leak_max"
                             :value="session.statistics.leak_max"
                             unit="L/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Leak Median"
-                            field="SessionStatistics.leak_median"
                             :value="session.statistics.leak_median"
                             unit="L/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Leak 70th"
-                            field="SessionStatistics.leak_percentile_70"
                             :value="session.statistics.leak_percentile_70"
                             unit="L/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Leak 95th"
-                            field="SessionStatistics.leak_95th"
                             :value="session.statistics.leak_95th"
                             unit="L/min"
                             :decimals="1"
@@ -453,7 +419,6 @@
                     <div class="stats-grid">
                         <StatCard
                             label="SpO₂ Mean"
-                            field="SessionStatistics.spo2_mean"
                             :value="session.statistics.spo2_mean"
                             unit="%"
                             :decimals="1"
@@ -461,35 +426,30 @@
                         />
                         <StatCard
                             label="SpO₂ Min"
-                            field="SessionStatistics.spo2_min"
                             :value="session.statistics.spo2_min"
                             unit="%"
                             :decimals="1"
                         />
                         <StatCard
                             label="SpO₂ Max"
-                            field="SessionStatistics.spo2_max"
                             :value="session.statistics.spo2_max"
                             unit="%"
                             :decimals="1"
                         />
                         <StatCard
                             label="SpO₂ Median"
-                            field="SessionStatistics.spo2_median"
                             :value="session.statistics.spo2_median"
                             unit="%"
                             :decimals="1"
                         />
                         <StatCard
                             label="SpO₂ 95th"
-                            field="SessionStatistics.spo2_95th"
                             :value="session.statistics.spo2_95th"
                             unit="%"
                             :decimals="1"
                         />
                         <StatCard
                             label="SpO₂ Below 90%"
-                            field="SessionStatistics.spo2_time_below_90"
                             :value="session.statistics.spo2_time_below_90"
                             unit="s"
                             :decimals="0"
@@ -497,7 +457,6 @@
                         />
                         <StatCard
                             label="Pulse Mean"
-                            field="SessionStatistics.pulse_mean"
                             :value="session.statistics.pulse_mean"
                             unit="bpm"
                             :decimals="0"
@@ -505,14 +464,12 @@
                         />
                         <StatCard
                             label="Pulse Min"
-                            field="SessionStatistics.pulse_min"
                             :value="session.statistics.pulse_min"
                             unit="bpm"
                             :decimals="0"
                         />
                         <StatCard
                             label="Pulse Max"
-                            field="SessionStatistics.pulse_max"
                             :value="session.statistics.pulse_max"
                             unit="bpm"
                             :decimals="0"
@@ -535,7 +492,6 @@
                     <div class="stats-grid">
                         <StatCard
                             label="Resp Rate Mean"
-                            field="SessionStatistics.respiratory_rate_mean"
                             :value="session.statistics.respiratory_rate_mean"
                             unit="br/min"
                             :decimals="1"
@@ -543,14 +499,12 @@
                         />
                         <StatCard
                             label="Resp Rate Min"
-                            field="SessionStatistics.respiratory_rate_min"
                             :value="session.statistics.respiratory_rate_min"
                             unit="br/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Resp Rate Max"
-                            field="SessionStatistics.respiratory_rate_max"
                             :value="session.statistics.respiratory_rate_max"
                             unit="br/min"
                             :decimals="1"
@@ -558,7 +512,6 @@
                         <StatCard
                             v-if="session.statistics.respiratory_rate_95th != null"
                             label="Resp Rate 95th"
-                            field="SessionStatistics.respiratory_rate_95th"
                             :value="session.statistics.respiratory_rate_95th"
                             unit="br/min"
                             :decimals="1"
@@ -566,7 +519,6 @@
                         <!-- STR tidal-volume stats are in L on the device; convert to mL for display. -->
                         <StatCard
                             label="Tidal Volume Mean"
-                            field="SessionStatistics.tidal_volume_mean"
                             :value="tvToMl(session.statistics.tidal_volume_mean)"
                             unit="mL"
                             :decimals="0"
@@ -574,14 +526,12 @@
                         />
                         <StatCard
                             label="Tidal Volume Min"
-                            field="SessionStatistics.tidal_volume_min"
                             :value="tvToMl(session.statistics.tidal_volume_min)"
                             unit="mL"
                             :decimals="0"
                         />
                         <StatCard
                             label="Tidal Volume Max"
-                            field="SessionStatistics.tidal_volume_max"
                             :value="tvToMl(session.statistics.tidal_volume_max)"
                             unit="mL"
                             :decimals="0"
@@ -589,14 +539,12 @@
                         <StatCard
                             v-if="session.statistics.tidal_volume_95th != null"
                             label="Tidal Volume 95th"
-                            field="SessionStatistics.tidal_volume_95th"
                             :value="tvToMl(session.statistics.tidal_volume_95th)"
                             unit="mL"
                             :decimals="0"
                         />
                         <StatCard
                             label="Min Ventilation Mean"
-                            field="SessionStatistics.minute_ventilation_mean"
                             :value="session.statistics.minute_ventilation_mean"
                             unit="L/min"
                             :decimals="1"
@@ -604,14 +552,12 @@
                         />
                         <StatCard
                             label="Min Ventilation Min"
-                            field="SessionStatistics.minute_ventilation_min"
                             :value="session.statistics.minute_ventilation_min"
                             unit="L/min"
                             :decimals="1"
                         />
                         <StatCard
                             label="Min Ventilation Max"
-                            field="SessionStatistics.minute_ventilation_max"
                             :value="session.statistics.minute_ventilation_max"
                             unit="L/min"
                             :decimals="1"
@@ -619,7 +565,6 @@
                         <StatCard
                             v-if="session.statistics.minute_ventilation_95th != null"
                             label="Min Ventilation 95th"
-                            field="SessionStatistics.minute_ventilation_95th"
                             :value="session.statistics.minute_ventilation_95th"
                             unit="L/min"
                             :decimals="1"
@@ -648,7 +593,6 @@
                         <StatCard
                             v-if="session.statistics.uai != null"
                             label="UAI"
-                            field="SessionStatistics.uai"
                             :value="session.statistics.uai"
                             unit="events/hr"
                             :decimals="2"
@@ -657,7 +601,6 @@
                         <StatCard
                             v-if="session.statistics.ai != null"
                             label="AI"
-                            field="SessionStatistics.ai"
                             :value="session.statistics.ai"
                             unit="events/hr"
                             :decimals="2"
@@ -666,7 +609,6 @@
                         <StatCard
                             v-if="session.statistics.rin != null"
                             label="RIN"
-                            field="SessionStatistics.rin"
                             :value="session.statistics.rin"
                             unit="events/hr"
                             :decimals="2"
@@ -675,7 +617,6 @@
                         <StatCard
                             v-if="session.statistics.csr_pct != null"
                             label="CSR"
-                            field="SessionStatistics.csr_pct"
                             :value="session.statistics.csr_pct"
                             unit="%"
                             :decimals="1"
@@ -684,7 +625,6 @@
                         <StatCard
                             v-if="session.statistics.spont_cyc_pct != null"
                             label="Spont Cyc"
-                            field="SessionStatistics.spont_cyc_pct"
                             :value="session.statistics.spont_cyc_pct"
                             unit="%"
                             :decimals="1"
@@ -693,7 +633,6 @@
                         <StatCard
                             v-if="session.statistics.mask_events != null"
                             label="Mask Events"
-                            field="SessionStatistics.mask_events"
                             :value="session.statistics.mask_events"
                             :decimals="0"
                             glossary-key="mask_events_str"
@@ -722,7 +661,6 @@
                         <StatCard
                             v-if="session.statistics.flow_5th != null"
                             label="Flow 5th"
-                            field="SessionStatistics.flow_5th"
                             :value="session.statistics.flow_5th"
                             unit="L/min"
                             :decimals="1"
@@ -731,7 +669,6 @@
                         <StatCard
                             v-if="session.statistics.flow_95th != null"
                             label="Flow 95th"
-                            field="SessionStatistics.flow_95th"
                             :value="session.statistics.flow_95th"
                             unit="L/min"
                             :decimals="1"
@@ -739,7 +676,6 @@
                         <StatCard
                             v-if="session.statistics.blow_press_5th != null"
                             label="Blow Press 5th"
-                            field="SessionStatistics.blow_press_5th"
                             :value="session.statistics.blow_press_5th"
                             unit="cmH₂O"
                             :decimals="1"
@@ -748,7 +684,6 @@
                         <StatCard
                             v-if="session.statistics.blow_press_95th != null"
                             label="Blow Press 95th"
-                            field="SessionStatistics.blow_press_95th"
                             :value="session.statistics.blow_press_95th"
                             unit="cmH₂O"
                             :decimals="1"
@@ -756,7 +691,6 @@
                         <StatCard
                             v-if="session.statistics.blow_flow_median != null"
                             label="Blow Flow Median"
-                            field="SessionStatistics.blow_flow_median"
                             :value="session.statistics.blow_flow_median"
                             unit="L/min"
                             :decimals="1"
@@ -782,7 +716,6 @@
                         <StatCard
                             v-if="session.statistics.ie_ratio_median != null"
                             label="I:E Ratio Median"
-                            field="SessionStatistics.ie_ratio_median"
                             :value="session.statistics.ie_ratio_median"
                             unit="%"
                             :decimals="0"
@@ -791,7 +724,6 @@
                         <StatCard
                             v-if="session.statistics.ie_ratio_95th != null"
                             label="I:E Ratio 95th"
-                            field="SessionStatistics.ie_ratio_95th"
                             :value="session.statistics.ie_ratio_95th"
                             unit="%"
                             :decimals="0"
@@ -799,7 +731,6 @@
                         <StatCard
                             v-if="session.statistics.ie_ratio_max != null"
                             label="I:E Ratio Max"
-                            field="SessionStatistics.ie_ratio_max"
                             :value="session.statistics.ie_ratio_max"
                             unit="%"
                             :decimals="0"
@@ -807,7 +738,6 @@
                         <StatCard
                             v-if="session.statistics.ti_median != null"
                             label="Ti Median"
-                            field="SessionStatistics.ti_median"
                             :value="session.statistics.ti_median"
                             unit="s"
                             :decimals="2"
@@ -816,7 +746,6 @@
                         <StatCard
                             v-if="session.statistics.ti_95th != null"
                             label="Ti 95th"
-                            field="SessionStatistics.ti_95th"
                             :value="session.statistics.ti_95th"
                             unit="s"
                             :decimals="2"
@@ -824,7 +753,6 @@
                         <StatCard
                             v-if="session.statistics.ti_max != null"
                             label="Ti Max"
-                            field="SessionStatistics.ti_max"
                             :value="session.statistics.ti_max"
                             unit="s"
                             :decimals="2"
@@ -849,7 +777,6 @@
                         <StatCard
                             v-if="session.statistics.amb_humidity_median != null"
                             label="Amb Humidity Median"
-                            field="SessionStatistics.amb_humidity_median"
                             :value="session.statistics.amb_humidity_median"
                             unit="%"
                             :decimals="1"
@@ -858,7 +785,6 @@
                         <StatCard
                             v-if="session.statistics.hum_temp_median != null"
                             label="Hum Temp Median"
-                            field="SessionStatistics.hum_temp_median"
                             :value="session.statistics.hum_temp_median"
                             unit="°C"
                             :decimals="1"
@@ -867,7 +793,6 @@
                         <StatCard
                             v-if="session.statistics.htube_temp_median != null"
                             label="HTube Temp Median"
-                            field="SessionStatistics.htube_temp_median"
                             :value="session.statistics.htube_temp_median"
                             unit="°C"
                             :decimals="1"
@@ -876,7 +801,6 @@
                         <StatCard
                             v-if="session.statistics.htube_pow_median != null"
                             label="HTube Power Median"
-                            field="SessionStatistics.htube_pow_median"
                             :value="session.statistics.htube_pow_median"
                             unit="W"
                             :decimals="1"
@@ -885,7 +809,6 @@
                         <StatCard
                             v-if="session.statistics.hum_pow_median != null"
                             label="Hum Power Median"
-                            field="SessionStatistics.hum_pow_median"
                             :value="session.statistics.hum_pow_median"
                             unit="W"
                             :decimals="1"
@@ -926,7 +849,6 @@
                     <div class="stats-grid mb-4">
                         <StatCard
                             label="Total Sleep"
-                            field="HealthNightDetailRead.total_sleep_seconds"
                             :value="secToHours(healthNight.total_sleep_seconds)"
                             unit="hr"
                             :decimals="1"
@@ -934,7 +856,6 @@
                         />
                         <StatCard
                             label="Efficiency"
-                            field="HealthNightDetailRead.sleep_efficiency_pct"
                             :value="healthNight.sleep_efficiency_pct ?? null"
                             unit="%"
                             :decimals="1"
@@ -942,7 +863,6 @@
                         />
                         <StatCard
                             label="Deep"
-                            field="HealthNightDetailRead.deep_seconds"
                             :value="secToHours(healthNight.deep_seconds)"
                             unit="hr"
                             :decimals="1"
@@ -950,7 +870,6 @@
                         />
                         <StatCard
                             label="REM"
-                            field="HealthNightDetailRead.rem_seconds"
                             :value="secToHours(healthNight.rem_seconds)"
                             unit="hr"
                             :decimals="1"
@@ -959,7 +878,6 @@
                         <StatCard
                             v-if="healthNight.avg_spo2_pct != null"
                             label="SpO₂ Avg"
-                            field="HealthNightDetailRead.avg_spo2_pct"
                             :value="healthNight.avg_spo2_pct"
                             unit="%"
                             :decimals="1"
@@ -967,7 +885,6 @@
                         <StatCard
                             v-if="healthNight.avg_rr != null"
                             label="Resp Rate Avg"
-                            field="HealthNightDetailRead.avg_rr"
                             :value="healthNight.avg_rr"
                             unit="br/min"
                             :decimals="1"
@@ -1109,8 +1026,6 @@ import {
 } from '@/utils/formatting'
 import { maskEntryName, styleLabel } from '@/utils/maskOptions'
 import type { SessionDetail, EventItem, HealthNightDetailRead } from '@/types'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor } from '@/utils/provenance'
 
 const props = defineProps<{ sessionId: number }>()
 const route = useRoute()

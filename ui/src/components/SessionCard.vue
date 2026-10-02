@@ -46,16 +46,11 @@
             </DropdownMenu>
         </div>
         <div class="data-card-row">
-            <span class="data-card-label"
-                >Duration
-                <ProvenanceMark :provenance="provenanceFor('SessionListItem.duration_hours')"
-            /></span>
+            <span class="data-card-label">Duration</span>
             <span class="data-card-value">{{ session.duration_hours.toFixed(1) }}h</span>
         </div>
         <div class="data-card-row">
-            <span class="data-card-label"
-                >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
-            /></span>
+            <span class="data-card-label">AHI</span>
             <span class="data-card-value" :class="ahiClass(session.ahi)">
                 {{ session.ahi?.toFixed(1) ?? '---' }}
             </span>
@@ -91,8 +86,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ahiClass, formatDateTime, formatDateWithWeekday } from '@/utils/formatting'
 import type { SessionListItem } from '@/types'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor } from '@/utils/provenance'
 
 defineProps<{
     session: SessionListItem

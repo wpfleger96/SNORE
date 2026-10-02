@@ -18,10 +18,10 @@
             />
             <Select v-model="selectedDeviceStr">
                 <SelectTrigger class="w-[200px]">
-                    <SelectValue placeholder="All Devices" />
+                    <SelectValue placeholder="All devices" />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="">All Devices</SelectItem>
+                    <SelectItem value="">All devices</SelectItem>
                     <SelectItem v-for="opt in deviceOptions" :key="opt.value" :value="opt.value">
                         {{ opt.label }}
                     </SelectItem>
@@ -151,19 +151,11 @@
                     >
                         <span class="inline-flex items-center gap-1">
                             Duration
-                            <!-- Tapping the mark opens its popover, not a re-sort. -->
-                            <span class="contents" @click.stop>
-                                <ProvenanceMark
-                                    :provenance="provenanceFor('SessionListItem.duration_hours')"
-                                />
-                            </span>
                             <ArrowUp v-if="sortBy === 'duration'" class="h-3 w-3 text-primary" />
                             <ArrowUpDown v-else class="h-3 w-3 opacity-30" />
                         </span>
                     </TableHead>
-                    <TableHead style="width: 80px"
-                        >AHI <ProvenanceMark :provenance="provenanceFor('SessionListItem.ahi')"
-                    /></TableHead>
+                    <TableHead style="width: 80px">AHI</TableHead>
                     <TableHead>Device</TableHead>
                     <TableHead style="width: 90px">Status</TableHead>
                     <TableHead style="width: 180px">Actions</TableHead>
@@ -349,8 +341,6 @@ import { useAuth } from '@/composables/useAuth'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useAvailableDates } from '@/composables/useAvailableDates'
 import DatePickerInput from '@/components/DatePickerInput.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor } from '@/utils/provenance'
 
 const { canWrite } = useAuth()
 const { isMobile } = useIsMobile()

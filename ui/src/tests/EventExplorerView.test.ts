@@ -28,23 +28,21 @@ vi.mock('@/api/sessions', () => ({
 
 import EventExplorerView from '@/views/EventExplorerView.vue'
 
-describe('EventExplorerView provenance', () => {
-    it('test_event_list_is_headed_device_scored_and_match_counts_are_marked', async () => {
+describe('EventExplorerView', () => {
+    it('test_match_section_is_flagged_experimental_and_event_list_is_not', async () => {
         const wrapper = mount(EventExplorerView, {
             props: { sessionId: 3 },
             global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
         })
         await flushPromises()
 
-        const headings = wrapper.findAll('.section-card h2').map((h) => h.text())
-        expect(headings).toContain('Device-scored Events')
-
-        const card = (label: string) =>
-            wrapper.findAll('.stat-card').find((c) => c.find('.stat-label').text() === label)!
-        const markOf = (label: string) =>
-            card(label).find('button.provenance-mark').attributes('aria-label') ?? null
-
-        expect(markOf('SNORE-detected')).toMatch(/^Experimental/)
-        expect(card('Device-scored').find('button.provenance-mark').exists()).toBe(false)
+        const sections = wrapper.findAll('.section-card')
+        const heading = (s: (typeof sections)[number]) => s.find('h2').text()
+        expect(sections.map(heading)).toEqual([
+            'Device-scored vs SNORE-detected',
+            'Device-scored Events',
+        ])
+        expect(sections[0]!.find('[role="note"]').exists()).toBe(true)
+        expect(sections[1]!.find('[role="note"]').exists()).toBe(false)
     })
 })

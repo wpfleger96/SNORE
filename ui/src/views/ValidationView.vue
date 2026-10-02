@@ -4,7 +4,7 @@
         <p class="mb-6 max-w-3xl text-sm text-muted-foreground">
             Validate SNORE's programmatic analysis against the device's own signals and an
             independent Apple Health axis. Event detection (apnea/hypopnea) is measured against
-            machine-flagged events; the FL, RERA, and Apple metrics are
+            device-scored events; the FL, RERA, and Apple metrics are
             <span class="font-medium">experimental trend instruments</span>, not clinically
             validated absolute measurements. Runs are persisted — use History to revisit a run and
             Compare Runs to measure the effect of an algorithm or parameter change.

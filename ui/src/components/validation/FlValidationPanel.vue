@@ -12,51 +12,44 @@
             <div v-if="report" class="space-y-6">
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                     <StatCard
-                        label="Spearman (Flattening)"
+                        label="Spearman (flattening)"
                         :value="report.aggregate.mean_spearman_flattening_r"
-                        field="FlAggregateMetrics.mean_spearman_flattening_r"
                         :decimals="3"
                         glossary-key="spearman_r"
                     />
                     <StatCard
-                        label="Spearman (Class Weight)"
+                        label="Spearman (class weight)"
                         :value="report.aggregate.mean_spearman_class_weight_r"
-                        field="FlAggregateMetrics.mean_spearman_class_weight_r"
                         :decimals="3"
                         glossary-key="spearman_r"
                     />
                     <StatCard
                         label="AUC25"
                         :value="report.aggregate.mean_auc_t25"
-                        field="FlAggregateMetrics.mean_auc_t25"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="AUC50"
                         :value="report.aggregate.mean_auc_t50"
-                        field="FlAggregateMetrics.mean_auc_t50"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Class AUC25"
                         :value="report.aggregate.mean_auc_class_t25"
-                        field="FlAggregateMetrics.mean_auc_class_t25"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Class AUC50"
                         :value="report.aggregate.mean_auc_class_t50"
-                        field="FlAggregateMetrics.mean_auc_class_t50"
                         :decimals="3"
                         glossary-key="auc"
                     />
                     <StatCard
                         label="Cross-night Spearman"
                         :value="report.aggregate.cross_night_spearman_r"
-                        field="FlAggregateMetrics.cross_night_spearman_r"
                         :decimals="3"
                         glossary-key="cross_night_spearman"
                     />
@@ -72,53 +65,18 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead
-                                    >Breaths
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('FlSessionValidation.n_breaths_compared')
-                                        "
+                                <TableHead>Breaths</TableHead>
+                                <TableHead class="whitespace-nowrap"
+                                    >Spearman <InfoHint glossary-key="spearman_r"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Spearman
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor(
-                                                'FlSessionValidation.spearman_flattening_r',
-                                            )
-                                        " />
-                                    <InfoHint glossary-key="spearman_r"
+                                    >AUC25 <InfoHint glossary-key="auc"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >AUC25
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('FlSessionValidation.auc_t25')
-                                        " />
-                                    <InfoHint glossary-key="auc"
+                                    >AUC50 <InfoHint glossary-key="auc"
                                 /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >AUC50
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('FlSessionValidation.auc_t50')
-                                        " />
-                                    <InfoHint glossary-key="auc"
-                                /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >SNORE FL 95th
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('FlSessionValidation.snore_fl_95th')
-                                        "
-                                /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >Device FLG 95th
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('FlSessionValidation.device_flg_95th')
-                                        "
-                                /></TableHead>
+                                <TableHead class="whitespace-nowrap">SNORE FL 95th</TableHead>
+                                <TableHead class="whitespace-nowrap">Device FLG 95th</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -162,7 +120,6 @@
 import { ref, computed } from 'vue'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import SessionDateCell from '@/components/validation/SessionDateCell.vue'
 import {
@@ -174,7 +131,6 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { downloadCsv } from '@/utils/download'
-import { provenanceFor } from '@/utils/provenance'
 import type { FlValidationReport } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

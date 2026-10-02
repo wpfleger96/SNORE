@@ -46,15 +46,6 @@ describe('ExperimentalBanner', () => {
 
         expect(wrapper.text()).toBe('Heads up. Custom note.')
     })
-
-    it('test_slot_overrides_body', () => {
-        const wrapper = mount(ExperimentalBanner, {
-            slots: { default: '<em>Slotted note.</em>' },
-        })
-
-        expect(wrapper.find('em').text()).toBe('Slotted note.')
-        expect(wrapper.text()).not.toContain(DEFAULT_BODY)
-    })
 })
 
 describe('ValidationPanelShell experimental banner', () => {

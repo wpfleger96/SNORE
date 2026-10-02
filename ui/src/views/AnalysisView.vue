@@ -32,7 +32,7 @@
         <ExperimentalBanner
             class="mb-5"
             title="Experimental analysis."
-            body="Everything SNORE detects on this page (events, indices, flow-limitation classes, breathing patterns) is its own heuristic scored from the flow waveform, not a clinically validated measurement. Device-scored events are the reference."
+            body="Everything SNORE detects on this page (events, indices, flow-limitation classes, breathing patterns) is its own heuristic, not a clinically validated measurement. Device-scored events are the reference."
         />
 
         <!-- Summary -->
@@ -43,14 +43,12 @@
                 unit="hrs"
                 :decimals="1"
                 glossary-key="session_duration_hours"
-                field="AnalysisResult.session_duration_hours"
             />
             <StatCard
                 label="Total Breaths"
                 :value="analysis.total_breaths"
                 :decimals="0"
                 glossary-key="total_breaths"
-                field="AnalysisResult.total_breaths"
             />
             <StatCard
                 label="Device-scored Events"
@@ -64,7 +62,6 @@
                 :value="analysis.pulse_change_count"
                 :decimals="0"
                 glossary-key="pulse_change_count"
-                field="AnalysisResult.pulse_change_count"
             />
         </div>
 
@@ -76,39 +73,30 @@
                     <div class="data-card-header">{{ row.mode }}</div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >AHI <ProvenanceMark :provenance="MARKS.modeAhi" />
-                            <InfoHint glossary-key="mode_ahi"
+                            >AHI <InfoHint glossary-key="mode_ahi"
                         /></span>
                         <span class="data-card-value"
                             ><strong>{{ row.ahi.toFixed(1) }}</strong></span
                         >
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label"
-                            >RDI <ProvenanceMark :provenance="MARKS.rdi" />
-                            <InfoHint glossary-key="rdi"
-                        /></span>
+                        <span class="data-card-label">RDI <InfoHint glossary-key="rdi" /></span>
                         <span class="data-card-value">{{ row.rdi.toFixed(1) }}</span>
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Apneas <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="apneas"
+                            >Apneas <InfoHint glossary-key="apneas"
                         /></span>
                         <span class="data-card-value">{{ row.apneas }}</span>
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
-                            >Hypopneas <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="hypopneas"
+                            >Hypopneas <InfoHint glossary-key="hypopneas"
                         /></span>
                         <span class="data-card-value">{{ row.hypopneas }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label"
-                            >RERAs <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="reras"
-                        /></span>
+                        <span class="data-card-label">RERAs <InfoHint glossary-key="reras" /></span>
                         <span class="data-card-value">{{ row.reras }}</span>
                     </div>
                 </div>
@@ -118,24 +106,19 @@
                     <TableRow>
                         <TableHead>Mode</TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
-                            AHI <ProvenanceMark :provenance="MARKS.modeAhi" />
-                            <InfoHint glossary-key="mode_ahi" />
+                            AHI <InfoHint glossary-key="mode_ahi" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
-                            RDI <ProvenanceMark :provenance="MARKS.rdi" />
-                            <InfoHint glossary-key="rdi" />
+                            RDI <InfoHint glossary-key="rdi" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
-                            Apneas <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="apneas" />
+                            Apneas <InfoHint glossary-key="apneas" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 100px">
-                            Hypopneas <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="hypopneas" />
+                            Hypopneas <InfoHint glossary-key="hypopneas" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
-                            RERAs <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                            <InfoHint glossary-key="reras" />
+                            RERAs <InfoHint glossary-key="reras" />
                         </TableHead>
                     </TableRow>
                 </TableHeader>
@@ -156,9 +139,7 @@
 
         <!-- Per-mode Events -->
         <div class="section-card">
-            <h2>
-                SNORE-detected Events by Mode <ProvenanceMark :provenance="MARKS.snoreDetected" />
-            </h2>
+            <h2>Events by Mode</h2>
             <ToggleGroup
                 :model-value="selectedMode"
                 type="single"
@@ -188,15 +169,12 @@
                             <span class="mobile-card-time">{{ formatTimeOffset(row.start) }}</span>
                         </div>
                         <div class="data-card-row">
-                            <span class="data-card-label"
-                                >Duration <ProvenanceMark :provenance="MARKS.snoreEventDuration"
-                            /></span>
+                            <span class="data-card-label">Duration</span>
                             <span class="data-card-value">{{ row.duration.toFixed(1) }}s</span>
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label"
-                                >Flow Red. <ProvenanceMark :provenance="MARKS.flowReduction" />
-                                <InfoHint glossary-key="flow_reduction"
+                                >Flow Red. <InfoHint glossary-key="flow_reduction"
                             /></span>
                             <span class="data-card-value"
                                 >{{ (row.flowReduction * 100).toFixed(0) }}%</span
@@ -204,8 +182,7 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label"
-                                >Confidence <ProvenanceMark :provenance="MARKS.confidence" />
-                                <InfoHint glossary-key="confidence"
+                                >Confidence <InfoHint glossary-key="confidence"
                             /></span>
                             <span class="data-card-value"
                                 >{{ (row.confidence * 100).toFixed(0) }}%</span
@@ -218,16 +195,12 @@
                         <TableRow>
                             <TableHead style="width: 80px">Type</TableHead>
                             <TableHead>Start Time</TableHead>
-                            <TableHead class="whitespace-nowrap" style="width: 90px">
-                                Duration <ProvenanceMark :provenance="MARKS.snoreEventDuration" />
+                            <TableHead style="width: 90px">Duration</TableHead>
+                            <TableHead class="whitespace-nowrap" style="width: 100px">
+                                Flow Red. <InfoHint glossary-key="flow_reduction" />
                             </TableHead>
                             <TableHead class="whitespace-nowrap" style="width: 100px">
-                                Flow Red. <ProvenanceMark :provenance="MARKS.flowReduction" />
-                                <InfoHint glossary-key="flow_reduction" />
-                            </TableHead>
-                            <TableHead class="whitespace-nowrap" style="width: 100px">
-                                Confidence <ProvenanceMark :provenance="MARKS.confidence" />
-                                <InfoHint glossary-key="confidence" />
+                                Confidence <InfoHint glossary-key="confidence" />
                             </TableHead>
                         </TableRow>
                     </TableHeader>
@@ -284,13 +257,11 @@
             <h2>Breathing Patterns</h2>
             <div v-if="analysis.csr_episodes?.length" class="pattern-info">
                 <strong>CSR Episodes:</strong>
-                <ProvenanceMark :provenance="MARKS.snoreDetected" />
                 <InfoHint glossary-key="csr" />
                 {{ analysis.csr_episodes.length }}
             </div>
             <div v-if="analysis.periodic_breathing_episodes?.length" class="pattern-info">
                 <strong>Periodic Breathing Episodes:</strong>
-                <ProvenanceMark :provenance="MARKS.snoreDetected" />
                 <InfoHint glossary-key="periodic_breathing" />
                 {{ analysis.periodic_breathing_episodes.length }}
             </div>
@@ -306,14 +277,12 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="flow_limitation_index"
-                    :provenance="glossaryProvenance('flow_limitation_index')"
                 />
                 <StatCard
                     label="Total Breaths"
                     :value="flowAnalysis!.total_breaths"
                     :decimals="0"
                     glossary-key="total_breaths"
-                    field="AnalysisResult.total_breaths"
                 />
                 <StatCard
                     label="Avg Confidence"
@@ -321,7 +290,6 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="avg_confidence"
-                    :provenance="glossaryProvenance('avg_confidence')"
                 />
             </div>
             <div v-if="isMobile" class="card-list">
@@ -337,15 +305,11 @@
                         <span class="data-card-value">{{ cls.severity }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Count <ProvenanceMark :provenance="MARKS.snoreDetected"
-                        /></span>
+                        <span class="data-card-label">Count</span>
                         <span class="data-card-value">{{ cls.count }}</span>
                     </div>
                     <div class="data-card-row">
-                        <span class="data-card-label"
-                            >% Breaths <ProvenanceMark :provenance="MARKS.snoreDetected"
-                        /></span>
+                        <span class="data-card-label">% Breaths</span>
                         <span class="data-card-value">{{ cls.pct.toFixed(1) }}%</span>
                     </div>
                 </div>
@@ -357,12 +321,8 @@
                         <TableHead style="width: 60px">Class</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead style="width: 80px">Severity</TableHead>
-                        <TableHead class="whitespace-nowrap" style="width: 80px">
-                            Count <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                        </TableHead>
-                        <TableHead class="whitespace-nowrap" style="width: 100px">
-                            % Breaths <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                        </TableHead>
+                        <TableHead style="width: 80px">Count</TableHead>
+                        <TableHead style="width: 80px">% Breaths</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -437,14 +397,12 @@
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
-                    field="EventComparisonResult.programmatic_event_count"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="comparison.false_negatives?.length ?? 0"
                     :decimals="0"
                     glossary-key="false_negatives"
-                    field="EventComparisonResult.false_negatives"
                 />
                 <StatCard
                     label="False Positives"
@@ -454,7 +412,6 @@
                     "
                     :decimals="0"
                     glossary-key="false_positives"
-                    field="EventComparisonResult.false_positives_apnea"
                 />
             </div>
 
@@ -485,10 +442,7 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label">Duration</span>
-                            <span class="data-card-value"
-                                >{{ e.duration.toFixed(1) }}s
-                                <ProvenanceMark :provenance="comparisonDurationProvenance(e)"
-                            /></span>
+                            <span class="data-card-value">{{ e.duration.toFixed(1) }}s</span>
                         </div>
                     </div>
                 </div>
@@ -525,10 +479,7 @@
                                     {{ formatTimeOffset(e.start_time) }}
                                 </RouterLink>
                             </TableCell>
-                            <TableCell
-                                >{{ e.duration.toFixed(1) }}s
-                                <ProvenanceMark :provenance="comparisonDurationProvenance(e)"
-                            /></TableCell>
+                            <TableCell>{{ e.duration.toFixed(1) }}s</TableCell>
                         </TableRow>
                     </TableBody>
                 </Table>
@@ -541,10 +492,7 @@
                 "
                 class="compare-table-section"
             >
-                <h3>
-                    False Positives: SNORE-detected Events the Device Did Not Score
-                    <ProvenanceMark :provenance="MARKS.snoreDetected" />
-                </h3>
+                <h3>False Positives: SNORE-detected Events the Device Did Not Score</h3>
                 <div v-if="isMobile" class="card-list">
                     <div v-for="(e, i) in allFalsePositives" :key="'fp-' + i" class="data-card">
                         <div class="data-card-header">
@@ -566,23 +514,16 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label">Duration</span>
-                            <span class="data-card-value"
-                                >{{ e.duration.toFixed(1) }}s
-                                <ProvenanceMark :provenance="comparisonDurationProvenance(e)"
-                            /></span>
+                            <span class="data-card-value">{{ e.duration.toFixed(1) }}s</span>
                         </div>
                         <div class="data-card-row">
-                            <span class="data-card-label"
-                                >Confidence <ProvenanceMark :provenance="MARKS.confidence"
-                            /></span>
+                            <span class="data-card-label">Confidence</span>
                             <span class="data-card-value">{{
                                 e.confidence != null ? (e.confidence * 100).toFixed(0) + '%' : '---'
                             }}</span>
                         </div>
                         <div class="data-card-row">
-                            <span class="data-card-label"
-                                >Flow Red. <ProvenanceMark :provenance="MARKS.flowReduction"
-                            /></span>
+                            <span class="data-card-label">Flow Red.</span>
                             <span class="data-card-value">{{
                                 e.flow_reduction != null
                                     ? (e.flow_reduction * 100).toFixed(0) + '%'
@@ -597,12 +538,8 @@
                             <TableHead style="width: 80px">Type</TableHead>
                             <TableHead>Time</TableHead>
                             <TableHead style="width: 90px">Duration</TableHead>
-                            <TableHead class="whitespace-nowrap" style="width: 100px">
-                                Confidence <ProvenanceMark :provenance="MARKS.confidence" />
-                            </TableHead>
-                            <TableHead class="whitespace-nowrap" style="width: 100px">
-                                Flow Red. <ProvenanceMark :provenance="MARKS.flowReduction" />
-                            </TableHead>
+                            <TableHead style="width: 100px">Confidence</TableHead>
+                            <TableHead style="width: 100px">Flow Red.</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -630,10 +567,7 @@
                                     {{ formatTimeOffset(e.start_time) }}
                                 </RouterLink>
                             </TableCell>
-                            <TableCell
-                                >{{ e.duration.toFixed(1) }}s
-                                <ProvenanceMark :provenance="comparisonDurationProvenance(e)"
-                            /></TableCell>
+                            <TableCell>{{ e.duration.toFixed(1) }}s</TableCell>
                             <TableCell>{{
                                 e.confidence != null ? (e.confidence * 100).toFixed(0) + '%' : '---'
                             }}</TableCell>
@@ -666,11 +600,10 @@ import { Loader2, AlertTriangle, ArrowLeft, BarChart3, Play, ChevronDown } from 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import FlowClassGlyph from '@/components/FlowClassGlyph.vue'
 import FlowClassPopover from '@/components/FlowClassPopover.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import { getAnalysis, runAnalysis } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { useAuth } from '@/composables/useAuth'
@@ -678,32 +611,13 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import { formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import { FLOW_LIMITATION_CLASSES } from '@/utils/flowLimitation'
-import { glossaryProvenance, provenanceFor, type Provenance } from '@/utils/provenance'
-import type { AnalysisResult, EventComparisonDetail, EventComparisonResult } from '@/types'
+import type { AnalysisResult, EventComparisonResult } from '@/types'
 
 interface FlowAnalysis {
     total_breaths: number
     class_distribution: Record<string, number>
     flow_limitation_index: number
     average_confidence: number
-}
-
-// Tiers reused across this page's tables (StatCards resolve theirs via `field`/
-// `provenance`). Mode-result event counts, FL class counts, and CSR/PB episode counts
-// are client-side counts of SNORE detections with no tagged backing field (#374), and
-// the bare names `apneas`, `hypopneas`, `reras` map to device counts elsewhere, so
-// they take the glossary tier of SNORE-detected events.
-const MARKS = {
-    snoreDetected: glossaryProvenance('programmatic_events'),
-    modeAhi: provenanceFor('ModeResult.ahi'),
-    rdi: provenanceFor('ModeResult.rdi'),
-    snoreEventDuration: provenanceFor('ApneaEvent.duration'),
-    flowReduction: provenanceFor('ApneaEvent.flow_reduction'),
-    confidence: provenanceFor('ApneaEvent.confidence'),
-}
-
-function comparisonDurationProvenance(e: EventComparisonDetail): Provenance {
-    return provenanceFor('EventComparisonDetail.duration', e.source)
 }
 
 const { canWrite } = useAuth()

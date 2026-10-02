@@ -1,13 +1,7 @@
-import type { Provenance } from '@/utils/provenance'
-
 export interface GlossaryEntry {
     label: string
     short: string // one-sentence explanation
     long?: string // optional fuller detail
-    // Tier for a displayed metric with no backing API field, read only through
-    // glossaryProvenance() in utils/provenance (tagged API fields use
-    // provenanceFor). Set it only where a call site reads it.
-    provenance?: Provenance
 }
 
 export const GLOSSARY: Record<string, GlossaryEntry> = {
@@ -31,12 +25,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     programmatic_events: {
         label: 'SNORE-detected Events',
         short: "Respiratory events detected by SNORE's own analysis algorithms from the raw flow signal.",
-        provenance: 'experimental',
-    },
-    events_per_hour: {
-        label: 'Events/Hour',
-        short: 'Events matching the current filter per hour of session length, computed by SNORE.',
-        provenance: 'derived',
     },
     ahi: {
         label: 'AHI',
@@ -206,7 +194,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     avg_confidence: {
         label: 'Avg Confidence',
         short: 'Average breath-classification confidence across all breaths in the session.',
-        provenance: 'experimental',
     },
     csr: {
         label: 'Cheyne-Stokes Respiration',
@@ -220,7 +207,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Flow Limitation Index',
         short: 'Severity-weighted share of breaths showing flow limitation.',
         long: "Each breath's class weight (0.0 for Class 1 up to 1.0 for Class 7) is multiplied by its classification confidence, then averaged across all breaths.",
-        provenance: 'experimental',
     },
     false_negatives: {
         label: 'False Negatives',
@@ -246,7 +232,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     sensitivity: {
         label: 'Sensitivity',
         short: 'Share of device-scored events that SNORE also detected (true-positive rate / recall).',
-        provenance: 'experimental',
     },
     precision: {
         label: 'Precision',
@@ -284,19 +269,19 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: 'Derived from wrist sensors during sleep, independent of the ResMed device. A positive rank correlation with the SNORE RERA/FL indices is weak external evidence they track real respiratory disturbance.',
     },
     cross_night_spearman: {
-        label: 'Cross-Night Spearman',
+        label: 'Cross-night Spearman',
         short: "Rank correlation of SNORE's nightly 95th-percentile FL against the device's nightly 95th-percentile FLG, across nights.",
         long: 'A night-level agreement check: even when per-breath alignment is noisy, nights the device ranks as more flow-limited should rank higher for SNORE too.',
     },
 
     // ── New device-channel labels ──────────────────────────────────────────
     fl_device: {
-        label: 'Flow Limitation (Device)',
+        label: 'Flow Limitation (device)',
         short: "ResMed's proprietary per-breath severity index for flow limitation, 0 (none) to 1 (severe).",
         long: "This is distinct from SNORE's computed flow-limitation classes. The device reports a continuous 0–1 score derived from its own internal algorithm; SNORE's FL classes are based on inspiratory flow-shape analysis.",
     },
     snore_device: {
-        label: 'Snore (Device)',
+        label: 'Snore (device)',
         short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled once per breath.',
         long: 'A unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.',
     },
@@ -314,7 +299,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         long: 'Useful for detecting brief snore vibrations and inspiratory flow-limitation shapes that are averaged away in the lower-resolution channel.',
     },
     trigger_cycle: {
-        label: 'Trigger/Cycle (Raw Codes)',
+        label: 'Trigger/Cycle (raw codes)',
         short: 'Raw numeric event codes (0–16) logged by the device firmware for breath trigger and cycle transitions.',
         long: 'These are undecoded manufacturer-internal event codes. They are stored as-is and have not been mapped to named states. Consult ResMed documentation or OSCAR source for code-to-state mappings.',
     },

@@ -30,10 +30,9 @@ describe('getByPath', () => {
 describe('computeDelta', () => {
     const metric: MetricDescriptor = {
         path: 'mean_proxy_sensitivity',
-        label: 'Proxy Sensitivity',
+        label: 'Proxy sensitivity',
         kind: 'percent',
         higherIsBetter: true,
-        provenance: 'experimental',
     }
 
     it('test_improvement_when_higher_is_better_and_b_greater', () => {
@@ -61,7 +60,6 @@ describe('computeDelta', () => {
             label: 'MAE',
             kind: 'rate',
             higherIsBetter: false,
-            provenance: 'experimental',
         }
         expect(computeDelta({ mae: 5 }, { mae: 3 }, errMetric).direction).toBe('better')
         expect(computeDelta({ mae: 3 }, { mae: 5 }, errMetric).direction).toBe('worse')
@@ -85,12 +83,7 @@ describe('computeDelta', () => {
     })
 
     it('test_count_metric_without_direction_stays_neutral', () => {
-        const countMetric: MetricDescriptor = {
-            path: 'n',
-            label: 'N',
-            kind: 'count',
-            provenance: 'device',
-        }
+        const countMetric: MetricDescriptor = { path: 'n', label: 'N', kind: 'count' }
         expect(computeDelta({ n: 1 }, { n: 9 }, countMetric).direction).toBe('neutral')
     })
 })
@@ -162,31 +155,5 @@ describe('AGGREGATE_METRICS coverage', () => {
         for (const type of ['events', 'fl', 'breaths', 'rera', 'apple'] as const) {
             expect(AGGREGATE_METRICS[type].length).toBeGreaterThan(0)
         }
-    })
-})
-
-describe('AGGREGATE_METRICS provenance', () => {
-    const all = Object.values(AGGREGATE_METRICS).flat()
-    const byPath = (path: string) => all.find((m) => m.path === path)
-
-    it('test_agreement_scores_are_experimental', () => {
-        // Every directional metric is an agreement score (sensitivity, precision,
-        // F1, Spearman, AUC) between SNORE's heuristics and a reference.
-        const scored = all.filter((m) => m.higherIsBetter !== undefined)
-        expect(scored.length).toBeGreaterThan(0)
-        for (const metric of scored) {
-            expect(metric.provenance, metric.path).toBe('experimental')
-        }
-    })
-
-    it('test_nested_path_resolves_from_leaf_field', () => {
-        expect(byPath('rr.mean_spearman_r')?.provenance).toBe('experimental')
-        expect(byPath('rera_vs_apple_bd.rho')?.provenance).toBe('experimental')
-    })
-
-    it('test_derived_and_device_tallies_keep_their_backend_tier', () => {
-        expect(byPath('machine_re_density')?.provenance).toBe('derived')
-        expect(byPath('total_proxy_reras')?.provenance).toBe('experimental')
-        expect(byPath('total_nights')?.provenance).toBe('device')
     })
 })

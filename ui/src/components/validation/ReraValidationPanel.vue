@@ -3,7 +3,7 @@
         validator-type="rera"
         :load-run-id="loadRunId"
         experimental
-        experimental-note="SNORE's RERA proxy is an experimental trend instrument, not a validated event count. It is scored against the device-flagged RE events, which the device reports extremely conservatively."
+        experimental-note="SNORE's RERA proxy is an experimental trend instrument, not a validated event count. It is scored against device-scored RE events, which the device reports extremely conservatively."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"
@@ -32,21 +32,18 @@
                     <StatCard
                         label="Proxy Sensitivity"
                         :value="report.aggregate.mean_proxy_sensitivity"
-                        field="ReraAggregateMetrics.mean_proxy_sensitivity"
                         :display="formatPercent(report.aggregate.mean_proxy_sensitivity)"
                         glossary-key="sensitivity"
                     />
                     <StatCard
                         label="Proxy Precision"
                         :value="report.aggregate.mean_proxy_precision"
-                        field="ReraAggregateMetrics.mean_proxy_precision"
                         :display="formatPercent(report.aggregate.mean_proxy_precision, 2)"
                         glossary-key="precision"
                     />
                     <StatCard
                         label="Chance Precision Floor"
                         :value="report.aggregate.chance_precision_floor"
-                        field="ReraAggregateMetrics.chance_precision_floor"
                         :display="formatPercent(report.aggregate.chance_precision_floor, 2)"
                         glossary-key="chance_floor"
                         :reason="floorReason"
@@ -54,28 +51,24 @@
                     <StatCard
                         label="Amplitude Sensitivity"
                         :value="report.aggregate.mean_amplitude_sensitivity"
-                        field="ReraAggregateMetrics.mean_amplitude_sensitivity"
                         :display="formatPercent(report.aggregate.mean_amplitude_sensitivity)"
                         glossary-key="sensitivity"
                     />
                     <StatCard
                         label="Amplitude Precision"
                         :value="report.aggregate.mean_amplitude_precision"
-                        field="ReraAggregateMetrics.mean_amplitude_precision"
                         :display="formatPercent(report.aggregate.mean_amplitude_precision, 2)"
                         glossary-key="precision"
                     />
                     <StatCard
                         label="Device RE Density"
                         :value="report.aggregate.machine_re_density"
-                        field="ReraAggregateMetrics.machine_re_density"
                         :decimals="2"
                         unit="/h"
                     />
                     <StatCard
                         label="Proxy Density"
                         :value="report.aggregate.proxy_density"
-                        field="ReraAggregateMetrics.proxy_density"
                         :decimals="2"
                         unit="/h"
                         glossary-key="rera_proxy"
@@ -97,7 +90,6 @@
                     <StatCard
                         label="Total Proxy RERAs"
                         :value="report.aggregate.total_proxy_reras"
-                        field="ReraAggregateMetrics.total_proxy_reras"
                         :decimals="0"
                     />
                     <StatCard
@@ -106,7 +98,7 @@
                         :decimals="0"
                     />
                     <StatCard
-                        label="Skipped (No Device RE)"
+                        label="Skipped (no device RE)"
                         :value="report.aggregate.sessions_skipped_no_machine_re"
                         :decimals="0"
                     />
@@ -118,37 +110,13 @@
                             <TableRow>
                                 <TableHead>Date</TableHead>
                                 <TableHead class="whitespace-nowrap">Device RE</TableHead>
+                                <TableHead class="whitespace-nowrap">Amplitude RERAs</TableHead>
+                                <TableHead class="whitespace-nowrap">Proxy RERAs</TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Amplitude RERAs
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor(
-                                                'ReraSessionValidation.amplitude_rera_count',
-                                            )
-                                        "
+                                    >Proxy Sens <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Proxy RERAs
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('ReraSessionValidation.proxy_rera_count')
-                                        "
-                                /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >Proxy Sens
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('ReraSessionValidation.proxy_sensitivity')
-                                        " />
-                                    <InfoHint glossary-key="sensitivity"
-                                /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >Proxy Prec
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('ReraSessionValidation.proxy_precision')
-                                        " />
-                                    <InfoHint glossary-key="precision"
+                                    >Proxy Prec <InfoHint glossary-key="precision"
                                 /></TableHead>
                             </TableRow>
                         </TableHeader>
@@ -199,7 +167,6 @@
 import { ref, computed } from 'vue'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import SessionDateCell from '@/components/validation/SessionDateCell.vue'
 import {
@@ -212,7 +179,6 @@ import {
 } from '@/components/ui/table'
 import { formatPercent } from '@/utils/formatting'
 import { downloadCsv } from '@/utils/download'
-import { provenanceFor } from '@/utils/provenance'
 import type { ReraValidationReport } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

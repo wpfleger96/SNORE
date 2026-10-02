@@ -1,38 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GLOSSARY } from '@/utils/glossary'
 
-// App source (not tests), to check which glossary tiers a call site reads.
-const SOURCES = Object.entries(
-    import.meta.glob<string>('/src/**/*.{ts,vue}', {
-        query: '?raw',
-        import: 'default',
-        eager: true,
-    }),
-)
-    .filter(([path]) => !path.startsWith('/src/tests/') && !path.includes('generated'))
-    .map(([, source]) => source)
-    .join('\n')
-
-describe('GLOSSARY provenance', () => {
-    it('test_every_glossary_tier_is_read_by_a_call_site', () => {
-        // A `provenance` nothing reads via glossaryProvenance() is dead and drifts.
-        const unread = Object.entries(GLOSSARY)
-            .filter(([, entry]) => entry.provenance !== undefined)
-            .map(([key]) => key)
-            .filter((key) => !SOURCES.includes(`glossaryProvenance('${key}')`))
-
-        expect(unread).toEqual([])
-    })
-
-    it('test_every_glossary_provenance_call_has_a_tier', () => {
-        const called = [...SOURCES.matchAll(/glossaryProvenance\('(\w+)'\)/g)].map((m) => m[1])
-        const missing = called.filter((key) => GLOSSARY[key]?.provenance === undefined)
-
-        expect(called.length).toBeGreaterThan(0)
-        expect(missing).toEqual([])
-    })
-})
-
 describe('GLOSSARY text', () => {
     it('test_rdi_entry_says_rdi_never_below_mode_ahi', () => {
         // The UI shows ModeResult.rdi: the mode's AHI plus its RERAs per hour.

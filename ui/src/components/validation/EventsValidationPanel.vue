@@ -33,7 +33,6 @@
                         :value="ratioPct(report.aggregate.avg_apnea_sensitivity)"
                         unit="%"
                         :decimals="1"
-                        field="AggregateMetrics.avg_apnea_sensitivity"
                         glossary-key="sensitivity"
                     />
                     <StatCard
@@ -41,7 +40,6 @@
                         :value="ratioPct(report.aggregate.avg_apnea_f1)"
                         unit="%"
                         :decimals="1"
-                        field="AggregateMetrics.avg_apnea_f1"
                         glossary-key="f1"
                     />
                     <StatCard
@@ -49,7 +47,6 @@
                         :value="ratioPct(report.aggregate.avg_hypopnea_sensitivity)"
                         unit="%"
                         :decimals="1"
-                        field="AggregateMetrics.avg_hypopnea_sensitivity"
                         glossary-key="sensitivity"
                     />
                     <StatCard
@@ -57,7 +54,6 @@
                         :value="ratioPct(report.aggregate.avg_hypopnea_f1)"
                         unit="%"
                         :decimals="1"
-                        field="AggregateMetrics.avg_hypopnea_f1"
                         glossary-key="f1"
                     />
                     <StatCard
@@ -73,58 +69,24 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
+                                <TableHead>Duration</TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Duration
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.duration_hours')
-                                        "
+                                    >Apnea Sens <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea Sens
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.apnea_sensitivity')
-                                        " />
-                                    <InfoHint glossary-key="sensitivity"
+                                    >Apnea Prec <InfoHint glossary-key="precision"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea Prec
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.apnea_precision')
-                                        " />
-                                    <InfoHint glossary-key="precision"
+                                    >Apnea F1 <InfoHint glossary-key="f1"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Apnea F1
-                                    <ProvenanceMark
-                                        :provenance="provenanceFor('SessionValidation.apnea_f1')" />
-                                    <InfoHint glossary-key="f1"
+                                    >Hypopnea Sens <InfoHint glossary-key="sensitivity"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Hypopnea Sens
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.hypopnea_sensitivity')
-                                        " />
-                                    <InfoHint glossary-key="sensitivity"
+                                    >Hypopnea Prec <InfoHint glossary-key="precision"
                                 /></TableHead>
                                 <TableHead class="whitespace-nowrap"
-                                    >Hypopnea Prec
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.hypopnea_precision')
-                                        " />
-                                    <InfoHint glossary-key="precision"
-                                /></TableHead>
-                                <TableHead class="whitespace-nowrap"
-                                    >Hypopnea F1
-                                    <ProvenanceMark
-                                        :provenance="
-                                            provenanceFor('SessionValidation.hypopnea_f1')
-                                        " />
-                                    <InfoHint glossary-key="f1"
+                                    >Hypopnea F1 <InfoHint glossary-key="f1"
                                 /></TableHead>
                             </TableRow>
                         </TableHeader>
@@ -175,7 +137,6 @@ import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import StatCard from '@/components/StatCard.vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import ValidationPanelShell from '@/components/validation/ValidationPanelShell.vue'
 import {
     Select,
@@ -194,7 +155,6 @@ import {
 } from '@/components/ui/table'
 import { formatDateShort } from '@/utils/formatting'
 import { downloadCsv } from '@/utils/download'
-import { provenanceFor } from '@/utils/provenance'
 import type { ValidationReport, SessionValidation } from '@/types'
 
 defineProps<{ loadRunId?: number | null }>()

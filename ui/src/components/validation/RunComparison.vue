@@ -122,7 +122,6 @@
                             >
                                 <TableCell class="whitespace-nowrap">
                                     {{ row.metric.label }}
-                                    <ProvenanceMark :provenance="row.metric.provenance" />
                                     <InfoHint
                                         v-if="row.metric.glossaryKey"
                                         :glossary-key="row.metric.glossaryKey"
@@ -168,7 +167,6 @@ import {
 } from '@/components/ui/select'
 import { Loader2 } from '@lucide/vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import IdentityChips from '@/components/validation/IdentityChips.vue'
 import { useValidationRuns } from '@/composables/useValidationRuns'
 import {

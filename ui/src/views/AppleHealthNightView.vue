@@ -28,7 +28,6 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Time in Bed"
-                field="HealthNightDetailRead.time_in_bed_seconds"
                 :value="secToHours(night.time_in_bed_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -36,7 +35,6 @@
             />
             <StatCard
                 label="Total Sleep"
-                field="HealthNightDetailRead.total_sleep_seconds"
                 :value="secToHours(night.total_sleep_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -44,7 +42,6 @@
             />
             <StatCard
                 label="Efficiency"
-                field="HealthNightDetailRead.sleep_efficiency_pct"
                 :value="night.sleep_efficiency_pct ?? null"
                 unit="%"
                 :decimals="1"
@@ -52,7 +49,6 @@
             />
             <StatCard
                 label="Core"
-                field="HealthNightDetailRead.core_seconds"
                 :value="secToHours(night.core_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -60,7 +56,6 @@
             />
             <StatCard
                 label="Deep"
-                field="HealthNightDetailRead.deep_seconds"
                 :value="secToHours(night.deep_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -68,7 +63,6 @@
             />
             <StatCard
                 label="REM"
-                field="HealthNightDetailRead.rem_seconds"
                 :value="secToHours(night.rem_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -76,7 +70,6 @@
             />
             <StatCard
                 label="Awake"
-                field="HealthNightDetailRead.awake_seconds"
                 :value="secToHours(night.awake_seconds)"
                 unit="hr"
                 :decimals="1"
@@ -84,7 +77,6 @@
             />
             <StatCard
                 label="Stage Coverage"
-                field="HealthNightDetailRead.stage_coverage_pct"
                 :value="night.stage_coverage_pct ?? null"
                 unit="%"
                 :decimals="1"
@@ -99,7 +91,6 @@
             <StatCard
                 v-if="night.avg_spo2_pct != null"
                 label="SpO₂ Avg"
-                field="HealthNightDetailRead.avg_spo2_pct"
                 :value="night.avg_spo2_pct"
                 unit="%"
                 :decimals="1"
@@ -108,7 +99,6 @@
             <StatCard
                 v-if="night.min_spo2_pct != null"
                 label="SpO₂ Min"
-                field="HealthNightDetailRead.min_spo2_pct"
                 :value="night.min_spo2_pct"
                 unit="%"
                 :decimals="1"
@@ -117,7 +107,6 @@
             <StatCard
                 v-if="night.avg_rr != null"
                 label="Resp Rate"
-                field="HealthNightDetailRead.avg_rr"
                 :value="night.avg_rr"
                 unit="br/min"
                 :decimals="1"

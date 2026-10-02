@@ -2,10 +2,8 @@
     <div class="stat-card">
         <div class="stat-label">
             {{ label
-            }}<span v-if="glossaryKey || resolvedProvenance !== 'device'" class="stat-hints"
-                ><ProvenanceMark :provenance="resolvedProvenance" /><InfoHint
-                    v-if="glossaryKey"
-                    :glossary-key="glossaryKey"
+            }}<span v-if="glossaryKey" class="ml-1 normal-case"
+                ><InfoHint :glossary-key="glossaryKey"
             /></span>
         </div>
         <div class="stat-value">
@@ -26,9 +24,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import { nullReasonLabel } from '@/utils/formatting'
-import { provenanceFor, type Provenance, type ProvenanceKey } from '@/utils/provenance'
 
 const props = defineProps<{
     label: string
@@ -43,17 +39,9 @@ const props = defineProps<{
     // Null-with-reason code (e.g. 'analysis_not_run'); shown as a tooltip on the
     // em-dash state to explain why a value is absent for this night.
     reason?: string | null
-    // Provenance mark next to the label. `field` is the tagged API field the
-    // value comes from; a value needing a per-value source or glossaryProvenance()
-    // resolves the tier at the call site and passes `provenance`, which wins.
-    field?: ProvenanceKey
-    provenance?: Provenance
 }>()
 
 const reasonLabel = computed(() => nullReasonLabel(props.reason))
-const resolvedProvenance = computed<Provenance>(
-    () => props.provenance ?? (props.field ? provenanceFor(props.field) : 'device'),
-)
 </script>
 
 <style scoped>
@@ -70,17 +58,6 @@ const resolvedProvenance = computed<Provenance>(
     letter-spacing: 0.04em;
     color: var(--color-muted-foreground);
     margin-bottom: 0.35rem;
-}
-
-/* Mark + info icon sit inline after the label text; same 1rem box as the
-   label line, so adding a mark causes no layout shift. */
-.stat-hints {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    margin-left: 0.25rem;
-    vertical-align: middle;
-    text-transform: none;
 }
 
 .stat-value {

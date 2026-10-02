@@ -15,19 +15,17 @@
         <!-- Summary -->
         <div class="summary-row">
             <StatCard label="Total Events" :value="filteredEvents.length" :decimals="0" />
-            <!-- Computed here from device-scored events and session length. -->
-            <StatCard
-                label="Events/Hour"
-                :value="eventsPerHour"
-                :decimals="1"
-                :provenance="glossaryProvenance('events_per_hour')"
-            />
+            <StatCard label="Events/Hour" :value="eventsPerHour" :decimals="1" />
             <StatCard label="Types" :value="uniqueTypes.length" :decimals="0" />
         </div>
 
         <!-- Event Match (if analysis exists) -->
         <div v-if="matchResult" class="section-card">
             <h2>Device-scored vs SNORE-detected</h2>
+            <ExperimentalBanner
+                class="mb-3"
+                body="SNORE's event detection scored against the device's events; not a clinical measurement."
+            />
             <div class="match-grid">
                 <StatCard
                     label="Device-scored"
@@ -40,27 +38,19 @@
                     :value="matchResult.programmatic_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
-                    field="EventMatchResult.programmatic_count"
                 />
-                <StatCard
-                    label="Matched"
-                    :value="matchResult.matched"
-                    :decimals="0"
-                    field="EventMatchResult.matched"
-                />
+                <StatCard label="Matched" :value="matchResult.matched" :decimals="0" />
                 <StatCard
                     label="False Positives"
                     :value="matchResult.false_positives"
                     :decimals="0"
                     glossary-key="false_positives"
-                    field="EventMatchResult.false_positives"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="matchResult.false_negatives"
                     :decimals="0"
                     glossary-key="false_negatives"
-                    field="EventMatchResult.false_negatives"
                 />
                 <StatCard
                     label="Sensitivity"
@@ -68,7 +58,6 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="sensitivity"
-                    :provenance="glossaryProvenance('sensitivity')"
                 />
             </div>
         </div>
@@ -219,10 +208,10 @@ import { getSession } from '@/api/sessions'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { formatTimeOffset } from '@/utils/formatting'
-import { glossaryProvenance } from '@/utils/provenance'
 import { EVENT_COLORS } from '@/types'
 import type { EventItem, EventMatchResult } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'
+import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 
 const emDash = '\u2014' // em-dash used for null display
 const props = defineProps<{ sessionId: number }>()

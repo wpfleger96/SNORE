@@ -362,21 +362,10 @@ and headers. The legend line prints automatically only for commands wrapped in
 after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
 header and a CSV `columns.csv` sidecar.
 
-**UI provenance marks:** `just ui-generate-types` (`scripts/export_openapi.py`) exports the
-`x-provenance` tags to `ui/src/types/provenance.json`, keyed `Schema.field` (never hand-edit; a unit
-test fails when it is stale). Views resolve tiers in `ui/src/utils/provenance.ts`:
-- `provenanceFor('Schema.field', source?)` for API fields; the key is type-checked (`ProvenanceKey`),
-  so name the schema the value actually comes from. Pass `source` only for fields with a per-value
-  source sibling (the JSON's `sources`, e.g. `DayDetail.ahi` ← `index_source`,
-  `EventComparisonDetail.duration` ← event `source`). A value with no tagged field gets no mark.
-- `glossaryProvenance(key)` for displayed metrics with no API field (the glossary `provenance` key;
-  set it only where a call site reads it — `glossary.test.ts` enforces this).
-
-An unrecognised source or a glossary entry without a tier logs a warning, which fails Vitest.
-`<ProvenanceMark :provenance>` is the only tier carrier (`InfoHint` explains terms, not tiers).
-`StatCard` takes `field` (a `ProvenanceKey`), else a call-site-resolved `provenance`.
-Never nest a mark inside a link: on cards only the date is a `RouterLink` (see `SessionCard.vue`).
-Headings and labels are Title Case; prose is sentence case.
+The web UI does not mark individual fields. A section or card whose content is an Experimental
+metric gets one `<ExperimentalBanner>` (pass a short `body` on small cards; `ValidationPanelShell`
+takes `experimental`/`experimental-note`); Device and Derived data stay unflagged. Day-level AHI
+names its source (`index_source`) in text: device-reported or SNORE recount.
 
 **UI:** API types are generated — run `just ui-generate-types` after changing API
 schemas (`ui/src/types/generated.ts`; `types/index.ts` re-exports them). New API

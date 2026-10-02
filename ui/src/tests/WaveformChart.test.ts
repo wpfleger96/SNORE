@@ -152,10 +152,10 @@ describe('WaveformChart', () => {
             peak_flow_limitation: null,
         }
         const withEvents = mount(WaveformChart, { props: { ...MINIMAL_PROPS, events: [event] } })
-        expect(withEvents.text()).toContain('Shaded Bands: Device-scored Events')
+        expect(withEvents.text()).toContain('Shaded bands: device-scored events')
 
         const without = mount(WaveformChart, { props: MINIMAL_PROPS })
-        expect(without.text()).not.toContain('Shaded Bands')
+        expect(without.text()).not.toContain('Shaded bands')
     })
 
     it('test_refetching_true_renders_corner_spinner', () => {

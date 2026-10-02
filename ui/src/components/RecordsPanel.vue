@@ -7,11 +7,7 @@
     </div>
     <div v-else class="records-grid">
         <div v-for="(metric, key) in displayMetrics" :key="key" class="record-card">
-            <h4>
-                {{ metric.label }}
-                <ProvenanceMark :provenance="metric.provenance" />
-                <InfoHint :glossary-key="metric.glossaryKey" />
-            </h4>
+            <h4>{{ metric.label }} <InfoHint :glossary-key="metric.glossaryKey" /></h4>
             <div class="record-columns">
                 <div class="record-col">
                     <span class="col-header best-header">Best</span>
@@ -43,8 +39,6 @@ import { computed } from 'vue'
 import { Loader2 } from '@lucide/vue'
 import { formatDateMonthDay } from '@/utils/formatting'
 import InfoHint from '@/components/InfoHint.vue'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor, type ProvenanceKey } from '@/utils/provenance'
 import type { RecordsData } from '@/types'
 
 const props = defineProps<{
@@ -53,36 +47,12 @@ const props = defineProps<{
     emptyMessage?: string
 }>()
 
-// `field` is the tagged RecordsResponse field behind each metric's records.
-const METRIC_CONFIG: Record<
-    string,
-    { label: string; decimals: number; glossaryKey: string; field: ProvenanceKey }
-> = {
-    ahi: { label: 'AHI', decimals: 1, glossaryKey: 'ahi', field: 'RecordsResponse.ahi' },
-    leak: {
-        label: 'Leak (L/min)',
-        decimals: 1,
-        glossaryKey: 'leak',
-        field: 'RecordsResponse.leak',
-    },
-    therapy_hours: {
-        label: 'Therapy Hours',
-        decimals: 1,
-        glossaryKey: 'usage',
-        field: 'RecordsResponse.therapy_hours',
-    },
-    spo2_min: {
-        label: 'SpO₂ Min (%)',
-        decimals: 0,
-        glossaryKey: 'spo2',
-        field: 'RecordsResponse.spo2_min',
-    },
-    total_sleep_hours: {
-        label: 'Total Sleep (hrs)',
-        decimals: 1,
-        glossaryKey: 'total_sleep',
-        field: 'RecordsResponse.total_sleep_hours',
-    },
+const METRIC_CONFIG: Record<string, { label: string; decimals: number; glossaryKey: string }> = {
+    ahi: { label: 'AHI', decimals: 1, glossaryKey: 'ahi' },
+    leak: { label: 'Leak (L/min)', decimals: 1, glossaryKey: 'leak' },
+    therapy_hours: { label: 'Therapy Hours', decimals: 1, glossaryKey: 'usage' },
+    spo2_min: { label: 'SpO₂ Min (%)', decimals: 0, glossaryKey: 'spo2' },
+    total_sleep_hours: { label: 'Total Sleep (hrs)', decimals: 1, glossaryKey: 'total_sleep' },
 }
 
 const displayMetrics = computed(() => {
@@ -93,7 +63,6 @@ const displayMetrics = computed(() => {
             label: cfg.label,
             decimals: cfg.decimals,
             glossaryKey: cfg.glossaryKey,
-            provenance: provenanceFor(cfg.field),
             best: props.records![key]?.best ?? [],
             worst: props.records![key]?.worst ?? [],
         }))

@@ -11,7 +11,6 @@
         <div class="stats-grid mb-6">
             <StatCard
                 label="Avg Sleep"
-                field="HealthNightSummaryRead.total_sleep_seconds"
                 :value="avgTotalSleep"
                 unit="hr"
                 :decimals="1"
@@ -19,7 +18,6 @@
             />
             <StatCard
                 label="Avg Efficiency"
-                field="HealthNightSummaryRead.sleep_efficiency_pct"
                 :value="avgEfficiency"
                 unit="%"
                 :decimals="1"
@@ -27,7 +25,6 @@
             />
             <StatCard
                 label="Avg Deep"
-                field="HealthNightSummaryRead.deep_seconds"
                 :value="avgDeep"
                 unit="hr"
                 :decimals="1"
@@ -35,7 +32,6 @@
             />
             <StatCard
                 label="Avg REM"
-                field="HealthNightSummaryRead.rem_seconds"
                 :value="avgRem"
                 unit="hr"
                 :decimals="1"
@@ -53,45 +49,52 @@
 
         <template v-else>
             <div v-if="isMobile" class="card-list">
-                <AppleHealthNightCard
+                <RouterLink
                     v-for="night in data.items"
                     :key="night.night_date"
-                    :night="night"
-                />
+                    class="data-card"
+                    :to="`/apple-health/${night.night_date}`"
+                >
+                    <div class="data-card-header">{{ formatDateFull(night.night_date) }}</div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Total Sleep (hr)</span>
+                        <span class="data-card-value">{{
+                            fmtHours(night.total_sleep_seconds)
+                        }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Efficiency (%)</span>
+                        <span class="data-card-value">{{
+                            fmtPct(night.sleep_efficiency_pct)
+                        }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Core (hr)</span>
+                        <span class="data-card-value">{{ fmtHours(night.core_seconds) }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Deep (hr)</span>
+                        <span class="data-card-value">{{ fmtHours(night.deep_seconds) }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">REM (hr)</span>
+                        <span class="data-card-value">{{ fmtHours(night.rem_seconds) }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label">Source</span>
+                        <span class="data-card-value">{{ night.preferred_source ?? '---' }}</span>
+                    </div>
+                </RouterLink>
             </div>
             <Table v-else>
                 <TableHeader>
                     <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead class="text-right"
-                            >Total Sleep
-                            <ProvenanceMark
-                                :provenance="
-                                    provenanceFor('HealthNightSummaryRead.total_sleep_seconds')
-                                "
-                        /></TableHead>
-                        <TableHead class="text-right"
-                            >Efficiency
-                            <ProvenanceMark
-                                :provenance="
-                                    provenanceFor('HealthNightSummaryRead.sleep_efficiency_pct')
-                                "
-                        /></TableHead>
-                        <TableHead class="text-right"
-                            >Core
-                            <ProvenanceMark
-                                :provenance="provenanceFor('HealthNightSummaryRead.core_seconds')"
-                        /></TableHead>
-                        <TableHead class="text-right"
-                            >Deep
-                            <ProvenanceMark
-                                :provenance="provenanceFor('HealthNightSummaryRead.deep_seconds')"
-                        /></TableHead>
-                        <TableHead class="text-right"
-                            >REM
-                            <ProvenanceMark
-                                :provenance="provenanceFor('HealthNightSummaryRead.rem_seconds')"
-                        /></TableHead>
+                        <TableHead class="text-right">Total Sleep</TableHead>
+                        <TableHead class="text-right">Efficiency</TableHead>
+                        <TableHead class="text-right">Core</TableHead>
+                        <TableHead class="text-right">Deep</TableHead>
+                        <TableHead class="text-right">REM</TableHead>
                         <TableHead>Source</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -157,13 +160,10 @@ import {
 import StatCard from '@/components/StatCard.vue'
 import PaginationBar from '@/components/PaginationBar.vue'
 import ErrorState from '@/components/ErrorState.vue'
-import AppleHealthNightCard from '@/components/AppleHealthNightCard.vue'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { getHealthNights } from '@/api/health'
 import { avg, formatDateFull } from '@/utils/formatting'
-import ProvenanceMark from '@/components/ProvenanceMark.vue'
-import { provenanceFor } from '@/utils/provenance'
 
 const router = useRouter()
 const { isMobile } = useIsMobile()
