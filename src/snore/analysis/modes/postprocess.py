@@ -6,7 +6,7 @@ import logging
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
@@ -24,6 +24,13 @@ EVENT_MATCH_TOLERANCE_SECONDS = 5.0
 # Events comparable by start-time tolerance matching. Apneas, hypopneas and
 # RERAs all expose ``start_time``; matching never inspects type-specific fields.
 MatchableEvent = ApneaEvent | HypopneaEvent | RERAEvent
+
+
+class HasStartTime(Protocol):
+    """Anything one-to-one matching can pair: only ``start_time`` is read."""
+
+    @property
+    def start_time(self) -> float: ...
 
 
 def _calculate_event_overlap(event1: ApneaEvent, event2: ApneaEvent) -> float:
@@ -232,7 +239,7 @@ def _merge_two_events(
 
 
 @dataclass(frozen=True)
-class MatchedEvents:
+class MatchedEvents[E: HasStartTime]:
     """
     Outcome of greedy one-to-one matching of programmatic vs machine events.
 
@@ -242,16 +249,16 @@ class MatchedEvents:
         false_negatives: Machine events with no matching programmatic event
     """
 
-    matched: list[tuple[MatchableEvent, MatchableEvent]]
-    false_positives: list[MatchableEvent]
-    false_negatives: list[MatchableEvent]
+    matched: list[tuple[E, E]]
+    false_positives: list[E]
+    false_negatives: list[E]
 
 
-def match_events_by_start_time(
-    programmatic: Sequence[MatchableEvent],
-    machine: Sequence[MatchableEvent],
+def match_events_by_start_time[E: HasStartTime](
+    programmatic: Sequence[E],
+    machine: Sequence[E],
     tolerance_seconds: float = EVENT_MATCH_TOLERANCE_SECONDS,
-) -> MatchedEvents:
+) -> MatchedEvents[E]:
     """
     Greedily match programmatic events to machine events by start time.
 
@@ -266,9 +273,9 @@ def match_events_by_start_time(
     Returns:
         MatchedEvents with matched pairs and unmatched events per side
     """
-    matched: list[tuple[MatchableEvent, MatchableEvent]] = []
+    matched: list[tuple[E, E]] = []
     matched_machine_indices: set[int] = set()
-    false_positives: list[MatchableEvent] = []
+    false_positives: list[E] = []
 
     for prog_event in programmatic:
         match_found = False
@@ -286,7 +293,7 @@ def match_events_by_start_time(
         if not match_found:
             false_positives.append(prog_event)
 
-    false_negatives: list[MatchableEvent] = [
+    false_negatives: list[E] = [
         mach_event
         for m_idx, mach_event in enumerate(machine)
         if m_idx not in matched_machine_indices
@@ -338,7 +345,7 @@ def validate_event_type(
     programmatic: Sequence[MatchableEvent],
     machine: Sequence[MatchableEvent],
     tolerance_seconds: float = EVENT_MATCH_TOLERANCE_SECONDS,
-) -> tuple[EventValidationResult, MatchedEvents]:
+) -> tuple[EventValidationResult, MatchedEvents[MatchableEvent]]:
     """
     Validate a single event type against machine events.
 
