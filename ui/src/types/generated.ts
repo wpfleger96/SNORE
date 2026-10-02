@@ -2231,7 +2231,7 @@ export interface components {
             machine_events: components['schemas']['AnalysisEvent'][]
             /**
              * Machine Rdi
-             * @description [DERIVED] Equal to machine_ahi: RERAs need EEG, so CPAP RDI is the AHI recount (None if no events)
+             * @description [DERIVED] Mirrors machine_ahi (machine-scored apneas + hypopneas per hour); device-flagged RERAs are not added, so this is not a true RDI (None if no events)
              */
             machine_rdi?: number | null
             /**

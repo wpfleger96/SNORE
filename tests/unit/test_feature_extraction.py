@@ -1,8 +1,7 @@
 """
 Unit tests for feature extraction from breath waveforms.
 
-Tests shape features, peak detection, statistical features,
-and spectral analysis.
+Tests shape features and peak detection.
 """
 
 import numpy as np
@@ -257,158 +256,18 @@ class TestPeakDetection:
             assert prom > 0
 
 
-class TestStatisticalFeatures:
-    """Test statistical feature extraction."""
+class TestFeatureValidation:
+    """Test that extracted features fall within valid ranges."""
 
-    def test_statistical_features_basic(self):
-        """Basic statistics should be calculated correctly."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.array([10.0, 20.0, 30.0, 20.0, 10.0])
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        assert stats.mean == 18.0
-        assert stats.median == 20.0
-        assert stats.std_dev > 0
-
-    def test_statistical_percentiles_ordered(self):
-        """Percentiles should be in ascending order."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.random.normal(20, 5, 100)
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        assert stats.percentile_25 <= stats.percentile_50
-        assert stats.percentile_50 <= stats.percentile_75
-        assert stats.percentile_75 <= stats.percentile_95
-
-    def test_statistical_empty_array(self):
-        """Empty array should return zeros or handle gracefully."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.array([])
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        # Should not crash
-        assert stats is not None
-
-    def test_statistical_single_value(self):
-        """Single value should have zero std dev."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.array([20.0])
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        assert stats.mean == 20.0
-        assert stats.std_dev == 0.0
-
-    def test_statistical_all_same_values(self):
-        """All same values should have zero std dev."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.ones(100) * 25.0
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        assert stats.std_dev == 0.0
-        assert stats.coefficient_of_variation == 0.0
-
-    def test_coefficient_of_variation(self):
-        """CV should be std_dev / mean."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.array([10.0, 20.0, 30.0])
-
-        stats = extractor.extract_statistical_features(waveform)
-
-        expected_cv = stats.std_dev / stats.mean
-        assert abs(stats.coefficient_of_variation - expected_cv) < 0.01
-
-
-class TestSpectralFeatures:
-    """Test spectral (frequency domain) features."""
-
-    def test_spectral_dominant_frequency(self):
-        """Should detect dominant frequency in periodic signal."""
-        extractor = WaveformFeatureExtractor()
-
-        t = np.linspace(0, 1, 100)
-        waveform = np.sin(2 * np.pi * 5 * t)
-
-        spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
-
-        assert 4.0 < spectral.dominant_frequency < 6.0
-
-    def test_spectral_entropy(self):
-        """Spectral entropy should be reasonable."""
-        extractor = WaveformFeatureExtractor()
-        t = np.linspace(0, 1, 100)
-        waveform = np.sin(2 * np.pi * 5 * t)
-
-        spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
-
-        assert spectral.spectral_entropy > 0
-
-    def test_spectral_psd_shape(self):
-        """Power spectral density should have expected shape."""
-        extractor = WaveformFeatureExtractor()
-        t = np.linspace(0, 1, 100)
-        waveform = np.sin(2 * np.pi * 5 * t)
-
-        spectral = extractor.extract_spectral_features(waveform, sample_rate=100.0)
-
-        assert len(spectral.power_spectral_density) > 0
-        assert np.all(spectral.power_spectral_density >= 0)
-
-    def test_spectral_very_short_signal(self):
-        """Very short signal should handle gracefully."""
-        extractor = WaveformFeatureExtractor()
-        waveform = np.array([1.0, 2.0, 3.0])
-
-        spectral = extractor.extract_spectral_features(waveform, sample_rate=25.0)
-
-        assert spectral is not None
-
-
-class TestAllFeaturesExtraction:
-    """Test extracting all features at once."""
-
-    def test_extract_all_features_complete(self):
-        """All features should be extracted without spectral."""
+    def test_shape_and_peak_features_pass_validation(self):
+        """Extracted shape and peak features should pass validation."""
         extractor = WaveformFeatureExtractor()
         _, flow = generate_sinusoidal_breath()
 
-        shape, peak, stats, spectral = extractor.extract_all_features(
-            flow, sample_rate=25.0, include_spectral=False
-        )
+        shape = extractor.extract_shape_features(flow, sample_rate=25.0)
+        peak = extractor.extract_peak_features(flow, sample_rate=25.0)
 
-        assert shape is not None
-        assert peak is not None
-        assert stats is not None
-        assert spectral is None
-
-    def test_extract_all_features_with_spectral(self):
-        """All features including spectral should be extracted."""
-        extractor = WaveformFeatureExtractor()
-        _, flow = generate_sinusoidal_breath()
-
-        shape, peak, stats, spectral = extractor.extract_all_features(
-            flow, sample_rate=25.0, include_spectral=True
-        )
-
-        assert shape is not None
-        assert peak is not None
-        assert stats is not None
-        assert spectral is not None
-
-    def test_all_features_pass_validation(self):
-        """Extracted features should pass validation."""
-        extractor = WaveformFeatureExtractor()
-        _, flow = generate_sinusoidal_breath()
-
-        shape, peak, stats, spectral = extractor.extract_all_features(
-            flow, sample_rate=25.0, include_spectral=False
-        )
-
-        assert_features_in_range(shape=shape, peak=peak, statistical=stats)
+        assert_features_in_range(shape=shape, peak=peak)
 
 
 class TestFeatureExtractionEdgeCases:
