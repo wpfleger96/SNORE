@@ -1,6 +1,5 @@
 """Mask epoch service: contiguous device-reported mask-type periods."""
 
-from snore.analysis.rx_tracker import RxTracker
 from snore.services._base import ProfileScopedService
 from snore.services.schemas import MaskEpochResponse
 
@@ -27,6 +26,10 @@ class MaskEpochService(ProfileScopedService):
         mask_log vocabulary; it is None for unrecognized device values (e.g.
         "Unknown").
         """
+        # Deferred: rx_tracker imports snore.services.schemas, whose package
+        # __init__ imports this module (#364).
+        from snore.analysis.rx_tracker import RxTracker  # noqa: PLC0415
+
         periods = await RxTracker(self.profile_id).get_history(
             self.db_session, keys=("mask_type",)
         )

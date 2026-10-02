@@ -3,9 +3,9 @@
   "extends": ["github>wpfleger96/github-config//renovate-config/default"],
   "packageRules": [
     {
-      "description": "Hold plotext below 6 until the CLI charts are ported to its new API (#356)",
-      "matchPackageNames": ["plotext"],
-      "allowedVersions": "<6"
+      "description": "Hold pint below 0.26 until mypy can analyze pint 0.26.x without crashing (#380)",
+      "matchPackageNames": ["pint"],
+      "allowedVersions": "<0.26"
     }
   ]
 }

@@ -242,7 +242,9 @@ async def show_waveform(
 
         if output_format == "plot":
             show_events = waveform_type_single == "flow"
-            renderer = WaveformRenderer(width=80, height=20, show_events=show_events)
+            renderer = WaveformRenderer(
+                console=console, width=80, height=20, show_events=show_events
+            )
             renderer.render(
                 timestamps=timestamps,
                 values=values,
@@ -321,7 +323,9 @@ async def show_waveform(
         type_order = {t: i for i, t in enumerate(waveform_types)}
         waveform_data.sort(key=lambda x: type_order.get(x[2], 999))
 
-        renderer = WaveformRenderer(width=80, height=20, show_events=False)
+        renderer = WaveformRenderer(
+            console=console, width=80, height=20, show_events=False
+        )
         renderer.render_multi(
             waveform_data=waveform_data,
             session_id=resolved_id,
