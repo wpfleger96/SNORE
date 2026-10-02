@@ -373,31 +373,62 @@ class TestStatsService:
         assert summary is not None
         assert summary.avg_pressure == pytest.approx(11.0)
 
+    async def test_all_disabled_day_excluded_from_hours_and_day_count(
+        self, async_db_session, async_test_device
+    ):
+        """A day whose sessions are all disabled adds no hours and no data day."""
+        today = date.today()
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            today - timedelta(days=1),
+            duration_hours=6.0,
+        )
+        # total_therapy_hours counts only enabled sessions, so it is 0 here even
+        # though the disabled session itself lasted 4 hours.
+        disabled_day = Day(
+            device_id=async_test_device.id, date=today, total_therapy_hours=0.0
+        )
+        async_db_session.add(disabled_day)
+        await async_db_session.flush()
+        async_db_session.add(
+            Session(
+                device_id=async_test_device.id,
+                day_id=disabled_day.id,
+                device_session_id=f"disabled_{today.isoformat()}",
+                start_time=datetime.combine(today, datetime.min.time()),
+                end_time=datetime.combine(today, datetime.min.time())
+                + timedelta(hours=4),
+                duration_seconds=4 * 3600,
+                enabled=False,
+            )
+        )
+        await async_db_session.flush()
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.total_hours == pytest.approx(6.0)
+        assert summary.days_with_data == 1
+        assert summary.avg_hours == pytest.approx(6.0)
+
+    async def test_zero_ahi_assessed_excellent(
+        self, async_db_session, async_test_device
+    ):
+        """An average AHI of exactly 0.0 is a real value, not missing data."""
+        await _create_day_with_session(
+            async_db_session, async_test_device, date.today(), ahi=0.0
+        )
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.avg_ahi == 0.0
+        assert summary.effectiveness == "excellent"
+
 
 class TestChunkedIdBinds:
     """Bulk ``Day.id.in_(...)`` binds are chunked under SQLite's param cap (#280)."""
-
-    async def test_summary_total_duration_summed_across_chunks(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """total_hours sums Session durations across every ID chunk."""
-        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
-        today = date.today()
-        for i, hours in enumerate((8.0, 7.0, 6.0)):
-            await _create_day_with_session(
-                async_db_session,
-                async_test_device,
-                today - timedelta(days=i),
-                duration_hours=hours,
-            )
-
-        service = StatsService(async_db_session, profile_id=1)
-        summary = await service.get_summary()
-
-        assert summary is not None
-        assert summary.days_with_data == 3
-        # 8 + 7 + 6 spans the two-day chunk boundary.
-        assert summary.total_hours == 21.0
 
     async def test_summary_event_counts_added_and_resorted_across_chunks(
         self, async_db_session, async_test_device, monkeypatch

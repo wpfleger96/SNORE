@@ -10,6 +10,7 @@ from snore.analysis.calculations import (
     assess_therapy_effectiveness,
     calculate_ahi_trend_direction,
     calculate_average_ahi,
+    calculate_average_hours_per_day,
     calculate_period_statistics,
     calculate_records,
     calculate_trends_extended,
@@ -167,22 +168,18 @@ class StatsService(ProfileScopedService):
         days_since_last = (date.today() - last_date).days
 
         day_ids = [d.id for d in day_records]
-        days_with_data = len(day_records)
-
-        total_duration = 0.0
-        for chunk in iter_id_chunks(day_ids):
-            total_duration += (
-                await self.db_session.execute(
-                    select(func.sum(models.Session.duration_seconds))
-                    .join(models.Day)
-                    .where(models.Day.id.in_(chunk))
-                )
-            ).scalar() or 0
-        total_hours = total_duration / 3600
-        avg_hours = total_hours / days_with_data if days_with_data > 0 else 0
+        # Day.total_therapy_hours counts only enabled sessions, so days whose
+        # sessions are all disabled contribute neither hours nor a data day.
+        total_hours = sum(d.total_therapy_hours or 0 for d in day_records)
+        days_with_data = sum(
+            1
+            for d in day_records
+            if d.total_therapy_hours and d.total_therapy_hours > 0
+        )
+        avg_hours = calculate_average_hours_per_day(day_records)
 
         avg_ahi = calculate_average_ahi(day_records)
-        effectiveness = assess_therapy_effectiveness(avg_ahi) if avg_ahi else "unknown"
+        effectiveness = assess_therapy_effectiveness(avg_ahi)
 
         weekly_periods = calculate_period_statistics(day_records, "week")
         weekly_ahi_values = [
