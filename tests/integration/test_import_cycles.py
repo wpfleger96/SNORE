@@ -8,19 +8,30 @@ import pytest
 
 import snore
 
+
+def _raise(name: str) -> None:
+    raise ImportError(name)
+
+
 MODULE_NAMES = [
     module.name
-    for module in pkgutil.walk_packages(snore.__path__, "snore.")
-    if ".migrations" not in module.name
+    for module in pkgutil.walk_packages(snore.__path__, "snore.", onerror=_raise)
 ]
 
 
 @pytest.mark.parametrize("module_name", MODULE_NAMES, ids=MODULE_NAMES)
-def test_module_imports_in_fresh_interpreter(module_name: str) -> None:
+def test_first_import_in_fresh_interpreter_succeeds(module_name: str) -> None:
     result = subprocess.run(
-        [sys.executable, "-c", f"import {module_name}"],
+        [
+            sys.executable,
+            "-c",
+            "import importlib, sys; importlib.import_module(sys.argv[1])",
+            module_name,
+        ],
         capture_output=True,
         text=True,
+        timeout=60,
     )
 
-    assert result.returncode == 0, result.stderr
+    if result.returncode != 0:
+        pytest.fail(result.stderr, pytrace=False)

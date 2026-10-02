@@ -104,7 +104,7 @@ class WaveformRenderer:
             waveform_type: Type of waveform (default: "flow")
 
         Note:
-            This method prints directly to stdout and returns None.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
         """
         if len(timestamps) < 2 or len(values) < 2 or timestamps[-1] == timestamps[0]:
             self.console.print("No data in window")
@@ -199,7 +199,7 @@ class WaveformRenderer:
             center_time: Center time for title
 
         Note:
-            This method prints directly to stdout and returns None.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
             Maximum 4 waveforms supported.
         """
         if not waveform_data:
