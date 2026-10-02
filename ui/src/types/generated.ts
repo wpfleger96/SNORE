@@ -2931,9 +2931,14 @@ export interface components {
         DayDetail: {
             /**
              * Ahi
-             * @description [DERIVED] Usage-weighted mean of session AHI
+             * @description [DEVICE] Headline AHI: device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = every enabled session reports the same device AHI/OAI/CAI/HI, none is disabled, and the imported mask-on time matches the device's (within 5 min or 5%)
              */
             ahi?: number | null
+            /**
+             * Ahi Computed
+             * @description [DERIVED] SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
+             */
+            ahi_computed?: number | null
             /**
              * Avg Leak
              * @description [DERIVED] Usage-weighted mean leak (L/min)
@@ -2951,9 +2956,14 @@ export interface components {
             avg_spo2?: number | null
             /**
              * Cai
-             * @description [DERIVED] Usage-weighted mean of session CAI
+             * @description [DEVICE] Headline CAI: same source rule as ahi
              */
             cai?: number | null
+            /**
+             * Cai Computed
+             * @description [DERIVED] SNORE recount CAI (see ahi_computed)
+             */
+            cai_computed?: number | null
             /**
              * Central Apneas
              * @description [DEVICE] Device-scored central apnea count for the night
@@ -3002,15 +3012,22 @@ export interface components {
             health_sleep?: components['schemas']['HealthNightSummaryRead'] | null
             /**
              * Hi
-             * @description [DERIVED] Usage-weighted mean of session HI
+             * @description [DEVICE] Headline HI: same source rule as ahi
              */
             hi?: number | null
+            /**
+             * Hi Computed
+             * @description [DERIVED] SNORE recount HI (see ahi_computed)
+             */
+            hi_computed?: number | null
             /**
              * Hypopneas
              * @description [DEVICE] Device-scored hypopnea count for the night
              * @default 0
              */
             hypopneas: number
+            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount) */
+            index_source?: components['schemas']['IndexSource'] | null
             /**
              * Leak 95Th
              * @description [DERIVED] Usage-weighted 95th percentile leak (L/min)
@@ -3033,9 +3050,14 @@ export interface components {
             leak_min?: number | null
             /**
              * Oai
-             * @description [DERIVED] Usage-weighted mean of session OAI
+             * @description [DEVICE] Headline OAI: same source rule as ahi
              */
             oai?: number | null
+            /**
+             * Oai Computed
+             * @description [DERIVED] SNORE recount OAI (see ahi_computed)
+             */
+            oai_computed?: number | null
             /**
              * Obstructive Apneas
              * @description [DEVICE] Device-scored obstructive apnea count for the night
@@ -3109,9 +3131,14 @@ export interface components {
         DayListItem: {
             /**
              * Ahi
-             * @description [DERIVED] Usage-weighted mean of session AHI
+             * @description [DEVICE] Headline AHI: device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = every enabled session reports the same device AHI/OAI/CAI/HI, none is disabled, and the imported mask-on time matches the device's (within 5 min or 5%)
              */
             ahi?: number | null
+            /**
+             * Ahi Computed
+             * @description [DERIVED] SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
+             */
+            ahi_computed?: number | null
             /**
              * Date
              * Format: date
@@ -3119,6 +3146,8 @@ export interface components {
             date: string
             /** Device Id */
             device_id: number
+            /** @description Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily value) or 'derived' (SNORE's recount) */
+            index_source?: components['schemas']['IndexSource'] | null
             /** Session Count */
             session_count: number
             /**
@@ -4001,6 +4030,12 @@ export interface components {
             /** Warnings */
             warnings: string[]
         }
+        /**
+         * IndexSource
+         * @description Which source a source-dependent day index came from; values mirror the matching Provenance tiers.
+         * @enum {string}
+         */
+        IndexSource: 'device' | 'derived'
         /** InviteCreatedResponse */
         InviteCreatedResponse: {
             /** Email */
@@ -4383,17 +4418,17 @@ export interface components {
         PeriodStatistics: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Average AHI
+             * @description [DERIVED] Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
              * Avg Cai
-             * @description [DERIVED] Average CAI (events/hour)
+             * @description [DERIVED] Usage-weighted average of daily headline CAI (events/hour) (can mix device-reported and recounted days)
              */
             avg_cai?: number | null
             /**
              * Avg Hi
-             * @description [DERIVED] Average HI (events/hour)
+             * @description [DERIVED] Usage-weighted average of daily headline HI (events/hour) (can mix device-reported and recounted days)
              */
             avg_hi?: number | null
             /**
@@ -4408,7 +4443,7 @@ export interface components {
             avg_leak?: number | null
             /**
              * Avg Oai
-             * @description [DERIVED] Average OAI (events/hour)
+             * @description [DERIVED] Usage-weighted average of daily headline OAI (events/hour) (can mix device-reported and recounted days)
              */
             avg_oai?: number | null
             /**
@@ -4450,7 +4485,7 @@ export interface components {
             days_used: number
             /**
              * Median Ahi
-             * @description [DERIVED] Median AHI
+             * @description [DERIVED] Median of daily headline AHI (can mix device-reported and recounted days)
              */
             median_ahi?: number | null
             /**
@@ -4641,7 +4676,7 @@ export interface components {
          *     metric.
          */
         RecordsResponse: {
-            /** @description [DERIVED] Nightly AHI */
+            /** @description [DERIVED] Daily headline AHI (device-reported when trusted, else SNORE's recount; records can mix both) */
             ahi?: components['schemas']['RecordExtremes'] | null
             /** @description [DERIVED] Nightly median leak (L/min) */
             leak?: components['schemas']['RecordExtremes'] | null
@@ -5087,7 +5122,7 @@ export interface components {
         RxPeriodResponse: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Usage-hours-weighted average AHI over the period
+             * @description [DERIVED] Usage-hours-weighted average of daily headline AHI over the period (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
@@ -5113,7 +5148,7 @@ export interface components {
             end_date: string
             /**
              * Median Ahi
-             * @description [DERIVED] Median AHI over the period
+             * @description [DERIVED] Median of daily headline AHI over the period (can mix device-reported and recounted days)
              */
             median_ahi?: number | null
             /** Settings */
@@ -5693,6 +5728,11 @@ export interface components {
              * @description [DERIVED] Mask-on therapy hours
              */
             usage_hours?: number | null
+            /**
+             * Usage Hours Device
+             * @description [DEVICE] Mask-on hours for the day as reported by the device (STR); daily value copied onto each session
+             */
+            usage_hours_device?: number | null
         }
         /**
          * SessionValidation
@@ -5824,7 +5864,7 @@ export interface components {
             ahi_trend_direction?: string | null
             /**
              * Avg Ahi
-             * @description [DERIVED] Average AHI
+             * @description [DERIVED] Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
@@ -5993,19 +6033,19 @@ export interface components {
          * @description Per-period trend series for ``GET /stats/trends``.
          */
         TrendsResponse: {
-            /** @description [DERIVED] Average AHI per period */
+            /** @description [DERIVED] Average daily headline AHI per period (can mix device-reported and recounted days) */
             ahi: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average CAI per period */
+            /** @description [DERIVED] Average daily headline CAI per period (can mix device-reported and recounted days) */
             cai: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average EPAP (cmH2O) per period */
             epap: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average HI per period */
+            /** @description [DERIVED] Average daily headline HI per period (can mix device-reported and recounted days) */
             hi: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average leak (L/min) per period */
             leak: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average minute ventilation (L/min) per period */
             mv: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average OAI per period */
+            /** @description [DERIVED] Average daily headline OAI per period (can mix device-reported and recounted days) */
             oai: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average pressure (cmH2O) per period */
             pressure: components['schemas']['TrendSeries']

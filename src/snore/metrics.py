@@ -56,11 +56,13 @@ SESSION_METRICS: tuple[MetricSpec, ...] = (
     _m("cai"),
     _m("hi"),
     _m("rei"),
-    # Device-reported (STR) indices, kept alongside the computed ones above
+    # Device-reported (STR) daily indices, kept alongside the computed ones
+    # above, and the daily mask-on hours they cover
     _m("ahi_device"),
     _m("oai_device"),
     _m("cai_device"),
     _m("hi_device"),
+    _m("usage_hours_device"),
     # Pressure
     _m("pressure_min"),
     _m("pressure_max"),
@@ -190,4 +192,5 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "oai_device",
     "cai_device",
     "hi_device",
+    "usage_hours_device",
 )

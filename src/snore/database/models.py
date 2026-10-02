@@ -35,6 +35,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Enum,
     Float,
     ForeignKey,
     ForeignKeyConstraint,
@@ -50,6 +51,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from snore.database.types import UTCDateTime, ValidatedJSON, ValidatedJSONWithDefault
+from snore.provenance import IndexSource
 
 # Constraint naming convention — must live here on Base.metadata (not env.py)
 # so that Base.metadata.create_all emits the same deterministic constraint
@@ -585,10 +587,27 @@ class Day(Base):
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Headline indices: the device-reported daily value when trusted, else the
+    # SNORE recount.  ``index_source`` says which; see
+    # ``DayManager._trusted_device_indices`` for the trust rule.
     ahi: Mapped[float | None] = mapped_column(Float)
     oai: Mapped[float | None] = mapped_column(Float)
     cai: Mapped[float | None] = mapped_column(Float)
     hi: Mapped[float | None] = mapped_column(Float)
+    index_source: Mapped[IndexSource | None] = mapped_column(
+        Enum(
+            IndexSource,
+            native_enum=False,
+            length=16,
+            values_callable=lambda e: [m.value for m in e],
+        )
+    )
+
+    # SNORE recount: usage-weighted mean of session indices (mask-on hours).
+    ahi_computed: Mapped[float | None] = mapped_column(Float)
+    oai_computed: Mapped[float | None] = mapped_column(Float)
+    cai_computed: Mapped[float | None] = mapped_column(Float)
+    hi_computed: Mapped[float | None] = mapped_column(Float)
 
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)
@@ -829,6 +848,9 @@ class Statistics(Base):
     oai_device: Mapped[float | None] = mapped_column(Float)
     cai_device: Mapped[float | None] = mapped_column(Float)
     hi_device: Mapped[float | None] = mapped_column(Float)
+    # Device-reported (STR) mask-on hours for the whole day, the time the
+    # *_device indices cover; copied onto each session of the day.
+    usage_hours_device: Mapped[float | None] = mapped_column(Float)
 
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)

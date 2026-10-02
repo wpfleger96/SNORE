@@ -426,7 +426,7 @@ class TestRdiTiIe:
 
         With no recovery breaths the RERA count is 0, so:
         rera_index = round(0 / 8.0, 2) = 0.0
-        rdi        = round(5.0 + 0.0, 2) = 5.0
+        rdi        = round(ahi_computed 5.0 + 0.0, 2) = 5.0
 
         ti_median_s = median([1.2, 1.2]) = 1.2
         ie_ratio    = median([0.4, 0.4]) = 0.4
@@ -436,7 +436,12 @@ class TestRdiTiIe:
         target_date = date(2024, 7, 1)
         device = await _make_device(async_db_session, async_test_profile.id)
         day, sess = await _make_day_session(
-            async_db_session, device, target_date, ahi=5.0, duration_hours=8.0
+            async_db_session,
+            device,
+            target_date,
+            ahi=5.0,
+            ahi_computed=5.0,
+            duration_hours=8.0,
         )
         ar = await _make_analysis_result(async_db_session, sess)
         await _make_breath(
@@ -470,8 +475,10 @@ class TestRdiTiIe:
 
         assert night.rdi is not None
         assert night.rdi_reason is None
-        # Arithmetic: rdi == round(ahi + rera_index, 2) with rera_index == 0.0
-        assert night.rdi == pytest.approx(round((night.ahi or 0.0) + 0.0, 2), abs=0.01)
+        # Arithmetic: rdi == round(ahi_computed + rera_index, 2), rera_index == 0.0
+        assert night.rdi == pytest.approx(
+            round((night.ahi_computed or 0.0) + 0.0, 2), abs=0.01
+        )
 
         assert night.ti_median_s is not None
         assert night.ti_median_reason is None
@@ -490,7 +497,12 @@ class TestRdiTiIe:
         target_date = date(2024, 7, 5)
         device = await _make_device(async_db_session, async_test_profile.id)
         await _make_day_session(
-            async_db_session, device, target_date, ahi=5.0, duration_hours=8.0
+            async_db_session,
+            device,
+            target_date,
+            ahi=5.0,
+            ahi_computed=5.0,
+            duration_hours=8.0,
         )
         # No AnalysisResult seeded
 

@@ -228,6 +228,7 @@ Production runs as a Docker stack on a homelab host, provisioned from the privat
 - **Data layout:** the stack lives in `/opt/snore` on the host; `/opt/snore/data` mounts to `/data` in the container, and `HOME=/data`, so the production DB is `/data/.snore/snore.db`.
 - **Running the CLI in production:** SSH to the host, then `docker exec snore /app/.venv/bin/snore <command>` — the venv is not on the container's `PATH`, so the absolute path is required (add `-it` for commands that prompt). Production is multiuser — most commands need `--user <email>` (and `--profile <name>` when the user has several).
 - **Re-analysis after algorithm version bumps is manual.** Bumping any `*_ALGO_VERSION` constant (`src/snore/analysis/shared/versioning.py`) marks every stored analysis row `STALE_VERSION` on the next deploy; aggregates null stale sessions rather than serving old numbers, but nothing re-analyzes automatically. Re-run per profile with an open-ended range — `snore analysis run --from 2000-01-01 --user <email> --profile <name>` — which processes every session in range (no already-analyzed skip) and stores new version rows. Optionally drop the superseded rows afterward: `snore analysis delete --all --stale-versions`, then `snore db vacuum`.
+- **Day rows are not recomputed on deploy.** After any change to day aggregation, backfill historical Day rows with `docker exec -it snore /app/.venv/bin/snore db recompute-days`. It re-derives every Day across all users, profiles, and devices from stored session statistics (no reparse), so it takes no `--user`/`--profile`; it prompts for confirmation (`--yes` skips it) and is safe to re-run if interrupted. Migration 018 backfills existing days as derived (old values copied into `*_computed`), and `recompute-days` alone cannot promote them to the device-reported AHI headline: the trust rule needs the per-session `statistics.usage_hours_device` (STR daily mask-on time), which is NULL on sessions imported before 018. Only a forced re-parse fills it: `docker exec -it snore /app/.venv/bin/snore import --force --all --no-backup --user <email> --profile <name> /data/.snore/raw/<profile_id>` (the profile's raw archive). A plain import or web upload/rescan skips already-imported sessions. `--force` deletes and recreates each session it finds (statistics, events, waveforms, settings, and cascaded analysis/breath rows; post-import analysis re-runs unless `--no-analyze`), re-enables any disabled session (#369), and re-aggregates the affected days itself, so no `recompute-days` is needed afterwards.
 
 ## Key Patterns
 
@@ -332,6 +333,13 @@ tier and its description names the fallback, in both directions: pressure/EPAP/l
 recomputed from the waveform when present are Derived (falling back to the device's summary value);
 `respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR
 value and are Device (falling back to the OSCAR session summary).
+Day-level `ahi/oai/cai/hi` (`Day` rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are
+source-dependent headlines: the device-reported daily value when trusted, otherwise SNORE's recount;
+`index_source` (`IndexSource.DEVICE`/`DERIVED`) says which. They are tagged Device with
+`source_field="index_source"` — copy that pattern for any new source-dependent field. Aggregates over
+them (period, Rx, trends, records) stay Derived and can mix device-reported and recounted days. The
+recount, when computable, is in `*_computed` (`DayListItem` carries only `ahi_computed`;
+`DayDetail` and MCP `NightlyRow` carry all four).
 
 The Pydantic schemas are the single source of tiers. Every metric field in MCP/REST schemas uses
 `provenance_field(Provenance.X, "...")` (adds `x-provenance` + a `[TIER]` description prefix);

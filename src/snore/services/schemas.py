@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import IndexSource, Provenance, provenance_field
 
 __all__ = [
     "PeriodStatistics",
@@ -91,10 +91,15 @@ class PeriodStatistics(BaseModel):
     )
 
     avg_ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Average AHI", default=None
+        Provenance.DERIVED,
+        "Usage-weighted average of daily headline AHI"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     median_ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Median AHI", default=None
+        Provenance.DERIVED,
+        "Median of daily headline AHI (can mix device-reported and recounted days)",
+        default=None,
     )
     avg_pressure: float | None = provenance_field(
         Provenance.DERIVED, "Average pressure (cmH₂O)", default=None
@@ -122,13 +127,22 @@ class PeriodStatistics(BaseModel):
     )
 
     avg_oai: float | None = provenance_field(
-        Provenance.DERIVED, "Average OAI (events/hour)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted average of daily headline OAI (events/hour)"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     avg_cai: float | None = provenance_field(
-        Provenance.DERIVED, "Average CAI (events/hour)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted average of daily headline CAI (events/hour)"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     avg_hi: float | None = provenance_field(
-        Provenance.DERIVED, "Average HI (events/hour)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted average of daily headline HI (events/hour)"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     avg_rera: float | None = provenance_field(
         Provenance.DERIVED,
@@ -304,6 +318,12 @@ class SessionStatistics(BaseModel):
     hi_device: float | None = provenance_field(
         Provenance.DEVICE,
         "Hypopnea index as reported by the device (STR)",
+        default=None,
+    )
+    usage_hours_device: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Mask-on hours for the day as reported by the device (STR); "
+        "daily value copied onto each session",
         default=None,
     )
     oai: float | None = provenance_field(
@@ -676,7 +696,10 @@ class TherapySummary(BaseModel):
         Provenance.DERIVED, "Days with therapy hours from enabled sessions"
     )
     avg_ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Average AHI", default=None
+        Provenance.DERIVED,
+        "Usage-weighted average of daily headline AHI"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     effectiveness: str = provenance_field(
         Provenance.DERIVED,
@@ -925,7 +948,25 @@ class DayListItem(BaseModel):
         default=None,
     )
     ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Usage-weighted mean of session AHI", default=None
+        Provenance.DEVICE,
+        "Headline AHI: device-reported daily value when trusted, otherwise "
+        "SNORE's recount; index_source says which. Trusted = every enabled "
+        "session reports the same device AHI/OAI/CAI/HI, none is disabled, "
+        "and the imported mask-on time matches the device's (within 5 min or 5%)",
+        source_field="index_source",
+        default=None,
+    )
+    index_source: IndexSource | None = Field(
+        default=None,
+        description="Source of the headline ahi/oai/cai/hi: 'device' "
+        "(device-reported daily value) or 'derived' (SNORE's recount)",
+    )
+    ahi_computed: float | None = provenance_field(
+        Provenance.DERIVED,
+        "SNORE recount AHI: device-scored events over SNORE mask-on hours, "
+        "usage-weighted across sessions; null when there are no mask-on hours "
+        "or no session statistics",
+        default=None,
     )
 
 
@@ -939,13 +980,31 @@ class DayDetail(DayListItem):
     """
 
     oai: float | None = provenance_field(
-        Provenance.DERIVED, "Usage-weighted mean of session OAI", default=None
+        Provenance.DEVICE,
+        "Headline OAI: same source rule as ahi",
+        source_field="index_source",
+        default=None,
     )
     cai: float | None = provenance_field(
-        Provenance.DERIVED, "Usage-weighted mean of session CAI", default=None
+        Provenance.DEVICE,
+        "Headline CAI: same source rule as ahi",
+        source_field="index_source",
+        default=None,
     )
     hi: float | None = provenance_field(
-        Provenance.DERIVED, "Usage-weighted mean of session HI", default=None
+        Provenance.DEVICE,
+        "Headline HI: same source rule as ahi",
+        source_field="index_source",
+        default=None,
+    )
+    oai_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount OAI (see ahi_computed)", default=None
+    )
+    cai_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount CAI (see ahi_computed)", default=None
+    )
+    hi_computed: float | None = provenance_field(
+        Provenance.DERIVED, "SNORE recount HI (see ahi_computed)", default=None
     )
     avg_pressure: float | None = provenance_field(
         Provenance.DERIVED, "Usage-weighted mean pressure (cmH2O)", default=None
@@ -1061,11 +1120,15 @@ class RxPeriodResponse(BaseModel):
     days_count: int
     avg_ahi: float | None = provenance_field(
         Provenance.DERIVED,
-        "Usage-hours-weighted average AHI over the period",
+        "Usage-hours-weighted average of daily headline AHI over the period"
+        " (can mix device-reported and recounted days)",
         default=None,
     )
     median_ahi: float | None = provenance_field(
-        Provenance.DERIVED, "Median AHI over the period", default=None
+        Provenance.DERIVED,
+        "Median of daily headline AHI over the period"
+        " (can mix device-reported and recounted days)",
+        default=None,
     )
     avg_hours: float | None = provenance_field(
         Provenance.DERIVED, "Average therapy hours per day with usage", default=None
@@ -1311,7 +1374,11 @@ type TrendSeries = list[tuple[date, float | None]]
 class TrendsResponse(BaseModel):
     """Per-period trend series for ``GET /stats/trends``."""
 
-    ahi: TrendSeries = provenance_field(Provenance.DERIVED, "Average AHI per period")
+    ahi: TrendSeries = provenance_field(
+        Provenance.DERIVED,
+        "Average daily headline AHI per period"
+        " (can mix device-reported and recounted days)",
+    )
     usage: TrendSeries = provenance_field(
         Provenance.DERIVED, "Average therapy hours per day, per period"
     )
@@ -1324,9 +1391,21 @@ class TrendsResponse(BaseModel):
     pressure: TrendSeries = provenance_field(
         Provenance.DERIVED, "Average pressure (cmH2O) per period"
     )
-    oai: TrendSeries = provenance_field(Provenance.DERIVED, "Average OAI per period")
-    cai: TrendSeries = provenance_field(Provenance.DERIVED, "Average CAI per period")
-    hi: TrendSeries = provenance_field(Provenance.DERIVED, "Average HI per period")
+    oai: TrendSeries = provenance_field(
+        Provenance.DERIVED,
+        "Average daily headline OAI per period"
+        " (can mix device-reported and recounted days)",
+    )
+    cai: TrendSeries = provenance_field(
+        Provenance.DERIVED,
+        "Average daily headline CAI per period"
+        " (can mix device-reported and recounted days)",
+    )
+    hi: TrendSeries = provenance_field(
+        Provenance.DERIVED,
+        "Average daily headline HI per period"
+        " (can mix device-reported and recounted days)",
+    )
     rera: TrendSeries = provenance_field(
         Provenance.DERIVED, "Average device-scored RERA index per period"
     )
@@ -1374,7 +1453,10 @@ class RecordsResponse(BaseModel):
     """
 
     ahi: RecordExtremes | None = provenance_field(
-        Provenance.DERIVED, "Nightly AHI", default=None
+        Provenance.DERIVED,
+        "Daily headline AHI (device-reported when trusted, else SNORE's"
+        " recount; records can mix both)",
+        default=None,
     )
     leak: RecordExtremes | None = provenance_field(
         Provenance.DERIVED, "Nightly median leak (L/min)", default=None

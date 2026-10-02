@@ -13,8 +13,17 @@ from sqlalchemy.orm import joinedload
 from snore.database.models import Day, Statistics
 from snore.database.models import Session as SessionModel
 from snore.metrics import DAY_METRIC_STAT_COLUMNS, DayAgg
+from snore.provenance import IndexSource
 from snore.therapy_hours import TherapyHoursBasis, therapy_hours
 from snore.utils.stats import weighted_mean
+
+_INDEX_FIELDS = ("ahi", "oai", "cai", "hi")
+
+# Allowed gap between SNORE's imported mask-on hours and the device's daily
+# mask-on hours before the device indices stop describing the imported data:
+# the larger of 5 minutes or 5% of the device's hours.
+COVERAGE_TOLERANCE_HOURS = 5 / 60
+COVERAGE_TOLERANCE_FRACTION = 0.05
 
 
 class DayManager:
@@ -137,6 +146,80 @@ class DayManager:
             if getattr(s, attr) is not None
         )
 
+    @staticmethod
+    def _trusted_device_indices(
+        enabled: list[SessionModel], has_disabled: bool, therapy_hours: float
+    ) -> dict[str, float] | None:
+        """The day's device-reported AHI/OAI/CAI/HI, or None if not trusted.
+
+        ResMed STR reports one daily value per index, plus the day's mask-on
+        time, and SNORE copies them onto every session of the day
+        (``Statistics.*_device``, ``Statistics.usage_hours_device``).
+        ``therapy_hours`` is the day's imported mask-on time
+        (``Day.total_therapy_hours``).  The device indices are trusted for the
+        day headline only when all of these hold:
+
+        - the day has no disabled sessions: the device's daily value also covers
+          their time, so it does not describe the enabled subset;
+        - every enabled session has a ``Statistics`` row;
+        - all four ``*_device`` values and ``usage_hours_device`` are non-null
+          on every enabled session, so the headline never pairs a device AHI
+          with a recount OAI/CAI/HI;
+        - each of those five has exactly one distinct value across the
+          sessions.  Exact equality is deliberate: the copies come verbatim
+          from the same STR record, so any difference means the sessions were
+          stamped from different daily records;
+        - ``therapy_hours`` is within the larger of
+          ``COVERAGE_TOLERANCE_HOURS`` or ``COVERAGE_TOLERANCE_FRACTION`` of
+          ``usage_hours_device``.  The device value covers the device's whole
+          day of mask-on time; if SNORE imported materially less (missing or
+          pruned DATALOG files, card pulled mid-night, deleted or dropped
+          sessions) or more, the device AHI does not describe the imported
+          data.
+        """
+        if has_disabled or not enabled:
+            return None
+        daily: dict[str, float] = {}
+        for field in (*(f"{f}_device" for f in _INDEX_FIELDS), "usage_hours_device"):
+            values = {
+                getattr(s.statistics, field) if s.statistics else None for s in enabled
+            }
+            value = values.pop()
+            if values or value is None:
+                return None
+            daily[field] = value
+        device_hours = daily["usage_hours_device"]
+        tolerance = max(
+            COVERAGE_TOLERANCE_HOURS, COVERAGE_TOLERANCE_FRACTION * device_hours
+        )
+        if abs(therapy_hours - device_hours) > tolerance:
+            return None
+        return {f: daily[f"{f}_device"] for f in _INDEX_FIELDS}
+
+    @staticmethod
+    def _set_indices(
+        day: Day,
+        computed: dict[str, float | None] | None,
+        device: dict[str, float] | None,
+    ) -> None:
+        """Store the recount and headline indices, and record the headline source.
+
+        The headline takes the trusted device values when present, else the
+        recount; ``index_source`` is None only when there is no index at all.
+        """
+        headline: dict[str, float | None] | None = (
+            dict(device) if device is not None else computed
+        )
+        for field in _INDEX_FIELDS:
+            setattr(day, f"{field}_computed", computed[field] if computed else None)
+            setattr(day, field, headline[field] if headline else None)
+        if device is not None:
+            day.index_source = IndexSource.DEVICE
+        elif computed is not None and any(v is not None for v in computed.values()):
+            day.index_source = IndexSource.DERIVED
+        else:
+            day.index_source = None
+
     @classmethod
     async def aggregate_day_statistics(cls, day: Day, db_session: AsyncSession) -> None:
         """
@@ -146,17 +229,19 @@ class DayManager:
             day: Day object to update
             db_session: SQLAlchemy async database session
         """
-        sessions = (
+        all_sessions = (
             (
                 await db_session.execute(
                     select(SessionModel)
-                    .filter_by(day_id=day.id, enabled=True)
+                    .filter_by(day_id=day.id)
                     .options(joinedload(SessionModel.statistics))
                 )
             )
             .scalars()
             .all()
         )
+        sessions = [s for s in all_sessions if s.enabled]
+        has_disabled = len(sessions) < len(all_sessions)
 
         if not sessions:
             day.session_count = 0
@@ -165,10 +250,7 @@ class DayManager:
             day.central_apneas = 0
             day.hypopneas = 0
             day.reras = 0
-            day.ahi = None
-            day.oai = None
-            day.cai = None
-            day.hi = None
+            cls._set_indices(day, computed=None, device=None)
             for spec in DAY_METRIC_STAT_COLUMNS:
                 setattr(day, spec.name, None)
             return
@@ -198,11 +280,6 @@ class DayManager:
             day.reras = sum(s.reras for s in stats_records if s.reras)
 
             total_hours = day.total_therapy_hours
-            if total_hours > 0:
-                day.ahi = cls._weighted_average(stat_pairs, "ahi")
-                day.oai = cls._weighted_average(stat_pairs, "oai")
-                day.cai = cls._weighted_average(stat_pairs, "cai")
-                day.hi = cls._weighted_average(stat_pairs, "hi")
 
             for spec in DAY_METRIC_STAT_COLUMNS:
                 if spec.day_agg in (DayAgg.MIN, DayAgg.MAX):
@@ -219,6 +296,19 @@ class DayManager:
                     setattr(
                         day, spec.name, cls._weighted_average(stat_pairs, spec.name)
                     )
+
+        computed = (
+            {f: cls._weighted_average(stat_pairs, f) for f in _INDEX_FIELDS}
+            if stat_pairs and day.total_therapy_hours > 0
+            else None
+        )
+        cls._set_indices(
+            day,
+            computed=computed,
+            device=cls._trusted_device_indices(
+                sessions, has_disabled, day.total_therapy_hours
+            ),
+        )
 
     @classmethod
     async def link_session_to_day(
@@ -270,9 +360,10 @@ class DayManager:
         Returns:
             True if the day still exists, False if it was pruned.
         """
-        # The existence probe is a Core statement and does not trigger
-        # autoflush, so flush first: a pending Session that references this
-        # day would otherwise be invisible and the day deleted from under it.
+        # Flush explicitly so a pending Session that references this day is
+        # visible to the existence probe; otherwise the day could be deleted
+        # from under it.  (Session.execute would autoflush too, but only when
+        # autoflush is enabled; the explicit flush does not depend on that.)
         await db_session.flush()
         referenced = await db_session.scalar(
             select(exists().where(SessionModel.day_id == day.id))

@@ -228,7 +228,10 @@ are device data, identifiers and bookkeeping fields (ids, offsets, pagination,
 coverage counts) are not classified, and responses with only device data carry
 no block. The block's `source_dependent` map takes a field path to the sibling
 field whose value decides that value's tier (e.g. MV fields ->
-`events[].context.mv_source`, where `flow_derived` means experimental). Device-scored events are the reference
+`events[].context.mv_source`, where `flow_derived` means experimental; nightly
+ahi/oai/cai/hi -> `nights[].index_source`: `device` is the device-reported daily
+value, `derived` is SNORE's recount; the recount, when computable, is in
+`*_computed`). Device-scored events are the reference
 standard; never present experimental metrics as device-scored or clinically
 validated.
 

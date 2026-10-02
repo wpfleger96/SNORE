@@ -45,6 +45,12 @@ from snore.mcp.tools._service_errors import (
 _DEFAULT_PAGE_SIZE = 30
 _DEFAULT_COMPLIANCE_THRESHOLD_HOURS = 4.0
 MAX_NIGHTLY_RANGE = 90
+# Day columns copied onto NightlyRow: the headline indices and their recounts.
+_NIGHTLY_INDEX_FIELDS = tuple(
+    f"{index}{suffix}"
+    for index in ("ahi", "oai", "cai", "hi")
+    for suffix in ("", "_computed")
+)
 
 
 async def get_nightly_summary(
@@ -63,8 +69,11 @@ async def get_nightly_summary(
     fl_class_ge4_pct, the percent of leak-valid, rule-matched classified breaths
     with flow_class >= 4) are populated from
     BreathService.get_nightly_range_summary(); absent entries are null with
-    reason (A2).  RDI here adds the experimental RERA-proxy index to the
-    night's AHI.  Compliance uses n_calendar_nights as denominator.
+    reason (A2).  ahi/oai/cai/hi are the Day headline: the device-reported
+    daily value when trusted, otherwise SNORE's recount; index_source says
+    which.  The recount, when computable, is in *_computed.  RDI here adds the
+    experimental RERA-proxy index to the night's ahi_computed.  Compliance uses
+    n_calendar_nights as denominator.
 
     Raises ValidationError when BreathService reports device ownership problems
     (DeviceAmbiguityError, DeviceNotOwnedError).  The server boundary converts
@@ -326,10 +335,8 @@ async def get_nightly_summary(
                 date=day.date,
                 usage_hours=round(usage_h, 2) if usage_h is not None else None,
                 session_count=day.session_count or 0,
-                ahi=round(day.ahi, 2) if day.ahi is not None else None,
-                oai=round(day.oai, 2) if day.oai is not None else None,
-                cai=round(day.cai, 2) if day.cai is not None else None,
-                hi=round(day.hi, 2) if day.hi is not None else None,
+                **_day_indices(day),
+                index_source=day.index_source,
                 rera_index=rera_index,
                 rera_index_reason=rera_index_reason,
                 rdi=rdi,
@@ -413,6 +420,14 @@ async def get_nightly_summary(
     )
 
 
+def _day_indices(day: models.Day) -> dict[str, float | None]:
+    """Headline + recount indices from a Day row, rounded to 2 dp."""
+    return {
+        name: None if (value := getattr(day, name)) is None else round(value, 2)
+        for name in _NIGHTLY_INDEX_FIELDS
+    }
+
+
 def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import (  # noqa: PLC0415
         parse_date_range,
@@ -438,11 +453,16 @@ def register(mcp: FastMCP) -> None:
         index, RDI, FL, Ti, I:E, PB) are null + a reason when unavailable:
         ``"not_available"`` when the night has sessions but no current (OK)
         analysis to draw from, ``"analysis_not_run"`` when the night has no
-        analyzable session summary at all. RDI here adds the experimental RERA-proxy index to the
-        night's AHI. ``fl_class_ge4_pct`` is the percent of leak-valid,
-        rule-matched classified breaths with ``flow_class >= 4``; the confidence
-        gate excludes fallback guesses. Compliance fields are included in the
-        response.
+        analyzable session summary at all. ``ahi``/``oai``/``cai``/``hi`` are
+        the device-reported daily value when trusted, otherwise SNORE's
+        recount; ``index_source`` (``"device"`` or ``"derived"``) says which.
+        The recount, when computable, is in ``*_computed``. RDI here adds the
+        experimental RERA-proxy index to the night's ``ahi_computed``; compare
+        ``rdi`` against ``ahi_computed``, not ``ahi`` — on device-headline
+        nights ``rdi`` can be lower than ``ahi``. ``fl_class_ge4_pct`` is the
+        percent of leak-valid, rule-matched classified breaths with
+        ``flow_class >= 4``; the confidence gate excludes fallback guesses.
+        Compliance fields are included in the response.
 
         The ``compliance`` block is present whenever ``start != end`` (range
         mode), even when the range contains no night data rows; it is ``null``

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Day, Device, Session
 from snore.exceptions import NotFoundError
+from snore.provenance import IndexSource
 from snore.services.day_service import DayService
 
 
@@ -260,6 +261,123 @@ class TestDayServiceGet:
         assert result.avg_pressure == pytest.approx(10.0)
         assert result.avg_leak == pytest.approx(5.0)
         assert result.avg_spo2 == pytest.approx(96.5)
+
+    async def test_get_day_maps_renamed_stats_and_counts(
+        self, async_db_session, async_test_device
+    ):
+        """Renamed Day columns, identity stats, and event counts reach DayDetail."""
+        async_db_session.add(
+            Day(
+                device_id=async_test_device.id,
+                date=date(2025, 4, 13),
+                session_count=2,
+                total_therapy_hours=7.5,
+                obstructive_apneas=4,
+                central_apneas=3,
+                hypopneas=2,
+                reras=1,
+                pressure_median=9.5,
+                pressure_95th=12.0,
+                leak_median=4.0,
+                leak_95th=20.0,
+                epap_95th=8.0,
+                spo2_mean=95.0,
+                spo2_min=88.0,
+                ahi_computed=1.3,
+                hi_computed=0.2,
+            )
+        )
+        await async_db_session.flush()
+
+        result = await DayService(async_db_session, profile_id=1).get_day(
+            date(2025, 4, 13)
+        )
+
+        assert (result.avg_pressure, result.avg_leak, result.avg_spo2) == (
+            9.5,
+            4.0,
+            95.0,
+        )
+        assert (result.pressure_median, result.pressure_95th) == (9.5, 12.0)
+        assert (result.leak_95th, result.epap_95th, result.spo2_min) == (
+            20.0,
+            8.0,
+            88.0,
+        )
+        assert (
+            result.obstructive_apneas,
+            result.central_apneas,
+            result.hypopneas,
+            result.reras,
+        ) == (4, 3, 2, 1)
+        assert (result.session_count, result.total_therapy_hours) == (2, 7.5)
+        assert (result.ahi_computed, result.hi_computed) == (1.3, 0.2)
+        assert result.oai_computed is None
+        assert result.session_ids == []
+
+    async def test_get_device_headline_day_exposes_source_and_recount(
+        self, async_db_session, async_test_device
+    ):
+        """DayDetail carries the headline indices, their source, and the recount."""
+        async_db_session.add(
+            Day(
+                device_id=async_test_device.id,
+                date=date(2025, 4, 11),
+                session_count=1,
+                total_therapy_hours=8.0,
+                ahi=1.2,
+                oai=0.4,
+                cai=0.3,
+                hi=0.5,
+                index_source=IndexSource.DEVICE,
+                ahi_computed=1.6,
+                oai_computed=0.6,
+                cai_computed=0.4,
+                hi_computed=0.6,
+            )
+        )
+        await async_db_session.flush()
+
+        service = DayService(async_db_session, profile_id=1)
+        result = await service.get_day(date(2025, 4, 11))
+        items, _ = await service.list_days()
+
+        assert result.index_source == IndexSource.DEVICE
+        assert (result.ahi, result.oai, result.cai, result.hi) == pytest.approx(
+            (1.2, 0.4, 0.3, 0.5)
+        )
+        assert (
+            result.ahi_computed,
+            result.oai_computed,
+            result.cai_computed,
+            result.hi_computed,
+        ) == pytest.approx((1.6, 0.6, 0.4, 0.6))
+        assert items[0].index_source == IndexSource.DEVICE
+        assert items[0].ahi_computed == pytest.approx(1.6)
+
+    async def test_get_derived_headline_day_reports_derived_source(
+        self, async_db_session, async_test_device
+    ):
+        """A recount headline is labelled 'derived'."""
+        async_db_session.add(
+            Day(
+                device_id=async_test_device.id,
+                date=date(2025, 4, 12),
+                session_count=1,
+                total_therapy_hours=8.0,
+                ahi=1.6,
+                ahi_computed=1.6,
+                index_source=IndexSource.DERIVED,
+            )
+        )
+        await async_db_session.flush()
+
+        result = await DayService(async_db_session, profile_id=1).get_day(
+            date(2025, 4, 12)
+        )
+
+        assert result.index_source == IndexSource.DERIVED
+        assert result.ahi == pytest.approx(result.ahi_computed)
 
     async def test_get_day_with_session_ids(self, async_db_session, async_test_device):
         """DayDetail includes linked session IDs."""

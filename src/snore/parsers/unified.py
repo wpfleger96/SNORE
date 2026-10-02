@@ -176,6 +176,11 @@ class SessionStatistics(BaseModel):
     hi_device: float | None = Field(
         default=None, ge=0, description="Device-reported HI (from STR)"
     )
+    usage_hours_device: float | None = Field(
+        default=None,
+        ge=0,
+        description="Device-reported mask-on hours for the day (from STR)",
+    )
 
     pressure_min: float | None = Field(default=None, description="Minimum pressure")
     pressure_max: float | None = Field(default=None, description="Maximum pressure")
