@@ -125,7 +125,7 @@ class TestGetNightDetail:
     def test_spo2_fraction_normalized_to_percent(
         self, api_client, db_session, test_profile
     ):
-        """SpO2 values stored as fractions (avg ≤ 1.5) are multiplied by 100 on read."""
+        """SpO2 values stored as fractions (≤ 1.5) are multiplied by 100 on read."""
         db_session.add(
             HealthNightlySummary(
                 profile_id=test_profile.id,
@@ -154,12 +154,12 @@ class TestGetNightDetail:
         resp = api_client.get("/api/v1/health/nights/2024-01-15")
         assert resp.status_code == 200
         data = resp.json()
-        # avg ≤ 1.5 → multiply by 100
+        # each sample ≤ 1.5 → multiply by 100
         assert data["avg_spo2_pct"] == pytest.approx(97.0, abs=0.1)
         assert data["min_spo2_pct"] == pytest.approx(95.0, abs=0.1)
 
     def test_spo2_percent_stored_unchanged(self, api_client, db_session, test_profile):
-        """SpO2 values already in percent (avg > 1.5) are not re-multiplied."""
+        """SpO2 values already in percent (> 1.5) are not re-multiplied."""
         db_session.add(
             HealthNightlySummary(
                 profile_id=test_profile.id,
@@ -188,7 +188,7 @@ class TestGetNightDetail:
         resp = api_client.get("/api/v1/health/nights/2024-01-15")
         assert resp.status_code == 200
         data = resp.json()
-        # avg > 1.5 → values left as-is (just rounded)
+        # each sample > 1.5 → left as-is (just rounded)
         assert data["avg_spo2_pct"] == pytest.approx(97.0, abs=0.1)
         assert data["min_spo2_pct"] == pytest.approx(95.0, abs=0.1)
 
