@@ -180,7 +180,7 @@ async function handleExport(): Promise<void> {
             const params: CsvExportParams = { ...baseParams }
             if (includeWaveforms.value) params.include_waveforms = true
             blob = await exportCsv(params)
-            filename = 'snore-export.csv'
+            filename = 'snore-export.zip'
         } else if (format.value === 'json') {
             blob = await exportJson(baseParams)
             filename = 'snore-export.json'

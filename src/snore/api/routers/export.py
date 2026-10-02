@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
 
@@ -50,16 +51,25 @@ async def export_csv(
 ) -> StreamingResponse:
     svc = ExportService(actor.profile_id)
     tmpdir = tempfile.mkdtemp()
-    output = Path(tmpdir) / "export.csv"
+    # The service writes several CSV files into a directory; ship them as one zip.
+    output_dir = Path(tmpdir) / "export"
     await svc.export_csv(
         db,
-        output,
+        output_dir,
         date_from=from_date,
         date_to=to_date,
         device_serial=device,
         include_waveforms=include_waveforms,
     )
-    return _streaming_export(tmpdir, output, "text/csv", "snore_export.csv")
+    archive = await asyncio.to_thread(
+        shutil.make_archive,
+        str(Path(tmpdir) / "snore_export"),
+        "zip",
+        root_dir=output_dir,
+    )
+    return _streaming_export(
+        tmpdir, Path(archive), "application/zip", "snore_export.zip"
+    )
 
 
 @router.get("/json")
