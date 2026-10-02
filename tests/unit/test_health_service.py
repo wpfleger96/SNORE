@@ -59,6 +59,26 @@ async def _make_profile(db: AsyncSession) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _add_spo2_samples(
+    db: AsyncSession, profile_id: int, values: tuple[float, ...]
+) -> None:
+    """Add one SpO2 sample per value, an hour apart starting at 02:00."""
+    for h, val in enumerate(values, start=2):
+        db.add(
+            HealthSample(
+                profile_id=profile_id,
+                record_type=_SPO2_TYPE,
+                source_name=_WATCH,
+                start_time=_dt(h),
+                end_time=_dt(h),
+                value_num=val,
+                unit="%",
+                night_date=_NIGHT,
+                ingest_channel="export_xml",
+            )
+        )
+
+
 @pytest.fixture
 async def profile_id(async_db_session):
     return await _make_profile(async_db_session)
@@ -191,16 +211,67 @@ class TestGetNightDetailAggregates:
         Aggregating raw values gives avg 47.975 for 0.95 + 95 and min 0.99 (→ 99%)
         for 0.99 + 92 — both wrong scales.
         """
-        for val, h in zip(values, (2, 3), strict=True):
+        _add_spo2_samples(async_db_session, profile_id, values)
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.avg_spo2_pct == pytest.approx(expected_avg, abs=0.1)
+        assert detail.min_spo2_pct == pytest.approx(expected_min, abs=0.1)
+
+    @pytest.mark.parametrize("implausible", [0.0, 1.5, -1.0, 20.0, 101.0])
+    async def test_implausible_spo2_sample_ignored(
+        self, async_db_session, profile_id, night_summary, implausible
+    ):
+        """A sample outside 50–100% after normalization is dropped from avg/min.
+
+        Without the filter: 0.0 → 0%, 1.5 → 150%, -1 → -100%, 20 → 20%.
+        """
+        _add_spo2_samples(async_db_session, profile_id, (implausible, 95.0))
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.avg_spo2_pct == pytest.approx(95.0, abs=0.1)
+        assert detail.min_spo2_pct == pytest.approx(95.0, abs=0.1)
+
+    async def test_only_implausible_spo2_returns_none(
+        self, async_db_session, profile_id, night_summary
+    ):
+        """A night whose SpO2 samples are all implausible has no SpO2 aggregates."""
+        _add_spo2_samples(async_db_session, profile_id, (0.0, 1.5, 20.0))
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.avg_spo2_pct is None
+        assert detail.min_spo2_pct is None
+
+    async def test_rr_samples_excluded_from_spo2_aggregates(
+        self, async_db_session, profile_id, night_summary
+    ):
+        """RR samples on the same night feed avg_rr only, never the SpO2 stats.
+
+        An RR of 60 /min sits inside the plausible SpO2 percent range, so it would
+        drag avg/min SpO2 down if it leaked into those aggregates.
+        """
+        _add_spo2_samples(async_db_session, profile_id, (0.95, 97.0))
+        for val, h in [(60.0, 4), (14.0, 5)]:
             async_db_session.add(
                 HealthSample(
                     profile_id=profile_id,
-                    record_type=_SPO2_TYPE,
+                    record_type=_RR_TYPE,
                     source_name=_WATCH,
                     start_time=_dt(h),
                     end_time=_dt(h),
                     value_num=val,
-                    unit="%",
+                    unit="count/min",
                     night_date=_NIGHT,
                     ingest_channel="export_xml",
                 )
@@ -211,8 +282,9 @@ class TestGetNightDetailAggregates:
             _NIGHT
         )
 
-        assert detail.avg_spo2_pct == pytest.approx(expected_avg, abs=0.1)
-        assert detail.min_spo2_pct == pytest.approx(expected_min, abs=0.1)
+        assert detail.avg_spo2_pct == pytest.approx(96.0, abs=0.1)
+        assert detail.min_spo2_pct == pytest.approx(95.0, abs=0.1)
+        assert detail.avg_rr == pytest.approx(37.0, abs=0.01)
 
     async def test_no_spo2_or_rr_returns_none(
         self, async_db_session, profile_id, night_summary

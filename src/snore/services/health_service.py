@@ -37,8 +37,10 @@ _BREATHING_DISTURBANCE_RECORD_TYPE = (
 )
 
 
-# Sources disagree on SpO₂ encoding: some write fractions (0.95), others percents (95).
-_SPO2_FRACTION_MAX = 1.5
+# Plausible SpO₂ range in percent; samples outside it (after fraction→percent
+# conversion) are treated as sensor or encoding errors and dropped.
+_SPO2_MIN_PCT = 50.0
+_SPO2_MAX_PCT = 100.0
 
 
 class HealthService(ProfileScopedService):
@@ -86,8 +88,9 @@ class HealthService(ProfileScopedService):
     async def get_night_detail(self, night_date: date) -> HealthNightDetailRead:
         """Return nightly sleep summary with aggregated SpO2 and respiratory rate.
 
-        SpO2 samples stored as fractions (0–1) are normalized to percent per
-        sample, before aggregation.
+        SpO2 sources disagree on encoding (fraction 0.95 vs percent 95), so each
+        sample is normalized to percent before aggregating; samples outside
+        50–100% after normalization are ignored.
 
         Raises NotFoundError when no summary exists for this night.
         """
@@ -103,16 +106,17 @@ class HealthService(ProfileScopedService):
         if summary is None:
             raise NotFoundError(f"No health data found for night {night_date}")
 
-        # Normalize each SpO2 sample to percent before aggregating: nights can mix
-        # fraction and percent sources, so normalizing the aggregate is wrong.
+        value = models.HealthSample.value_num
         is_spo2 = models.HealthSample.record_type == _SPO2_RECORD_TYPE
+        # Value ranges are disjoint: [0.5, 1] is a fraction, [50, 100] a percent.
         spo2_pct = case(
             (
-                is_spo2 & (models.HealthSample.value_num <= _SPO2_FRACTION_MAX),
-                models.HealthSample.value_num * 100,
+                is_spo2 & (value * 100).between(_SPO2_MIN_PCT, _SPO2_MAX_PCT),
+                value * 100,
             ),
-            (is_spo2, models.HealthSample.value_num),
+            (is_spo2 & value.between(_SPO2_MIN_PCT, _SPO2_MAX_PCT), value),
         )
+        rr = case((models.HealthSample.record_type == _RR_RECORD_TYPE, value))
 
         # Single-pass conditional aggregation for SpO2 avg/min and RR avg.
         agg = (
@@ -120,14 +124,7 @@ class HealthService(ProfileScopedService):
                 select(
                     func.avg(spo2_pct).label("avg_spo2"),
                     func.min(spo2_pct).label("min_spo2"),
-                    func.avg(
-                        case(
-                            (
-                                models.HealthSample.record_type == _RR_RECORD_TYPE,
-                                models.HealthSample.value_num,
-                            )
-                        )
-                    ).label("avg_rr"),
+                    func.avg(rr).label("avg_rr"),
                 ).where(
                     models.HealthSample.profile_id == self.profile_id,
                     models.HealthSample.night_date == night_date,
@@ -138,15 +135,11 @@ class HealthService(ProfileScopedService):
             )
         ).one()
 
-        avg_spo2: float | None = agg.avg_spo2
-        min_spo2: float | None = agg.min_spo2
-        avg_rr: float | None = agg.avg_rr
-
         return HealthNightDetailRead(
             **HealthNightSummaryRead.model_validate(summary).model_dump(),
-            avg_spo2_pct=round(avg_spo2, 1) if avg_spo2 is not None else None,
-            min_spo2_pct=round(min_spo2, 1) if min_spo2 is not None else None,
-            avg_rr=round(avg_rr, 2) if avg_rr is not None else None,
+            avg_spo2_pct=round(agg.avg_spo2, 1) if agg.avg_spo2 is not None else None,
+            min_spo2_pct=round(agg.min_spo2, 1) if agg.min_spo2 is not None else None,
+            avg_rr=round(agg.avg_rr, 2) if agg.avg_rr is not None else None,
         )
 
     async def get_breathing_disturbance_by_night(
