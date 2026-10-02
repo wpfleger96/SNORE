@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import plotext as plt
 
+from rich.console import Console
 from rich.markup import escape
-
-from snore.cli.display import console
 
 if TYPE_CHECKING:
     from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
@@ -62,6 +61,8 @@ class WaveformRenderer:
 
     def __init__(
         self,
+        *,
+        console: Console,
         width: int = 80,
         height: int = 20,
         show_events: bool = True,
@@ -70,10 +71,12 @@ class WaveformRenderer:
         Initialize renderer.
 
         Args:
+            console: Rich console that receives all text output
             width: Chart width in characters (default: 80)
             height: Chart height in lines (default: 20)
             show_events: Whether to show event annotations (default: True)
         """
+        self.console = console
         self.width = width
         self.height = height
         self.show_events = show_events
@@ -101,10 +104,10 @@ class WaveformRenderer:
             waveform_type: Type of waveform (default: "flow")
 
         Note:
-            This method prints directly to stdout and returns None.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
         """
         if len(timestamps) < 2 or len(values) < 2 or timestamps[-1] == timestamps[0]:
-            console.print("No data in window")
+            self.console.print("No data in window")
             return
 
         label = WAVEFORM_LABELS.get(waveform_type, waveform_type.capitalize())
@@ -120,8 +123,10 @@ class WaveformRenderer:
             title = f"{label} Waveform"
 
         sample_rate = len(timestamps) / (timestamps[-1] - timestamps[0])
-        console.print(f"Sample rate: {sample_rate:.0f}Hz | Samples: {len(timestamps)}")
-        console.print()
+        self.console.print(
+            f"Sample rate: {sample_rate:.0f}Hz | Samples: {len(timestamps)}"
+        )
+        self.console.print()
 
         plt.clear_figure()
         plt.theme("clear")
@@ -145,18 +150,18 @@ class WaveformRenderer:
         plt.show()
 
         if self.show_events:
-            console.print()
-            console.print("Events in window:")
+            self.console.print()
+            self.console.print("Events in window:")
 
             if machine_events and len(machine_events) > 0:
                 for event in machine_events:
                     time_str = format_time_offset(event.start_time)
                     event_type = getattr(event, "event_type", "Unknown")
-                    console.print(
+                    self.console.print(
                         f"  Machine:      {escape(str(event_type))} at {time_str} ({event.duration:.1f}s)"
                     )
             else:
-                console.print("  Machine:      (none)")
+                self.console.print("  Machine:      (none)")
 
             if programmatic_events and len(programmatic_events) > 0:
                 for event in programmatic_events:
@@ -169,15 +174,15 @@ class WaveformRenderer:
 
                     flow_red = getattr(event, "flow_reduction", None)
                     if flow_red is not None:
-                        console.print(
+                        self.console.print(
                             f"  Programmatic: {escape(str(event_type))} at {time_str} ({event.duration:.1f}s, {flow_red * 100:.0f}% flow reduction)"
                         )
                     else:
-                        console.print(
+                        self.console.print(
                             f"  Programmatic: {escape(str(event_type))} at {time_str} ({event.duration:.1f}s)"
                         )
             else:
-                console.print("  Programmatic: (none)")
+                self.console.print("  Programmatic: (none)")
 
     def render_multi(
         self,
@@ -194,15 +199,15 @@ class WaveformRenderer:
             center_time: Center time for title
 
         Note:
-            This method prints directly to stdout and returns None.
+            Text goes to self.console; plotext writes the chart to stdout. Returns None.
             Maximum 4 waveforms supported.
         """
         if not waveform_data:
-            console.print("No waveform data provided")
+            self.console.print("No waveform data provided")
             return
 
         if len(waveform_data) > 4:
-            console.print("Warning: Maximum 4 waveforms supported, using first 4")
+            self.console.print("Warning: Maximum 4 waveforms supported, using first 4")
             waveform_data = waveform_data[:4]
 
         num_plots = len(waveform_data)
@@ -260,5 +265,5 @@ class WaveformRenderer:
                 sample_rates.append(f"{label}: {rate:.0f}Hz")
 
         if sample_rates:
-            console.print()
-            console.print("Sample rates: " + " | ".join(sample_rates))
+            self.console.print()
+            self.console.print("Sample rates: " + " | ".join(sample_rates))

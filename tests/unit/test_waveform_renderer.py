@@ -1,9 +1,11 @@
 """Smoke tests that draw waveform charts through real (unmocked) plotext."""
 
+import io
+
 import numpy as np
 import pytest
 
-import snore.cli  # noqa: F401  # load before snore.waveform to avoid an import cycle (#364)
+from rich.console import Console
 
 from snore.waveform.renderer import WaveformRenderer
 
@@ -22,18 +24,23 @@ def _sine_window() -> tuple[np.ndarray, np.ndarray]:
 
 def test_render_draws_single_waveform_chart(capsys):
     timestamps, values = _sine_window()
+    console_out = io.StringIO()
 
-    WaveformRenderer(width=60, height=12, show_events=False).render(
-        timestamps, values, session_id=7
-    )
+    WaveformRenderer(
+        console=Console(file=console_out), width=60, height=12, show_events=False
+    ).render(timestamps, values, session_id=7)
 
     assert "Session 7 - Flow Waveform" in capsys.readouterr().out
+    assert "Sample rate" in console_out.getvalue()
 
 
 def test_render_multi_draws_stacked_charts(capsys):
     timestamps, values = _sine_window()
+    console_out = io.StringIO()
 
-    WaveformRenderer(width=60, height=24).render_multi(
+    WaveformRenderer(
+        console=Console(file=console_out), width=60, height=24
+    ).render_multi(
         [(timestamps, values, "flow"), (timestamps, values + 10, "pressure")],
         session_id=7,
     )
@@ -41,3 +48,4 @@ def test_render_multi_draws_stacked_charts(capsys):
     out = capsys.readouterr().out
     assert "Session 7 - Multi-waveform" in out
     assert "Pressure (cmH2O)" in out
+    assert "Sample rates:" in console_out.getvalue()
