@@ -466,6 +466,8 @@ class TestListNightDatesSorted:
         (95.0, 95.0),  # already percent
         (0.5, 50.0),  # lower fraction boundary
         (1.0, 100.0),  # upper fraction boundary
+        (50.0, 50.0),  # lower percent boundary
+        (100.0, 100.0),  # upper percent boundary
         (20.0, 20.0),  # implausible: shown as stored
         (1.5, 1.5),  # implausible: shown as stored
     ],

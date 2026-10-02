@@ -17,7 +17,12 @@ from snore.services.schemas import (
     HealthSampleRead,
 )
 
-__all__ = ["HealthService", "NightFragmentation"]
+__all__ = [
+    "SPO2_RECORD_TYPE",
+    "HealthService",
+    "NightFragmentation",
+    "spo2_display_pct",
+]
 
 
 class NightFragmentation(NamedTuple):
@@ -37,8 +42,10 @@ _BREATHING_DISTURBANCE_RECORD_TYPE = (
 )
 
 
-# Plausible SpO₂ range in percent; samples outside it (after fraction→percent
-# conversion) are treated as sensor or encoding errors and dropped.
+# Plausible SpO₂ range in percent. A stored value is a fraction when value*100
+# lands in it, a percent when the value itself does. Night aggregates in
+# ``get_night_detail`` drop samples outside it as sensor or encoding errors;
+# ``spo2_display_pct`` keeps them visible as stored.
 _SPO2_MIN_PCT = 50.0
 _SPO2_MAX_PCT = 100.0
 
@@ -120,6 +127,7 @@ class HealthService(ProfileScopedService):
         value = models.HealthSample.value_num
         is_spo2 = models.HealthSample.record_type == SPO2_RECORD_TYPE
         # Value ranges are disjoint: [0.5, 1] is a fraction, [50, 100] a percent.
+        # Python twin: ``spo2_display_pct`` — keep the two in sync.
         spo2_pct = case(
             (
                 is_spo2 & (value * 100).between(_SPO2_MIN_PCT, _SPO2_MAX_PCT),

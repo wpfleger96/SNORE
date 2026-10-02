@@ -125,7 +125,7 @@ def test_health_show_spo2_samples_on_percent_scale(snore, tmp_path):
         '<Record type="HKQuantityTypeIdentifierOxygenSaturation" '
         'sourceName="Third-party Oximeter" sourceVersion="1.0" device="Oximeter" '
         'creationDate="2024-01-16 04:00:00 -0500" startDate="2024-01-16 04:00:00 -0500" '
-        'endDate="2024-01-16 04:00:00 -0500" value="94" unit="%"/>\n'
+        'endDate="2024-01-16 04:00:00 -0500" value="94.25" unit="%"/>\n'
     )
     export_dir = tmp_path / "export"
     export_dir.mkdir()
@@ -142,5 +142,5 @@ def test_health_show_spo2_samples_on_percent_scale(snore, tmp_path):
     assert result.returncode == 0, result.stderr or result.stdout
     assert "96.2 %" in result.stdout
     assert "0.962 %" not in result.stdout
-    assert "94.0 %" in result.stdout
+    assert "94.25 %" in result.stdout
     assert "14.5 count/min" in result.stdout

@@ -104,7 +104,10 @@ def _fmt_sample_value(sample: HealthSample) -> str:
     if sample.value_num is None:
         return str(sample.value_text or "")
     if sample.record_type == SPO2_RECORD_TYPE:
-        return f"{spo2_display_pct(sample.value_num):.1f} {sample.unit}"
+        pct = spo2_display_pct(sample.value_num)
+        # Round only values scaled from a fraction; others print as stored.
+        shown = f"{pct:.1f}" if pct != sample.value_num else f"{pct}"
+        return f"{shown} %"
     return f"{sample.value_num} {sample.unit}"
 
 
