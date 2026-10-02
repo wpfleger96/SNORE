@@ -3,7 +3,7 @@ export type AhiTier = 'good' | 'mild' | 'moderate' | 'severe'
 export interface AhiScaleEntry {
     tier: AhiTier
     label: string
-    color: string
+    color: string // any CSS colour; the moderate tier is a theme token so it follows dark mode
     maxAhi: number | null // null = no upper bound (catch-all)
 }
 
@@ -15,12 +15,12 @@ export interface AhiScaleEntry {
 export const AHI_COLOR_SCALE: AhiScaleEntry[] = [
     { tier: 'good', label: 'AHI < 5 — Good', color: '#22c55e', maxAhi: 5 },
     { tier: 'mild', label: 'AHI 5–9 — Mild', color: '#eab308', maxAhi: 10 },
-    { tier: 'moderate', label: 'AHI 10–14 — Moderate', color: '#f97316', maxAhi: 15 },
+    { tier: 'moderate', label: 'AHI 10–14 — Moderate', color: 'var(--color-moderate)', maxAhi: 15 },
     { tier: 'severe', label: 'AHI ≥ 15 — Severe', color: '#ef4444', maxAhi: null },
 ]
 
 export function ahiTier(ahi: number | null | undefined): AhiTier | null {
-    if (ahi == null) return null
+    if (ahi == null || Number.isNaN(ahi)) return null
     return AHI_COLOR_SCALE.find((e) => e.maxAhi == null || ahi < e.maxAhi)!.tier
 }
 

@@ -69,7 +69,7 @@
 }
 
 .ahi-moderate {
-    color: #f97316;
+    color: var(--color-moderate);
     font-weight: 600;
 }
 

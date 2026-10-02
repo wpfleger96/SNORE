@@ -28,7 +28,7 @@ vi.mock('@/components/DatePickerInput.vue', () => ({
 }))
 
 import { makeAuthMock } from './helpers/mockUseAuth'
-import { chooseSelectOption, installSelectDomStubs } from './helpers/selectOption'
+import { chooseSelectOption, openSelect, selectedOptionLabel } from './helpers/selectOption'
 import { useAuth } from '@/composables/useAuth'
 import { useRoute, useRouter } from 'vue-router'
 import { getSessions } from '@/api/sessions'
@@ -46,7 +46,6 @@ describe('SessionListView device filter', () => {
         vi.mocked(useRouter).mockReturnValue({ push: vi.fn() } as never)
         vi.mocked(getSessions).mockResolvedValue({ items: [], total: 0 } as never)
         vi.mocked(getDevices).mockResolvedValue([DEVICE] as never)
-        installSelectDomStubs()
     })
 
     afterEach(() => {
@@ -54,11 +53,23 @@ describe('SessionListView device filter', () => {
         vi.clearAllMocks()
     })
 
-    it('test_choosing_all_devices_after_a_device_sends_no_device_param', async () => {
-        wrapper = mount(SessionListView, {
+    function mountView(): VueWrapper {
+        return mount(SessionListView, {
             attachTo: document.body,
             global: { stubs: { RouterLink: true } },
         })
+    }
+
+    it('test_device_filter_starts_on_all_devices', async () => {
+        wrapper = mountView()
+        await flushPromises()
+
+        expect(vi.mocked(getSessions).mock.calls.at(-1)![0]?.device).toBeUndefined()
+        expect(selectedOptionLabel(await openSelect(wrapper))).toBe('All devices')
+    })
+
+    it('test_choosing_all_devices_after_a_device_sends_no_device_param', async () => {
+        wrapper = mountView()
         await flushPromises()
 
         await chooseSelectOption(wrapper, 'ResMed AirSense 11')

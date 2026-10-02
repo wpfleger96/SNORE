@@ -23,7 +23,7 @@ vi.mock('@/components/DatePickerInput.vue', () => ({
     default: { props: ['modelValue'], template: '<input :value="modelValue" />' },
 }))
 
-import { chooseSelectOption, installSelectDomStubs } from './helpers/selectOption'
+import { chooseSelectOption, openSelect, selectedOptionLabel } from './helpers/selectOption'
 import { getDevices } from '@/api/devices'
 import { exportCsv } from '@/api/export'
 import ExportView from '@/views/ExportView.vue'
@@ -40,7 +40,6 @@ describe('ExportView device filter', () => {
     let wrapper: VueWrapper
 
     beforeEach(() => {
-        installSelectDomStubs()
         vi.mocked(getDevices).mockResolvedValue([DEVICE] as never)
         vi.mocked(exportCsv).mockResolvedValue(new Blob(['x']))
     })
@@ -48,6 +47,13 @@ describe('ExportView device filter', () => {
     afterEach(() => {
         wrapper?.unmount()
         vi.clearAllMocks()
+    })
+
+    it('test_device_filter_starts_on_all_devices', async () => {
+        wrapper = mount(ExportView, { attachTo: document.body })
+        await flushPromises()
+
+        expect(selectedOptionLabel(await openSelect(wrapper))).toBe('All Devices')
     })
 
     it('test_choosing_all_devices_after_a_device_sends_no_device_param', async () => {

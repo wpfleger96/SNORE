@@ -20,9 +20,10 @@ describe('ahiTier', () => {
         expect(ahiTier(ahi)).toBe(tier)
     })
 
-    it('test_nullish_has_no_tier', () => {
+    it('test_nullish_or_nan_has_no_tier', () => {
         expect(ahiTier(null)).toBeNull()
         expect(ahiTier(undefined)).toBeNull()
+        expect(ahiTier(NaN)).toBeNull()
     })
 })
 
@@ -31,8 +32,9 @@ describe('ahiColorClass', () => {
         expect(ahiColorClass(ahi)).toBe(`cell--${tier}`)
     })
 
-    it('test_null_maps_to_empty_cell', () => {
+    it('test_null_or_nan_maps_to_empty_cell', () => {
         expect(ahiColorClass(null)).toBe('cell--empty')
+        expect(ahiColorClass(NaN)).toBe('cell--empty')
     })
 })
 
@@ -41,8 +43,9 @@ describe('ahiClass', () => {
         expect(ahiClass(ahi)).toBe(`ahi-${tier}`)
     })
 
-    it('test_nullish_maps_to_no_class', () => {
+    it('test_nullish_or_nan_maps_to_no_class', () => {
         expect(ahiClass(null)).toBe('')
         expect(ahiClass(undefined)).toBe('')
+        expect(ahiClass(NaN)).toBe('')
     })
 })
