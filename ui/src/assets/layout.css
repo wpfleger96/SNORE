@@ -68,6 +68,8 @@
     font-weight: 600;
 }
 
+/* Text colour, not the heatmap fill: an orange dark enough for 4.5:1 text on
+   white reads brown-red as a cell, so cells keep the brighter #f97316. */
 .ahi-moderate {
     color: var(--color-moderate);
     font-weight: 600;

@@ -179,7 +179,7 @@ const monthLabels = computed(() => {
     background: #eab308;
 }
 .cell--moderate {
-    background: var(--color-moderate);
+    background: #f97316;
 }
 .cell--severe {
     background: #ef4444;
