@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Event
+from snore.provenance import IndexSource
 from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
@@ -531,6 +532,40 @@ class TestGetNightlySummary:
         night = result.nights[0]
         assert night.ahi == pytest.approx(5.2, abs=0.01)
         assert night.oai == pytest.approx(1.0, abs=0.01)
+
+    async def test_device_headline_night_carries_source_and_recount(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.provenance import response_provenance
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        await _make_day_session(
+            async_db_session,
+            device,
+            date(2024, 8, 1),
+            ahi=1.2,
+            index_source=IndexSource.DEVICE,
+            ahi_computed=1.6789,
+            cai_computed=0.4,
+        )
+
+        result = await get_nightly_summary(
+            async_db_session,
+            date(2024, 8, 1),
+            date(2024, 8, 1),
+            profile_id=async_test_profile.id,
+        )
+        night = result.nights[0]
+        block = response_provenance(type(result))
+
+        assert night.index_source == "device"
+        assert night.ahi == pytest.approx(1.2)
+        assert night.ahi_computed == 1.68
+        assert night.cai_computed == pytest.approx(0.4)
+        assert night.hi_computed is None
+        assert block["source_dependent"]["nights[].ahi"] == "nights[].index_source"
+        assert "nights[].ahi_computed" in block["derived"]
 
     async def test_compliance_block_present_in_range_mode(
         self, async_db_session: AsyncSession, async_test_profile: Any

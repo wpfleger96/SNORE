@@ -524,6 +524,27 @@ class TestDeviceIndexMapRetargeting:
         assert not {"ahi", "oai", "cai", "hi"} & day.keys()
 
 
+class TestDeviceUsageHours:
+    """STR daily mask-on minutes land in ``usage_hours_device`` as hours."""
+
+    @pytest.mark.parametrize("label", ["Duration", "Mask Dur"])  # S10/S11, S9
+    def test_mask_on_minutes_map_to_usage_hours_device(self, parser, tmp_path, label):
+        edf = _make_str_edf(tmp_path, {label: 92.0})
+        _, summaries = parser._preload_str_file(edf)
+        assert summaries is not None
+        day = summaries[_DATE_0]
+        assert day["usage_hours_device"] == pytest.approx(92.0 / 60, rel=1e-3)
+        # The imported-session usage column is SNORE's, never STR's.
+        assert "usage_hours" not in day
+
+    def test_scaling_leaves_other_stats_unscaled(self, parser, tmp_path):
+        edf = _make_str_edf(tmp_path, {"Duration": 120.0, "AHI": 15.0})
+        _, summaries = parser._preload_str_file(edf)
+        assert summaries is not None
+        assert summaries[_DATE_0]["usage_hours_device"] == pytest.approx(2.0, rel=1e-3)
+        assert summaries[_DATE_0]["ahi_device"] == pytest.approx(15.0, rel=1e-3)
+
+
 # ---------------------------------------------------------------------------
 # Device-reported indices preserved alongside the computed ones
 # ---------------------------------------------------------------------------

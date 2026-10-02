@@ -950,8 +950,11 @@ class TestScrubDemo:
 
         from snore.cli.groups.db import _DAY_CLONE_EXCLUDED_COLUMNS  # noqa: PLC0415
 
+        # Non-numeric but safe to clone: closed enums with no personal data.
+        safe_non_numeric = {"index_source"}  # "device" / "derived" / None
+
         for col in models.Day.__table__.columns:
-            if col.name in _DAY_CLONE_EXCLUDED_COLUMNS:
+            if col.name in _DAY_CLONE_EXCLUDED_COLUMNS or col.name in safe_non_numeric:
                 continue
             # Float no longer subclasses Numeric as of SQLAlchemy 2.1.
             assert isinstance(col.type, (Integer, Numeric, Float)), (

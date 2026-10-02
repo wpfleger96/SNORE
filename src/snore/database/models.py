@@ -35,6 +35,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Enum,
     Float,
     ForeignKey,
     ForeignKeyConstraint,
@@ -45,11 +46,14 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from snore.database.types import UTCDateTime, ValidatedJSON, ValidatedJSONWithDefault
+from snore.provenance import IndexSource
 
 # Constraint naming convention — must live here on Base.metadata (not env.py)
 # so that Base.metadata.create_all emits the same deterministic constraint
@@ -585,10 +589,27 @@ class Day(Base):
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Headline indices: the device-reported daily value when trusted, else the
+    # SNORE recount.  ``index_source`` says which; see
+    # ``DayManager._trusted_device_indices`` for the trust rule.
     ahi: Mapped[float | None] = mapped_column(Float)
     oai: Mapped[float | None] = mapped_column(Float)
     cai: Mapped[float | None] = mapped_column(Float)
     hi: Mapped[float | None] = mapped_column(Float)
+    index_source: Mapped[IndexSource | None] = mapped_column(
+        Enum(
+            IndexSource,
+            native_enum=False,
+            length=16,
+            values_callable=lambda e: [m.value for m in e],
+        )
+    )
+
+    # SNORE recount: usage-weighted mean of session indices (mask-on hours).
+    ahi_computed: Mapped[float | None] = mapped_column(Float)
+    oai_computed: Mapped[float | None] = mapped_column(Float)
+    cai_computed: Mapped[float | None] = mapped_column(Float)
+    hi_computed: Mapped[float | None] = mapped_column(Float)
 
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)
@@ -632,6 +653,37 @@ class Day(Base):
 
     def __repr__(self) -> str:
         return f"<Day(id={self.id}, device_id={self.device_id}, date={self.date}, ahi={self.ahi})>"
+
+
+# ``Enum(native_enum=False)`` emits no CHECK, and a stray ``days.index_source``
+# string makes every ORM load of that Day raise LookupError.  Adding a CHECK to
+# an existing ``days`` table needs a table rebuild (cascade risk), so SQLite
+# triggers guard the column instead, built from ``IndexSource`` so they cannot
+# drift.  Fresh DBs get them via ``after_create``; migration 018 adds them to
+# existing DBs.  A batch (copy-and-rename) rebuild of ``days`` drops them, so a
+# migration doing one must recreate them.
+_INDEX_SOURCE_VALUES = ", ".join(f"'{source.value}'" for source in IndexSource)
+DAY_INDEX_SOURCE_TRIGGERS: dict[str, str] = {
+    name: (
+        f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {when} ON days FOR EACH ROW "
+        f"WHEN NEW.index_source IS NOT NULL "
+        f"AND NEW.index_source NOT IN ({_INDEX_SOURCE_VALUES}) "
+        "BEGIN SELECT RAISE(ABORT, 'invalid days.index_source'); END"
+    )
+    for name, when in (
+        ("trg_days_index_source_insert", "INSERT"),
+        ("trg_days_index_source_update", "UPDATE OF index_source"),
+    )
+}
+
+
+@event.listens_for(Day.__table__, "after_create")
+def _create_day_index_source_triggers(
+    target: Any, connection: Connection, **kw: Any
+) -> None:
+    if connection.dialect.name == "sqlite":
+        for trigger_sql in DAY_INDEX_SOURCE_TRIGGERS.values():
+            connection.exec_driver_sql(trigger_sql)
 
 
 class Session(Base):
@@ -829,6 +881,9 @@ class Statistics(Base):
     oai_device: Mapped[float | None] = mapped_column(Float)
     cai_device: Mapped[float | None] = mapped_column(Float)
     hi_device: Mapped[float | None] = mapped_column(Float)
+    # Device-reported (STR) mask-on hours for the whole day, the time the
+    # *_device indices cover; copied onto each session of the day.
+    usage_hours_device: Mapped[float | None] = mapped_column(Float)
 
     pressure_min: Mapped[float | None] = mapped_column(Float)
     pressure_max: Mapped[float | None] = mapped_column(Float)

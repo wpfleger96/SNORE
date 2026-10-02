@@ -56,11 +56,13 @@ SESSION_METRICS: tuple[MetricSpec, ...] = (
     _m("cai"),
     _m("hi"),
     _m("rei"),
-    # Device-reported (STR) indices, kept alongside the computed ones above
+    # Device-reported (STR) daily indices, kept alongside the computed ones
+    # above, and the daily mask-on hours they cover
     _m("ahi_device"),
     _m("oai_device"),
     _m("cai_device"),
     _m("hi_device"),
+    _m("usage_hours_device"),
     # Pressure
     _m("pressure_min"),
     _m("pressure_max"),
@@ -190,4 +192,19 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "oai_device",
     "cai_device",
     "hi_device",
+    "usage_hours_device",
 )
+
+
+# Day respiratory indices that have both a headline column (``Day.<name>``:
+# the device-reported daily value when trusted, else SNORE's recount) and a
+# recount column (``Day.<name>_computed``).
+DAY_INDEX_FIELDS: tuple[str, ...] = ("ahi", "oai", "cai", "hi")
+
+# Allowed gap between SNORE's imported mask-on hours and the device's daily
+# mask-on hours before the device indices stop describing the imported data:
+# the larger of the floor or the fraction of the device's hours.  The floor
+# absorbs per-file rounding of BRP durations, which leaves gaps of up to ~4 min
+# on real nights.
+COVERAGE_TOLERANCE_HOURS = 5 / 60
+COVERAGE_TOLERANCE_FRACTION = 0.05

@@ -81,6 +81,12 @@ _DAY_NON_METRIC_COLUMNS = {
     "oai",
     "cai",
     "hi",
+    # Recount + headline source: dedicated DayManager logic.
+    "ahi_computed",
+    "oai_computed",
+    "cai_computed",
+    "hi_computed",
+    "index_source",
     "created_at",
     "updated_at",
 }

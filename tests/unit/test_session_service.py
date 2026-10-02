@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from snore.database.models import Day, Session
+from snore.provenance import IndexSource
 from snore.services.session_service import SessionService
 
 
@@ -913,6 +914,56 @@ class TestSessionServiceEnable:
         await async_db_session.refresh(day)
         assert day.session_count == 1
         assert day.ahi == pytest.approx(5.0)
+
+    async def test_toggle_session_on_device_day_switches_index_source(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """Disabling one session of a device-headlined day falls back to the
+        recount; re-enabling it restores the device headline."""
+        from snore.database.day_manager import DayManager
+
+        device_indices = {
+            "ahi_device": 2.5,
+            "oai_device": 1.0,
+            "cai_device": 0.5,
+            "hi_device": 1.0,
+            "usage_hours_device": 8.0,  # matches the 6 h + 2 h imported
+        }
+        first = await async_test_session_factory(
+            async_test_device.id,
+            datetime(2025, 3, 1, 22, 0, 0),
+            duration_hours=6.0,
+            ahi=4.0,
+            **device_indices,
+        )
+        second = await async_test_session_factory(
+            async_test_device.id,
+            datetime(2025, 3, 2, 4, 0, 0),
+            duration_hours=2.0,
+            ahi=8.0,
+            **device_indices,
+        )
+        await DayManager.link_session_to_day(
+            first, async_test_device.id, async_db_session
+        )
+        day = await DayManager.link_session_to_day(
+            second, async_test_device.id, async_db_session
+        )
+        service = SessionService(async_db_session, profile_id=1)
+
+        async def toggle(enabled: bool) -> tuple[IndexSource | None, float | None]:
+            await service.set_session_enabled(second.id, enabled)
+            await async_db_session.flush()
+            await async_db_session.refresh(day)
+            return day.index_source, day.ahi
+
+        assert day.index_source == IndexSource.DEVICE
+        source, ahi = await toggle(False)
+        assert source == IndexSource.DERIVED
+        assert ahi == pytest.approx(4.0)
+        source, ahi = await toggle(True)
+        assert source is IndexSource.DEVICE  # round-trips as the enum member
+        assert ahi == pytest.approx(2.5)
 
     async def test_set_session_enabled_not_found(self, async_db_session):
         """Raises ValueError if session not found."""

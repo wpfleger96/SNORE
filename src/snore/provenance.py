@@ -45,6 +45,13 @@ class Provenance(StrEnum):
     EXPERIMENTAL = "experimental"
 
 
+class IndexSource(StrEnum):
+    """Which source a source-dependent day index came from; values mirror the matching Provenance tiers."""
+
+    DEVICE = "device"
+    DERIVED = "derived"
+
+
 PROVENANCE_NOTES: dict[Provenance, str] = {
     Provenance.DEVICE: (
         "Reported by the recording device (CPAP, oximeter, or Apple Health source)."

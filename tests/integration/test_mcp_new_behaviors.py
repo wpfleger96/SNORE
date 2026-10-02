@@ -108,7 +108,12 @@ class TestDurationZeroReason:
         target_date = date(2024, 3, 11)
         device = await _make_device(async_db_session, async_test_profile.id)
         day, sess = await _make_day_session(
-            async_db_session, device, target_date, duration_hours=8.0, ahi=4.0
+            async_db_session,
+            device,
+            target_date,
+            duration_hours=8.0,
+            ahi=4.0,
+            ahi_computed=4.0,
         )
         ar = await _make_analysis_result(async_db_session, sess)
         await _make_breath(async_db_session, ar, sess, breath_number=1)

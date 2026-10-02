@@ -7,11 +7,11 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 
 from snore.database import models
 from snore.exceptions import NotFoundError
-from snore.metrics import DAY_METRIC_STAT_COLUMNS
 from snore.services._base import ProfileScopedService, paginate
 from snore.services.schemas import DayDetail, DayListItem, HealthNightSummaryRead
 
@@ -21,6 +21,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 __all__ = ["DayService"]
+
+# DayDetail fields stored on the Day row under the same name; get_day copies
+# them by identity and passes only renamed, defaulted, or joined fields.
+_DAY_DETAIL_IDENTITY_FIELDS = tuple(
+    name
+    for name in DayDetail.model_fields
+    if name in sa_inspect(models.Day).column_attrs.keys()
+)
 
 
 def _null_fl_rera(reason: str) -> dict[str, Any]:
@@ -149,32 +157,21 @@ class DayService(ProfileScopedService):
 
         fl_rera = await self._nightly_fl_rera(day_date, day.device_id)
 
-        # Identity copies: Day metric columns that DayDetail exposes under the
-        # same name.  Columns DayDetail renames (pressure_median → avg_pressure,
-        # leak_median → avg_leak, spo2_mean → avg_spo2) are not DayDetail
-        # fields, so the membership test skips them; they are passed explicitly.
-        stat_fields = {
-            spec.name: getattr(day, spec.name)
-            for spec in DAY_METRIC_STAT_COLUMNS
-            if spec.name in DayDetail.model_fields
-        }
-
-        return DayDetail(
-            **DayListItem.model_validate(day).model_dump(),
-            **stat_fields,
-            oai=day.oai,
-            cai=day.cai,
-            hi=day.hi,
-            avg_pressure=day.pressure_median,
-            avg_leak=day.leak_median,
-            avg_spo2=day.spo2_mean,
-            obstructive_apneas=day.obstructive_apneas or 0,
-            central_apneas=day.central_apneas or 0,
-            hypopneas=day.hypopneas or 0,
-            reras=day.reras or 0,
-            session_ids=session_ids,
-            health_sleep=health_sleep,
-            **fl_rera,
+        identity = {name: getattr(day, name) for name in _DAY_DETAIL_IDENTITY_FIELDS}
+        return DayDetail.model_validate(
+            {
+                **identity,
+                "avg_pressure": day.pressure_median,
+                "avg_leak": day.leak_median,
+                "avg_spo2": day.spo2_mean,
+                "obstructive_apneas": day.obstructive_apneas or 0,
+                "central_apneas": day.central_apneas or 0,
+                "hypopneas": day.hypopneas or 0,
+                "reras": day.reras or 0,
+                "session_ids": session_ids,
+                "health_sleep": health_sleep,
+                **fl_rera,
+            }
         )
 
     async def _nightly_fl_rera(self, day_date: date, device_id: int) -> dict[str, Any]:
