@@ -1727,18 +1727,12 @@ class TestImportCorruptTimezone:
         return temp_db
 
     def test_corrupt_timezone_yields_clean_error(
-        self, cli_runner, db_with_corrupt_timezone, tmp_path, monkeypatch
+        self, cli_runner, db_with_corrupt_timezone, tmp_path
     ):
         from unittest.mock import patch
 
-        import snore.logging_config as logging_config
-
         from snore.services.import_service import ImportService
         from snore.services.schemas import ImportSource
-
-        # Pin the normal (non --verbose) user path: the CLI re-raises import
-        # errors instead of rendering them when verbose_mode is set.
-        monkeypatch.setattr(logging_config, "verbose_mode", False)
 
         source = ImportSource(parser_name="oscar_binary", root_path=str(tmp_path))
         with patch.object(ImportService, "detect_sources", return_value=[source]):
@@ -1763,6 +1757,8 @@ class TestImportCorruptTimezone:
     def test_verbose_mode_reraises_for_debugging(
         self, cli_runner, db_with_corrupt_timezone, tmp_path, monkeypatch
     ):
+        import logging
+
         from unittest.mock import patch
 
         import snore.logging_config as logging_config
@@ -1770,13 +1766,21 @@ class TestImportCorruptTimezone:
         from snore.services.import_service import ImportService
         from snore.services.schemas import ImportSource
 
-        monkeypatch.setattr(logging_config, "verbose_mode", True)
+        # setup_logging is once-per-process: if an earlier test already
+        # configured logging, --verbose would be ignored. Force a fresh setup;
+        # monkeypatch restores the module state, and a fresh handlers list
+        # keeps the root logger's prior handlers intact for later tests.
+        monkeypatch.setattr(logging_config, "_logging_configured", False)
+        monkeypatch.setattr(logging_config, "verbose_mode", False)
+        root_logger = logging.getLogger()
+        monkeypatch.setattr(root_logger, "handlers", list(root_logger.handlers))
 
         source = ImportSource(parser_name="oscar_binary", root_path=str(tmp_path))
         with patch.object(ImportService, "detect_sources", return_value=[source]):
             result = cli_runner.invoke(
                 cli,
                 [
+                    "--verbose",
                     "import",
                     str(tmp_path),
                     "--db",
