@@ -116,7 +116,7 @@
         >
             <StatCard
                 label="Avg Sleep"
-                field="total_sleep_seconds"
+                field="avg_total_sleep_hours"
                 :value="avgTotalSleepHours"
                 unit="hrs"
                 :decimals="1"
@@ -124,7 +124,7 @@
             />
             <StatCard
                 label="Avg Sleep Efficiency"
-                field="sleep_efficiency_pct"
+                field="avg_sleep_efficiency_pct"
                 :value="avgSleepEfficiency"
                 unit="%"
                 :decimals="1"
@@ -186,10 +186,6 @@
                         </li>
                     </ul>
                     <p class="text-xs text-muted-foreground mt-2">
-                        Each day's AHI is the device-reported value when SNORE can trust it,
-                        otherwise SNORE's recount; the day view marks which.
-                    </p>
-                    <p class="text-xs text-muted-foreground mt-2">
                         Note: this display scale is stricter than the common clinical convention
                         (&lt;5 normal, 5–15 mild, 15–30 moderate, &gt;30 severe).
                     </p>
@@ -202,13 +198,14 @@
         <div v-if="recentSessions.length" class="section-card">
             <h2>Recent Sessions</h2>
             <div v-if="isMobile" class="card-list">
-                <RouterLink
-                    v-for="session in recentSessions"
-                    :key="session.id"
-                    class="data-card"
-                    :to="{ name: 'session-detail', params: { id: session.id } }"
-                >
-                    <div class="data-card-header">{{ formatDateFull(session.therapy_day) }}</div>
+                <div v-for="session in recentSessions" :key="session.id" class="data-card">
+                    <div class="data-card-header">
+                        <RouterLink
+                            class="text-primary no-underline hover:underline"
+                            :to="{ name: 'session-detail', params: { id: session.id } }"
+                            >{{ formatDateFull(session.therapy_day) }}</RouterLink
+                        >
+                    </div>
                     <div class="data-card-row">
                         <span class="data-card-label">Duration</span>
                         <span class="data-card-value"
@@ -216,19 +213,14 @@
                         >
                     </div>
                     <div class="data-card-row">
-                        <!-- @click.stop.prevent: tapping the mark opens its popover
-                             instead of following the card link. -->
                         <span class="data-card-label"
                             >AHI
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark
-                                    :provenance="
-                                        provenanceFor('ahi', { schema: 'SessionListItem' })
-                                    " /></span
-                        ></span>
+                            <ProvenanceMark
+                                :provenance="provenanceFor('ahi', { schema: 'SessionListItem' })"
+                        /></span>
                         <span class="data-card-value">{{ session.ahi?.toFixed(1) ?? '---' }}</span>
                     </div>
-                </RouterLink>
+                </div>
             </div>
             <Table v-else>
                 <TableHeader>

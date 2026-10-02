@@ -161,4 +161,24 @@ describe('StatsView', () => {
 
         expect(getSummary).toHaveBeenLastCalledWith(undefined)
     })
+
+    it('test_trend_badge_and_ahi_chart_label_are_marked_derived', async () => {
+        vi.mocked(getSummary).mockResolvedValue({ ahi_trend_direction: 'stable' } as never)
+        vi.mocked(getTrends).mockResolvedValue({
+            ...EMPTY_TRENDS,
+            ahi: [['2026-09-01', 2.2]],
+        } as never)
+
+        const wrapper = await mountAndLoad()
+
+        const tiers = (el: ReturnType<typeof wrapper.find>) =>
+            el.findAll('.provenance-mark').map((m) => m.attributes('aria-label')!.split(':')[0])
+        expect(tiers(wrapper.find('.trend-badge'))).toEqual(['Derived'])
+        // Trend AHI is a per-period average (TrendsResponse.ahi), unlike a day's headline AHI.
+        const ahiLabel = wrapper
+            .findAll('.trend-metric-label')
+            .find((l) => l.text().startsWith('AHI'))
+        expect(ahiLabel, 'AHI trend chart should render').toBeDefined()
+        expect(tiers(ahiLabel!)).toEqual(['Derived'])
+    })
 })

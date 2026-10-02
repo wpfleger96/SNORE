@@ -51,14 +51,14 @@ export const AGGREGATE_METRICS = withProvenance({
     events: [
         {
             path: 'avg_apnea_sensitivity',
-            label: 'Apnea sensitivity',
+            label: 'Apnea Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
             higherIsBetter: true,
         },
         {
             path: 'avg_apnea_precision',
-            label: 'Apnea precision',
+            label: 'Apnea Precision',
             kind: 'percent',
             glossaryKey: 'precision',
             higherIsBetter: true,
@@ -72,14 +72,14 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'avg_hypopnea_sensitivity',
-            label: 'Hypopnea sensitivity',
+            label: 'Hypopnea Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
             higherIsBetter: true,
         },
         {
             path: 'avg_hypopnea_precision',
-            label: 'Hypopnea precision',
+            label: 'Hypopnea Precision',
             kind: 'percent',
             glossaryKey: 'precision',
             higherIsBetter: true,
@@ -96,14 +96,14 @@ export const AGGREGATE_METRICS = withProvenance({
     fl: [
         {
             path: 'mean_spearman_flattening_r',
-            label: 'Spearman (flattening)',
+            label: 'Spearman (Flattening)',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
             higherIsBetter: true,
         },
         {
             path: 'mean_spearman_class_weight_r',
-            label: 'Spearman (class weight)',
+            label: 'Spearman (Class Weight)',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
             higherIsBetter: true,
@@ -143,7 +143,7 @@ export const AGGREGATE_METRICS = withProvenance({
             glossaryKey: 'cross_night_spearman',
             higherIsBetter: true,
         },
-        { path: 'sessions_compared', label: 'Sessions compared', kind: 'count' },
+        { path: 'sessions_compared', label: 'Sessions Compared', kind: 'count' },
     ],
     breaths: [
         {
@@ -174,46 +174,46 @@ export const AGGREGATE_METRICS = withProvenance({
             glossaryKey: 'spearman_r',
             higherIsBetter: true,
         },
-        { path: 'sessions_compared', label: 'Sessions compared', kind: 'count' },
+        { path: 'sessions_compared', label: 'Sessions Compared', kind: 'count' },
     ],
     rera: [
         {
             path: 'mean_amplitude_sensitivity',
-            label: 'Amplitude sensitivity',
+            label: 'Amplitude Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
             higherIsBetter: true,
         },
         {
             path: 'mean_amplitude_precision',
-            label: 'Amplitude precision',
+            label: 'Amplitude Precision',
             kind: 'percent',
             glossaryKey: 'precision',
             higherIsBetter: true,
         },
         {
             path: 'mean_proxy_sensitivity',
-            label: 'Proxy sensitivity',
+            label: 'Proxy Sensitivity',
             kind: 'percent',
             glossaryKey: 'sensitivity',
             higherIsBetter: true,
         },
         {
             path: 'mean_proxy_precision',
-            label: 'Proxy precision',
+            label: 'Proxy Precision',
             kind: 'percent',
             glossaryKey: 'precision',
             higherIsBetter: true,
         },
         {
             path: 'chance_precision_floor',
-            label: 'Chance precision floor',
+            label: 'Chance Precision Floor',
             kind: 'percent',
             glossaryKey: 'chance_floor',
         },
-        { path: 'proxy_density', label: 'Proxy density (/h)', kind: 'rate' },
-        { path: 'machine_re_density', label: 'Machine RE density (/h)', kind: 'rate' },
-        { path: 'total_proxy_reras', label: 'Total proxy RERAs', kind: 'count' },
+        { path: 'proxy_density', label: 'Proxy Density (/h)', kind: 'rate' },
+        { path: 'machine_re_density', label: 'Device RE Density (/h)', kind: 'rate' },
+        { path: 'total_proxy_reras', label: 'Total Proxy RERAs', kind: 'count' },
     ],
     apple: [
         {
@@ -232,19 +232,19 @@ export const AGGREGATE_METRICS = withProvenance({
         },
         {
             path: 'rera_vs_awake_seconds.rho',
-            label: 'RERA vs awake time',
+            label: 'RERA vs Awake Time',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
             higherIsBetter: true,
         },
         {
             path: 'fl_vs_sleep_efficiency.rho',
-            label: 'FL vs sleep efficiency',
+            label: 'FL vs Sleep Efficiency',
             kind: 'decimal',
             glossaryKey: 'spearman_r',
         },
         { path: 'n_with_apple_bd', label: 'Nights with Apple BD', kind: 'count' },
-        { path: 'total_nights', label: 'Total nights', kind: 'count' },
+        { path: 'total_nights', label: 'Total Nights', kind: 'count' },
     ],
 })
 

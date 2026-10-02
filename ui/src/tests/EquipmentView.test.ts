@@ -82,3 +82,22 @@ describe('EquipmentView current settings', () => {
         expect(wrapper.text()).toContain('No settings recorded for this device.')
     })
 })
+
+describe('EquipmentView usage provenance', () => {
+    beforeEach(() => {
+        vi.resetAllMocks()
+    })
+
+    it('test_total_hours_is_marked_derived', async () => {
+        const wrapper = await mountWith({})
+
+        const totalHours = wrapper
+            .findAll('.usage-label')
+            .find((l) => l.text().startsWith('Total Hours'))
+        expect(totalHours, 'Total Hours stat should render').toBeDefined()
+        const tiers = totalHours!
+            .findAll('.provenance-mark')
+            .map((m) => m.attributes('aria-label')!.split(':')[0])
+        expect(tiers).toEqual(['Derived'])
+    })
+})

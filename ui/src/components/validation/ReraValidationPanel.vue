@@ -3,7 +3,7 @@
         validator-type="rera"
         :load-run-id="loadRunId"
         experimental
-        experimental-note="SNORE's RERA proxy is an experimental trend instrument, not a validated event count. It is scored against the device's machine-flagged RE events, which the device reports extremely conservatively."
+        experimental-note="SNORE's RERA proxy is an experimental trend instrument, not a validated event count. It is scored against the device-flagged RE events, which the device reports extremely conservatively."
         :filename-base="fileStem()"
         @update:report="rawReport = $event"
         @download-csv="onDownloadCsv"
@@ -17,7 +17,7 @@
                     <p class="mb-1 font-medium text-foreground">How to read these scores</p>
                     <p>
                         The device flags RERAs very conservatively, so the FL-run proxy fires far
-                        more often than there are machine RE events to match. Low sensitivity and
+                        more often than there are device RE events to match. Low sensitivity and
                         near-zero precision are the
                         <span class="font-medium">expected</span> result, not a detector failure.
                         Compare proxy precision to the
@@ -66,7 +66,7 @@
                         glossary-key="precision"
                     />
                     <StatCard
-                        label="Machine RE Density"
+                        label="Device RE Density"
                         :value="report.aggregate.machine_re_density"
                         field="machine_re_density"
                         :decimals="2"
@@ -90,7 +90,7 @@
 
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
                     <StatCard
-                        label="Total Machine RE"
+                        label="Total Device RE"
                         :value="report.aggregate.total_machine_re"
                         :decimals="0"
                     />
@@ -106,7 +106,7 @@
                         :decimals="0"
                     />
                     <StatCard
-                        label="Skipped (no machine RE)"
+                        label="Skipped (No Device RE)"
                         :value="report.aggregate.sessions_skipped_no_machine_re"
                         :decimals="0"
                     />
@@ -117,7 +117,7 @@
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead class="whitespace-nowrap">Machine RE</TableHead>
+                                <TableHead class="whitespace-nowrap">Device RE</TableHead>
                                 <TableHead class="whitespace-nowrap"
                                     >Amplitude RERAs
                                     <ProvenanceMark

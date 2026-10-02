@@ -64,7 +64,15 @@
                         <span class="usage-value">{{
                             device.usage.total_therapy_hours.toFixed(1)
                         }}</span>
-                        <span class="usage-label">Total Hours</span>
+                        <span class="usage-label"
+                            >Total Hours
+                            <ProvenanceMark
+                                :provenance="
+                                    provenanceFor('total_therapy_hours', {
+                                        schema: 'DeviceUsageSummary',
+                                    })
+                                "
+                        /></span>
                     </div>
                     <div class="usage-stat">
                         <span class="usage-value">{{
@@ -210,11 +218,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import ErrorState from '@/components/ErrorState.vue'
 import InfoHint from '@/components/InfoHint.vue'
 import MaskLogManager from '@/components/MaskLogManager.vue'
+import ProvenanceMark from '@/components/ProvenanceMark.vue'
 import { getDevices, getDeviceDetail } from '@/api/devices'
 import { getMaskEpochs } from '@/api/equipment'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { formatDateFull } from '@/utils/formatting'
 import { categorizeSettings, formatSettingValue, settingLabel } from '@/utils/deviceSettings'
+import { provenanceFor } from '@/utils/provenance'
 import type { DeviceDetail, MaskEpochResponse } from '@/types'
 
 const { data, loading, error, reload } = useApiLoad<DeviceDetail[]>(async () => {

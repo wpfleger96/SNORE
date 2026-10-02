@@ -36,7 +36,8 @@ describe('EventExplorerView provenance', () => {
         })
         await flushPromises()
 
-        expect(wrapper.find('h2.events-heading').text()).toBe('Device-scored events')
+        const headings = wrapper.findAll('.section-card h2').map((h) => h.text())
+        expect(headings).toContain('Device-scored Events')
 
         const card = (label: string) =>
             wrapper.findAll('.stat-card').find((c) => c.find('.stat-label').text() === label)!

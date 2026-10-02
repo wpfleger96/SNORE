@@ -71,7 +71,13 @@
                 <div class="session-meta text-muted-foreground">
                     <Badge v-if="session.therapy_mode">{{ session.therapy_mode }}</Badge>
                     <span>{{ session.device_manufacturer }} {{ session.device_model }}</span>
-                    <span>{{ session.duration_hours.toFixed(1) }} hours</span>
+                    <span
+                        >{{ session.duration_hours.toFixed(1) }} hours
+                        <ProvenanceMark
+                            :provenance="
+                                provenanceFor('duration_hours', { schema: 'SessionDetail' })
+                            "
+                    /></span>
                     <span>Started: {{ formatDateTime(session.start_time) }}</span>
                     <span v-if="session.statistics?.ahi != null">
                         AHI:
@@ -94,7 +100,7 @@
         >
             <span v-if="session.active_mask">Mask: {{ maskInfoLine }}</span>
             <span v-if="session.active_mask && maskTypeFromSettings">·</span>
-            <span v-if="maskTypeFromSettings">Device type: {{ maskTypeFromSettings }}</span>
+            <span v-if="maskTypeFromSettings">Device Type: {{ maskTypeFromSettings }}</span>
         </div>
 
         <!-- Waveform section -->

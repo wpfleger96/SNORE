@@ -18,10 +18,10 @@
             />
             <Select v-model="selectedDeviceStr">
                 <SelectTrigger class="w-[200px]">
-                    <SelectValue placeholder="All devices" />
+                    <SelectValue placeholder="All Devices" />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="">All devices</SelectItem>
+                    <SelectItem value="">All Devices</SelectItem>
                     <SelectItem v-for="opt in deviceOptions" :key="opt.value" :value="opt.value">
                         {{ opt.label }}
                     </SelectItem>
@@ -151,6 +151,16 @@
                     >
                         <span class="inline-flex items-center gap-1">
                             Duration
+                            <!-- Tapping the mark opens its popover, not a re-sort. -->
+                            <span class="contents" @click.stop>
+                                <ProvenanceMark
+                                    :provenance="
+                                        provenanceFor('duration_hours', {
+                                            schema: 'SessionListItem',
+                                        })
+                                    "
+                                />
+                            </span>
                             <ArrowUp v-if="sortBy === 'duration'" class="h-3 w-3 text-primary" />
                             <ArrowUpDown v-else class="h-3 w-3 opacity-30" />
                         </span>

@@ -46,7 +46,11 @@
             </DropdownMenu>
         </div>
         <div class="data-card-row">
-            <span class="data-card-label">Duration</span>
+            <span class="data-card-label"
+                >Duration
+                <ProvenanceMark
+                    :provenance="provenanceFor('duration_hours', { schema: 'SessionListItem' })"
+            /></span>
             <span class="data-card-value">{{ session.duration_hours.toFixed(1) }}h</span>
         </div>
         <div class="data-card-row">

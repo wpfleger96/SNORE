@@ -5,7 +5,7 @@
             <Loader2 class="h-4 w-4 animate-spin" />
         </div>
         <p v-if="events?.length" class="mt-1 text-xs text-muted-foreground">
-            Shaded bands: Device-scored events
+            Shaded Bands: Device-scored Events
         </p>
     </div>
 </template>

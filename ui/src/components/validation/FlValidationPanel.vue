@@ -12,14 +12,14 @@
             <div v-if="report" class="space-y-6">
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                     <StatCard
-                        label="Spearman (flattening)"
+                        label="Spearman (Flattening)"
                         :value="report.aggregate.mean_spearman_flattening_r"
                         field="mean_spearman_flattening_r"
                         :decimals="3"
                         glossary-key="spearman_r"
                     />
                     <StatCard
-                        label="Spearman (class weight)"
+                        label="Spearman (Class Weight)"
                         :value="report.aggregate.mean_spearman_class_weight_r"
                         field="mean_spearman_class_weight_r"
                         :decimals="3"

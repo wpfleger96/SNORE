@@ -43,14 +43,14 @@
                 unit="hrs"
                 :decimals="1"
                 glossary-key="session_duration_hours"
-                :provenance="MARKS.sessionDuration"
+                field="session_duration_hours"
             />
             <StatCard
                 label="Total Breaths"
                 :value="analysis.total_breaths"
                 :decimals="0"
                 glossary-key="total_breaths"
-                :provenance="MARKS.totalBreaths"
+                field="total_breaths"
             />
             <StatCard
                 label="Device-scored Events"
@@ -64,7 +64,7 @@
                 :value="analysis.pulse_change_count"
                 :decimals="0"
                 glossary-key="pulse_change_count"
-                :provenance="MARKS.pulseChanges"
+                field="pulse_change_count"
             />
         </div>
 
@@ -77,7 +77,7 @@
                     <div class="data-card-row">
                         <span class="data-card-label"
                             >AHI <ProvenanceMark :provenance="MARKS.modeAhi" />
-                            <InfoHint glossary-key="ahi"
+                            <InfoHint glossary-key="mode_ahi"
                         /></span>
                         <span class="data-card-value"
                             ><strong>{{ row.ahi.toFixed(1) }}</strong></span
@@ -119,7 +119,7 @@
                         <TableHead>Mode</TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
                             AHI <ProvenanceMark :provenance="MARKS.modeAhi" />
-                            <InfoHint glossary-key="ahi" />
+                            <InfoHint glossary-key="mode_ahi" />
                         </TableHead>
                         <TableHead class="whitespace-nowrap" style="width: 80px">
                             RDI <ProvenanceMark :provenance="MARKS.rdi" />
@@ -306,14 +306,14 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="flow_limitation_index"
-                    :provenance="MARKS.flowLimitationIndex"
+                    :provenance="glossaryProvenance('flow_limitation_index')"
                 />
                 <StatCard
                     label="Total Breaths"
                     :value="flowAnalysis!.total_breaths"
                     :decimals="0"
                     glossary-key="total_breaths"
-                    :provenance="MARKS.totalBreaths"
+                    field="total_breaths"
                 />
                 <StatCard
                     label="Avg Confidence"
@@ -321,7 +321,7 @@
                     unit="%"
                     :decimals="1"
                     glossary-key="avg_confidence"
-                    :provenance="MARKS.avgConfidence"
+                    :provenance="glossaryProvenance('avg_confidence')"
                 />
             </div>
             <div v-if="isMobile" class="card-list">
@@ -437,14 +437,14 @@
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
-                    :provenance="MARKS.programmaticEvents"
+                    field="programmatic_event_count"
                 />
                 <StatCard
                     label="False Negatives"
                     :value="comparison.false_negatives?.length ?? 0"
                     :decimals="0"
                     glossary-key="false_negatives"
-                    :provenance="MARKS.falseNegatives"
+                    field="false_negatives"
                 />
                 <StatCard
                     label="False Positives"
@@ -454,12 +454,12 @@
                     "
                     :decimals="0"
                     glossary-key="false_positives"
-                    :provenance="MARKS.falsePositives"
+                    field="false_positives"
                 />
             </div>
 
             <div v-if="comparison.false_negatives?.length" class="compare-table-section">
-                <h3>False Negatives: device-scored events SNORE missed</h3>
+                <h3>False Negatives: Device-scored Events SNORE Missed</h3>
                 <div v-if="isMobile" class="card-list">
                     <div
                         v-for="(e, i) in comparison.false_negatives"
@@ -542,7 +542,7 @@
                 class="compare-table-section"
             >
                 <h3>
-                    False Positives: SNORE-detected events the device did not score
+                    False Positives: SNORE-detected Events the Device Did Not Score
                     <ProvenanceMark :provenance="MARKS.snoreDetected" />
                 </h3>
                 <div v-if="isMobile" class="card-list">
@@ -688,24 +688,18 @@ interface FlowAnalysis {
     average_confidence: number
 }
 
-// Tiers of the metrics this page labels. Mode results, their event lists, FL class
-// counts, and CSR/PB episodes are all SNORE detections; the bare names `apneas`,
-// `hypopneas`, `reras` map to device counts elsewhere, so those use the glossary tier.
+// Tiers reused across this page's tables (StatCards resolve theirs via `field`/
+// `provenance`). Mode-result event counts, FL class counts, and CSR/PB episode counts
+// are client-side counts of SNORE detections with no tagged backing field (#374), and
+// the bare names `apneas`, `hypopneas`, `reras` map to device counts elsewhere, so
+// they take the glossary tier of SNORE-detected events.
 const MARKS = {
     snoreDetected: glossaryProvenance('programmatic_events'),
-    sessionDuration: provenanceFor('session_duration_hours'),
-    totalBreaths: provenanceFor('total_breaths'),
-    pulseChanges: provenanceFor('pulse_change_count'),
     modeAhi: provenanceFor('ahi', { schema: 'ModeResult' }),
     rdi: provenanceFor('rdi'),
     snoreEventDuration: provenanceFor('duration', { schema: 'ApneaEvent' }),
     flowReduction: provenanceFor('flow_reduction'),
     confidence: provenanceFor('confidence'),
-    flowLimitationIndex: glossaryProvenance('flow_limitation_index'),
-    avgConfidence: glossaryProvenance('avg_confidence'),
-    programmaticEvents: provenanceFor('programmatic_event_count'),
-    falseNegatives: provenanceFor('false_negatives'),
-    falsePositives: provenanceFor('false_positives'),
 }
 
 function comparisonDurationProvenance(e: EventComparisonDetail): Provenance {

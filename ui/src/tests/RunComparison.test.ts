@@ -38,7 +38,7 @@ describe('RunComparison provenance marks', () => {
         const labelCell = (text: string) =>
             wrapper.findAll('td').find((td) => td.text().startsWith(text))!.element
 
-        expect(markLabel(labelCell('Proxy sensitivity'))).toMatch(/^Experimental/)
-        expect(markLabel(labelCell('Machine RE density'))).toMatch(/^Derived/)
+        expect(markLabel(labelCell('Proxy Sensitivity'))).toMatch(/^Experimental/)
+        expect(markLabel(labelCell('Device RE Density'))).toMatch(/^Derived/)
     })
 })

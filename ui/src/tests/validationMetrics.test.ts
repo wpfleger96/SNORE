@@ -30,7 +30,7 @@ describe('getByPath', () => {
 describe('computeDelta', () => {
     const metric: MetricDescriptor = {
         path: 'mean_proxy_sensitivity',
-        label: 'Proxy sensitivity',
+        label: 'Proxy Sensitivity',
         kind: 'percent',
         higherIsBetter: true,
         provenance: 'experimental',

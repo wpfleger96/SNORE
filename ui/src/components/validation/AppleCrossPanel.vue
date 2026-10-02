@@ -36,12 +36,12 @@
                         glossary-key="apple_breathing_disturbances"
                     />
                     <StatCard
-                        label="Skipped (analysis not run)"
+                        label="Skipped (Analysis Not Run)"
                         :value="report.aggregate.n_analysis_not_run"
                         :decimals="0"
                     />
                     <StatCard
-                        label="Skipped (device ambiguous)"
+                        label="Skipped (Device Ambiguous)"
                         :value="report.aggregate.n_device_ambiguous"
                         :decimals="0"
                     />

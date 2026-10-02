@@ -162,6 +162,19 @@ describe('DayDetailView provenance marks', () => {
         expect(findCard(wrapper, 'AHI')!.find('.stat-footnote').exists()).toBe(false)
     })
 
+    it('test_null_index_source_leaves_indices_unmarked_without_recount_line', async () => {
+        // No index_source: nothing says the headline is a recount, so the schema's
+        // device tier applies and no recount comparison is shown.
+        const wrapper = await mountDay(
+            makeDay({ ahi: 2.1, ahi_computed: 2.64, oai: 0.5, index_source: null }),
+        )
+
+        for (const label of ['AHI', 'OAI', 'CAI', 'HI']) {
+            expect(cardMarks(wrapper, label)).toEqual([])
+        }
+        expect(findCard(wrapper, 'AHI')!.find('.stat-footnote').exists()).toBe(false)
+    })
+
     it('test_rera_index_card_is_marked_experimental', async () => {
         const wrapper = await mountDay(makeDay({ rera_index: 5.5, reras: 3 }))
 

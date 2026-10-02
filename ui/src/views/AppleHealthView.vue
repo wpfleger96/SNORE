@@ -52,69 +52,12 @@
         </div>
 
         <template v-else>
-            <!-- Card labels wrap their marks in @click.stop.prevent so tapping a
-                 mark opens its popover instead of following the card link. -->
             <div v-if="isMobile" class="card-list">
-                <RouterLink
+                <AppleHealthNightCard
                     v-for="night in data.items"
                     :key="night.night_date"
-                    class="data-card"
-                    :to="`/apple-health/${night.night_date}`"
-                >
-                    <div class="data-card-header">{{ formatDateFull(night.night_date) }}</div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Total Sleep (hr)
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark
-                                    :provenance="provenanceFor('total_sleep_seconds')" /></span
-                        ></span>
-                        <span class="data-card-value">{{
-                            fmtHours(night.total_sleep_seconds)
-                        }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Efficiency (%)
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark
-                                    :provenance="provenanceFor('sleep_efficiency_pct')" /></span
-                        ></span>
-                        <span class="data-card-value">{{
-                            fmtPct(night.sleep_efficiency_pct)
-                        }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Core (hr)
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark
-                                    :provenance="provenanceFor('core_seconds')" /></span
-                        ></span>
-                        <span class="data-card-value">{{ fmtHours(night.core_seconds) }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Deep (hr)
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark
-                                    :provenance="provenanceFor('deep_seconds')" /></span
-                        ></span>
-                        <span class="data-card-value">{{ fmtHours(night.deep_seconds) }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >REM (hr)
-                            <span class="contents" @click.stop.prevent
-                                ><ProvenanceMark :provenance="provenanceFor('rem_seconds')" /></span
-                        ></span>
-                        <span class="data-card-value">{{ fmtHours(night.rem_seconds) }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label">Source</span>
-                        <span class="data-card-value">{{ night.preferred_source ?? '---' }}</span>
-                    </div>
-                </RouterLink>
+                    :night="night"
+                />
             </div>
             <Table v-else>
                 <TableHeader>
@@ -202,6 +145,7 @@ import {
 import StatCard from '@/components/StatCard.vue'
 import PaginationBar from '@/components/PaginationBar.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import AppleHealthNightCard from '@/components/AppleHealthNightCard.vue'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { getHealthNights } from '@/api/health'
