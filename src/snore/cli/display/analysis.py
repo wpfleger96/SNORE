@@ -64,7 +64,6 @@ def create_header_panel(
 def create_machine_events_table(
     machine_events: list[AnalysisEvent],
     machine_ahi: float,
-    machine_rdi: float,
     plain: bool = False,
 ) -> Table:
     from snore.constants import (
@@ -102,10 +101,6 @@ def create_machine_events_table(
     table.add_row(
         mark_field("AHI", AnalysisResult, "machine_ahi"),
         f"[{ahi_color}]{machine_ahi:.1f}[/{ahi_color}] events/hr",
-    )
-    table.add_row(
-        mark_field("RDI", AnalysisResult, "machine_rdi"),
-        f"{machine_rdi:.1f} events/hr",
     )
     table.add_section()
 
@@ -652,7 +647,7 @@ def display_analysis_result(
     machine_events = result.machine_events
     if machine_events:
         machine_table = create_machine_events_table(
-            machine_events, result.machine_ahi or 0.0, result.machine_rdi or 0.0, plain
+            machine_events, result.machine_ahi or 0.0, plain
         )
         con.print(machine_table)
         con.print()

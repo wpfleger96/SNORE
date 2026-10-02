@@ -66,7 +66,6 @@ from snore.analysis.types import (
     _machine_ahi_rdi,
 )
 from snore.constants import BreathSegmentationConstants as BSC
-from snore.constants import FlowLimitationConstants as FLC
 from snore.constants import PatternDetectionConstants as PDC
 from snore.constants import PulseChangeConstants as PCC
 from snore.database import models
@@ -217,7 +216,6 @@ class AnalysisService:
         db_session: AsyncSession | None = None,
         profile_id: int | None = None,
         min_breath_duration: float = BSC.MIN_BREATH_DURATION,
-        confidence_threshold: float = FLC.CONFIDENCE_THRESHOLD,
     ):
         """
         Initialize analysis service.
@@ -229,7 +227,6 @@ class AnalysisService:
                 are scoped to this profile — sessions not owned by it raise or
                 return ``None`` exactly as if missing.
             min_breath_duration: Minimum breath duration for segmentation (seconds)
-            confidence_threshold: Minimum confidence for reliable findings
         """
         if db_session is not None and profile_id is None:
             raise ValueError(
@@ -242,9 +239,7 @@ class AnalysisService:
         )
         self.breath_segmenter = BreathSegmenter(min_breath_duration=min_breath_duration)
         self.feature_extractor = WaveformFeatureExtractor()
-        self.flow_classifier = FlowLimitationClassifier(
-            confidence_threshold=confidence_threshold
-        )
+        self.flow_classifier = FlowLimitationClassifier()
         self.pattern_detector = ComplexPatternDetector()
         self.pulse_detector = PulseChangeDetector(
             bpm_threshold=PCC.BPM_THRESHOLD,

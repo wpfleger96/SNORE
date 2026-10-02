@@ -18,7 +18,7 @@ from snore.constants import (
 from snore.provenance import Provenance, provenance_field
 
 # Machine event types counted toward the machine-event AHI recount (apneas +
-# hypopneas).  RERAs are excluded — for CPAP data RDI equals AHI.
+# hypopneas).  Device-flagged RERAs are excluded.
 _MACHINE_AHI_EVENT_TYPES: frozenset[str] = frozenset(
     {
         EVENT_TYPE_OBSTRUCTIVE_APNEA,
@@ -67,8 +67,9 @@ def _machine_ahi_rdi(
 ) -> tuple[float | None, float | None]:
     """Recount machine events into AHI/RDI over waveform-coverage hours.
 
-    Returns ``(None, None)`` when there are no machine events.  RDI equals AHI
-    for CPAP data because RERA scoring requires EEG.
+    Returns ``(None, None)`` when there are no machine events.  The RDI slot
+    mirrors the AHI (device-flagged RERAs are not added), so it is not a true
+    RDI; it is kept only for the persisted ``machine_rdi`` field.
     """
     if not machine_events:
         return None, None
@@ -97,7 +98,8 @@ class AnalysisResult(BaseModel):
     )
     machine_rdi: float | None = provenance_field(
         Provenance.DERIVED,
-        "Equal to machine_ahi: RERAs need EEG, so CPAP RDI is the AHI recount "
+        "Mirrors machine_ahi (machine-scored apneas + hypopneas per hour); "
+        "device-flagged RERAs are not added, so this is not a true RDI "
         "(None if no events)",
         default=None,
         ge=0,

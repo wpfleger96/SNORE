@@ -110,7 +110,7 @@ class TestAnalysisResultFromStoredJson:
         ]
         result = AnalysisResult.from_stored_json(self._stored(events))
 
-        # 4 counting events (RERA "RE" excluded) over 8.0 h → 0.5; RDI == AHI.
+        # 4 counting events (RERA "RE" excluded) over 8.0 h → 0.5; RDI mirrors AHI.
         assert result.machine_ahi == pytest.approx(0.5)
         assert result.machine_rdi == pytest.approx(0.5)
 
@@ -224,7 +224,7 @@ class TestAnalysisProvenanceLegend:
         legend_buf = StringIO()
         legend_console = Console(file=legend_buf, no_color=True, width=200)
         with patch("snore.cli.display.console", legend_console), provenance_legend():
-            machine = _render(create_machine_events_table([], 2.0, 2.0))
+            machine = _render(create_machine_events_table([], 2.0))
             validation = _render(
                 create_validation_table(
                     "aasm",

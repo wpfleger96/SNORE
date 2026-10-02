@@ -31,18 +31,24 @@ def _classify_apnea_type(
     if flow_signal is not None and len(flow_signal) > 5:
         effort_from_flow = _estimate_effort_from_flow(flow_signal, sample_rate)
 
-        if effort_from_flow > 0.15:
-            distance_from_boundary = min(effort_from_flow - 0.15, 0.35)
+        if effort_from_flow > EDC.APNEA_EFFORT_OBSTRUCTIVE_MIN:
+            distance_from_boundary = min(
+                effort_from_flow - EDC.APNEA_EFFORT_OBSTRUCTIVE_MIN, 0.35
+            )
             classification_confidence = 0.5 + (distance_from_boundary / 0.35) * 0.5
             return "OA", float(classification_confidence)
 
-        elif effort_from_flow < 0.05:
-            distance_from_boundary = min(0.05 - effort_from_flow, 0.05)
+        elif effort_from_flow < EDC.APNEA_EFFORT_CENTRAL_MAX:
+            distance_from_boundary = min(
+                EDC.APNEA_EFFORT_CENTRAL_MAX - effort_from_flow, 0.05
+            )
             classification_confidence = 0.5 + (distance_from_boundary / 0.05) * 0.5
             return "CA", float(classification_confidence)
 
         else:
-            distance_from_midpoint = abs(effort_from_flow - 0.10)
+            distance_from_midpoint = abs(
+                effort_from_flow - EDC.APNEA_EFFORT_MIXED_MIDPOINT
+            )
             classification_confidence = 0.3 + (distance_from_midpoint / 0.05) * 0.2
             return "MA", float(classification_confidence)
 
