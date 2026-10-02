@@ -1324,6 +1324,18 @@ class TestStatsPeriod:
         assert result.output.count(_DERIVED_LEGEND) == 1
         assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 
+    def test_stats_trend_renders_chart(
+        self, cli_runner, populated_test_db_with_day_stats
+    ):
+        """Test --trend draws the AHI chart through real (unmocked) plotext."""
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_with_day_stats), "--trend"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "AHI Over Time" in result.output
+
 
 @pytest.fixture
 async def db_with_rx_settings_changes(temp_db):
