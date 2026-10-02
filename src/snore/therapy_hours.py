@@ -106,3 +106,19 @@ def therapy_hours(
     if sample_count is None or sample_rate is None or sample_rate <= 0:
         return None
     return sample_count / sample_rate / _SECONDS_PER_HOUR
+
+
+def effective_session_hours(
+    usage_hours: float | None, span_seconds: float | None
+) -> float:
+    """Mask-on hours of one stored session, the per-session Day denominator.
+
+    Prefers ``usage_hours`` (``Statistics.usage_hours``, actual mask-on time);
+    ``0.0`` is known-zero and gets no fallback.  Unknown usage falls back to
+    the session span, and an unknown span counts as zero hours.
+    """
+    if usage_hours is not None:
+        return usage_hours
+    return (
+        therapy_hours(TherapyHoursBasis.SESSION_SPAN, span_seconds=span_seconds) or 0.0
+    )

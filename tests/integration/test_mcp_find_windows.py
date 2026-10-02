@@ -151,9 +151,9 @@ class TestWorstFlatteningLeakValid:
     async def test_windows_ordered_worst_first_leak_invalid_excluded(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """worst_flattening_leak_valid windows sorted by flattening descending;
-        a breath with leak_valid=False cannot anchor a window even if its
-        mid_insp_flattening is the highest."""
+        """worst_flattening_leak_valid windows sorted by flattening ascending
+        (lower = more flow-limited); a breath with leak_valid=False cannot anchor
+        a window even if its mid_insp_flattening is the lowest."""
         from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
 
         target_date = date(2024, 1, 15)
@@ -161,18 +161,18 @@ class TestWorstFlatteningLeakValid:
         _, sess = await _make_day_session(async_db_session, device, target_date)
         ar = await _make_analysis_result(async_db_session, sess)
 
-        # Breath 6 (index 6): highest flattening BUT leak_valid=False → not an anchor
-        # Breath 4 (index 4): second-highest → anchor for window 1
-        # Breath 9 (index 9): third-highest → anchor for window 2
+        # Breath 6 (index 6): lowest flattening BUT leak_valid=False → not an anchor
+        # Breath 4 (index 4): second-lowest → anchor for window 1
+        # Breath 9 (index 9): third-lowest → anchor for window 2
         for i in range(10):
             if i == 6:
-                mid_fl, lv = 0.95, False
+                mid_fl, lv = 0.20, False
             elif i == 4:
-                mid_fl, lv = 0.85, True
+                mid_fl, lv = 0.35, True
             elif i == 9:
-                mid_fl, lv = 0.70, True
+                mid_fl, lv = 0.55, True
             else:
-                mid_fl, lv = 0.10, True
+                mid_fl, lv = 1.00, True
             await _make_breath(
                 async_db_session,
                 ar,
@@ -196,8 +196,8 @@ class TestWorstFlatteningLeakValid:
         assert len(result.windows) == 2
 
         # Windows sorted worst-first by mid_insp_flattening
-        assert result.windows[0].worst_mid_insp_flattening == pytest.approx(0.85)
-        assert result.windows[1].worst_mid_insp_flattening == pytest.approx(0.70)
+        assert result.windows[0].worst_mid_insp_flattening == pytest.approx(0.35)
+        assert result.windows[1].worst_mid_insp_flattening == pytest.approx(0.55)
 
         # Every window has OK analysis status
         for w in result.windows:
@@ -206,8 +206,8 @@ class TestWorstFlatteningLeakValid:
     async def test_leak_invalid_breath_not_in_anchor_set(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """The leak-invalid breath with the highest flattening is absent from
-        the anchor set; only breaths 4 and 9 produce windows."""
+        """The leak-invalid breath with the lowest flattening is absent from
+        the anchor set."""
         from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
 
         target_date = date(2024, 1, 16)
@@ -216,7 +216,7 @@ class TestWorstFlatteningLeakValid:
         ar = await _make_analysis_result(async_db_session, sess)
 
         for i in range(10):
-            mid_fl = 0.95 if i == 6 else (0.80 if i == 4 else 0.10)
+            mid_fl = 0.20 if i == 6 else (0.40 if i == 4 else 1.00)
             lv: bool | None = False if i == 6 else True
             await _make_breath(
                 async_db_session,
@@ -236,15 +236,51 @@ class TestWorstFlatteningLeakValid:
             n=5,
         )
 
-        # With breath 6 excluded, only breath 4 has a notably high flattening.
-        # Other breaths have flattening=0.10 and also anchor windows when eligible.
+        # With breath 6 excluded, only breath 4 has a notably low flattening.
+        # Other breaths have flattening=1.00 and also anchor windows when eligible.
         assert result.null_reason is None
         assert any(
-            w.worst_mid_insp_flattening == pytest.approx(0.80) for w in result.windows
-        ), "Breath 4 (highest valid-leak anchor) must appear in windows"
+            w.worst_mid_insp_flattening == pytest.approx(0.40) for w in result.windows
+        ), "Breath 4 (lowest valid-leak anchor) must appear in windows"
         assert not any(
-            w.worst_mid_insp_flattening == pytest.approx(0.95) for w in result.windows
+            w.worst_mid_insp_flattening == pytest.approx(0.20) for w in result.windows
         ), "Breath 6 (leak_valid=False) must not anchor any window"
+
+    async def test_flattening_threshold_excludes_breaths_above_it(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """flattening_threshold is a ceiling: only breaths at or below it anchor."""
+        from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
+
+        target_date = date(2024, 1, 17)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        ar = await _make_analysis_result(async_db_session, sess)
+
+        flattening = {2: 0.45, 12: 0.30, 22: 0.60}
+        for i in range(25):
+            await _make_breath(
+                async_db_session,
+                ar,
+                sess,
+                breath_number=i,
+                mid_insp_flattening=flattening.get(i, 1.00),
+            )
+
+        await async_db_session.flush()
+        result = await find_windows(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            criterion="worst_flattening_leak_valid",
+            n=5,
+            flattening_threshold=0.5,
+        )
+
+        assert [w.worst_mid_insp_flattening for w in result.windows] == [
+            pytest.approx(0.30),
+            pytest.approx(0.45),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +542,39 @@ class TestCaCenteredNoAnalysis:
         assert w.window_start_offset == pytest.approx(ev_offset_s - 120.0)
         assert w.window_end_offset == pytest.approx(ev_offset_s + 120.0)
 
+    async def test_ca_centered_skips_disabled_sessions(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """CA events of a disabled session on the same night yield no windows."""
+        from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
+
+        target_date = date(2024, 3, 3)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        day, enabled = await _make_day_session(async_db_session, device, target_date)
+        disabled = await _add_session_to_day(async_db_session, device, day)
+        disabled.enabled = False
+        for sess in (enabled, disabled):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type="CA",
+                    start_time=sess.start_time + timedelta(seconds=300.0),
+                    duration_seconds=15.0,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await find_windows(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            criterion="ca_centered",
+            n=5,
+            device_id=device.id,
+        )
+
+        assert [w.session_id for w in result.windows] == [enabled.id]
+
 
 # ---------------------------------------------------------------------------
 # TestFlRunEndingInRecovery
@@ -527,8 +596,22 @@ class TestFlRunEndingInRecovery:
 
         # Breaths: normal, FL, FL, recovery, normal
         await _make_breath(async_db_session, ar, sess, breath_number=0, flow_class=1)
-        await _make_breath(async_db_session, ar, sess, breath_number=1, flow_class=5)
-        await _make_breath(async_db_session, ar, sess, breath_number=2, flow_class=6)
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=1,
+            flow_class=5,
+            mid_insp_flattening=0.40,
+        )
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=2,
+            flow_class=6,
+            mid_insp_flattening=0.55,
+        )
         await _make_breath(
             async_db_session,
             ar,
@@ -553,6 +636,7 @@ class TestFlRunEndingInRecovery:
         w = result.windows[0]
         assert w.fl_run_length == 2
         assert w.criterion == "fl_run_ending_in_recovery"
+        assert w.worst_mid_insp_flattening == pytest.approx(0.40)
         assert w.analysis_status == "ok"
 
     async def test_mixed_primary_mode_refuses_fl_run_criterion(
@@ -791,9 +875,32 @@ class TestReraProxyCentered:
         _, sess = await _make_day_session(async_db_session, device, target_date)
         ar = await _make_analysis_result(async_db_session, sess)
 
-        await _make_breath(async_db_session, ar, sess, breath_number=0, flow_class=1)
-        await _make_breath(async_db_session, ar, sess, breath_number=1, flow_class=5)
-        await _make_breath(async_db_session, ar, sess, breath_number=2, flow_class=6)
+        # Flattening outside the FL run (breaths 0, 3, 4) is lower than inside
+        # it, so worst_mid_insp_flattening proves it reads the run's minimum.
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=0,
+            flow_class=1,
+            mid_insp_flattening=0.05,
+        )
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=1,
+            flow_class=5,
+            mid_insp_flattening=0.4,
+        )
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=2,
+            flow_class=6,
+            mid_insp_flattening=0.2,
+        )
         await _make_breath(
             async_db_session,
             ar,
@@ -801,8 +908,16 @@ class TestReraProxyCentered:
             breath_number=3,
             flow_class=1,
             is_recovery_breath=True,
+            mid_insp_flattening=0.1,
         )
-        await _make_breath(async_db_session, ar, sess, breath_number=4, flow_class=1)
+        await _make_breath(
+            async_db_session,
+            ar,
+            sess,
+            breath_number=4,
+            flow_class=1,
+            mid_insp_flattening=0.05,
+        )
 
         await async_db_session.flush()
         result = await find_windows(
@@ -825,6 +940,7 @@ class TestReraProxyCentered:
         assert w.window_end_offset == pytest.approx(24.0)
         assert w.analysis_status == "ok"
         assert "rera_proxy" in w.reason_summary
+        assert w.worst_mid_insp_flattening == pytest.approx(0.2)
 
     async def test_rera_proxy_centered_no_clamping_mid_session(
         self, async_db_session: AsyncSession, async_test_profile: Any

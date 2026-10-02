@@ -5111,7 +5111,8 @@ class TestNightlySummaryReraRdi:
         assert summary.rdi_reason is None
 
     async def test_rera_index_none_when_therapy_hours_zero(self, async_db_session):
-        """rera_index is None with DURATION_ZERO reason when total_therapy_hours == 0."""
+        """rera_index is None with DURATION_ZERO reason when the analyzed session
+        has known-zero mask-on time (usage_hours == 0.0) despite a 1 h span."""
         therapy_date = date(2025, 8, 2)
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -5134,6 +5135,8 @@ class TestNightlySummaryReraRdi:
             duration_seconds=3600.0,
         )
         async_db_session.add(session)
+        await async_db_session.flush()
+        async_db_session.add(models.Statistics(session_id=session.id, usage_hours=0.0))
         await async_db_session.flush()
         await _store_analysis_with_breaths(
             async_db_session, session, profile_id, n_breaths=5

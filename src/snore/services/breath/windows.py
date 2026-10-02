@@ -241,8 +241,7 @@ class WindowsMixin(_BreathServiceCore):
 
         elif criterion == WindowCriterion.CA_CENTERED:
             windows = await self._find_ca_centered_windows(
-                therapy_date=therapy_date,
-                device_id=resolved_device_id,
+                session_ids=session_ids,
                 session_starts=session_starts,
                 ar_by_session=ar_by_session,
                 ar_status_by_session=ar_status_by_session,
@@ -344,15 +343,9 @@ class WindowsMixin(_BreathServiceCore):
                 ):
                     if (
                         opts.flattening_threshold is None
-                        or b.mid_insp_flattening >= opts.flattening_threshold
+                        or b.mid_insp_flattening <= opts.flattening_threshold
                     ):
                         eligible_indices.append(i)
-
-            # Sort by mid_insp_flattening descending (§6 step 2)
-            eligible_indices.sort(
-                key=lambda i: cast(float, breath_rows[i].mid_insp_flattening),
-                reverse=True,
-            )
 
             for anchor_idx in eligible_indices:
                 # §6 step 3: form candidate window
@@ -388,14 +381,17 @@ class WindowsMixin(_BreathServiceCore):
                     )
                 )
 
+        # Lower flattening = more flow-limited, so rank ascending (§6 step 2)
         return self._dedup_and_top_n(
-            candidates, n, key=lambda w: w.worst_mid_insp_flattening or 0.0
+            candidates,
+            n,
+            key=lambda w: cast(float, w.worst_mid_insp_flattening),
+            descending=False,
         )
 
     async def _find_ca_centered_windows(
         self,
-        therapy_date: date,
-        device_id: int,
+        session_ids: list[int],
         session_starts: dict[int, datetime],
         ar_by_session: dict[int, int | None],
         ar_status_by_session: dict[int, AnalysisStatus],
@@ -403,14 +399,15 @@ class WindowsMixin(_BreathServiceCore):
         opts: WindowCriterionOptions,
     ) -> list[WindowResult]:
         """Build CA_CENTERED windows — anchored on Event rows (CA_CENTERED proceeds
-        on any day_status including NOT_RUN, per §6 pass-3 IMPORTANT-5)."""
+        on any day_status including NOT_RUN, per §6 pass-3 IMPORTANT-5).
+
+        ``session_ids`` are the night's sessions from ``_resolve_range``, so
+        disabled sessions contribute no windows."""
         stmt = (
             select(models.Event, models.Session)
             .join(models.Session, models.Event.session_id == models.Session.id)
-            .join(models.Day, models.Session.day_id == models.Day.id)
             .where(
-                models.Day.date == therapy_date,
-                models.Session.device_id == device_id,
+                models.Event.session_id.in_(session_ids),
                 models.Event.event_type == "CA",
             )
             .order_by(models.Event.start_time)
@@ -454,7 +451,7 @@ class WindowsMixin(_BreathServiceCore):
             )
 
         return self._dedup_and_top_n(
-            candidates, n, key=lambda w: -(w.anchor_event_offset or 0.0)
+            candidates, n, key=lambda w: w.anchor_event_offset or 0.0, descending=False
         )
 
     async def _find_fl_recovery_windows(
@@ -510,7 +507,7 @@ class WindowsMixin(_BreathServiceCore):
                         window_start_offset=win_start,
                         window_end_offset=win_end,
                         reason_summary=reason,
-                        worst_mid_insp_flattening=max(
+                        worst_mid_insp_flattening=min(
                             (
                                 b.mid_insp_flattening
                                 for b in fl_run
@@ -526,7 +523,9 @@ class WindowsMixin(_BreathServiceCore):
                     )
                 )
 
-        return self._dedup_and_top_n(candidates, n, key=lambda w: w.fl_run_length or 0)
+        return self._dedup_and_top_n(
+            candidates, n, key=lambda w: w.fl_run_length or 0, descending=True
+        )
 
     async def _find_fl_run_windows(
         self,
@@ -609,10 +608,15 @@ class WindowsMixin(_BreathServiceCore):
         candidates: list[WindowResult],
         n: int,
         key: Callable[[WindowResult], Any],
+        *,
+        descending: bool,
     ) -> list[WindowResult]:
-        """Deduplicate overlapping windows (>50% of shorter), keep worst; return top-N."""
-        # Sort by severity descending (largest key first)
-        sorted_cands = sorted(candidates, key=key, reverse=True)
+        """Deduplicate overlapping windows (>50% of shorter), keep worst; return top-N.
+
+        Candidates are ranked by ``key`` (largest first when ``descending``) and
+        an earlier-ranked window wins any overlap.
+        """
+        sorted_cands = sorted(candidates, key=key, reverse=descending)
         kept: list[WindowResult] = []
         for cand in sorted_cands:
             overlaps = False

@@ -271,6 +271,7 @@ class WindowCriterionOptions(BaseModel):
     """Criterion-specific options."""
 
     include_unknown_leak: bool = False
+    # Maximum anchor mid-insp flattening (lower = more flow-limited); None = no cutoff.
     flattening_threshold: float | None = None
     min_window_breaths: int = 3
     context_breaths_before: int = Field(default=3, ge=0)
@@ -622,8 +623,8 @@ class NightlyAnalysisSummary(BaseModel):
     compliance_threshold_hours: float
     is_compliant: bool
 
-    # rera_index = rera_count (FL-run proxy v2) / therapy hours; rdi = day AHI +
-    # rera_index. RERAs come from the query-time FL-run proxy, NOT the
+    # rera_index = rera_count (FL-run proxy v2) per mask-on hour of analyzed
+    # sessions (DURATION_ZERO when those hours are 0); rdi = day AHI + rera_index. RERAs come from the query-time FL-run proxy, NOT the
     # analysis-time amplitude-crescendo detector behind ModeResult.rdi, so this
     # nightly rdi and the per-session ModeResult.rdi disagree by construction.
     rera_index: float | None = None

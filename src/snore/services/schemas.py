@@ -784,12 +784,16 @@ class WaveformInfo(BaseModel):
 class EventMatchResult(BaseModel):
     """Result of matching machine vs programmatic events."""
 
-    machine_count: int = provenance_field(Provenance.DEVICE, "Machine-scored events")
+    machine_count: int = provenance_field(
+        Provenance.DEVICE, "Machine-scored apneas and hypopneas"
+    )
     programmatic_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Programmatically detected events"
+        Provenance.EXPERIMENTAL, "Programmatically detected apneas and hypopneas"
     )
     matched: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Events matched within tolerance"
+        Provenance.EXPERIMENTAL,
+        "Programmatic/machine event pairs matched one-to-one within tolerance "
+        "(each event in at most one pair)",
     )
     false_positives: int = provenance_field(
         Provenance.EXPERIMENTAL, "Programmatic events unmatched"
@@ -1111,7 +1115,8 @@ class DayDetail(DayListItem):
     fl_class_ge4_pct_reason: str | None = None
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "RERA-proxy events per therapy hour (FL-run proxy, not device-scored).",
+        "RERA-proxy events per mask-on hour of analyzed sessions (FL-run "
+        "proxy, not device-scored).",
         default=None,
     )
     rera_index_reason: str | None = None

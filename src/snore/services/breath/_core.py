@@ -245,6 +245,7 @@ class _BreathServiceCore:
                 .join(models.Day, models.Session.day_id == models.Day.id)
                 .where(
                     models.Session.device_id == device_id,
+                    models.Session.enabled.is_(True),
                     models.Day.date >= date_start,
                     models.Day.date <= date_end,
                 )
@@ -268,6 +269,7 @@ class _BreathServiceCore:
                 models.Day.date >= date_start,
                 models.Day.date <= date_end,
                 models.Device.profile_id == self._profile_id,
+                models.Session.enabled.is_(True),
             )
             .order_by(models.Day.date, models.Session.start_time)
         )
