@@ -21,7 +21,7 @@
                     <SelectValue placeholder="All devices" />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="">All devices</SelectItem>
+                    <SelectItem value="all">All devices</SelectItem>
                     <SelectItem v-for="opt in deviceOptions" :key="opt.value" :value="opt.value">
                         {{ opt.label }}
                     </SelectItem>
@@ -365,11 +365,12 @@ type SessionSortBy = 'date-asc' | 'date-desc' | 'session-id' | 'duration'
 const sortBy = ref<SessionSortBy>('date-desc')
 const devices = ref<DeviceInfo[]>([])
 
-// Bridge between null-based selectedDevice ref and string-based Select v-model
+// Bridge between null-based selectedDevice ref and string-based Select v-model.
+// reka-ui reserves '' for clearing the selection, so "All devices" is 'all'.
 const selectedDeviceStr = computed({
-    get: () => selectedDevice.value ?? '',
+    get: () => selectedDevice.value ?? 'all',
     set: (v: string) => {
-        selectedDevice.value = v === '' ? null : v
+        selectedDevice.value = v === 'all' ? null : v
     },
 })
 
