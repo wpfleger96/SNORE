@@ -26,7 +26,6 @@ from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
 from snore.provenance import PROVENANCE_NOTES, Provenance
-from tests.helpers.terminal_charts import has_drawn_braille
 
 _DERIVED_LEGEND = (
     f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
@@ -1220,7 +1219,6 @@ class TestWaveformShowCommand:
 
         assert result.exit_code == 0, result.output
         assert "Session 1 - Flow at 00:00:01" in result.output
-        assert has_drawn_braille(result.output)
 
     def test_waveform_show_renders_stacked_charts(
         self, cli_runner, populated_test_db_full
@@ -1244,7 +1242,6 @@ class TestWaveformShowCommand:
         assert result.exit_code == 0, result.output
         assert "Session 1 - Multi-waveform at 00:00:01" in result.output
         assert "Pressure (cmH2O)" in result.output
-        assert has_drawn_braille(result.output)
 
 
 class TestSessionShowExpanded:
@@ -1357,9 +1354,7 @@ class TestStatsPeriod:
     ):
         # Chart rendering is covered by test_stats_trend_renders_chart; stub
         # plotext so only the surrounding text output is exercised.
-        plotext_stub = MagicMock()
-        plotext_stub.figure.build.return_value.string.return_value = ""
-        with patch.dict(sys.modules, {"plotext": plotext_stub}):
+        with patch.dict(sys.modules, {"plotext": MagicMock()}):
             result = cli_runner.invoke(
                 cli,
                 ["stats", "--db", str(populated_test_db_with_day_stats), "--trend"],
@@ -1396,7 +1391,6 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0, result.output
         assert "AHI Over Time" in result.output
-        assert has_drawn_braille(result.output)
 
 
 @pytest.fixture

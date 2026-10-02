@@ -6,6 +6,11 @@
       "description": "Hold pint below 0.26 until mypy can analyze pint 0.26.x without crashing (#380)",
       "matchPackageNames": ["pint"],
       "allowedVersions": "<0.26"
+    },
+    {
+      "description": "Hold plotext below 6 until the plotext 6 port stops killing the Linux CI test runner (#379)",
+      "matchPackageNames": ["plotext"],
+      "allowedVersions": "<6"
     }
   ]
 }
