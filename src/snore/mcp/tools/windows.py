@@ -72,7 +72,7 @@ async def find_windows(
         n: Number of windows to return (1–50; pre-validated by server wrapper).
         device_id: Optional device filter; required when multiple devices share a date.
         include_unknown_leak: Include breaths with unknown leak validity (leak_valid=None).
-        flattening_threshold: Minimum mid-insp flattening to anchor a window.
+        flattening_threshold: Maximum mid-insp flattening to anchor a window.
         min_window_breaths: Minimum breaths per formed window.
         context_breaths_before: Context breaths before the anchor breath.
         context_breaths_after: Context breaths after the anchor breath.
@@ -217,8 +217,8 @@ def register(mcp: FastMCP) -> None:
             date: Session date in YYYY-MM-DD format.
             criterion: Window selection criterion.  One of:
                 ``"worst_flattening_leak_valid"`` — windows anchored on the leak-valid
-                    breaths with the highest mid-inspiratory flattening, ranked by that
-                    single anchor breath's score; use to find FL hotspots.
+                    breaths with the lowest (most flow-limited) mid-inspiratory flattening,
+                    ranked by that single anchor breath's score; use to find FL hotspots.
                 ``"ca_centered"`` — context window of ±``context_seconds`` around each
                     CA event, ordered by offset within its session (see above); ``n``
                     keeps the first N in that order.  Works even when the day mixes
@@ -241,8 +241,8 @@ def register(mcp: FastMCP) -> None:
                        have data for the same date.
             include_unknown_leak: Include breaths where leak validity is unknown
                 (default false).  Only relevant for ``worst_flattening_leak_valid``.
-            flattening_threshold: Minimum mid-inspiratory flattening score for a breath
-                to anchor a window.  Service default when omitted.
+            flattening_threshold: Maximum mid-inspiratory flattening score for a breath
+                to anchor a window (lower = more flow-limited).  No cutoff when omitted.
             min_window_breaths: Minimum breaths per window (default 3).
             context_breaths_before: Context breaths before the anchor (default 3).
             context_breaths_after: Context breaths after the anchor (default 3).

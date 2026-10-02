@@ -344,14 +344,13 @@ class WindowsMixin(_BreathServiceCore):
                 ):
                     if (
                         opts.flattening_threshold is None
-                        or b.mid_insp_flattening >= opts.flattening_threshold
+                        or b.mid_insp_flattening <= opts.flattening_threshold
                     ):
                         eligible_indices.append(i)
 
-            # Sort by mid_insp_flattening descending (§6 step 2)
+            # Lower flattening = more flow-limited, so sort ascending (§6 step 2)
             eligible_indices.sort(
-                key=lambda i: cast(float, breath_rows[i].mid_insp_flattening),
-                reverse=True,
+                key=lambda i: cast(float, breath_rows[i].mid_insp_flattening)
             )
 
             for anchor_idx in eligible_indices:
@@ -389,7 +388,7 @@ class WindowsMixin(_BreathServiceCore):
                 )
 
         return self._dedup_and_top_n(
-            candidates, n, key=lambda w: w.worst_mid_insp_flattening or 0.0
+            candidates, n, key=lambda w: -cast(float, w.worst_mid_insp_flattening)
         )
 
     async def _find_ca_centered_windows(
@@ -510,7 +509,7 @@ class WindowsMixin(_BreathServiceCore):
                         window_start_offset=win_start,
                         window_end_offset=win_end,
                         reason_summary=reason,
-                        worst_mid_insp_flattening=max(
+                        worst_mid_insp_flattening=min(
                             (
                                 b.mid_insp_flattening
                                 for b in fl_run

@@ -745,7 +745,8 @@ class WindowRow(BaseModel):
     reason_summary: str
     worst_mid_insp_flattening: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Highest mid-inspiratory flattening that ranked the window.",
+        "Lowest (most flow-limited) mid-inspiratory flattening in the window's "
+        "anchor breath or FL run.",
         default=None,
     )
     fl_run_length: int | None = provenance_field(
