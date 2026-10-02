@@ -1,14 +1,32 @@
 """Pytest configuration and fixtures for SNORE tests."""
 
+import atexit
 import os
+import shutil
 import sqlite3
-import tempfile  # load-bearing: mkdtemp used for the module-level DB guard below
+import tempfile  # load-bearing: mkdtemp used for the module-level test HOME below
 
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+# --- Isolated HOME (module-level, before any snore import) ---
+# snore.constants resolves DEFAULT_DATABASE_PATH and every other ~/.snore path
+# (raw backups, logs, spool, VACUUM/deploy markers) via Path.home() at import
+# time, and CLI commands run without --db open DEFAULT_DATABASE_PATH directly,
+# ignoring SNORE_DB_PATH.  A per-test HOME patch is too late for those, so the
+# whole process gets a throwaway HOME before anything imports snore.  conftest
+# is imported in every xdist worker, so each worker gets its own.  Matplotlib's
+# font cache is keyed off HOME and takes ~15 s to rebuild, so pin it to a
+# stable temp location instead of rebuilding it on every run.
+_TEST_HOME = Path(tempfile.mkdtemp(prefix="snore-test-home-"))
+atexit.register(shutil.rmtree, _TEST_HOME, ignore_errors=True)
+os.environ["HOME"] = os.environ["USERPROFILE"] = str(_TEST_HOME)
+os.environ.setdefault(
+    "MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "snore-test-mplconfig")
+)
 
 sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
 sqlite3.register_converter("DATETIME", lambda s: datetime.fromisoformat(s.decode()))
@@ -38,8 +56,7 @@ os.environ.setdefault("SNORE_AUTH_MODE", "local")
 # baseline covers those windows unconditionally.  Per-test monkeypatch.setenv
 # calls still win because they happen later; _block_real_db refines this
 # baseline to a per-test tmp_path for stronger isolation.
-_DB_GUARD_DIR = Path(tempfile.mkdtemp(prefix="snore-test-dbguard-"))
-os.environ["SNORE_DB_PATH"] = str(_DB_GUARD_DIR / "guard.db")  # unconditional override
+os.environ["SNORE_DB_PATH"] = str(_TEST_HOME / "guard.db")  # unconditional override
 
 
 @pytest.fixture(autouse=True)
@@ -117,12 +134,10 @@ def _block_real_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (env chain: ``SNORE_DATABASE_URL`` > ``SNORE_DB_PATH`` > default) and the
     app lifespan's own env read in ``app.py``.
 
-    NOT protected (env is not consulted):
-    - ``init_database(None)`` hardcodes ``DEFAULT_DATABASE_PATH`` directly;
-      no current code or test calls it with ``None``.
-    - ``snore db`` CLI subcommands (``cli/groups/db.py``) resolve
-      ``Path(db) if db else Path(DEFAULT_DATABASE_PATH)``; tests guard these
-      by always passing an explicit ``--db`` flag.
+    Paths that ignore the env and use ``DEFAULT_DATABASE_PATH`` directly
+    (``init_database(None)``, i.e. any CLI command run without ``--db``, and
+    the ``snore db`` subcommands) are covered by the module-level test HOME
+    instead: they land in a throwaway database, never the real one.
 
     Tests that set ``SNORE_DATABASE_URL`` via monkeypatch still win — it
     outranks ``SNORE_DB_PATH`` by precedence — so MCP module fixtures that
