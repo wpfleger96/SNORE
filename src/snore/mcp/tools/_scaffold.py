@@ -23,8 +23,13 @@ from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any, cast
 
+import mcp.types as mt
+
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools import ToolResult
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
@@ -45,6 +50,41 @@ RESPONSE_SIZE_LIMIT = 500_000  # bytes; tools return narrow-your-query guidance
 _PYDANTIC_VALUE_ERROR_PREFIX = "Value error, "
 
 
+def _format_pydantic_errors(exc: PydanticValidationError) -> str:
+    """Render pydantic errors as ``field: message`` pairs without pydantic internals."""
+    parts: list[str] = []
+    for err in exc.errors():
+        msg = err["msg"].removeprefix(_PYDANTIC_VALUE_ERROR_PREFIX)
+        loc = err.get("loc", ())
+        if loc:
+            parts.append(f"{'.'.join(str(p) for p in loc)}: {msg}")
+        else:
+            parts.append(msg)
+    return "; ".join(parts)
+
+
+class ArgumentValidationMiddleware(Middleware):
+    """Clean schema-level argument errors the same way ``tool_error_boundary`` does.
+
+    FastMCP validates arguments against the tool signature (e.g. ``Field(ge=...)``
+    bounds) before the boundary-wrapped closure runs, and its default message
+    carries pydantic internals (``input_value=``, errors.pydantic.dev URLs).
+    """
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        try:
+            return await call_next(context)
+        except FastMCPValidationError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, PydanticValidationError):
+                raise ToolError(_format_pydantic_errors(cause)) from exc
+            raise
+
+
 def tool_error_boundary(
     func: Callable[..., Awaitable[Any]],
 ) -> Callable[..., Awaitable[Any]]:
@@ -57,15 +97,7 @@ def tool_error_boundary(
         except ToolError:
             raise
         except PydanticValidationError as exc:
-            parts: list[str] = []
-            for err in exc.errors():
-                msg = err["msg"].removeprefix(_PYDANTIC_VALUE_ERROR_PREFIX)
-                loc = err.get("loc", ())
-                if loc:
-                    parts.append(f"{'.'.join(str(p) for p in loc)}: {msg}")
-                else:
-                    parts.append(msg)
-            raise ToolError("; ".join(parts)) from exc
+            raise ToolError(_format_pydantic_errors(exc)) from exc
         except (ValidationError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
         except Exception as exc:

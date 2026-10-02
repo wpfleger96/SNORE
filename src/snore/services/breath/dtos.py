@@ -530,6 +530,11 @@ class WaveformWindow(BaseModel):
     missing_channel_reason: NullReason | None
 
 
+# LTTB target-point bounds for waveform windows; shared with the MCP tool schemas.
+MAX_POINTS_MIN = 2
+MAX_POINTS_MAX = 1000
+
+
 class WaveformWindowRequest(BaseModel):
     """Request for a multi-channel waveform window."""
 
@@ -542,7 +547,7 @@ class WaveformWindowRequest(BaseModel):
         default_factory=list,
         max_length=len(WaveformChannelName),
     )
-    max_points: int | None = Field(default=None, ge=1, le=1000)
+    max_points: int | None = Field(default=None, ge=MAX_POINTS_MIN, le=MAX_POINTS_MAX)
     window_cap_seconds: float = Field(default=120.0, gt=0.0)
 
     @model_validator(mode="after")
