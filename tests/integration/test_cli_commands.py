@@ -38,6 +38,13 @@ def cli_runner():
     return CliRunner()
 
 
+@pytest.fixture
+def chart_terminal(monkeypatch):
+    """Pin the terminal size that plotext sizes charts from."""
+    monkeypatch.setenv("LINES", "50")
+    monkeypatch.setenv("COLUMNS", "120")
+
+
 async def _create_test_user_and_profile(
     session: AsyncSession, email: str = "cli_test@example.com"
 ) -> models.Profile:
@@ -1189,6 +1196,54 @@ class TestWaveformListCommand:
         assert result.exit_code != 0
 
 
+@pytest.mark.usefixtures("chart_terminal")
+class TestWaveformShowCommand:
+    """Test waveform show draws charts through real (unmocked) plotext."""
+
+    def test_waveform_show_renders_single_chart(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "show",
+                "--db",
+                str(populated_test_db_full),
+                "--session-id",
+                "1",
+                "--time",
+                "00:00:01",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Session 1 - Flow at 00:00:01" in result.output
+
+    def test_waveform_show_renders_stacked_charts(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "show",
+                "--db",
+                str(populated_test_db_full),
+                "--session-id",
+                "1",
+                "--time",
+                "00:00:01",
+                "--type",
+                "flow,pressure",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Session 1 - Multi-waveform at 00:00:01" in result.output
+        assert "Pressure (cmH2O)" in result.output
+
+
 class TestSessionShowExpanded:
     """Test expanded session show output with full statistics."""
 
@@ -1297,8 +1352,8 @@ class TestStatsPeriod:
     def test_stats_trend_marks_derived_ahi_trend(
         self, cli_runner, populated_test_db_with_day_stats
     ):
-        # The chart itself is out of scope here; stub plotext so only the
-        # surrounding text output is exercised.
+        # Chart rendering is covered by test_stats_trend_renders_chart; stub
+        # plotext so only the surrounding text output is exercised.
         with patch.dict(sys.modules, {"plotext": MagicMock()}):
             result = cli_runner.invoke(
                 cli,
@@ -1324,6 +1379,7 @@ class TestStatsPeriod:
         assert result.output.count(_DERIVED_LEGEND) == 1
         assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 
+    @pytest.mark.usefixtures("chart_terminal")
     def test_stats_trend_renders_chart(
         self, cli_runner, populated_test_db_with_day_stats
     ):

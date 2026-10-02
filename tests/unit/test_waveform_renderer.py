@@ -1,10 +1,18 @@
 """Smoke tests that draw waveform charts through real (unmocked) plotext."""
 
 import numpy as np
+import pytest
 
-import snore.cli  # noqa: F401  # load before snore.waveform to avoid an import cycle
+import snore.cli  # noqa: F401  # load before snore.waveform to avoid an import cycle (#364)
 
 from snore.waveform.renderer import WaveformRenderer
+
+
+@pytest.fixture(autouse=True)
+def _pin_terminal_size(monkeypatch):
+    # plotext sizes figures from the terminal; a small one drops the title.
+    monkeypatch.setenv("LINES", "50")
+    monkeypatch.setenv("COLUMNS", "120")
 
 
 def _sine_window() -> tuple[np.ndarray, np.ndarray]:

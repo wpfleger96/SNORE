@@ -18,6 +18,8 @@ dependencies = [
     "scipy>=1.17.1",
     "packaging>=26.2",
     "rich>=15.0.0",
+    # <6: plotext 6 removed the module-level API (plt.clf, plt.plot, ...) used by
+    # cli/commands/stats.py and waveform/renderer.py; lift once ported (#356).
     "plotext>=5.3.2,<6",
     # <0.26: mypy segfaults analyzing pint 0.26.x; lift once mypy handles it.
     "pint>=0.25.3,<0.26",
