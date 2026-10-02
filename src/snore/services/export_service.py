@@ -9,6 +9,7 @@ Supports:
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 import logging
@@ -68,6 +69,31 @@ def _columns_csv_rows() -> list[list[str]]:
         ["events.csv", Provenance.DEVICE, "Device-scored events, verbatim."],
         ["settings.csv", Provenance.DEVICE, "Device settings, verbatim."],
     ]
+
+
+def _night_of(start_time: datetime) -> date:
+    """Sleep night a session belongs to (sessions before noon count as the prior night)."""
+    if start_time.hour >= 12:
+        return start_time.date()
+    return (start_time - timedelta(days=1)).date()
+
+
+def _write_csv_rows(path: Path, rows: list[list[Any]], mode: str = "a") -> None:
+    with open(path, mode, newline="") as f:
+        csv.writer(f).writerows(rows)
+
+
+def _write_waveform_csv(path: Path, samples: np.ndarray) -> None:
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["offset_seconds", "value"])
+        for offset, value in samples:
+            writer.writerow([f"{offset:.3f}", f"{value:.3f}"])
+
+
+def _write_text(path: Path, text: str, mode: str = "a") -> None:
+    with open(path, mode) as f:
+        f.write(text)
 
 
 @dataclass
@@ -257,10 +283,8 @@ class ExportService:
 
         All three output files (sessions, events, settings) are written in a
         single generator pass — no full materialisation of the result set.
+        File writes run in worker threads, off the event loop.
         """
-        from snore.database import models  # noqa: PLC0415
-
-        output.mkdir(parents=True, exist_ok=True)
         warnings: list[str] = []
         files_written = 0
         nights: set[date] = set()
@@ -297,104 +321,103 @@ class ExportService:
         events_path = output / "events.csv"
         settings_path = output / "settings.csv"
 
-        with open(output / "columns.csv", "w", newline="") as cf:
-            csv.writer(cf).writerows(_columns_csv_rows())
+        # File I/O runs in worker threads so the event loop is never blocked;
+        # rows are buffered per DB chunk to keep memory bounded.
+        def _write_headers() -> None:
+            _write_csv_rows(output / "columns.csv", _columns_csv_rows(), mode="w")
+            _write_csv_rows(sessions_path, [session_header], mode="w")
+            _write_csv_rows(events_path, [event_header], mode="w")
+            _write_csv_rows(settings_path, [setting_header], mode="w")
+
+        await asyncio.to_thread(output.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(_write_headers)
+
+        session_rows: list[list[Any]] = []
+        event_rows: list[list[Any]] = []
+        setting_rows: list[list[Any]] = []
+
+        def _append_buffered() -> None:
+            _write_csv_rows(sessions_path, session_rows)
+            _write_csv_rows(events_path, event_rows)
+            _write_csv_rows(settings_path, setting_rows)
+
+        async def _flush() -> None:
+            await asyncio.to_thread(_append_buffered)
+            session_rows.clear()
+            event_rows.clear()
+            setting_rows.clear()
 
         found_any = False
-        with (
-            open(sessions_path, "w", newline="") as sf,
-            open(events_path, "w", newline="") as ef,
-            open(settings_path, "w", newline="") as stf,
+        async for s, evs, stts in self._build_export_rows(
+            db_session, date_from, date_to, device_serial
         ):
-            sw = csv.writer(sf)
-            ew = csv.writer(ef)
-            stw = csv.writer(stf)
-            sw.writerow(session_header)
-            ew.writerow(event_header)
-            stw.writerow(setting_header)
+            found_any = True
+            stats = s.get("statistics") or {}
+            nights.add(_night_of(s["start_time"]))
+            session_date = s["start_time"].strftime("%Y-%m-%d")
 
-            async for s, evs, stts in self._build_export_rows(
-                db_session, date_from, date_to, device_serial
-            ):
-                found_any = True
-                stats = s.get("statistics") or {}
-                night = (
-                    s["start_time"].date()
-                    if s["start_time"].hour >= 12
-                    else (s["start_time"] - timedelta(days=1)).date()
-                )
-                nights.add(night)
+            session_rows.append(
+                [
+                    s["device_session_id"],
+                    session_date,
+                    s["start_time"].isoformat(),
+                    s["end_time"].isoformat(),
+                    round(s["duration_seconds"] / 3600, 2)
+                    if s["duration_seconds"]
+                    else "",
+                    s["serial_number"],
+                    s["model"],
+                    s["therapy_mode"],
+                    "local",
+                    *[stats.get(k, "") for k in EXPORT_STAT_KEYS],
+                ]
+            )
+            event_rows.extend(
+                [
+                    s["device_session_id"],
+                    session_date,
+                    e.event_type,
+                    e.start_time.isoformat() if e.start_time else "",
+                    e.duration_seconds or "",
+                    "local",
+                ]
+                for e in evs
+            )
+            setting_rows.extend(
+                [s["device_session_id"], session_date, st.key, st.value] for st in stts
+            )
 
-                sw.writerow(
-                    [
-                        s["device_session_id"],
-                        s["start_time"].strftime("%Y-%m-%d"),
-                        s["start_time"].isoformat(),
-                        s["end_time"].isoformat(),
-                        round(s["duration_seconds"] / 3600, 2)
-                        if s["duration_seconds"]
-                        else "",
-                        s["serial_number"],
-                        s["model"],
-                        s["therapy_mode"],
-                        "local",
-                        *[stats.get(k, "") for k in EXPORT_STAT_KEYS],
-                    ]
-                )
-
-                for e in evs:
-                    ew.writerow(
-                        [
-                            s["device_session_id"],
-                            s["start_time"].strftime("%Y-%m-%d"),
-                            e.event_type,
-                            e.start_time.isoformat() if e.start_time else "",
-                            e.duration_seconds or "",
-                            "local",
-                        ]
-                    )
-
-                for st in stts:
-                    stw.writerow(
-                        [
-                            s["device_session_id"],
-                            s["start_time"].strftime("%Y-%m-%d"),
-                            st.key,
-                            st.value,
-                        ]
-                    )
-
-                if include_waveforms:
-                    sid = s["id"]
-                    waveforms_dir = output / "waveforms"
-                    waveforms_dir.mkdir(exist_ok=True)
-                    waveforms = (
-                        (
-                            await db_session.execute(
-                                select(models.Waveform).filter_by(session_id=sid)
-                            )
+            if include_waveforms:
+                waveforms_dir = output / "waveforms"
+                await asyncio.to_thread(waveforms_dir.mkdir, exist_ok=True)
+                waveforms = (
+                    (
+                        await db_session.execute(
+                            select(models.Waveform).filter_by(session_id=s["id"])
                         )
-                        .scalars()
-                        .all()
                     )
-                    for w in waveforms:
-                        if not w.data_blob:
-                            continue
-                        fname = (
-                            f"{s['serial_number']}_{s['start_time']:%Y%m%d}_"
-                            f"{s['start_time']:%H%M%S}_{w.waveform_type}.csv"
-                        )
-                        wpath = waveforms_dir / fname
-                        flat = np.frombuffer(w.data_blob, dtype=np.float32)
-                        if len(flat) % 2 != 0:
-                            continue
-                        wf_rows = flat.reshape(-1, 2)
-                        with open(wpath, "w", newline="") as wf:
-                            writer = csv.writer(wf)
-                            writer.writerow(["offset_seconds", "value"])
-                            for wrow in wf_rows:
-                                writer.writerow([f"{wrow[0]:.3f}", f"{wrow[1]:.3f}"])
-                        files_written += 1
+                    .scalars()
+                    .all()
+                )
+                for w in waveforms:
+                    if not w.data_blob:
+                        continue
+                    flat = np.frombuffer(w.data_blob, dtype=np.float32)
+                    if len(flat) % 2 != 0:
+                        continue
+                    fname = (
+                        f"{s['serial_number']}_{s['start_time']:%Y%m%d}_"
+                        f"{s['start_time']:%H%M%S}_{w.waveform_type}.csv"
+                    )
+                    await asyncio.to_thread(
+                        _write_waveform_csv, waveforms_dir / fname, flat.reshape(-1, 2)
+                    )
+                    files_written += 1
+
+            if len(session_rows) >= self._EXPORT_CHUNK_SIZE:
+                await _flush()
+
+        await _flush()
 
         if not found_any:
             warnings.append("No sessions found for the specified filters.")
@@ -427,7 +450,6 @@ class ExportService:
         Writes the JSON array incrementally — one object per session — so the
         full session list is never held in memory simultaneously.
         """
-        output.parent.mkdir(parents=True, exist_ok=True)
         warnings: list[str] = []
         nights: set[date] = set()
         session_count = 0
@@ -465,49 +487,46 @@ class ExportService:
             }
             return json.dumps(obj, indent=2, default=str)
 
-        with open(output, "w") as f:
-            header = {
-                "exported_at": datetime.now().isoformat(),
-                "snore_export_format": "1.1",
-                "date_range": {
-                    "from": date_from.isoformat() if date_from else None,
-                    "to": date_to.isoformat() if date_to else None,
+        header = {
+            "exported_at": datetime.now().isoformat(),
+            "snore_export_format": "1.1",
+            "date_range": {
+                "from": date_from.isoformat() if date_from else None,
+                "to": date_to.isoformat() if date_to else None,
+            },
+            "provenance": {
+                "columns": EXPORT_COLUMN_PROVENANCE,
+                "sections": {
+                    "events": Provenance.DEVICE,
+                    "settings": Provenance.DEVICE,
                 },
-                "provenance": {
-                    "columns": EXPORT_COLUMN_PROVENANCE,
-                    "sections": {
-                        "events": Provenance.DEVICE,
-                        "settings": Provenance.DEVICE,
-                    },
-                },
-            }
-            f.write("{\n")
-            for k, v in header.items():
-                f.write(f"  {json.dumps(k)}: {json.dumps(v, default=str)},\n")
-            f.write('  "sessions": [\n')
+            },
+        }
+        head = "{\n" + "".join(
+            f"  {json.dumps(k)}: {json.dumps(v, default=str)},\n"
+            for k, v in header.items()
+        )
+        await asyncio.to_thread(output.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(_write_text, output, head + '  "sessions": [\n', "w")
 
-            first_session = True
-            async for s, events, settings in self._build_export_rows(
-                db_session, date_from, date_to, device_serial
-            ):
-                night = (
-                    s["start_time"].date()
-                    if s["start_time"].hour >= 12
-                    else (s["start_time"] - timedelta(days=1)).date()
-                )
-                nights.add(night)
-                session_count += 1
+        # File I/O runs in worker threads so the event loop is never blocked;
+        # serialised sessions are buffered per DB chunk to keep memory bounded.
+        pending: list[str] = []
+        async for s, events, settings in self._build_export_rows(
+            db_session, date_from, date_to, device_serial
+        ):
+            nights.add(_night_of(s["start_time"]))
+            if session_count:
+                pending.append(",\n")
+            session_count += 1
+            obj_str = _session_obj(s, events, settings)
+            pending.append("\n".join("    " + line for line in obj_str.splitlines()))
+            if len(pending) >= self._EXPORT_CHUNK_SIZE:
+                await asyncio.to_thread(_write_text, output, "".join(pending))
+                pending.clear()
 
-                if not first_session:
-                    f.write(",\n")
-                first_session = False
-                obj_str = _session_obj(s, events, settings)
-                indented = "\n".join("    " + line for line in obj_str.splitlines())
-                f.write(indented)
-
-            f.write("\n  ],\n")
-            f.write(f'  "session_count": {session_count}\n')
-            f.write("}\n")
+        pending.append(f'\n  ],\n  "session_count": {session_count}\n}}\n')
+        await asyncio.to_thread(_write_text, output, "".join(pending))
 
         if session_count == 0:
             warnings.append("No sessions found for the specified filters.")
