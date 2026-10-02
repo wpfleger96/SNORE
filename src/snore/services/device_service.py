@@ -80,6 +80,8 @@ class DeviceService(ProfileScopedService):
         last_session_date: date | None = (
             sessions[-1].start_time.date() if sessions else None
         )
+        # Hours come from Day rows (mask-on time, enabled sessions only, kept current by
+        # DayManager.recalculate_day); count, dates and modes come from enabled Sessions.
         total_therapy_hours = (
             await self.db_session.execute(
                 select(

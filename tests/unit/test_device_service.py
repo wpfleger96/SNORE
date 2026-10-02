@@ -10,6 +10,7 @@ from snore.database.day_manager import DayManager
 from snore.database.models import Setting
 from snore.exceptions import NotFoundError
 from snore.services.device_service import DeviceService
+from snore.services.session_service import SessionService
 
 
 async def _add_settings(
@@ -222,22 +223,27 @@ class TestGetDeviceDetail:
         enabled = await async_test_session_factory(
             async_test_device.id,
             start_time=datetime(2024, 1, 1, 22, 0),
-            duration_hours=7.0,
+            duration_hours=8.0,
+            usage_hours=6.5,
         )
         disabled = await async_test_session_factory(
             async_test_device.id,
-            start_time=datetime(2024, 1, 2, 22, 0),
-            duration_hours=5.0,
+            start_time=datetime(2024, 1, 2, 6, 30),
+            duration_hours=1.0,
+            usage_hours=0.75,
         )
-        disabled.enabled = False
         for s in (enabled, disabled):
             await DayManager.link_session_to_day(
                 s, async_test_device.id, async_db_session
             )
+        assert enabled.day_id == disabled.day_id
+        await SessionService(async_db_session, profile_id=1).set_session_enabled(
+            disabled.id, False
+        )
         svc = DeviceService(async_db_session, profile_id=1)
         detail = await svc.get_device_detail(async_test_device.id)
         assert detail.usage.session_count == 1
-        assert detail.usage.total_therapy_hours == 7.0
+        assert detail.usage.total_therapy_hours == 6.5
 
     async def test_identity_fields_included(self, async_db_session, async_test_device):
         svc = DeviceService(async_db_session, profile_id=1)

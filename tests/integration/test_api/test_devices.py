@@ -68,6 +68,7 @@ class TestGetDeviceDetail:
             start_time=datetime(2024, 1, 1, 22, 0),
             duration_hours=7.5,
         )
+        # Hours set by hand: shape test only; derivation is in test_device_service.py.
         day = Day(
             device_id=test_device.id,
             date=date(2024, 1, 1),
