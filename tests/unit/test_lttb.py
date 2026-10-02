@@ -97,6 +97,16 @@ class TestLTTBDownsampling:
         np.testing.assert_array_equal(t_down, timestamps)
         np.testing.assert_array_equal(v_down, values)
 
+    def test_target_two_returns_endpoints(self):
+        """Target=2 on a longer series returns the first and last points."""
+        timestamps = np.arange(0, 100, dtype=float)
+        values = np.sin(timestamps)
+
+        t_down, v_down = lttb_downsample(timestamps, values, target_points=2)
+
+        np.testing.assert_array_equal(t_down, [0.0, 99.0])
+        np.testing.assert_array_equal(v_down, [values[0], values[-1]])
+
     def test_mismatched_lengths_raises_error(self):
         """Timestamps and values with different lengths raise ValueError."""
         timestamps = np.array([0.0, 1.0, 2.0])

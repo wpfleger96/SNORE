@@ -272,41 +272,30 @@ class TestPureFunctions:
         png_bytes = render_png_from_raw(raw)
         assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
 
-    def test_lttb_small_window_raw_passthrough_is_downsampled_false(self) -> None:
-        """Window with 2 samples and max_points=1 → values not reduced, is_downsampled=False.
-
-        Pins the service contract: LTTB requires ≥3 points; slices smaller than that
-        are returned raw regardless of max_points.
-        """
+    def test_lttb_minimum_max_points_downsamples_to_two(self) -> None:
+        """max_points=2 (the lower bound) on a 500-sample channel → 2 values, is_downsampled=True."""
         from snore.services.breath_service import (  # noqa: PLC0415
             RawWaveformChannel,
             RawWaveformWindow,
             WaveformChannelName,
-            WaveformWindowRequest,
         )
 
-        # 2-sample blob
-        offsets = [0.0, 1.0]
-        values = [1.0, 2.0]
+        n = 500
+        offsets = np.linspace(0.0, 50.0, n).tolist()
+        values = [float(i % 20) for i in range(n)]
         blob, count = _make_blob(offsets, values)
 
         ch = RawWaveformChannel(
             waveform_type=WaveformChannelName.FLOW,
             unit="L/min",
-            sample_rate=1.0,
+            sample_rate=10.0,
             sample_count=count,
             raw_bytes=blob,
         )
-        request = WaveformWindowRequest(
-            therapy_date=date(2024, 1, 1),
-            offset_start=0.0,
-            offset_end=30.0,
-            channels=[WaveformChannelName.FLOW],
-            max_points=1,  # smaller than the 2 samples
-            window_cap_seconds=120.0,
-        )
         raw = RawWaveformWindow(
-            request=request,
+            request=_make_request(
+                offset_end=50.0, channels=[WaveformChannelName.FLOW], max_points=2
+            ),
             session_id=7,
             session_start_wall_clock=datetime(2024, 1, 1, 22, 0, 0),
             channels=[ch],
@@ -315,11 +304,10 @@ class TestPureFunctions:
 
         response = waveform_response_from_raw(raw)
 
-        assert len(response.channels) == 1
         result_ch = response.channels[0]
-        # LTTB skipped: both samples returned, not downsampled
+        assert result_ch.is_downsampled is True
         assert len(result_ch.values) == 2
-        assert result_ch.is_downsampled is False
+        assert result_ch.original_sample_count == 500
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +596,33 @@ class TestGetWaveformClient:
         assert "pydantic" not in err.lower()
         assert "input_value" not in err
         assert "validation error for" not in err.lower()
+
+    @pytest.mark.parametrize("tool", ["get_waveform", "render_window"])
+    async def test_max_points_below_two_raises_clean_tool_error(
+        self, mock_db_session: MagicMock, mcp_client_factory: object, tool: str
+    ) -> None:
+        """max_points=1 → ToolError naming max_points; service never reaches LTTB."""
+        with patch(
+            "snore.services.breath_service.BreathService.fetch_waveform_window",
+            new_callable=AsyncMock,
+        ) as mock_svc:
+            async with mcp_client_factory(mock_db_session) as client:
+                with pytest.raises(ToolError) as exc_info:
+                    await client.call_tool(
+                        tool,
+                        {
+                            "date": "2024-01-01",
+                            "offset_start": 0.0,
+                            "offset_end": 30.0,
+                            "max_points": 1,
+                        },
+                    )
+
+        err = str(exc_info.value)
+        assert "max_points" in err
+        assert "target_points" not in err
+        assert "pydantic" not in err.lower()
+        mock_svc.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,9 @@ def lttb_downsample(
     if len(timestamps) == 0:
         return np.array([]), np.array([])
 
+    if target_points == 2:
+        return timestamps[[0, -1]], values[[0, -1]]
+
     sampled_indices = np.zeros(target_points, dtype=int)
     sampled_indices[0] = 0
     sampled_indices[-1] = len(timestamps) - 1

@@ -105,7 +105,7 @@ async def fetch_waveform_raw(
             multiple sessions on the date.
         channels: Waveform channel names to fetch (e.g. ["flow", "pressure"]).
             Defaults to [flow, pressure, leak] when empty or None.
-        max_points: LTTB target point count for downsampling (1–1000).
+        max_points: LTTB target point count for downsampling (2–1000).
         window_cap_seconds: Maximum window width in seconds (enforced by caller).
     """
     from snore.services.breath_service import (  # noqa: PLC0415
@@ -245,12 +245,10 @@ def register(mcp: FastMCP) -> None:
         + _CHANNEL_VOCAB_DOC
         + "\n\n"
         "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
-        "``max_points`` (1–1000): when set, applies LTTB downsampling per channel so\n"
+        "``max_points`` (2–1000): when set, applies LTTB downsampling per channel so\n"
         "the visual shape is preserved while reducing data volume.  Omit for raw\n"
         "unmodified samples.  Many-channel raw requests often exceed the 500,000-byte\n"
-        "response limit — use ``max_points`` or fewer channels if that happens.\n"
-        "Windows whose slice has fewer than 3 samples are returned raw even if\n"
-        "``max_points`` is smaller (LTTB needs ≥3 points); ``is_downsampled`` stays false.\n\n"
+        "response limit — use ``max_points`` or fewer channels if that happens.\n\n"
         "Args:\n"
         "    date: Session date in YYYY-MM-DD format.\n"
         "    offset_start: Window start in seconds from session start (≥ 0).\n"
@@ -261,7 +259,7 @@ def register(mcp: FastMCP) -> None:
         "    session_id: Filter to a specific session.  Required when the device had\n"
         "                multiple sessions on the date.\n"
         "    channels: Waveform channels to return.  Defaults to [flow, pressure, leak].\n"
-        "    max_points: LTTB target sample count per channel (1–1000).\n\n"
+        "    max_points: LTTB target sample count per channel (2–1000).\n\n"
         "Returns:\n"
         "    WaveformWindowResponse.  ``session_id`` and ``session_start_wall_clock``\n"
         '    (tier-2 offset-free ISO 8601, ``timezone_status: "unknown" | "user_declared"``,\n'
@@ -323,7 +321,7 @@ def register(mcp: FastMCP) -> None:
         + _CHANNEL_VOCAB_DOC
         + "\n\n"
         "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
-        "``max_points`` (1–1000): thins dense windows before plotting, preserving visual\n"
+        "``max_points`` (2–1000): thins dense windows before plotting, preserving visual\n"
         "shape while speeding rendering.  Omit for raw unmodified samples.\n\n"
         "Missing channels (not recorded by the device) are noted in the image title\n"
         "rather than causing an error.\n\n"
@@ -342,7 +340,7 @@ def register(mcp: FastMCP) -> None:
         "    session_id: Filter to a specific session.  Required when the device had\n"
         "                multiple sessions on the date.\n"
         "    channels: Waveform channels to plot.  Defaults to [flow, pressure, leak].\n"
-        "    max_points: LTTB target sample count per channel before plotting (1–1000).\n\n"
+        "    max_points: LTTB target sample count per channel before plotting (2–1000).\n\n"
         "Returns:\n"
         "    PNG image (not JSON) — one stacked subplot per channel.\n\n"
         "Error conditions:\n"

@@ -542,7 +542,7 @@ class WaveformWindowRequest(BaseModel):
         default_factory=list,
         max_length=len(WaveformChannelName),
     )
-    max_points: int | None = Field(default=None, ge=1, le=1000)
+    max_points: int | None = Field(default=None, ge=2, le=1000)
     window_cap_seconds: float = Field(default=120.0, gt=0.0)
 
     @model_validator(mode="after")
