@@ -3430,17 +3430,17 @@ export interface components {
             false_positives: number
             /**
              * Machine Count
-             * @description [DEVICE] Machine-scored events
+             * @description [DEVICE] Machine-scored apneas and hypopneas
              */
             machine_count: number
             /**
              * Matched
-             * @description [EXPERIMENTAL] Events matched within tolerance
+             * @description [EXPERIMENTAL] Programmatic/machine event pairs matched one-to-one within tolerance (each event in at most one pair)
              */
             matched: number
             /**
              * Programmatic Count
-             * @description [EXPERIMENTAL] Programmatically detected events
+             * @description [EXPERIMENTAL] Programmatically detected apneas and hypopneas
              */
             programmatic_count: number
         }

@@ -1,5 +1,8 @@
 """Unit tests for EventService."""
 
+from datetime import datetime, timedelta
+
+from snore.database.models import Event
 from snore.services.event_service import EVENT_MATCH_TOLERANCE_SECONDS, EventService
 
 
@@ -170,3 +173,38 @@ class TestEventService:
         assert result.matched == 1
         assert result.false_positives == 0
         assert result.false_negatives == 1
+
+
+class TestMachineApneaHypopneaTimes:
+    """Tests for EventService.get_machine_apnea_hypopnea_times()."""
+
+    async def test_non_apnea_device_flags_do_not_steal_matches(
+        self,
+        async_db_session,
+        async_test_profile,
+        async_test_device,
+        async_test_session_factory,
+    ):
+        """VS/FL flags just before an OA are dropped, so the OA still matches."""
+        start = datetime(2025, 1, 10, 22, 0)
+        session = await async_test_session_factory(async_test_device.id, start)
+        oa_time = start + timedelta(hours=1)
+        for event_type, offset_s in (("VS", -2.0), ("FL", -1.0), ("OA", 0.0)):
+            async_db_session.add(
+                Event(
+                    session_id=session.id,
+                    event_type=event_type,
+                    start_time=oa_time + timedelta(seconds=offset_s),
+                    duration_seconds=10.0,
+                )
+            )
+        await async_db_session.flush()
+        svc = EventService(async_db_session, profile_id=async_test_profile.id)
+
+        machine_times = await svc.get_machine_apnea_hypopnea_times(session.id)
+        result = EventService.match_events(machine_times, [oa_time.timestamp()])
+
+        assert machine_times == [oa_time.timestamp()]
+        assert result.matched == 1
+        assert result.false_negatives == 0
+        assert result.false_positives == 0
