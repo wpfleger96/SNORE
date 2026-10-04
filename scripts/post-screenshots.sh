@@ -19,7 +19,11 @@ GH_USER=$(gh api user --jq .login)
 BRANCH="agent-screenshots/${GH_USER}"
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
-mapfile -t PNGS < <(find "$PNG_DIR" -maxdepth 1 -name "*.png" -type f | sort)
+# macOS ships bash 3.2, which lacks mapfile — build the array with read.
+PNGS=()
+while IFS= read -r PNG; do
+  PNGS+=("$PNG")
+done < <(find "$PNG_DIR" -maxdepth 1 -name "*.png" -type f | sort)
 if [[ ${#PNGS[@]} -eq 0 ]]; then
   echo "error: no PNGs found in $PNG_DIR" >&2
   exit 1
@@ -51,44 +55,38 @@ PARENT_ARGS=()
 if git rev-parse "origin/${BRANCH}" >/dev/null 2>&1; then
   PARENT_ARGS=(-p "origin/${BRANCH}")
 fi
-COMMIT=$(git commit-tree "$TREE" "${PARENT_ARGS[@]}" -m "screenshots: PR #${PR}")
+# ${arr[@]+...} guards the empty-array case, which trips set -u on bash 3.2.
+COMMIT=$(git commit-tree "$TREE" ${PARENT_ARGS[@]+"${PARENT_ARGS[@]}"} -m "screenshots: PR #${PR}")
 git push --force-with-lease origin "${COMMIT}:refs/heads/${BRANCH}"
 
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/${COMMIT}"
 
-declare -A IMAGE_URL_MAP
+# Parallel name/url arrays instead of an associative array (bash 4+ only).
+IMAGE_NAMES=()
 IMAGE_URLS=()
 for i in "${!PNGS[@]}"; do
-  ORIG_NAME="$(basename "${PNGS[$i]}" .png)"
-  URL="${RAW_BASE}/${TREE_PATHS[$i]}"
-  IMAGE_URLS+=("$URL")
-  IMAGE_URL_MAP["$ORIG_NAME"]="$URL"
+  IMAGE_NAMES+=("$(basename "${PNGS[$i]}" .png)")
+  IMAGE_URLS+=("${RAW_BASE}/${TREE_PATHS[$i]}")
 done
 
 if [[ -n "$BODY_FILE" ]]; then
   COMMENT_BODY="$(cat "$BODY_FILE")"
-  UNREFERENCED=()
-  for NAME in "${!IMAGE_URL_MAP[@]}"; do
-    URL="${IMAGE_URL_MAP[$NAME]}"
+  # IMAGE_NAMES follows the sorted PNG list, so unreferenced images land at the
+  # tail in name order; appended links hold no {{...}}, so later substitutions skip them.
+  for i in "${!IMAGE_NAMES[@]}"; do
+    NAME="${IMAGE_NAMES[$i]}"
+    URL="${IMAGE_URLS[$i]}"
     PLACEHOLDER="{{${NAME}}}"
     if [[ "$COMMENT_BODY" == *"$PLACEHOLDER"* ]]; then
       COMMENT_BODY="${COMMENT_BODY//"$PLACEHOLDER"/![$NAME]($URL)}"
     else
-      UNREFERENCED+=("$NAME")
+      COMMENT_BODY+=$'\n\n'"![${NAME}](${URL})"
     fi
   done
-  if [[ ${#UNREFERENCED[@]} -gt 0 ]]; then
-    IFS=$'\n' SORTED=($(printf '%s\n' "${UNREFERENCED[@]}" | sort)); unset IFS
-    for NAME in "${SORTED[@]}"; do
-      COMMENT_BODY+=$'\n\n'"![${NAME}](${IMAGE_URL_MAP[$NAME]})"
-    done
-  fi
 else
   COMMENT_BODY="## Screenshots"$'\n\n'
-  for URL in "${IMAGE_URLS[@]}"; do
-    FILENAME=$(basename "$URL")
-    NAME="${FILENAME%.png}"
-    COMMENT_BODY+="![${NAME}](${URL})"$'\n\n'
+  for i in "${!IMAGE_NAMES[@]}"; do
+    COMMENT_BODY+="![${IMAGE_NAMES[$i]}](${IMAGE_URLS[$i]})"$'\n\n'
   done
 fi
 
