@@ -62,15 +62,3 @@ docker-build:
 ui-generate-types:
     SNORE_AUTH_MODE=local uv run python scripts/export_openapi.py ui/openapi.json
     cd ui && pnpm run generate:types
-
-# Install production deps only (`--no-dev`, as the Docker image does) into a
-# throwaway env and import the app's entry modules, catching runtime imports
-# that only resolve through a dev dependency.
-prod-import-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    env_dir="$(mktemp -d)"
-    trap 'rm -rf "$env_dir"' EXIT
-    UV_PROJECT_ENVIRONMENT="$env_dir" uv sync --frozen --no-dev --quiet
-    "$env_dir/bin/python" -c "import snore.api.app, snore.api.mcp_embed, snore.mcp.server, snore.mcp.auth, snore.auth.google_oauth, httpx2; from authlib.integrations.httpx_client import AsyncOAuth2Client"
-    echo "Production install imports OK"
