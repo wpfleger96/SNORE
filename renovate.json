@@ -6,6 +6,11 @@
       "description": "Hold pint below 0.26 until mypy can analyze pint 0.26.x without crashing (#380)",
       "matchPackageNames": ["pint"],
       "allowedVersions": "<0.26"
+    },
+    {
+      "description": "Hold typescript below 7 until vue-tsc, typescript-eslint, and openapi-typescript work with the TS 7 native compiler (#260)",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
     }
   ]
 }
