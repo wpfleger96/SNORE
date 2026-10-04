@@ -1,10 +1,5 @@
 <template>
     <div ref="heatmapEl" class="calendar-heatmap">
-        <div class="month-labels" :style="{ gridTemplateColumns: `repeat(${weeks}, 14px)` }">
-            <span v-for="m in monthLabels" :key="m.offset" :style="{ gridColumn: m.offset }">
-                {{ m.label }}
-            </span>
-        </div>
         <div class="day-labels">
             <span>Mon</span>
             <span />
@@ -14,15 +9,22 @@
             <span />
             <span />
         </div>
-        <div class="grid" :style="{ gridTemplateColumns: `repeat(${weeks}, 14px)` }">
-            <div
-                v-for="cell in cells"
-                :key="cell.date"
-                class="cell"
-                :class="cell.class"
-                :title="cell.title"
-                @click="cell.ahi != null && $emit('day-click', cell.date)"
-            />
+        <div class="weeks">
+            <div class="month-labels" :style="{ gridTemplateColumns: `repeat(${weeks}, 14px)` }">
+                <span v-for="m in monthLabels" :key="m.offset" :style="{ gridColumn: m.offset }">
+                    {{ m.label }}
+                </span>
+            </div>
+            <div class="grid" :style="{ gridTemplateColumns: `repeat(${weeks}, 14px)` }">
+                <div
+                    v-for="cell in cells"
+                    :key="cell.date"
+                    class="cell"
+                    :class="cell.class"
+                    :title="cell.title"
+                    @click="cell.ahi != null && $emit('day-click', cell.date)"
+                />
+            </div>
         </div>
     </div>
 </template>
@@ -104,6 +106,11 @@ watch(
     { immediate: true },
 )
 
+// Drop the first label when its month covers only one column before the next
+// starts (Monday alignment spills the grid into the prior month). Only the
+// first label can be that close: full months span ≥4 week columns.
+const MIN_LABEL_GAP = 2
+
 const monthLabels = computed(() => {
     const labels: { label: string; offset: number }[] = []
     let lastMonth = -1
@@ -111,9 +118,12 @@ const monthLabels = computed(() => {
         const d = parseLocalDate(cells.value[i].date)
         if (d.getMonth() !== lastMonth) {
             lastMonth = d.getMonth()
+            const offset = Math.floor(i / 7) + 1
+            const prev = labels.at(-1)
+            if (prev && offset - prev.offset < MIN_LABEL_GAP) labels.pop()
             labels.push({
                 label: d.toLocaleString(undefined, { month: 'short' }),
-                offset: Math.floor(i / 7) + 1,
+                offset,
             })
         }
     }
@@ -123,6 +133,7 @@ const monthLabels = computed(() => {
 
 <style scoped>
 .calendar-heatmap {
+    --month-row: 1.25rem;
     display: flex;
     gap: 0.25rem;
     overflow-x: auto;
@@ -139,7 +150,10 @@ const monthLabels = computed(() => {
     gap: 2px;
     font-size: 0.65rem;
     color: var(--color-muted-foreground);
-    margin-top: 1.25rem;
+    /* Match the month-label row height so weekday rows align with cell rows.
+       Padding, not margin, so the sticky background covers month labels
+       scrolling under it when the grid overflows horizontally. */
+    padding-top: var(--month-row);
     text-align: right;
     padding-right: 0.25rem;
 }
@@ -149,8 +163,10 @@ const monthLabels = computed(() => {
     gap: 2px;
     font-size: 0.65rem;
     color: var(--color-muted-foreground);
-    height: 1rem;
-    margin-left: 2rem;
+    height: var(--month-row);
+    line-height: 1rem;
+    /* Labels are wider than a week column: overflow it rather than wrap. */
+    white-space: nowrap;
 }
 
 .grid {
@@ -158,7 +174,6 @@ const monthLabels = computed(() => {
     grid-template-rows: repeat(7, 14px);
     grid-auto-flow: column;
     gap: 2px;
-    margin-top: 1.25rem;
 }
 
 .cell {
