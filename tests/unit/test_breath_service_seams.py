@@ -153,6 +153,10 @@ async def _store_analysis_with_breaths(
     explicit per-breath list, used to exercise the rule-matched / fallback split.
     ``flattening`` overrides the uniform ``mid_insp_flattening`` per breath.
     """
+    if flow_specs is not None and flattening is not None:
+        assert len(flow_specs) == len(flattening), (
+            "flow_specs and flattening must have the same length"
+        )
     if flow_specs is not None:
         n_breaths = len(flow_specs)
     if flattening is not None:
@@ -5177,10 +5181,15 @@ class TestNightlySummaryReraRdi:
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
 
-        for d in therapy_dates:
+        # 40 distinct, unsorted values per night so median, p5 (sorted[2]) and
+        # min (sorted[0]) all differ; a tail mix-up would break parity.
+        for offset, d in enumerate(therapy_dates):
             _, session = await _make_day_and_session(async_db_session, dev.id, d)
+            flattening = [
+                round(0.2 + 0.02 * ((i * 7 + offset) % 40), 2) for i in range(40)
+            ]
             await _store_analysis_with_breaths(
-                async_db_session, session, profile_id, n_breaths=10
+                async_db_session, session, profile_id, flattening=flattening
             )
 
         svc = BreathService(async_db_session, profile_id=profile_id)
@@ -5201,6 +5210,10 @@ class TestNightlySummaryReraRdi:
             assert bulk.rera_count == per_night.rera_count
             assert bulk.rera_reason == per_night.rera_reason
             assert bulk.rera_proxy_version == per_night.rera_proxy_version == "v2"
+            assert per_night.fl_min is not None
+            assert per_night.fl_5th is not None
+            assert per_night.fl_median is not None
+            assert per_night.fl_min < per_night.fl_5th < per_night.fl_median
             assert bulk.fl_median == per_night.fl_median
             assert bulk.fl_5th == per_night.fl_5th
             assert bulk.fl_min == per_night.fl_min

@@ -389,6 +389,15 @@ class TestDisabledSessionsExcluded:
             ).nights[0]
             assert night.session_count == 0
             assert night.rera_index_reason == "analysis_not_run"
+            assert night.fl_median is None
+            assert night.fl_5th is None
+            assert night.fl_min is None
+            assert (
+                night.fl_median_reason
+                == night.fl_5th_reason
+                == night.fl_min_reason
+                == "analysis_not_run"
+            )
         elif tool == "events":
             events = await get_events(db, target_date, profile_id=pid, device_id=dev_id)
             assert events.events == []

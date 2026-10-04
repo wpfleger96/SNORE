@@ -52,10 +52,13 @@ def _stat_pair(
     return (value, None) if value is not None else (None, reason)
 
 
-def _sorted_distribution(
+def _high_tail_distribution(
     vals: list[float], reason: NullReason
 ) -> tuple[float | None, float | None, float | None, NullReason | None]:
-    """``(median, p95, max, None)`` over ``vals``, or all-``None`` + reason when empty."""
+    """``(median, p95, max, None)`` over ``vals``, or all-``None`` + reason when empty.
+
+    For direct-severity metrics where higher = worse.
+    """
     if not vals:
         return None, None, None, reason
     sorted_v = sorted(vals)
@@ -253,10 +256,10 @@ class NightlyMixin(_BreathServiceCore):
             )
 
         device_flg_median, device_flg_95th, device_flg_max, device_flg_reason = (
-            _sorted_distribution(fl_all, NullReason.CHANNEL_ABSENT)
+            _high_tail_distribution(fl_all, NullReason.CHANNEL_ABSENT)
         )
 
-        snore_median, snore_95th, _, snore_reason = _sorted_distribution(
+        snore_median, snore_95th, _, snore_reason = _high_tail_distribution(
             snore_all, NullReason.CHANNEL_ABSENT
         )
         snore_pct_time = (
