@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
-import httpx
+import httpx2
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
@@ -47,7 +47,7 @@ def make_auth_provider(
     base_url: str,
     google_client_id: str,
     google_client_secret: str,
-    http_client: httpx.AsyncClient | None = None,
+    http_client: httpx2.AsyncClient | None = None,
 ) -> AuthProvider:
     """Construct a GoogleProvider for HTTP transport.
 
@@ -57,9 +57,11 @@ def make_auth_provider(
                              for loopback addresses (127.x.x.x, ::1, localhost).
         google_client_id:    OAuth client ID (GOOGLE_CLIENT_ID).
         google_client_secret: OAuth client secret (GOOGLE_CLIENT_SECRET).
-        http_client:         httpx.AsyncClient for connection pooling to Google
+        http_client:         httpx2.AsyncClient for connection pooling to Google
                              endpoints.  When None (default), a long-lived client
-                             is created inside this function and passed to
+                             with a 10s timeout (fastmcp's own default, which it
+                             does not apply to an injected client) is created
+                             inside this function and passed to
                              GoogleProvider.  The client is intentionally
                              process-lifetime: the MCP server process owns it and
                              connections close with the process.  Pass an explicit
@@ -107,7 +109,9 @@ def make_auth_provider(
             f"SNORE_PUBLIC_BASE_URL must be a valid HTTPS (or loopback HTTP) URL: {exc}"
         ) from exc
 
-    _client = http_client if http_client is not None else httpx.AsyncClient()
+    _client = (
+        http_client if http_client is not None else httpx2.AsyncClient(timeout=10.0)
+    )
     return GoogleProvider(
         client_id=google_client_id,
         client_secret=google_client_secret,

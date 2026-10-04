@@ -14,11 +14,9 @@ Import cycle safety: this module imports from snore.mcp (server, auth) and
 snore.api.config, but never from snore.api.middleware — middleware must import
 is_mcp_path from here, not the other way around.
 
-Session idle timeout: fastmcp 3.4.6 drops the ``session_idle_timeout`` knob
-from its ``FastMCPStreamableHTTPSessionManager`` (it exists on the underlying
-mcp-sdk ``StreamableHTTPSessionManager`` but is not threaded through fastmcp's
-``create_streamable_http_app``).  Setting it would require constructing the
-session manager by hand — skipped pending upstream support.
+Session idle timeout: a stateful MCP session with no request in flight for
+``MCP_SESSION_IDLE_TIMEOUT_SECONDS`` is terminated and reaped; the client then
+gets 404 for that session ID and re-initializes.
 """
 
 from __future__ import annotations
@@ -36,10 +34,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MCP_PATH = "/mcp"
+# mcp SDK's DEFAULT_SESSION_IDLE_TIMEOUT (30 min).  fastmcp passes None to the SDK
+# unless told otherwise, which disables reaping, so set it explicitly.
+MCP_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 _MCP_PATH_PREFIX = MCP_PATH + "/"
 
-# Root-level OAuth flow paths registered by fastmcp 3.4.6 GoogleProvider /
-# OAuthProxy.  Audit this set on fastmcp upgrades.
+# Root-level OAuth flow paths registered by fastmcp 4.0.11 GoogleProvider /
+# OAuthProxy (/revoke is not registered but kept defensively).  Audit this set
+# on fastmcp upgrades.
 _MCP_ROOT_PATHS = frozenset(
     {"/authorize", "/token", "/register", "/revoke", "/consent", "/auth/callback"}
 )
@@ -87,7 +89,11 @@ def build_mcp_app(cfg: AppConfig) -> StarletteWithLifespan | None:
 
     auth = _make_mcp_auth_provider(cfg)
     server = make_server(profile_name="neutral", auth=auth, manage_database=False)
-    app = server.http_app(path=MCP_PATH, host_origin_protection=False)
+    app = server.http_app(
+        path=MCP_PATH,
+        host_origin_protection=False,
+        session_idle_timeout=MCP_SESSION_IDLE_TIMEOUT_SECONDS,
+    )
 
     logger.info(
         "Embedded MCP server enabled — endpoint: %s%s",

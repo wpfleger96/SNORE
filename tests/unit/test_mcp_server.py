@@ -473,7 +473,7 @@ class TestStage2ToolsRegistered:
 
         ce_tool = next(t for t in tools if t.name == "compare_epochs")
         # epochs parameter must appear in the input schema
-        schema = ce_tool.inputSchema
+        schema = ce_tool.input_schema
         assert "epochs" in (schema.get("properties") or {}), (
             f"compare_epochs inputSchema missing 'epochs': {schema}"
         )
