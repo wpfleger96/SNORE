@@ -2,9 +2,7 @@
 
 from typing import Any
 
-import numpy as np
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from snore.constants import ApneaEventType
 from snore.provenance import Provenance, provenance_field
@@ -30,7 +28,7 @@ class BreathMetrics(BaseModel):
         respiratory_rate: Instantaneous rate (60/duration) in breaths/min
         respiratory_rate_rolling: Rolling 60s window rate (breaths/min)
         minute_ventilation: Estimated ventilation using rolling RR (L/min)
-        amplitude: Peak-to-peak amplitude (peak_insp - |peak_exp|) in L/min
+        amplitude: Peak-to-peak amplitude (peak_insp + |peak_exp|) in L/min
         is_complete: Whether breath has both inspiration and expiration
     """
 
@@ -269,56 +267,6 @@ class PeakFeatures(BaseModel):
                 f"(got {len(self.peak_positions)} and {len(self.peak_prominences)})"
             )
         return self
-
-
-class StatisticalFeatures(BaseModel):
-    """
-    Statistical features of breath waveform.
-
-    Basic statistical measures that help characterize the distribution
-    and variability of flow values.
-
-    Attributes:
-        mean: Mean flow value
-        median: Median flow value
-        std_dev: Standard deviation
-        percentile_25: 25th percentile
-        percentile_50: 50th percentile (median)
-        percentile_75: 75th percentile
-        percentile_95: 95th percentile
-        coefficient_of_variation: std_dev / mean
-        zero_crossing_rate: Frequency of sign changes
-    """
-
-    mean: float = Field(description="Mean flow value")
-    median: float = Field(description="Median flow value")
-    std_dev: float = Field(ge=0, description="Standard deviation")
-    percentile_25: float = Field(description="25th percentile")
-    percentile_50: float = Field(description="50th percentile (median)")
-    percentile_75: float = Field(description="75th percentile")
-    percentile_95: float = Field(description="95th percentile")
-    coefficient_of_variation: float = Field(ge=0, description="CV (std/mean)")
-    zero_crossing_rate: float = Field(ge=0, description="Sign change frequency")
-
-
-class SpectralFeatures(BaseModel):
-    """
-    Spectral (frequency domain) features of breath waveform.
-
-    Optional features that analyze frequency content using FFT.
-    Useful for detecting periodic patterns.
-
-    Attributes:
-        dominant_frequency: Primary frequency component (Hz)
-        spectral_entropy: Measure of spectral regularity
-        power_spectral_density: Power distribution across frequencies
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    dominant_frequency: float = Field(ge=0, description="Dominant frequency (Hz)")
-    spectral_entropy: float = Field(ge=0, description="Spectral regularity measure")
-    power_spectral_density: np.ndarray = Field(description="Power distribution")
 
 
 class FlowPattern(BaseModel):

@@ -489,30 +489,3 @@ class BreathSegmenter:
             return (
                 tv_history[-3] + tv_history[-2] + tv_history[-1] + current_tv * 2
             ) / 5
-
-    def handle_incomplete_breaths(
-        self, breaths: list[BreathMetrics]
-    ) -> list[BreathMetrics]:
-        """
-        Filter or merge incomplete breaths.
-
-        Incomplete breaths occur at segment boundaries or during mask-off
-        periods. This method filters them out for now. Future enhancement
-        could attempt to merge with adjacent segments.
-
-        Args:
-            breaths: List of BreathMetrics including incomplete breaths
-
-        Returns:
-            List of complete BreathMetrics only
-
-        Example:
-            >>> complete_breaths = segmenter.handle_incomplete_breaths(breaths)
-        """
-        complete_breaths = [b for b in breaths if b.is_complete]
-
-        removed_count = len(breaths) - len(complete_breaths)
-        if removed_count > 0:
-            logger.debug(f"Filtered out {removed_count} incomplete breaths")
-
-        return complete_breaths

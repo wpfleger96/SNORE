@@ -176,8 +176,8 @@ class TestFeatureVariability:
             end_idx = int(breath.end_time * metadata["sample_rate"])
             breath_flow = flow_values[start_idx:end_idx]
 
-            shape, _, _, _ = extractor.extract_all_features(
-                breath_flow, sample_rate=metadata["sample_rate"], include_spectral=False
+            shape = extractor.extract_shape_features(
+                breath_flow, sample_rate=metadata["sample_rate"]
             )
             flatness_values.append(shape.flatness_index)
 
