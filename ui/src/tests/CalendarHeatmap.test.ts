@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { DayListItem } from '@/types'
 import CalendarHeatmap from '@/components/CalendarHeatmap.vue'
@@ -22,6 +22,21 @@ function titleFor(days: DayListItem[], date: string): string | undefined {
         .find((t) => t?.startsWith(`${date}:`))
 }
 
+function monthName(year: number, monthIndex: number): string {
+    return new Date(year, monthIndex, 15).toLocaleString(undefined, { month: 'short' })
+}
+
+function renderedMonthLabels(): { text: string; column: number }[] {
+    const wrapper = mount(CalendarHeatmap, { props: { days: [] } })
+    return wrapper.findAll('.month-labels span').map((s) => ({
+        text: s.text(),
+        column: Number(/grid-column:\s*(\d+)/.exec(s.attributes('style') ?? '')?.[1]),
+    }))
+}
+
+const APR_TO_SEP_2026 = [3, 4, 5, 6, 7, 8].map((m) => monthName(2026, m))
+const APR_TO_OCT_2026 = [3, 4, 5, 6, 7, 8, 9].map((m) => monthName(2026, m))
+
 describe('CalendarHeatmap cell titles', () => {
     it('test_device_index_source_names_value_device_reported', () => {
         const date = isoDaysAgo(2)
@@ -44,48 +59,59 @@ describe('CalendarHeatmap cell titles', () => {
     })
 })
 
-function monthName(year: number, monthIndex: number): string {
-    return new Date(year, monthIndex, 15).toLocaleString(undefined, { month: 'short' })
-}
-
-function renderedMonthLabels(): { text: string; column: number }[] {
-    const wrapper = mount(CalendarHeatmap, { props: { days: [] } })
-    return wrapper.findAll('.month-labels span').map((s) => ({
-        text: s.text(),
-        column: Number(/grid-column:\s*(\d+)/.exec(s.attributes('style') ?? '')?.[1]),
-    }))
-}
-
-const APR_TO_OCT_2026 = [3, 4, 5, 6, 7, 8, 9].map((m) => monthName(2026, m))
-
 describe('CalendarHeatmap month labels', () => {
+    beforeEach(() => vi.useFakeTimers())
     afterEach(() => {
         vi.useRealTimers()
     })
 
     it('test_monday_spillover_into_prior_month_drops_spillover_label', () => {
         // 6 months back is Fri 2026-04-03; Monday alignment starts the grid on Mar 30.
-        vi.useFakeTimers()
         vi.setSystemTime(new Date(2026, 9, 3, 12))
 
         const labels = renderedMonthLabels()
 
         expect(labels[0].text).toBe(monthName(2026, 3))
         for (let i = 1; i < labels.length; i++) {
-            expect(labels[i].column - labels[i - 1].column).toBeGreaterThanOrEqual(3)
+            expect(labels[i].column - labels[i - 1].column).toBeGreaterThanOrEqual(2)
         }
         // The last week column starts Mon Sep 28, so no column belongs to October yet.
-        expect(labels.map((l) => l.text)).toEqual(APR_TO_OCT_2026.slice(0, -1))
+        expect(labels.map((l) => l.text)).toEqual(APR_TO_SEP_2026)
     })
 
     it('test_mid_month_start_labels_every_month_once', () => {
         // 6 months back is Wed 2026-04-15; Monday alignment stays in April.
-        vi.useFakeTimers()
         vi.setSystemTime(new Date(2026, 9, 15, 12))
 
         const labels = renderedMonthLabels()
 
         expect(labels.map((l) => l.text)).toEqual(APR_TO_OCT_2026)
         expect(labels[0].column).toBe(1)
+    })
+
+    it('test_late_month_start_keeps_two_column_first_month', () => {
+        // 6 months back is Sat Apr 25 → grid starts Mon Apr 20; Apr covers
+        // columns 1–2, May starts column 3.
+        vi.setSystemTime(new Date(2026, 9, 25, 12))
+
+        const labels = renderedMonthLabels()
+
+        expect(labels[0].text).toBe(monthName(2026, 3))
+        expect(labels[0].column).toBe(1)
+        expect(labels[1].text).toBe(monthName(2026, 4))
+        expect(labels[1].column).toBe(3)
+    })
+
+    it('test_month_labels_share_column_with_grid_above_cells', () => {
+        // Guards against the side-by-side layout regression: .month-labels and
+        // .grid must share a wrapper div that is not the .calendar-heatmap root.
+        const wrapper = mount(CalendarHeatmap, { props: { days: [] } })
+        const monthLabelsEl = wrapper.find('.month-labels').element
+        const gridEl = wrapper.find('.grid').element
+        const calendarHeatmapEl = wrapper.find('.calendar-heatmap').element
+
+        expect(monthLabelsEl.parentElement).toBe(gridEl.parentElement)
+        expect(monthLabelsEl.parentElement).not.toBe(calendarHeatmapEl)
+        expect(monthLabelsEl.nextElementSibling).toBe(gridEl)
     })
 })
