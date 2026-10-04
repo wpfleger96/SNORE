@@ -29,8 +29,11 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "argon2-cffi>=23.1.0",
     "itsdangerous>=2.2.0",
-    "authlib>=1.4.0",
-    "fastmcp>=3,<4",
+    # >=1.8.0: first release whose httpx_client uses httpx2; uv tool install ignores uv.lock.
+    "authlib>=1.8.0",
+    "fastmcp>=4,<5",
+    # Imported directly: fastmcp GoogleProvider client + Google JWKS fetch.
+    "httpx2>=2.13.1,<3",
     "matplotlib>=3.11",
     "pyotp>=2.9.0",
     "segno>=1.6.0",
