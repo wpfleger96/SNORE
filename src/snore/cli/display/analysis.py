@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from snore.analysis.modes.types import ModeResult
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import console, mark_field, mark_provenance
 from snore.constants import FLOW_LIMITATION_CLASSES
@@ -19,7 +20,6 @@ from snore.services.schemas import SessionStatistics
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
-    from snore.analysis.modes.types import ModeResult
     from snore.services.schemas import SessionDetail
 
 
@@ -64,7 +64,6 @@ def create_header_panel(
 def create_machine_events_table(
     machine_events: list[AnalysisEvent],
     machine_ahi: float,
-    machine_rdi: float,
     plain: bool = False,
 ) -> Table:
     from snore.constants import (
@@ -103,10 +102,6 @@ def create_machine_events_table(
         mark_field("AHI", AnalysisResult, "machine_ahi"),
         f"[{ahi_color}]{machine_ahi:.1f}[/{ahi_color}] events/hr",
     )
-    table.add_row(
-        mark_field("RDI", AnalysisResult, "machine_rdi"),
-        f"{machine_rdi:.1f} events/hr",
-    )
     table.add_section()
 
     if oa_count > 0:
@@ -141,14 +136,14 @@ def create_mode_comparison_table(
         table.add_column(mode_name, justify="right")
 
     ahi_values = [mode_results[mode].ahi for mode in mode_results]
-    ahi_row = ["AHI"]
+    ahi_row = [mark_field("AHI", ModeResult, "ahi")]
     for _mode_name, ahi in zip(mode_results.keys(), ahi_values, strict=False):
         color = _get_ahi_color(ahi)
         ahi_row.append(f"[{color}]{ahi:.1f}[/{color}]")
     table.add_row(*ahi_row)
 
     rdi_values = [f"{mode_results[mode].rdi:.1f}" for mode in mode_results]
-    table.add_row("RDI", *rdi_values)
+    table.add_row(mark_field("RDI", ModeResult, "rdi"), *rdi_values)
 
     total_events = [
         str(len(mode_results[mode].apneas) + len(mode_results[mode].hypopneas))
@@ -652,7 +647,7 @@ def display_analysis_result(
     machine_events = result.machine_events
     if machine_events:
         machine_table = create_machine_events_table(
-            machine_events, result.machine_ahi or 0.0, result.machine_rdi or 0.0, plain
+            machine_events, result.machine_ahi or 0.0, plain
         )
         con.print(machine_table)
         con.print()
