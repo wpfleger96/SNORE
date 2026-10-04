@@ -272,7 +272,7 @@ DetectionModeConfig(
    → Identifies individual breaths from flow signal
    ↓
 3. WaveformFeatureExtractor (per breath)
-   → Extracts shape features, spectral features, waveform features
+   → Extracts shape features (flatness, plateau, rise/fall) and peak features
    ↓
 4. FlowLimitationClassifier.analyze_session()
    → Classifies flow limitation severity

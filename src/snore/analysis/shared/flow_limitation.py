@@ -12,11 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from snore.analysis.shared.feature_extractors import (
-    PeakFeatures,
-    ShapeFeatures,
-    StatisticalFeatures,
-)
+from snore.analysis.shared.feature_extractors import PeakFeatures, ShapeFeatures
 from snore.analysis.shared.types import FlowPattern, SessionFlowAnalysis
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.constants import FlowLimitationConstants as FLC
@@ -44,14 +40,8 @@ class FlowLimitationClassifier:
         >>> print(f"Class {pattern.flow_class}: {pattern.class_name}")
     """
 
-    def __init__(self, confidence_threshold: float = FLC.CONFIDENCE_THRESHOLD):
-        """
-        Initialize the classifier.
-
-        Args:
-            confidence_threshold: Minimum confidence for reliable classification
-        """
-        self.confidence_threshold = confidence_threshold
+    def __init__(self) -> None:
+        """Initialize the classifier."""
         self.classes = FLOW_LIMITATION_CLASSES
         logger.info(
             f"FlowLimitationClassifier initialized with {len(self.classes)} classes"
@@ -62,7 +52,6 @@ class FlowLimitationClassifier:
         breath_number: int,
         shape_features: ShapeFeatures,
         peak_features: PeakFeatures,
-        statistical_features: StatisticalFeatures | None = None,
     ) -> FlowPattern:
         """
         Classify a single breath into one of 7 flow limitation classes.
@@ -71,7 +60,6 @@ class FlowLimitationClassifier:
             breath_number: Sequential breath number
             shape_features: Shape characteristics (flatness, plateau, etc.)
             peak_features: Peak analysis results
-            statistical_features: Optional statistical features
 
         Returns:
             FlowPattern with classification and confidence score

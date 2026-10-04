@@ -5,11 +5,7 @@ Provides assertion helpers and validation utilities for test assertions.
 """
 
 from snore.analysis.shared.breath_segmenter import BreathMetrics
-from snore.analysis.shared.feature_extractors import (
-    PeakFeatures,
-    ShapeFeatures,
-    StatisticalFeatures,
-)
+from snore.analysis.shared.feature_extractors import PeakFeatures, ShapeFeatures
 
 
 def assert_breath_valid(
@@ -73,7 +69,6 @@ def assert_breath_valid(
 def assert_features_in_range(
     shape: ShapeFeatures | None = None,
     peak: PeakFeatures | None = None,
-    statistical: StatisticalFeatures | None = None,
 ) -> None:
     """
     Assert that extracted features are within valid ranges.
@@ -81,7 +76,6 @@ def assert_features_in_range(
     Args:
         shape: Shape features to validate
         peak: Peak features to validate
-        statistical: Statistical features to validate
 
     Raises:
         AssertionError: If features are out of valid ranges
@@ -123,31 +117,3 @@ def assert_features_in_range(
             assert interval > 0, (
                 f"Inter-peak interval {i} = {interval} must be positive"
             )
-
-    if statistical is not None:
-        assert -100 <= statistical.mean <= 100, (
-            f"Mean {statistical.mean} outside reasonable flow range"
-        )
-        assert -100 <= statistical.median <= 100, (
-            f"Median {statistical.median} outside reasonable flow range"
-        )
-
-        assert statistical.std_dev >= 0, "Standard deviation must be non-negative"
-
-        assert statistical.percentile_25 <= statistical.percentile_50, (
-            "25th percentile should be <= median"
-        )
-        assert statistical.percentile_50 <= statistical.percentile_75, (
-            "Median should be <= 75th percentile"
-        )
-        assert statistical.percentile_75 <= statistical.percentile_95, (
-            "75th percentile should be <= 95th percentile"
-        )
-
-        assert statistical.coefficient_of_variation >= 0, (
-            "Coefficient of variation must be non-negative"
-        )
-
-        assert 0 <= statistical.zero_crossing_rate <= 1, (
-            f"Zero crossing rate {statistical.zero_crossing_rate} outside [0, 1]"
-        )
