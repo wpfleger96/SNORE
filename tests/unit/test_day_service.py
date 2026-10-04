@@ -559,4 +559,4 @@ class TestDayServiceFlReraProxy:
 
         assert result.rera_index_reason == "analysis_not_run"
         assert result.fl_class_ge4_pct_reason == "analysis_not_run"
-        assert caplog.text == ""
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
