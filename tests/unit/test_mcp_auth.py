@@ -534,3 +534,65 @@ class TestMakeAuthProvider:
         assert isinstance(provider, AuthProvider)
         # Pin that the configured base URL was wired into the provider.
         assert str(provider.base_url).rstrip("/") == "https://example.com"
+
+    # Token verification goes through the provider's private ``_token_validator``
+    # (fastmcp's GoogleTokenVerifier): the public ``verify_token`` only accepts
+    # FastMCP-issued JWTs backed by a stored upstream token from a full OAuth flow.
+
+    async def test_injected_client_transport_error_rejects_token(self) -> None:
+        import httpx2  # noqa: PLC0415
+
+        from snore.mcp.auth import make_auth_provider  # noqa: PLC0415
+
+        requested: list[str] = []
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            requested.append(str(request.url))
+            raise httpx2.ConnectError("unreachable", request=request)
+
+        provider = make_auth_provider(
+            base_url="https://example.com",
+            google_client_id="valid-client-id",
+            google_client_secret="valid-client-secret",
+            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        )
+
+        assert await provider._token_validator.verify_token("google-token") is None
+        assert requested, "the injected client was not used"
+
+    async def test_injected_client_valid_tokeninfo_returns_access_token(
+        self,
+    ) -> None:
+        import httpx2  # noqa: PLC0415
+
+        from snore.mcp.auth import make_auth_provider  # noqa: PLC0415
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            if request.url.path == "/tokeninfo":
+                return httpx2.Response(
+                    200,
+                    json={
+                        "aud": "valid-client-id",
+                        "sub": "google-sub-123",
+                        "scope": "openid https://www.googleapis.com/auth/userinfo.email",
+                        "expires_in": "3599",
+                        "email": "user@example.com",
+                    },
+                )
+            if request.url.path == "/oauth2/v2/userinfo":
+                return httpx2.Response(200, json={"name": "Test User"})
+            return httpx2.Response(404)
+
+        provider = make_auth_provider(
+            base_url="https://example.com",
+            google_client_id="valid-client-id",
+            google_client_secret="valid-client-secret",
+            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        )
+
+        token = await provider._token_validator.verify_token("google-token")
+
+        assert token is not None
+        assert token.subject == "google-sub-123"
+        assert token.claims["sub"] == "google-sub-123"
+        assert token.claims["name"] == "Test User"

@@ -64,7 +64,7 @@ async def fetch_google_id_token_claims(
                     and must not surface the message to the browser.
     """
     try:
-        import httpx
+        import httpx2
 
         from authlib.integrations.httpx_client import (  # type: ignore[import-untyped]
             AsyncOAuth2Client,
@@ -76,7 +76,7 @@ async def fetch_google_id_token_claims(
             now_ts = _time.monotonic()
             cached = _jwks_cache.get(GOOGLE_CERTS_URL)
             if force_refresh or cached is None or now_ts >= cached[1]:
-                async with httpx.AsyncClient(timeout=10.0) as http_client:
+                async with httpx2.AsyncClient(timeout=10.0) as http_client:
                     certs_resp = await http_client.get(GOOGLE_CERTS_URL)
                     certs_resp.raise_for_status()
                     new_jwks = JsonWebKey.import_key_set(certs_resp.json())
