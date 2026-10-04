@@ -8,12 +8,14 @@ import pytest
 
 from rich.console import Console, RenderableType
 
+from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.analysis.types import AnalysisResult
 from snore.cli.display import provenance_legend
 from snore.cli.display.analysis import (
     create_header_panel,
     create_machine_events_table,
+    create_mode_comparison_table,
     create_validation_table,
     format_event_list,
 )
@@ -110,16 +112,16 @@ class TestAnalysisResultFromStoredJson:
         ]
         result = AnalysisResult.from_stored_json(self._stored(events))
 
-        # 4 counting events (RERA "RE" excluded) over 8.0 h → 0.5; RDI == AHI.
+        # 4 counting events (RERA "RE" excluded) over 8.0 h → 0.5; RDI mirrors AHI.
         assert result.machine_ahi == pytest.approx(0.5)
-        assert result.machine_rdi == pytest.approx(0.5)
+        assert result.model_dump()["machine_rdi"] == pytest.approx(0.5)
 
     def test_stays_none_when_no_events(self):
         """Old payload with no machine events → machine_ahi/rdi remain None."""
         result = AnalysisResult.from_stored_json(self._stored([]))
 
         assert result.machine_ahi is None
-        assert result.machine_rdi is None
+        assert result.model_dump()["machine_rdi"] is None
 
     def test_does_not_overwrite_present_value(self):
         """Fresh payload already carrying machine_ahi is left untouched."""
@@ -139,7 +141,7 @@ class TestAnalysisResultFromStoredJson:
         result = AnalysisResult.from_stored_json(payload)
 
         assert result.machine_ahi == pytest.approx(42.0)
-        assert result.machine_rdi == pytest.approx(42.0)
+        assert result.model_dump()["machine_rdi"] == pytest.approx(42.0)
 
 
 class TestFormatEventList:
@@ -224,7 +226,7 @@ class TestAnalysisProvenanceLegend:
         legend_buf = StringIO()
         legend_console = Console(file=legend_buf, no_color=True, width=200)
         with patch("snore.cli.display.console", legend_console), provenance_legend():
-            machine = _render(create_machine_events_table([], 2.0, 2.0))
+            machine = _render(create_machine_events_table([], 2.0))
             validation = _render(
                 create_validation_table(
                     "aasm",
@@ -239,3 +241,9 @@ class TestAnalysisProvenanceLegend:
             f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
             f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
         )
+
+    def test_mode_comparison_marks_ahi_and_rdi_rows(self):
+        mode = ModeResult(mode_name="aasm", apneas=[], hypopneas=[], ahi=2.0, rdi=3.0)
+        output = _render(create_mode_comparison_table({"aasm": mode}))
+        assert "AHI*" in output
+        assert "RDI*" in output

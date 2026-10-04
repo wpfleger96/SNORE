@@ -12,8 +12,6 @@ from snore.analysis.shared.breath_segmenter import (
 from snore.analysis.shared.feature_extractors import (
     PeakFeatures,
     ShapeFeatures,
-    SpectralFeatures,
-    StatisticalFeatures,
     WaveformFeatureExtractor,
 )
 
@@ -23,6 +21,4 @@ __all__ = [
     "WaveformFeatureExtractor",
     "ShapeFeatures",
     "PeakFeatures",
-    "StatisticalFeatures",
-    "SpectralFeatures",
 ]

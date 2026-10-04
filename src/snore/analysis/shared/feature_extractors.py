@@ -1,10 +1,9 @@
 """
 Feature extraction algorithms for waveform analysis.
 
-This module provides comprehensive feature extraction from breath waveforms,
-including shape characteristics, peak analysis, statistical features, and
-optional spectral features. These features are used for flow limitation
-classification and respiratory pattern analysis.
+This module provides feature extraction from breath waveforms, including
+shape characteristics and peak analysis. These features are used for flow
+limitation classification and respiratory pattern analysis.
 """
 
 import logging
@@ -13,12 +12,7 @@ import numpy as np
 
 from scipy import signal, stats
 
-from snore.analysis.shared.types import (
-    PeakFeatures,
-    ShapeFeatures,
-    SpectralFeatures,
-    StatisticalFeatures,
-)
+from snore.analysis.shared.types import PeakFeatures, ShapeFeatures
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +20,6 @@ __all__ = [
     "WaveformFeatureExtractor",
     "ShapeFeatures",
     "PeakFeatures",
-    "StatisticalFeatures",
-    "SpectralFeatures",
     "compute_mid_insp_flattening",
     "largest_inspiratory_segment",
 ]
@@ -99,8 +91,8 @@ class WaveformFeatureExtractor:
     """
     Extracts comprehensive features from breath waveforms.
 
-    Provides methods to extract shape, peak, statistical, and spectral
-    features from individual breath segments. These features are used
+    Provides methods to extract shape and peak features from individual
+    breath segments. These features are used
     for flow limitation classification and pattern detection.
 
     Example:
@@ -125,42 +117,6 @@ class WaveformFeatureExtractor:
         """
         self.flatness_threshold = flatness_threshold
         self.peak_prominence_threshold = peak_prominence_threshold
-
-    def extract_all_features(
-        self,
-        waveform: np.ndarray,
-        sample_rate: float,
-        include_spectral: bool = False,
-    ) -> tuple[
-        ShapeFeatures, PeakFeatures, StatisticalFeatures, SpectralFeatures | None
-    ]:
-        """
-        Extract all features from a waveform.
-
-        Convenience method that extracts all feature types in one call.
-
-        Args:
-            waveform: 1D array of flow values (typically inspiration only)
-            sample_rate: Sample rate in Hz
-            include_spectral: Whether to compute spectral features
-
-        Returns:
-            Tuple of (shape, peak, statistical, spectral) features
-            spectral will be None if include_spectral=False
-
-        Example:
-            >>> shape, peak, stats, spectral = extractor.extract_all_features(
-            ...     flow, 25.0, include_spectral=True
-            ... )
-        """
-        shape = self.extract_shape_features(waveform, sample_rate)
-        peak = self.extract_peak_features(waveform, sample_rate)
-        statistical = self.extract_statistical_features(waveform)
-        spectral = None
-        if include_spectral:
-            spectral = self.extract_spectral_features(waveform, sample_rate)
-
-        return shape, peak, statistical, spectral
 
     def extract_shape_features(
         self, waveform: np.ndarray, sample_rate: float
@@ -399,110 +355,4 @@ class WaveformFeatureExtractor:
             peak_positions=peak_positions,
             peak_prominences=peak_prominences,
             inter_peak_intervals=inter_peak_intervals,
-        )
-
-    def extract_statistical_features(self, waveform: np.ndarray) -> StatisticalFeatures:
-        """
-        Extract statistical features from waveform.
-
-        Args:
-            waveform: 1D array of flow values
-
-        Returns:
-            StatisticalFeatures object with statistical metrics
-
-        Example:
-            >>> stats = extractor.extract_statistical_features(flow)
-            >>> print(f"Mean: {stats.mean:.2f}, StdDev: {stats.std_dev:.2f}")
-        """
-        if len(waveform) == 0:
-            return StatisticalFeatures(
-                mean=0,
-                median=0,
-                std_dev=0,
-                percentile_25=0,
-                percentile_50=0,
-                percentile_75=0,
-                percentile_95=0,
-                coefficient_of_variation=0,
-                zero_crossing_rate=0,
-            )
-
-        mean_val = np.mean(waveform)
-        median_val = np.median(waveform)
-        std_val = np.std(waveform)
-
-        p25, p50, p75, p95 = np.percentile(waveform, [25, 50, 75, 95])
-
-        if mean_val != 0:
-            cv = std_val / abs(mean_val)
-        else:
-            cv = 0.0
-
-        if len(waveform) > 1:
-            zero_crossings = np.sum(np.diff(np.sign(waveform)) != 0)
-            zcr = zero_crossings / (len(waveform) - 1)
-        else:
-            zcr = 0.0
-
-        return StatisticalFeatures(
-            mean=mean_val,
-            median=median_val,
-            std_dev=std_val,
-            percentile_25=p25,
-            percentile_50=p50,
-            percentile_75=p75,
-            percentile_95=p95,
-            coefficient_of_variation=cv,
-            zero_crossing_rate=zcr,
-        )
-
-    def extract_spectral_features(
-        self, waveform: np.ndarray, sample_rate: float
-    ) -> SpectralFeatures:
-        """
-        Extract spectral (frequency domain) features from waveform.
-
-        Uses FFT to analyze frequency content. Useful for detecting
-        periodic patterns like CSR or periodic breathing.
-
-        Args:
-            waveform: 1D array of flow values
-            sample_rate: Sample rate in Hz
-
-        Returns:
-            SpectralFeatures object with frequency analysis
-
-        Example:
-            >>> spectral = extractor.extract_spectral_features(flow, 25.0)
-            >>> print(f"Dominant frequency: {spectral.dominant_frequency:.3f} Hz")
-        """
-        if len(waveform) < 4:
-            return SpectralFeatures(
-                dominant_frequency=0.0,
-                spectral_entropy=0.0,
-                power_spectral_density=np.array([]),
-            )
-
-        frequencies, psd = signal.welch(
-            waveform, fs=sample_rate, nperseg=min(len(waveform), 256)
-        )
-
-        if len(frequencies) > 1:
-            dominant_idx = np.argmax(psd[1:]) + 1
-            dominant_frequency = frequencies[dominant_idx]
-        else:
-            dominant_frequency = 0.0
-
-        # Calculate spectral entropy
-        # Normalize PSD to probability distribution
-        psd_norm = psd / np.sum(psd)
-        # Remove zeros to avoid log(0)
-        psd_nonzero = psd_norm[psd_norm > 0]
-        spectral_entropy = -np.sum(psd_nonzero * np.log2(psd_nonzero))
-
-        return SpectralFeatures(
-            dominant_frequency=dominant_frequency,
-            spectral_entropy=spectral_entropy,
-            power_spectral_density=psd,
         )
