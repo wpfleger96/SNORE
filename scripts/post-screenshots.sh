@@ -71,7 +71,8 @@ done
 
 if [[ -n "$BODY_FILE" ]]; then
   COMMENT_BODY="$(cat "$BODY_FILE")"
-  UNREFERENCED=()
+  # IMAGE_NAMES follows the sorted PNG list, so unreferenced images land at the
+  # tail in name order; appended links hold no {{...}}, so later substitutions skip them.
   for i in "${!IMAGE_NAMES[@]}"; do
     NAME="${IMAGE_NAMES[$i]}"
     URL="${IMAGE_URLS[$i]}"
@@ -79,20 +80,13 @@ if [[ -n "$BODY_FILE" ]]; then
     if [[ "$COMMENT_BODY" == *"$PLACEHOLDER"* ]]; then
       COMMENT_BODY="${COMMENT_BODY//"$PLACEHOLDER"/![$NAME]($URL)}"
     else
-      UNREFERENCED+=("${NAME}"$'\t'"${URL}")
+      COMMENT_BODY+=$'\n\n'"![${NAME}](${URL})"
     fi
   done
-  if [[ ${#UNREFERENCED[@]} -gt 0 ]]; then
-    while IFS=$'\t' read -r NAME URL; do
-      COMMENT_BODY+=$'\n\n'"![${NAME}](${URL})"
-    done < <(printf '%s\n' "${UNREFERENCED[@]}" | sort)
-  fi
 else
   COMMENT_BODY="## Screenshots"$'\n\n'
-  for URL in "${IMAGE_URLS[@]}"; do
-    FILENAME=$(basename "$URL")
-    NAME="${FILENAME%.png}"
-    COMMENT_BODY+="![${NAME}](${URL})"$'\n\n'
+  for i in "${!IMAGE_NAMES[@]}"; do
+    COMMENT_BODY+="![${IMAGE_NAMES[$i]}](${IMAGE_URLS[$i]})"$'\n\n'
   done
 fi
 
