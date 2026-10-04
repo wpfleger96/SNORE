@@ -48,7 +48,7 @@
                             <SelectValue placeholder="All Devices" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="">All Devices</SelectItem>
+                            <SelectItem value="all">All Devices</SelectItem>
                             <SelectItem
                                 v-for="d in devices ?? []"
                                 :key="`${d.manufacturer} ${d.model}`"
@@ -142,7 +142,8 @@ const { load: loadDates, isDateDisabled, minValue, maxValue } = useAvailableDate
 const format = ref('csv')
 const fromDate = ref('')
 const toDate = ref('')
-const device = ref('')
+// reka-ui reserves '' for clearing the selection, so "All Devices" is 'all'.
+const device = ref('all')
 const includeWaveforms = ref(false)
 const trimStr = ref(false)
 const exporting = ref(false)
@@ -171,7 +172,7 @@ async function handleExport(): Promise<void> {
         const baseParams: ExportParams = {}
         if (fromDate.value) baseParams.from_date = fromDate.value
         if (toDate.value) baseParams.to_date = toDate.value
-        if (device.value) baseParams.device = device.value
+        if (device.value !== 'all') baseParams.device = device.value
 
         let blob: Blob
         let filename: string
