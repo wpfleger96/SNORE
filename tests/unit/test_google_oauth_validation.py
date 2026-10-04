@@ -1,7 +1,7 @@
 """Unit tests for google_oauth.fetch_google_id_token_claims OIDC validation.
 
 Uses a locally-generated RSA-2048 key pair — no internet access needed.
-Both the JWKS fetch (httpx) and the OAuth token exchange (AsyncOAuth2Client)
+Both the JWKS fetch (httpx2) and the OAuth token exchange (AsyncOAuth2Client)
 are patched; only the JWT decode/validate logic runs against real authlib code.
 """
 
@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import time
 
-# Pre-import so the class definition runs before any httpx.AsyncClient patch.
-# Without this, patching httpx.AsyncClient first causes a metaclass conflict
-# when authlib tries to define AsyncOAuth2Client(…, httpx.AsyncClient) during
+# Pre-import so the class definition runs before any httpx2.AsyncClient patch.
+# Without this, patching httpx2.AsyncClient first causes a metaclass conflict
+# when authlib tries to define AsyncOAuth2Client(…, httpx2.AsyncClient) during
 # the lazy import triggered by mock.patch.
 import authlib.integrations.httpx_client  # type: ignore[import-untyped]  # noqa: F401
 import pytest
@@ -95,7 +95,7 @@ def _make_token(
 
 
 def _make_http_mock(jwks_dict: dict) -> object:
-    """Return an async context manager mock for httpx.AsyncClient that serves jwks_dict."""
+    """Return an async context manager mock for httpx2.AsyncClient that serves jwks_dict."""
     from unittest.mock import AsyncMock, MagicMock
 
     fake_resp = MagicMock()
@@ -149,7 +149,7 @@ async def _call(
     oauth_mock = _make_oauth_mock(id_token)
 
     with (
-        mock.patch("httpx.AsyncClient", http_mock),
+        mock.patch("httpx2.AsyncClient", http_mock),
         mock.patch(
             "authlib.integrations.httpx_client.AsyncOAuth2Client",
             oauth_mock,
@@ -311,7 +311,7 @@ class TestAlgorithmRestriction:
         oauth_mock = _make_oauth_mock(fake_token)
 
         with (
-            mock.patch("httpx.AsyncClient", http_mock),
+            mock.patch("httpx2.AsyncClient", http_mock),
             mock.patch(
                 "authlib.integrations.httpx_client.AsyncOAuth2Client", oauth_mock
             ),
@@ -359,7 +359,7 @@ class TestPS256AlgorithmRejection:
         oauth_mock = _make_oauth_mock(ps256_token)
 
         with (
-            mock.patch("httpx.AsyncClient", http_mock),
+            mock.patch("httpx2.AsyncClient", http_mock),
             mock.patch(
                 "authlib.integrations.httpx_client.AsyncOAuth2Client", oauth_mock
             ),
@@ -420,7 +420,7 @@ class TestJwksRetry:
         oauth_mock = _make_oauth_mock(id_token)
 
         with (
-            mock.patch("httpx.AsyncClient", http_mock),
+            mock.patch("httpx2.AsyncClient", http_mock),
             mock.patch(
                 "authlib.integrations.httpx_client.AsyncOAuth2Client", oauth_mock
             ),
@@ -435,14 +435,14 @@ class TestJwksRetry:
             )
 
         assert claims["sub"] == "test-sub-123"
-        # httpx.AsyncClient must not have been called (JWKS came from cache).
+        # httpx2.AsyncClient must not have been called (JWKS came from cache).
         http_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_unknown_kid_triggers_one_refetch_then_succeeds(
         self, rsa_private_key, jwks_dict
     ):
-        """Unknown kid → fetch once → success; httpx called exactly once."""
+        """Unknown kid → fetch once → success; httpx2 called exactly once."""
         import time as _time
         import unittest.mock as mock
 
@@ -480,12 +480,12 @@ class TestJwksRetry:
 
         # Token signed with rsa_private_key and kid="current-kid" (not in stale JWKS).
         id_token = _make_token(rsa_private_key, header_override={"kid": "current-kid"})
-        # httpx mock returns the CORRECT JWKS on the forced refresh.
+        # httpx2 mock returns the CORRECT JWKS on the forced refresh.
         http_mock = _make_http_mock(current_jwks_dict)
         oauth_mock = _make_oauth_mock(id_token)
 
         with (
-            mock.patch("httpx.AsyncClient", http_mock),
+            mock.patch("httpx2.AsyncClient", http_mock),
             mock.patch(
                 "authlib.integrations.httpx_client.AsyncOAuth2Client", oauth_mock
             ),
@@ -500,7 +500,7 @@ class TestJwksRetry:
             )
 
         assert claims["sub"] == "test-sub-123"
-        # httpx.AsyncClient must have been called exactly once (for the forced refresh).
+        # httpx2.AsyncClient must have been called exactly once (for the forced refresh).
         assert http_mock.call_count == 1
 
     @pytest.mark.asyncio
@@ -530,7 +530,7 @@ class TestJwksRetry:
         oauth_mock = _make_oauth_mock(id_token)
 
         with (
-            mock.patch("httpx.AsyncClient", http_mock),
+            mock.patch("httpx2.AsyncClient", http_mock),
             mock.patch(
                 "authlib.integrations.httpx_client.AsyncOAuth2Client", oauth_mock
             ),
@@ -545,5 +545,5 @@ class TestJwksRetry:
                 expected_nonce=_NONCE,
             )
 
-        # httpx.AsyncClient must NOT have been called (bad signature ≠ unknown kid).
+        # httpx2.AsyncClient must NOT have been called (bad signature ≠ unknown kid).
         http_mock.assert_not_called()

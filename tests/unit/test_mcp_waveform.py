@@ -666,7 +666,7 @@ class TestGetWaveformClient:
         async with mcp_client_factory(mock_db_session) as client:
             tools = await client.list_tools()
 
-        schema = next(t for t in tools if t.name == tool).inputSchema
+        schema = next(t for t in tools if t.name == tool).input_schema
         int_branch = next(
             b
             for b in schema["properties"]["max_points"]["anyOf"]
@@ -712,7 +712,7 @@ class TestRenderWindowClient:
 
         content = result.content[0]
         assert content.type == "image"
-        assert content.mimeType == "image/png"
+        assert content.mime_type == "image/png"
         img_bytes = base64.b64decode(content.data)
         assert img_bytes[:8] == b"\x89PNG\r\n\x1a\n"
 

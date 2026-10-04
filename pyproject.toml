@@ -29,10 +29,11 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "argon2-cffi>=23.1.0",
     "itsdangerous>=2.2.0",
-    "authlib>=1.4.0",
+    # >=1.8.0: first release whose httpx_client uses httpx2; uv tool install ignores uv.lock.
+    "authlib>=1.8.0",
     "fastmcp>=4,<5",
-    "httpx>=0.28.1",
-    "httpx2>=2.13.1",
+    # Imported directly: fastmcp GoogleProvider client + Google JWKS fetch.
+    "httpx2>=2.13.1,<3",
     "matplotlib>=3.11",
     "pyotp>=2.9.0",
     "segno>=1.6.0",
@@ -101,6 +102,7 @@ disable_error_code = ["var-annotated", "type-arg", "union-attr", "assignment", "
 [dependency-groups]
 dev = [
     "anyio>=4.14.2",
+    "httpx>=0.28.1",
     "mne>=1.6.0",
     "mypy>=2.0.0",
     "pytest>=9.0.3",

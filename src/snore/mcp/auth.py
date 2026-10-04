@@ -59,7 +59,9 @@ def make_auth_provider(
         google_client_secret: OAuth client secret (GOOGLE_CLIENT_SECRET).
         http_client:         httpx2.AsyncClient for connection pooling to Google
                              endpoints.  When None (default), a long-lived client
-                             is created inside this function and passed to
+                             with a 10s timeout (fastmcp's own default, which it
+                             does not apply to an injected client) is created
+                             inside this function and passed to
                              GoogleProvider.  The client is intentionally
                              process-lifetime: the MCP server process owns it and
                              connections close with the process.  Pass an explicit
@@ -107,7 +109,9 @@ def make_auth_provider(
             f"SNORE_PUBLIC_BASE_URL must be a valid HTTPS (or loopback HTTP) URL: {exc}"
         ) from exc
 
-    _client = http_client if http_client is not None else httpx2.AsyncClient()
+    _client = (
+        http_client if http_client is not None else httpx2.AsyncClient(timeout=10.0)
+    )
     return GoogleProvider(
         client_id=google_client_id,
         client_secret=google_client_secret,
