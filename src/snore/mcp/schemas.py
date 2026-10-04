@@ -290,22 +290,22 @@ class NightlyRow(BaseModel):
     # Breath-level FL/RERA fields (from BreathService.get_nightly_summary)
     fl_median: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Median per-breath flow-limitation score.",
+        "Median per-breath mid_insp_flattening (lower = more flow-limited).",
         default=None,
     )
     fl_median_reason: str | None = None
-    fl_p95: float | None = provenance_field(
+    fl_p5: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "95th-percentile per-breath flow-limitation score.",
+        "5th-percentile per-breath mid_insp_flattening (lower = more flow-limited).",
         default=None,
     )
-    fl_p95_reason: str | None = None
-    fl_max: float | None = provenance_field(
+    fl_p5_reason: str | None = None
+    fl_min: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Maximum per-breath flow-limitation score.",
+        "Minimum per-breath mid_insp_flattening (lower = more flow-limited).",
         default=None,
     )
-    fl_max_reason: str | None = None
+    fl_min_reason: str | None = None
     fl_class_ge4_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of leak-valid, rule-matched classified breaths with "

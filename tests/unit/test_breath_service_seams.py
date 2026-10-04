@@ -25,6 +25,7 @@ Coverage:
 
 from __future__ import annotations
 
+import statistics
 import uuid
 
 from datetime import UTC, date, datetime, timedelta
@@ -144,14 +145,18 @@ async def _store_analysis_with_breaths(
     flow_class: int | None = 1,
     is_recovery: bool = False,
     flow_specs: list[tuple[int | None, float | None]] | None = None,
+    flattening: list[float] | None = None,
 ) -> models.AnalysisResult:
     """Write an AnalysisResult + Breath rows via AnalysisService.store_result.
 
     ``flow_specs`` overrides the uniform (flow_class, flow_confidence) with an
     explicit per-breath list, used to exercise the rule-matched / fallback split.
+    ``flattening`` overrides the uniform ``mid_insp_flattening`` per breath.
     """
     if flow_specs is not None:
         n_breaths = len(flow_specs)
+    if flattening is not None:
+        n_breaths = len(flattening)
     result_dto = AnalysisResultDTO(
         session_id=session.id,
         session_duration_hours=session.duration_seconds / 3600.0
@@ -187,7 +192,7 @@ async def _store_analysis_with_breaths(
             tidal_volume_ml=400.0,
             respiratory_rate_rolling=15.0,
             flatness_index=0.2,
-            mid_insp_flattening=0.35,
+            mid_insp_flattening=flattening[i] if flattening is not None else 0.35,
             flow_class=flow_specs[i][0] if flow_specs is not None else flow_class,
             flow_confidence=flow_specs[i][1] if flow_specs is not None else 0.9,
             is_recovery_breath=is_recovery if i == n_breaths - 1 else False,
@@ -5197,8 +5202,8 @@ class TestNightlySummaryReraRdi:
             assert bulk.rera_reason == per_night.rera_reason
             assert bulk.rera_proxy_version == per_night.rera_proxy_version == "v2"
             assert bulk.fl_median == per_night.fl_median
-            assert bulk.fl_95th == per_night.fl_95th
-            assert bulk.fl_max == per_night.fl_max
+            assert bulk.fl_5th == per_night.fl_5th
+            assert bulk.fl_min == per_night.fl_min
             assert bulk.fl_class_ge4_pct == per_night.fl_class_ge4_pct
             assert bulk.fl_class_ge4_pct_reason == per_night.fl_class_ge4_pct_reason
             assert bulk.ti_median_s == per_night.ti_median_s
@@ -5849,3 +5854,31 @@ class TestNightlyRangeSummaryChunked:
             assert night.analyzed_session_count == 1
             assert night.fl_median == pytest.approx(0.35)
             assert night.total_therapy_hours == pytest.approx(5.5)
+
+
+@pytest.mark.unit
+class TestNightlyFlatteningLowTail:
+    async def test_flattening_distribution_reports_low_tail(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """fl_5th/fl_min come from the low (most flow-limited) end of the
+        inverse-severity ``mid_insp_flattening`` distribution."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2025, 9, 10)
+        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
+        # 20 values: clear lowest 0.2, next 0.25, rest 0.6..0.95; unsorted on purpose.
+        flattening = [0.95, 0.2, 0.25] + [round(0.6 + 0.02 * i, 2) for i in range(17)]
+        await _store_analysis_with_breaths(
+            async_db_session, session, profile_id, flattening=flattening
+        )
+
+        night = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_nightly_summary(therapy_date, device_id=dev.id)
+
+        assert night.fl_min == pytest.approx(0.2)
+        # Nearest rank: sorted[int(20 * 0.05)] = sorted[1].
+        assert night.fl_5th == pytest.approx(0.25)
+        assert night.fl_median == pytest.approx(statistics.median(flattening))
+        assert night.fl_5th < night.fl_median

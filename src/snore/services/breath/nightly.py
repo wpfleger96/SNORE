@@ -67,6 +67,24 @@ def _sorted_distribution(
     )
 
 
+def _low_tail_distribution(
+    vals: list[float], reason: NullReason
+) -> tuple[float | None, float | None, float | None, NullReason | None]:
+    """``(median, p5, min, None)`` over ``vals``, or all-``None`` + reason when empty.
+
+    For inverse-severity metrics where lower = worse.
+    """
+    if not vals:
+        return None, None, None, reason
+    sorted_v = sorted(vals)
+    return (
+        float(statistics.median(sorted_v)),
+        percentile_nearest_rank(sorted_v, 0.05),
+        sorted_v[0],
+        None,
+    )
+
+
 def _periodic_breathing_pct(
     ok_day_sessions: Sequence[models.Session],
     pb_seconds_by_session: Mapping[int, float | None],
@@ -259,8 +277,8 @@ class NightlyMixin(_BreathServiceCore):
                 rera_reason=NullReason.NOT_AVAILABLE,
                 primary_mode=None,
                 fl_median=None,
-                fl_95th=None,
-                fl_max=None,
+                fl_5th=None,
+                fl_min=None,
                 fl_reason=NullReason.NOT_AVAILABLE,
                 fl_class_ge4_pct=None,
                 fl_class_ge4_pct_reason=NullReason.NOT_AVAILABLE,
@@ -337,7 +355,7 @@ class NightlyMixin(_BreathServiceCore):
             # contiguity.
             rera_count += _count_fl_run_reras(breath_rows)
 
-        fl_median, fl_95th, fl_max, fl_reason = _sorted_distribution(
+        fl_median, fl_5th, fl_min, fl_reason = _low_tail_distribution(
             fl_vals, NullReason.NOT_AVAILABLE
         )
 
@@ -423,8 +441,8 @@ class NightlyMixin(_BreathServiceCore):
             ),
             primary_mode=uniform_primary_mode,
             fl_median=fl_median,
-            fl_95th=fl_95th,
-            fl_max=fl_max,
+            fl_5th=fl_5th,
+            fl_min=fl_min,
             fl_reason=fl_reason,
             fl_class_ge4_pct=fl_class_ge4_pct,
             fl_class_ge4_pct_reason=fl_class_ge4_pct_reason,

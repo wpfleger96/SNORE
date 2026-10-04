@@ -221,10 +221,10 @@ async def get_nightly_summary(
         rdi_reason: str | None = None
         fl_median: float | None = None
         fl_median_reason: str | None = None
-        fl_p95: float | None = None
-        fl_p95_reason: str | None = None
-        fl_max: float | None = None
-        fl_max_reason: str | None = None
+        fl_p5: float | None = None
+        fl_p5_reason: str | None = None
+        fl_min: float | None = None
+        fl_min_reason: str | None = None
         fl_class_ge4_pct: float | None = None
         fl_class_ge4_pct_reason: str | None = None
         rera_proxy_count: int | None = None
@@ -269,12 +269,12 @@ async def get_nightly_summary(
             if bs_night.fl_reason is not None:
                 reason_str = str_or_none(bs_night.fl_reason)
                 fl_median_reason = reason_str
-                fl_p95_reason = reason_str
-                fl_max_reason = reason_str
-            if bs_night.fl_95th is not None:
-                fl_p95 = round(bs_night.fl_95th, 4)
-            if bs_night.fl_max is not None:
-                fl_max = round(bs_night.fl_max, 4)
+                fl_p5_reason = reason_str
+                fl_min_reason = reason_str
+            if bs_night.fl_5th is not None:
+                fl_p5 = round(bs_night.fl_5th, 4)
+            if bs_night.fl_min is not None:
+                fl_min = round(bs_night.fl_min, 4)
 
             if bs_night.fl_class_ge4_pct is not None:
                 fl_class_ge4_pct = round(bs_night.fl_class_ge4_pct, 1)
@@ -316,8 +316,8 @@ async def get_nightly_summary(
             rera_index_reason = "analysis_not_run"
             rdi_reason = "analysis_not_run"
             fl_median_reason = "analysis_not_run"
-            fl_p95_reason = "analysis_not_run"
-            fl_max_reason = "analysis_not_run"
+            fl_p5_reason = "analysis_not_run"
+            fl_min_reason = "analysis_not_run"
             fl_class_ge4_pct_reason = "analysis_not_run"
             rera_proxy_reason = "analysis_not_run"
             ti_median_reason = "analysis_not_run"
@@ -342,10 +342,10 @@ async def get_nightly_summary(
                 rdi_reason=rdi_reason,
                 fl_median=fl_median,
                 fl_median_reason=fl_median_reason,
-                fl_p95=fl_p95,
-                fl_p95_reason=fl_p95_reason,
-                fl_max=fl_max,
-                fl_max_reason=fl_max_reason,
+                fl_p5=fl_p5,
+                fl_p5_reason=fl_p5_reason,
+                fl_min=fl_min,
+                fl_min_reason=fl_min_reason,
                 fl_class_ge4_pct=fl_class_ge4_pct,
                 fl_class_ge4_pct_reason=fl_class_ge4_pct_reason,
                 rera_proxy_count=rera_proxy_count,
