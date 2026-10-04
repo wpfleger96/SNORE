@@ -31,6 +31,8 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "authlib>=1.4.0",
     "fastmcp>=4,<5",
+    "httpx>=0.28.1",
+    "httpx2>=2.13.1",
     "matplotlib>=3.11",
     "pyotp>=2.9.0",
     "segno>=1.6.0",
@@ -99,7 +101,6 @@ disable_error_code = ["var-annotated", "type-arg", "union-attr", "assignment", "
 [dependency-groups]
 dev = [
     "anyio>=4.14.2",
-    "httpx>=0.28.1",
     "mne>=1.6.0",
     "mypy>=2.0.0",
     "pytest>=9.0.3",

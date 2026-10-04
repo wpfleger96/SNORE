@@ -2586,6 +2586,8 @@ dependencies = [
     { name = "click" },
     { name = "fastapi" },
     { name = "fastmcp" },
+    { name = "httpx" },
+    { name = "httpx2" },
     { name = "itsdangerous" },
     { name = "jinja2" },
     { name = "matplotlib" },
@@ -2612,7 +2614,6 @@ edf-discontinuous = [
 [package.dev-dependencies]
 dev = [
     { name = "anyio" },
-    { name = "httpx" },
     { name = "mne" },
     { name = "mypy" },
     { name = "pytest" },
@@ -2633,6 +2634,8 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.3" },
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "fastmcp", specifier = ">=4,<5" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "matplotlib", specifier = ">=3.11" },
@@ -2656,7 +2659,6 @@ provides-extras = ["edf-discontinuous"]
 [package.metadata.requires-dev]
 dev = [
     { name = "anyio", specifier = ">=4.14.2" },
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "mne", specifier = ">=1.6.0" },
     { name = "mypy", specifier = ">=2.0.0" },
     { name = "pytest", specifier = ">=9.0.3" },
