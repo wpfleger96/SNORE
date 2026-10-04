@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { DayListItem } from '@/types'
 import CalendarHeatmap from '@/components/CalendarHeatmap.vue'
@@ -41,5 +41,51 @@ describe('CalendarHeatmap cell titles', () => {
         const days = [day(withAhi, { ahi: 1.5, index_source: null }), day(noAhi)]
         expect(titleFor(days, withAhi)).toBe(`${withAhi}: AHI 1.5`)
         expect(titleFor(days, noAhi)).toBe(`${noAhi}: AHI N/A`)
+    })
+})
+
+function monthName(year: number, monthIndex: number): string {
+    return new Date(year, monthIndex, 15).toLocaleString(undefined, { month: 'short' })
+}
+
+function renderedMonthLabels(): { text: string; column: number }[] {
+    const wrapper = mount(CalendarHeatmap, { props: { days: [] } })
+    return wrapper.findAll('.month-labels span').map((s) => ({
+        text: s.text(),
+        column: Number(/grid-column:\s*(\d+)/.exec(s.attributes('style') ?? '')?.[1]),
+    }))
+}
+
+const APR_TO_OCT_2026 = [3, 4, 5, 6, 7, 8, 9].map((m) => monthName(2026, m))
+
+describe('CalendarHeatmap month labels', () => {
+    afterEach(() => {
+        vi.useRealTimers()
+    })
+
+    it('test_monday_spillover_into_prior_month_drops_spillover_label', () => {
+        // 6 months back is Fri 2026-04-03; Monday alignment starts the grid on Mar 30.
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 9, 3, 12))
+
+        const labels = renderedMonthLabels()
+
+        expect(labels[0].text).toBe(monthName(2026, 3))
+        for (let i = 1; i < labels.length; i++) {
+            expect(labels[i].column - labels[i - 1].column).toBeGreaterThanOrEqual(3)
+        }
+        // The last week column starts Mon Sep 28, so no column belongs to October yet.
+        expect(labels.map((l) => l.text)).toEqual(APR_TO_OCT_2026.slice(0, -1))
+    })
+
+    it('test_mid_month_start_labels_every_month_once', () => {
+        // 6 months back is Wed 2026-04-15; Monday alignment stays in April.
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 9, 15, 12))
+
+        const labels = renderedMonthLabels()
+
+        expect(labels.map((l) => l.text)).toEqual(APR_TO_OCT_2026)
+        expect(labels[0].column).toBe(1)
     })
 })
