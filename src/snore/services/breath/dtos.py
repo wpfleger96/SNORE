@@ -602,9 +602,11 @@ class NightlyAnalysisSummary(BaseModel):
     # RERA scan actually ran (rera_count is non-null); None otherwise.
     rera_proxy_version: str | None = None
     primary_mode: str | None
+    # Over raw mid_insp_flattening (inverse severity): lower = more flow-limited,
+    # so the reported tail is the low one (5th percentile and minimum).
     fl_median: float | None
-    fl_95th: float | None
-    fl_max: float | None
+    fl_5th: float | None
+    fl_min: float | None
     fl_reason: NullReason | None
     # Percent of leak-valid, rule-matched classified breaths with flow_class >= 4.
     # Both numerator and denominator count only breaths whose flow_confidence

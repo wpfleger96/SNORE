@@ -10,7 +10,7 @@ Both SNORE comparators use **direct severity** (higher = more flow-limited):
 
 - ``flattening_severity``:  ``1 − mid_insp_flattening``
   ``mid_insp_flattening`` is an *inverse* severity measure (~1.0 = unimpeded,
-  <0.7 = flow-limited).  The nightly ``fl_median``/``fl_95th`` aggregates in
+  <0.7 = flow-limited).  The nightly ``fl_median``/``fl_5th`` aggregates in
   BreathService store raw ``mid_insp_flattening`` values (inverse severity).
   ``snore_fl_95th`` here reports the 95th percentile of ``flattening_severity``
   (i.e., direct severity, = 1 − raw mid_insp_flattening) for comparability

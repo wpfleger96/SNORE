@@ -52,10 +52,13 @@ def _stat_pair(
     return (value, None) if value is not None else (None, reason)
 
 
-def _sorted_distribution(
+def _high_tail_distribution(
     vals: list[float], reason: NullReason
 ) -> tuple[float | None, float | None, float | None, NullReason | None]:
-    """``(median, p95, max, None)`` over ``vals``, or all-``None`` + reason when empty."""
+    """``(median, p95, max, None)`` over ``vals``, or all-``None`` + reason when empty.
+
+    For direct-severity metrics where higher = worse.
+    """
     if not vals:
         return None, None, None, reason
     sorted_v = sorted(vals)
@@ -63,6 +66,24 @@ def _sorted_distribution(
         float(statistics.median(sorted_v)),
         percentile_nearest_rank(sorted_v, 0.95),
         sorted_v[-1],
+        None,
+    )
+
+
+def _low_tail_distribution(
+    vals: list[float], reason: NullReason
+) -> tuple[float | None, float | None, float | None, NullReason | None]:
+    """``(median, p5, min, None)`` over ``vals``, or all-``None`` + reason when empty.
+
+    For inverse-severity metrics where lower = worse.
+    """
+    if not vals:
+        return None, None, None, reason
+    sorted_v = sorted(vals)
+    return (
+        float(statistics.median(sorted_v)),
+        percentile_nearest_rank(sorted_v, 0.05),
+        sorted_v[0],
         None,
     )
 
@@ -235,10 +256,10 @@ class NightlyMixin(_BreathServiceCore):
             )
 
         device_flg_median, device_flg_95th, device_flg_max, device_flg_reason = (
-            _sorted_distribution(fl_all, NullReason.CHANNEL_ABSENT)
+            _high_tail_distribution(fl_all, NullReason.CHANNEL_ABSENT)
         )
 
-        snore_median, snore_95th, _, snore_reason = _sorted_distribution(
+        snore_median, snore_95th, _, snore_reason = _high_tail_distribution(
             snore_all, NullReason.CHANNEL_ABSENT
         )
         snore_pct_time = (
@@ -259,8 +280,8 @@ class NightlyMixin(_BreathServiceCore):
                 rera_reason=NullReason.NOT_AVAILABLE,
                 primary_mode=None,
                 fl_median=None,
-                fl_95th=None,
-                fl_max=None,
+                fl_5th=None,
+                fl_min=None,
                 fl_reason=NullReason.NOT_AVAILABLE,
                 fl_class_ge4_pct=None,
                 fl_class_ge4_pct_reason=NullReason.NOT_AVAILABLE,
@@ -337,7 +358,7 @@ class NightlyMixin(_BreathServiceCore):
             # contiguity.
             rera_count += _count_fl_run_reras(breath_rows)
 
-        fl_median, fl_95th, fl_max, fl_reason = _sorted_distribution(
+        fl_median, fl_5th, fl_min, fl_reason = _low_tail_distribution(
             fl_vals, NullReason.NOT_AVAILABLE
         )
 
@@ -423,8 +444,8 @@ class NightlyMixin(_BreathServiceCore):
             ),
             primary_mode=uniform_primary_mode,
             fl_median=fl_median,
-            fl_95th=fl_95th,
-            fl_max=fl_max,
+            fl_5th=fl_5th,
+            fl_min=fl_min,
             fl_reason=fl_reason,
             fl_class_ge4_pct=fl_class_ge4_pct,
             fl_class_ge4_pct_reason=fl_class_ge4_pct_reason,

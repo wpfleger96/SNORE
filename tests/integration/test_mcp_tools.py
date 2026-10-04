@@ -15,7 +15,7 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Event
+from snore.database.models import Breath, Event
 from snore.provenance import IndexSource
 from tests.integration.conftest import (
     _make_analysis_result,
@@ -448,6 +448,53 @@ class TestGetNightlySummary:
         assert night.leak_above_24_pct_reason == "not_available"
         assert night.periodic_breathing_pct is None
         assert night.pb_reason == "not_available"
+
+    async def test_flattening_low_tail_from_leak_valid_breaths(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """fl_median/fl_5th/fl_min summarise the low (most flow-limited) tail
+        of leak-valid per-breath mid_insp_flattening; leak-invalid breaths
+        are excluded even when they are the lowest values."""
+        from snore.mcp.tools.summary import get_nightly_summary
+
+        target_date = date(2024, 8, 4)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        ar = await _make_analysis_result(async_db_session, sess)
+        # 40 distinct leak-valid values 0.20..0.98, unsorted on purpose.
+        flattening = [round(0.2 + 0.02 * ((i * 7) % 40), 2) for i in range(40)]
+        specs = [(f, True) for f in flattening] + [(0.01, False)]
+        for n, (value, leak_valid) in enumerate(specs):
+            async_db_session.add(
+                Breath(
+                    analysis_result_id=ar.id,
+                    session_id=sess.id,
+                    breath_number=n,
+                    start_offset_s=float(n) * 5.0,
+                    end_offset_s=float(n) * 5.0 + 4.0,
+                    mid_insp_flattening=value,
+                    leak_valid=leak_valid,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await get_nightly_summary(
+            async_db_session,
+            target_date,
+            target_date,
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        ordered = sorted(flattening)
+        assert night.fl_min == pytest.approx(0.2)
+        # Nearest rank: sorted[int(40 * 0.05)] = sorted[2].
+        assert night.fl_5th == pytest.approx(ordered[2])
+        assert night.fl_5th == pytest.approx(0.24)
+        assert night.fl_median == pytest.approx((ordered[19] + ordered[20]) / 2)
+        assert night.fl_median_reason is None
+        assert night.fl_5th_reason is None
+        assert night.fl_min_reason is None
 
     async def test_periodic_breathing_pct_from_persisted_episodes(
         self, async_db_session: AsyncSession, async_test_profile: Any
