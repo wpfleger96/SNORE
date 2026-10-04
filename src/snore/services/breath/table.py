@@ -44,13 +44,15 @@ class TableMixin(_BreathServiceCore):
         # Resolve session_id
         if query.session_id is not None:
             session_id = query.session_id
-            # Verify ownership: session must belong to this profile and date
+            # Verify ownership: session must belong to this profile and date,
+            # and be enabled (disabled sessions are excluded like _resolve_range)
             session_stmt = (
                 select(models.Session)
                 .join(models.Device, models.Session.device_id == models.Device.id)
                 .where(
                     models.Session.id == session_id,
                     models.Device.profile_id == self._profile_id,
+                    models.Session.enabled.is_(True),
                     models.Session.day_id.in_(
                         select(models.Day.id).where(
                             models.Day.date == query.therapy_date
@@ -61,8 +63,8 @@ class TableMixin(_BreathServiceCore):
             session_row = (await self._db.execute(session_stmt)).scalars().first()
             if session_row is None:
                 raise ValueError(
-                    f"session_id {session_id} does not belong to date {query.therapy_date}"
-                    " or is not owned by this profile"
+                    f"session_id {session_id} does not belong to date {query.therapy_date},"
+                    " is disabled, or is not owned by this profile"
                 )
             device_id = session_row.device_id
             # If caller also specified device_id, verify the session belongs to it

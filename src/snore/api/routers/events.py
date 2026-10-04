@@ -45,7 +45,7 @@ async def match_events(
     facade: AnalysisFacadeDep,
     mode: str = Query(default="aasm"),
 ) -> EventMatchResult:
-    machine_times = await svc.get_machine_event_times(session_id)
+    machine_times = await svc.get_machine_apnea_hypopnea_times(session_id)
 
     analysis = await facade.get_analysis_result(session_id)
     if not analysis:

@@ -227,8 +227,10 @@ class NightlyRow(BaseModel):
     # (ModeResult.rdi); the two disagree by construction.
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "RERA-proxy events per therapy hour from flow-limitation runs "
-        "(FL-run proxy, not device-reported).",
+        "RERA-proxy events per mask-on hour of analyzed sessions, from "
+        "flow-limitation runs (FL-run proxy, not device-reported); "
+        "rera_index_reason='duration_zero' when those sessions have zero "
+        "mask-on hours.",
         default=None,
     )
     rera_index_reason: str | None = None
@@ -745,7 +747,8 @@ class WindowRow(BaseModel):
     reason_summary: str
     worst_mid_insp_flattening: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Highest mid-inspiratory flattening that ranked the window.",
+        "Lowest (most flow-limited) mid-inspiratory flattening in the window's "
+        "anchor breath or FL run.",
         default=None,
     )
     fl_run_length: int | None = provenance_field(

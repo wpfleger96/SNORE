@@ -103,12 +103,16 @@ class CapabilitiesMixin(_BreathServiceCore):
                 serial_number=None,
             )
 
-        # Date range of actual data — only days with at least one Session count
-        # as "imported nights".  DayManager.recalculate_day prunes orphaned Day
-        # rows, so this predicate is defence-in-depth against hand-edited data.
+        # Date range of actual data — only days with at least one enabled
+        # Session count as "imported nights": the other tools skip disabled
+        # sessions, so capabilities must too.  DayManager.recalculate_day also
+        # prunes orphaned Day rows; this predicate guards hand-edited data.
         day_stmt = select(models.Day).where(
             models.Day.device_id == device_id,
-            exists().where(models.Session.day_id == models.Day.id),
+            exists().where(
+                models.Session.day_id == models.Day.id,
+                models.Session.enabled.is_(True),
+            ),
         )
         if date_start is not None:
             day_stmt = day_stmt.where(models.Day.date >= date_start)
@@ -138,7 +142,10 @@ class CapabilitiesMixin(_BreathServiceCore):
                     await self._db.execute(
                         select(sqlfunc.count())
                         .select_from(models.Session)
-                        .where(models.Session.day_id.in_(chunk))
+                        .where(
+                            models.Session.day_id.in_(chunk),
+                            models.Session.enabled.is_(True),
+                        )
                     )
                 ).scalar()
                 session_count += chunk_count or 0
@@ -147,7 +154,7 @@ class CapabilitiesMixin(_BreathServiceCore):
         sess_stmt = (
             select(models.Session.id)
             .join(models.Day, models.Session.day_id == models.Day.id)
-            .where(models.Day.device_id == device_id)
+            .where(models.Day.device_id == device_id, models.Session.enabled.is_(True))
         )
         if date_start is not None:
             sess_stmt = sess_stmt.where(models.Day.date >= date_start)

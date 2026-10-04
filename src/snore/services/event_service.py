@@ -2,20 +2,39 @@
 
 from __future__ import annotations
 
-import bisect
-
 from datetime import datetime
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import select
 
-from snore.analysis.modes.postprocess import EVENT_MATCH_TOLERANCE_SECONDS
+from snore.analysis.modes.postprocess import (
+    EVENT_MATCH_TOLERANCE_SECONDS,
+    match_events_by_start_time,
+)
+from snore.constants import APNEA_TYPE_MAP, EVENT_TYPE_HYPOPNEA
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, session_device_join
 from snore.services.schemas import EventMatchResult
 
-__all__ = ["EVENT_MATCH_TOLERANCE_SECONDS", "EventService"]
+__all__ = [
+    "EVENT_MATCH_TOLERANCE_SECONDS",
+    "MATCHABLE_MACHINE_EVENT_TYPES",
+    "EventService",
+]
+
+# Device event types matched against programmatic apneas + hypopneas: the apnea
+# types batch validation converts (``APNEA_TYPE_MAP``, incl. ResMed's CAA) plus H.
+MATCHABLE_MACHINE_EVENT_TYPES: frozenset[str] = frozenset(
+    {*APNEA_TYPE_MAP, EVENT_TYPE_HYPOPNEA}
+)
+
+
+class _TimedEvent(BaseModel, frozen=True):
+    """A bare timestamp shaped for ``match_events_by_start_time``."""
+
+    start_time: float
 
 
 class EventService(ProfileScopedService):
@@ -55,31 +74,25 @@ class EventService(ProfileScopedService):
         events = list((await self.db_session.execute(stmt)).scalars().all())
         return events, session.start_time
 
-    async def get_machine_event_times(self, session_id: int) -> list[float]:
-        """Return sorted machine event timestamps for a session."""
+    async def get_machine_apnea_hypopnea_times(self, session_id: int) -> list[float]:
+        """Return sorted start timestamps of a session's device apneas + hypopneas.
+
+        Only the types the programmatic side detects (``MATCHABLE_MACHINE_EVENT_TYPES``,
+        the apnea/hypopnea set batch validation compares): other device flags (FL,
+        VS, LL, PB, RE, ...) would otherwise take one-to-one matches.
+        """
 
         await self._get_session_owned(session_id)
 
-        events = (
-            (
-                await self.db_session.execute(
-                    select(models.Event).where(models.Event.session_id == session_id)
+        start_times = (
+            await self.db_session.execute(
+                select(models.Event.start_time).where(
+                    models.Event.session_id == session_id,
+                    models.Event.event_type.in_(MATCHABLE_MACHINE_EVENT_TYPES),
                 )
             )
-            .scalars()
-            .all()
-        )
-        return sorted(e.start_time.timestamp() for e in events)
-
-    @staticmethod
-    def _within_tolerance(
-        t: float, sorted_other: list[float], tolerance: float
-    ) -> bool:
-        idx = bisect.bisect_left(sorted_other, t - tolerance)
-        return any(
-            abs(t - sorted_other[j]) <= tolerance
-            for j in range(idx, min(idx + 10, len(sorted_other)))
-        )
+        ).scalars()
+        return sorted(t.timestamp() for t in start_times)
 
     @staticmethod
     def match_events(
@@ -87,48 +100,20 @@ class EventService(ProfileScopedService):
         programmatic_times: list[float],
         tolerance: float = EVENT_MATCH_TOLERANCE_SECONDS,
     ) -> EventMatchResult:
-        """Match machine vs programmatic events using bisect-based tolerance matching."""
-        sorted_machine = sorted(machine_times)
-        sorted_prog = sorted(programmatic_times)
+        """Match machine vs programmatic events one-to-one by start time.
 
-        false_negatives = sum(
-            not EventService._within_tolerance(t, sorted_prog, tolerance)
-            for t in sorted_machine
+        Uses the batch-validation matcher, but on one pooled apnea + hypopnea
+        list rather than batch validation's separate per-type matches.
+        """
+        result = match_events_by_start_time(
+            [_TimedEvent(start_time=t) for t in sorted(programmatic_times)],
+            [_TimedEvent(start_time=t) for t in sorted(machine_times)],
+            tolerance,
         )
-        false_positives = sum(
-            not EventService._within_tolerance(t, sorted_machine, tolerance)
-            for t in sorted_prog
-        )
-
-        machine_count = len(sorted_machine)
-        prog_count = len(sorted_prog)
-        matched_count = machine_count - false_negatives
-
         return EventMatchResult(
-            machine_count=machine_count,
-            programmatic_count=prog_count,
-            matched=matched_count,
-            false_positives=false_positives,
-            false_negatives=false_negatives,
+            machine_count=len(machine_times),
+            programmatic_count=len(programmatic_times),
+            matched=len(result.matched),
+            false_positives=len(result.false_positives),
+            false_negatives=len(result.false_negatives),
         )
-
-    @staticmethod
-    def classify_matches(
-        machine_times: list[float],
-        programmatic_times: list[float],
-        tolerance: float = EVENT_MATCH_TOLERANCE_SECONDS,
-    ) -> tuple[list[bool], list[bool]]:
-        """Classify each event as matched or unmatched."""
-        sorted_machine = sorted(machine_times)
-        sorted_prog = sorted(programmatic_times)
-
-        machine_matched = [
-            EventService._within_tolerance(t, sorted_prog, tolerance)
-            for t in sorted_machine
-        ]
-        prog_matched = [
-            EventService._within_tolerance(t, sorted_machine, tolerance)
-            for t in sorted_prog
-        ]
-
-        return machine_matched, prog_matched

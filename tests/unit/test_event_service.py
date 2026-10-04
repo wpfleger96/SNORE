@@ -1,5 +1,8 @@
 """Unit tests for EventService."""
 
+from datetime import datetime, timedelta
+
+from snore.database.models import Event
 from snore.services.event_service import EVENT_MATCH_TOLERANCE_SECONDS, EventService
 
 
@@ -90,9 +93,9 @@ class TestEventService:
 
         assert result.machine_count == 4
         assert result.programmatic_count == 3
-        assert result.matched == 3
+        assert result.matched == 2
         assert result.false_positives == 1
-        assert result.false_negatives == 1
+        assert result.false_negatives == 2
 
     def test_custom_tolerance(self):
         """Custom tolerance parameter allows tighter matching."""
@@ -150,8 +153,8 @@ class TestEventService:
         assert result.false_positives == 0
         assert result.false_negatives == 0
 
-    def test_many_to_one_matching(self):
-        """Multiple programmatic events can match to a single machine event."""
+    def test_extra_programmatic_events_are_false_positives(self):
+        """A machine event pairs with one programmatic event; the rest are FPs."""
         machine_times = [10.0]
         programmatic_times = [9.0, 10.0, 11.0]
 
@@ -160,52 +163,48 @@ class TestEventService:
         assert result.machine_count == 1
         assert result.programmatic_count == 3
         assert result.matched == 1
-        assert result.false_positives == 0
+        assert result.false_positives == 2
         assert result.false_negatives == 0
 
+    def test_one_detection_cannot_match_two_machine_events(self):
+        """Two machine events near one detection leave one false negative."""
+        result = EventService.match_events([100.0, 105.0], [102.0])
 
-class TestEventServiceClassifyMatches:
-    """Tests for EventService.classify_matches()."""
+        assert result.matched == 1
+        assert result.false_positives == 0
+        assert result.false_negatives == 1
 
-    def test_empty_events(self):
-        """Empty event lists return empty boolean lists."""
-        machine_matched, prog_matched = EventService.classify_matches([], [])
 
-        assert machine_matched == []
-        assert prog_matched == []
+class TestMachineApneaHypopneaTimes:
+    """Tests for EventService.get_machine_apnea_hypopnea_times()."""
 
-    def test_mixed_match(self):
-        """Mixed scenario with some matched and some unmatched events."""
-        machine_times = [10.0, 20.0, 30.0, 40.0]
-        programmatic_times = [11.0, 35.0, 50.0]
+    async def test_non_apnea_device_flags_do_not_steal_matches(
+        self,
+        async_db_session,
+        async_test_profile,
+        async_test_device,
+        async_test_session_factory,
+    ):
+        """VS/FL flags just before an OA are dropped, so the OA still matches."""
+        start = datetime(2025, 1, 10, 22, 0)
+        session = await async_test_session_factory(async_test_device.id, start)
+        oa_time = start + timedelta(hours=1)
+        for event_type, offset_s in (("VS", -2.0), ("FL", -1.0), ("OA", 0.0)):
+            async_db_session.add(
+                Event(
+                    session_id=session.id,
+                    event_type=event_type,
+                    start_time=oa_time + timedelta(seconds=offset_s),
+                    duration_seconds=10.0,
+                )
+            )
+        await async_db_session.flush()
+        svc = EventService(async_db_session, profile_id=async_test_profile.id)
 
-        machine_matched, prog_matched = EventService.classify_matches(
-            machine_times, programmatic_times
-        )
+        machine_times = await svc.get_machine_apnea_hypopnea_times(session.id)
+        result = EventService.match_events(machine_times, [oa_time.timestamp()])
 
-        assert machine_matched == [True, False, True, True]
-        assert prog_matched == [True, True, False]
-
-    def test_many_to_one_matching(self):
-        """Multiple programmatic events can all match to a single machine event."""
-        machine_times = [10.0]
-        programmatic_times = [9.0, 10.0, 11.0]
-
-        machine_matched, prog_matched = EventService.classify_matches(
-            machine_times, programmatic_times
-        )
-
-        assert machine_matched == [True]
-        assert prog_matched == [True, True, True]
-
-    def test_returns_correct_list_lengths(self):
-        """Return lists match input list lengths."""
-        machine_times = [10.0, 20.0, 30.0, 40.0, 50.0]
-        programmatic_times = [15.0, 25.0]
-
-        machine_matched, prog_matched = EventService.classify_matches(
-            machine_times, programmatic_times
-        )
-
-        assert len(machine_matched) == len(machine_times)
-        assert len(prog_matched) == len(programmatic_times)
+        assert machine_times == [oa_time.timestamp()]
+        assert result.matched == 1
+        assert result.false_negatives == 0
+        assert result.false_positives == 0
