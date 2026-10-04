@@ -7,4 +7,10 @@ import { installMatchMediaMock } from './matchMedia'
 // The typeof guard keeps this setup file inert in node-environment suites.
 if (typeof window !== 'undefined') {
     installMatchMediaMock()
+
+    // reka-ui's Select calls these Element APIs, which jsdom does not implement.
+    // Define no-ops only where missing so a future jsdom implementation wins.
+    Element.prototype.scrollIntoView ??= () => {}
+    Element.prototype.hasPointerCapture ??= () => false
+    Element.prototype.releasePointerCapture ??= () => {}
 }

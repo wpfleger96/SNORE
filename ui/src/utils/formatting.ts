@@ -1,10 +1,10 @@
 /** Shared date/time, quantity, and classification formatting helpers. */
 
+import { ahiTier } from '@/utils/ahiScale'
+
 export function ahiClass(ahi: number | null | undefined): string {
-    if (ahi == null) return ''
-    if (ahi < 5) return 'ahi-good'
-    if (ahi < 15) return 'ahi-mild'
-    return 'ahi-severe'
+    const tier = ahiTier(ahi)
+    return tier ? `ahi-${tier}` : ''
 }
 
 /** e.g. parseLocalDate("2026-05-28") — treats date-only strings as local midnight to avoid UTC shift. */
