@@ -187,6 +187,25 @@ class TestPeriodicBreathingDetection:
         assert periodic is not None
         assert 0.0 <= periodic.regularity_score <= 1.0
 
+    def test_detect_periodic_breathing_noise_weakens_periodicity_lowers_confidence(
+        self, detector
+    ):
+        timestamps = np.arange(0, 600, 1.0)
+        respiratory_rate = np.ones(len(timestamps)) * 15.0
+        clean = 500.0 * (1 + 0.3 * np.sin(2 * np.pi * timestamps / 60.0))
+        noisy = clean + np.random.default_rng(0).normal(0, 80.0, len(timestamps))
+
+        clean_pb = detector.detect_periodic_breathing(
+            timestamps, clean, respiratory_rate
+        )
+        noisy_pb = detector.detect_periodic_breathing(
+            timestamps, noisy, respiratory_rate
+        )
+
+        assert clean_pb is not None
+        assert noisy_pb is not None
+        assert clean_pb.confidence > noisy_pb.confidence
+
     def _generate_periodic_pattern(
         self, timestamps: np.ndarray, cycle_length: float, amplitude: float
     ) -> np.ndarray:
@@ -240,10 +259,10 @@ class TestSignalProcessing:
         signal_data = np.sin(2 * np.pi * timestamps / 60.0)
 
         autocorr = detector._calculate_autocorrelation(signal_data)
-        dominant_cycle = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
+        cycle_and_peak = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
 
-        assert dominant_cycle is not None
-        cycle_length, peak_height = dominant_cycle
+        assert cycle_and_peak is not None
+        cycle_length, peak_height = cycle_and_peak
         assert 50 <= cycle_length <= 70
         assert peak_height >= detector.autocorr_threshold
 
@@ -252,18 +271,36 @@ class TestSignalProcessing:
         signal_data = np.random.normal(0, 1, len(timestamps))
 
         autocorr = detector._calculate_autocorrelation(signal_data)
-        dominant_cycle = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
+        cycle_and_peak = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
 
-        assert dominant_cycle is None
+        assert cycle_and_peak is None
 
     def test_find_dominant_cycle_short_signal(self, detector):
         timestamps = np.arange(0, 10, 1.0)
         signal_data = np.sin(2 * np.pi * timestamps / 60.0)
 
         autocorr = detector._calculate_autocorrelation(signal_data)
-        dominant_cycle = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
+        cycle_and_peak = detector._find_dominant_cycle(autocorr, timestamps, 45.0, 90.0)
 
-        assert dominant_cycle is None
+        assert cycle_and_peak is None
+
+    @pytest.mark.parametrize("cycle_length", [32.0, 100.0])
+    def test_find_dominant_cycle_perfect_sine_grades_near_one_at_any_lag(
+        self, detector, cycle_length
+    ):
+        # Short and long cycles in the same search range grade alike: the
+        # biased autocorrelation would otherwise cap a 100 s cycle near 0.53.
+        timestamps = np.arange(0, 600, 1.0)
+        signal_data = np.sin(2 * np.pi * timestamps / cycle_length)
+
+        autocorr = detector._calculate_autocorrelation(signal_data)
+        cycle_and_peak = detector._find_dominant_cycle(
+            autocorr, timestamps, 30.0, 120.0
+        )
+
+        assert cycle_and_peak is not None
+        _, peak_height = cycle_and_peak
+        assert detector._periodicity_strength(peak_height) >= 0.95
 
     def test_extract_envelope_upper(self, detector):
         signal_data = np.sin(np.arange(0, 100, 0.1)) * np.linspace(1, 2, 1000)
@@ -364,48 +401,47 @@ class TestHelperMethods:
 
         assert not has_apneas
 
-    def test_calculate_csr_confidence_high(self, detector):
+    def test_calculate_csr_confidence_all_bonuses_is_exactly_one(self, detector):
         confidence = detector._calculate_csr_confidence(
-            periodicity=1.0, amplitude_var=0.5, waxing_waning=0.8, cycle_count=6
+            periodicity_strength=1.0,
+            amplitude_var=0.5,
+            waxing_waning=0.8,
+            cycle_count=6,
         )
 
-        assert 0.8 <= confidence <= 1.0
+        assert confidence == 1.0
 
-    def test_calculate_csr_confidence_low(self, detector):
+    def test_calculate_csr_confidence_no_periodicity_falls_below_old_floor(
+        self, detector
+    ):
+        # Regression for #354: an always-earned cycle-range bonus pinned every
+        # CSR detection at >= 0.7.
         confidence = detector._calculate_csr_confidence(
-            periodicity=0.0, amplitude_var=0.1, waxing_waning=0.4, cycle_count=2
+            periodicity_strength=0.0,
+            amplitude_var=0.1,
+            waxing_waning=0.4,
+            cycle_count=2,
         )
 
-        assert confidence == 0.5
+        assert 0.5 <= confidence < 0.7
 
-    def test_calculate_periodic_confidence_high(self, detector):
+    def test_calculate_periodic_confidence_all_bonuses_is_exactly_one(self, detector):
         confidence = detector._calculate_periodic_confidence(
-            periodicity=1.0, regularity=0.85, has_apneas=True
+            periodicity_strength=1.0, regularity=0.85, has_apneas=True
         )
 
-        assert 0.8 <= confidence <= 1.0
+        assert confidence == 1.0
 
-    def test_calculate_periodic_confidence_low(self, detector):
+    def test_calculate_periodic_confidence_no_periodicity_falls_below_old_floor(
+        self, detector
+    ):
+        # Regression for #354: an always-earned cycle-range bonus pinned every
+        # periodic breathing detection at >= 0.6.
         confidence = detector._calculate_periodic_confidence(
-            periodicity=0.0, regularity=0.45, has_apneas=False
+            periodicity_strength=0.0, regularity=0.45, has_apneas=False
         )
 
-        assert confidence == 0.5
-
-    def test_weakest_detectable_peak_scores_below_old_floor(self, detector):
-        # Regression for #354: the always-earned cycle-range bonus pinned CSR
-        # confidence at >= 0.7 and PB at >= 0.6 for every detection.
-        periodicity = detector._periodicity_strength(detector.autocorr_threshold)
-
-        csr_confidence = detector._calculate_csr_confidence(
-            periodicity, amplitude_var=0.1, waxing_waning=0.5, cycle_count=3
-        )
-        pb_confidence = detector._calculate_periodic_confidence(
-            periodicity, regularity=0.5, has_apneas=False
-        )
-
-        assert csr_confidence < 0.7
-        assert pb_confidence < 0.6
+        assert 0.5 <= confidence < 0.6
 
     def test_confidence_strictly_increases_with_periodicity(self, detector):
         periodicities = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -432,6 +468,9 @@ class TestHelperMethods:
 
     def test_periodicity_strength_below_threshold_clips_to_zero(self, detector):
         assert detector._periodicity_strength(detector.autocorr_threshold - 0.2) == 0.0
+
+    def test_periodicity_strength_nan_peak_is_zero(self, detector):
+        assert detector._periodicity_strength(float("nan")) == 0.0
 
     def test_calculate_csr_time_percentage(self, detector):
         signal_data = np.concatenate([np.ones(50) * 500, np.ones(50) * 100])

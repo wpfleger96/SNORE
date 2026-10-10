@@ -1,9 +1,9 @@
 """
 Complex breathing pattern detection algorithm.
 
-This module implements detection of complex breathing patterns including
-Cheyne-Stokes Respiration (CSR) and periodic breathing using time-series
-analysis and clustering techniques.
+This module detects Cheyne-Stokes Respiration (CSR) and periodic breathing
+from tidal-volume time series using autocorrelation, envelope analysis, and
+spectral analysis.
 """
 
 import logging
@@ -36,15 +36,16 @@ class ComplexPatternDetector:
     """
     Detects complex breathing patterns from time-series data.
 
-    Uses autocorrelation, spectral analysis, and clustering to identify
-    Cheyne-Stokes Respiration, periodic breathing, and positional events.
+    Finds the dominant cycle by autocorrelation, then confirms Cheyne-Stokes
+    Respiration with envelope (waxing/waning) analysis and periodic breathing
+    with spectral regularity.
 
     Example:
         >>> detector = ComplexPatternDetector()
         >>> csr = detector.detect_csr(
         ...     timestamps, tidal_volumes, window_minutes=10
         ... )
-        >>> if csr.confidence > 0.7:
+        >>> if csr is not None and csr.confidence > 0.7:
         ...     print(f"CSR detected: {csr.cycle_length:.1f}s cycles")
     """
 
@@ -93,14 +94,14 @@ class ComplexPatternDetector:
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        dominant_cycle = self._find_dominant_cycle(
+        cycle_and_peak = self._find_dominant_cycle(
             autocorr, timestamps, min_cycle, max_cycle
         )
 
-        if dominant_cycle is None:
+        if cycle_and_peak is None:
             return None
 
-        cycle_length, peak_height = dominant_cycle
+        cycle_length, peak_height = cycle_and_peak
 
         amplitude_var = np.std(smoothed_tv) / np.mean(smoothed_tv)
 
@@ -162,14 +163,14 @@ class ComplexPatternDetector:
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        dominant_cycle = self._find_dominant_cycle(
+        cycle_and_peak = self._find_dominant_cycle(
             autocorr, timestamps, min_cycle, max_cycle
         )
 
-        if dominant_cycle is None:
+        if cycle_and_peak is None:
             return None
 
-        cycle_length, peak_height = dominant_cycle
+        cycle_length, peak_height = cycle_and_peak
 
         regularity = self._calculate_regularity_score(smoothed_tv, cycle_length)
 
@@ -221,7 +222,11 @@ class ComplexPatternDetector:
         min_period: float,
         max_period: float,
     ) -> tuple[float, float] | None:
-        """Find dominant cycle as (cycle_length, peak_height) from autocorrelation."""
+        """Find the dominant cycle from autocorrelation.
+
+        Returns (cycle_length, peak_height), where peak_height is bias-corrected
+        for grading; detection gates on the raw autocorrelation.
+        """
         if len(autocorr) < 10 or len(timestamps) < 2:
             return None
 
@@ -242,13 +247,18 @@ class ComplexPatternDetector:
         if len(peaks) == 0:
             return None
 
-        highest = np.argmax(properties["peak_heights"])
-        highest_peak_idx = peaks[highest]
-
-        cycle_lag = min_lag + highest_peak_idx
+        heights = properties["peak_heights"]
+        best = int(np.argmax(heights))
+        cycle_lag = min_lag + peaks[best]
         cycle_length = cycle_lag * sample_interval
 
-        return float(cycle_length), float(properties["peak_heights"][highest])
+        # The biased autocorrelation (normalized only by lag 0) sums N - lag
+        # products, so even a perfect cycle peaks near (N - lag) / N and long
+        # cycles would grade weaker than short ones. Rescale to undo that.
+        n = len(autocorr)
+        unbiased_peak_height = heights[best] * n / (n - cycle_lag)
+
+        return float(cycle_length), float(unbiased_peak_height)
 
     def _periodicity_strength(self, peak_height: float) -> float:
         """Grade how far the autocorrelation peak clears the detection gate.
@@ -261,6 +271,9 @@ class ComplexPatternDetector:
         strength = (peak_height - self.autocorr_threshold) / (
             1 - self.autocorr_threshold
         )
+
+        if not np.isfinite(strength):
+            return 0.0
 
         return float(np.clip(strength, 0.0, 1.0))
 
@@ -353,41 +366,42 @@ class ComplexPatternDetector:
 
     def _calculate_csr_confidence(
         self,
-        periodicity: float,
+        periodicity_strength: float,
         amplitude_var: float,
         waxing_waning: float,
         cycle_count: int,
     ) -> float:
-        """Calculate confidence score for CSR detection."""
-        confidence = 0.5 + 0.2 * periodicity
+        """Score a CSR detection in [0.5, 1.0].
 
-        if amplitude_var > PDC.CSR_MIN_AMPLITUDE_VAR:
-            confidence += 0.1
+        0.5 base for passing every detection gate, up to +0.2 graded from
+        ``periodicity_strength``, and +0.1 each for strong amplitude variation,
+        strong waxing/waning, and enough cycles.
+        """
+        earned = sum(
+            (
+                amplitude_var > PDC.CSR_MIN_AMPLITUDE_VAR,
+                waxing_waning > PDC.CSR_MIN_WAXING_WANING,
+                cycle_count >= PDC.CSR_MIN_CYCLES_HIGH_CONF,
+            )
+        )
 
-        if waxing_waning > PDC.CSR_MIN_WAXING_WANING:
-            confidence += 0.1
-
-        if cycle_count >= PDC.CSR_MIN_CYCLES_HIGH_CONF:
-            confidence += 0.1
-
-        return min(1.0, confidence)
+        return min(1.0, 0.5 + 0.2 * periodicity_strength + 0.1 * earned)
 
     def _calculate_periodic_confidence(
         self,
-        periodicity: float,
+        periodicity_strength: float,
         regularity: float,
         has_apneas: bool,
     ) -> float:
-        """Calculate confidence score for periodic breathing detection."""
-        confidence = 0.5 + 0.1 * periodicity
+        """Score a periodic breathing detection in [0.5, 1.0].
 
-        if regularity > PDC.PERIODIC_HIGH_REGULARITY:
-            confidence += 0.2
+        0.5 base for passing every detection gate, up to +0.1 graded from
+        ``periodicity_strength``, and +0.2 each for high spectral regularity
+        and the presence of apneas.
+        """
+        earned = sum((regularity > PDC.PERIODIC_HIGH_REGULARITY, has_apneas))
 
-        if has_apneas:
-            confidence += 0.2
-
-        return min(1.0, confidence)
+        return min(1.0, 0.5 + 0.1 * periodicity_strength + 0.2 * earned)
 
     def detect_csr_episodes(
         self,

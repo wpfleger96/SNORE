@@ -27,7 +27,8 @@ from snore.analysis.modes.config import AVAILABLE_CONFIGS
 # ---------------------------------------------------------------------------
 # Versioned algorithm constants
 # Each constant is stamped into AlgorithmIdentity; bumping any value makes
-# prior rows stale and prevents cross-version aggregation.
+# prior rows stale. Keys in CROSS_VERSION_REFUSAL_KEYS also refuse (or warn on)
+# cross-version comparison.
 # ---------------------------------------------------------------------------
 
 SEGMENTER_ALGO_VERSION: str = "v1"
@@ -46,9 +47,10 @@ RECOVERY_DETECTOR_ALGO_VERSION: str = "v2"
 # ramp_active / mask_off breath validity flags: settings-driven timed ramp
 # heuristic + persisted mask-on-segment gap overlap.
 VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
-# v2 grades CSR/PB confidence on autocorrelation periodicity strength; v1 was the
-# unversioned scoring whose cycle-range bonus was always earned.
-PATTERN_DETECTOR_ALGO_VERSION: str = "v2"
+# CSR/PB confidence graded on bias-corrected autocorrelation periodicity
+# strength; before this key existed, scoring had an always-earned cycle-range
+# bonus.
+PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
 
 # Flow-derived MV fallback used by get_events' per-event ventilatory context
 # when a session has no device MV channel. NOT part of AlgorithmIdentity — it
@@ -121,9 +123,9 @@ class AlgorithmIdentity(BaseModel):
 # none feeds a cross-epoch distribution (trigger/cycle labels are per-breath
 # experimental metadata; ramp_active/mask_off validity flags gate rows, not
 # aggregates; CSR/PB confidence is a per-session score), so a version bump in
-# any of them need not refuse comparisons.  A solo bump of an
-# excluded key MUST be accompanied by a format_version bump so old rows still
-# go stale — format_version is in this set and catches it.
+# any of them need not refuse comparisons. A solo bump of an excluded key MUST
+# be accompanied by a format_version bump so old rows still go stale —
+# format_version is in this set and catches it.
 CROSS_VERSION_REFUSAL_KEYS: frozenset[str] = frozenset(
     {
         "format_version",

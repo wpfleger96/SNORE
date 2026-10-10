@@ -326,7 +326,7 @@ class TestGetAnalysisStatus:
         stored = _make_algo_versions().model_dump()
         stored["identity"]["format_version"] = format_version
         for key in missing_keys:
-            del stored["identity"][key]  # legacy rows never stored it
+            stored["identity"].pop(key, None)  # legacy rows never stored it
         ar = models.AnalysisResult(
             session_id=session.id,
             timestamp_start=session.start_time,
