@@ -93,12 +93,14 @@ class ComplexPatternDetector:
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        cycle_length = self._find_dominant_cycle(
+        dominant_cycle = self._find_dominant_cycle(
             autocorr, timestamps, min_cycle, max_cycle
         )
 
-        if cycle_length is None:
+        if dominant_cycle is None:
             return None
+
+        cycle_length, peak_height = dominant_cycle
 
         amplitude_var = np.std(smoothed_tv) / np.mean(smoothed_tv)
 
@@ -115,7 +117,10 @@ class ComplexPatternDetector:
         csr_time = self._calculate_csr_time_percentage(smoothed_tv, cycle_length)
 
         confidence = self._calculate_csr_confidence(
-            cycle_length, amplitude_var, waxing_waning_score, cycle_count
+            self._periodicity_strength(peak_height),
+            amplitude_var,
+            waxing_waning_score,
+            cycle_count,
         )
 
         return CSRDetection(
@@ -157,12 +162,14 @@ class ComplexPatternDetector:
 
         autocorr = self._calculate_autocorrelation(smoothed_tv)
 
-        cycle_length = self._find_dominant_cycle(
+        dominant_cycle = self._find_dominant_cycle(
             autocorr, timestamps, min_cycle, max_cycle
         )
 
-        if cycle_length is None:
+        if dominant_cycle is None:
             return None
+
+        cycle_length, peak_height = dominant_cycle
 
         regularity = self._calculate_regularity_score(smoothed_tv, cycle_length)
 
@@ -172,7 +179,7 @@ class ComplexPatternDetector:
         has_apneas = self._check_for_apneas(tidal_volumes)
 
         confidence = self._calculate_periodic_confidence(
-            cycle_length, regularity, has_apneas
+            self._periodicity_strength(peak_height), regularity, has_apneas
         )
 
         return PeriodicBreathingDetection(
@@ -213,8 +220,8 @@ class ComplexPatternDetector:
         timestamps: np.ndarray,
         min_period: float,
         max_period: float,
-    ) -> float | None:
-        """Find dominant cycle length from autocorrelation."""
+    ) -> tuple[float, float] | None:
+        """Find dominant cycle as (cycle_length, peak_height) from autocorrelation."""
         if len(autocorr) < 10 or len(timestamps) < 2:
             return None
 
@@ -235,12 +242,27 @@ class ComplexPatternDetector:
         if len(peaks) == 0:
             return None
 
-        highest_peak_idx = peaks[np.argmax(properties["peak_heights"])]
+        highest = np.argmax(properties["peak_heights"])
+        highest_peak_idx = peaks[highest]
 
         cycle_lag = min_lag + highest_peak_idx
         cycle_length = cycle_lag * sample_interval
 
-        return float(cycle_length)
+        return float(cycle_length), float(properties["peak_heights"][highest])
+
+    def _periodicity_strength(self, peak_height: float) -> float:
+        """Grade how far the autocorrelation peak clears the detection gate.
+
+        0 at ``autocorr_threshold`` (barely periodic), 1 at a perfect peak.
+        """
+        if self.autocorr_threshold >= 1:
+            return 1.0
+
+        strength = (peak_height - self.autocorr_threshold) / (
+            1 - self.autocorr_threshold
+        )
+
+        return float(np.clip(strength, 0.0, 1.0))
 
     def _detect_waxing_waning(
         self, signal_data: np.ndarray, cycle_length: float
@@ -331,16 +353,13 @@ class ComplexPatternDetector:
 
     def _calculate_csr_confidence(
         self,
-        cycle_length: float,
+        periodicity: float,
         amplitude_var: float,
         waxing_waning: float,
         cycle_count: int,
     ) -> float:
         """Calculate confidence score for CSR detection."""
-        confidence = 0.5
-
-        if PDC.CSR_MIN_CYCLE_LENGTH <= cycle_length <= PDC.CSR_MAX_CYCLE_LENGTH:
-            confidence += 0.2
+        confidence = 0.5 + 0.2 * periodicity
 
         if amplitude_var > PDC.CSR_MIN_AMPLITUDE_VAR:
             confidence += 0.1
@@ -355,15 +374,12 @@ class ComplexPatternDetector:
 
     def _calculate_periodic_confidence(
         self,
-        cycle_length: float,
+        periodicity: float,
         regularity: float,
         has_apneas: bool,
     ) -> float:
         """Calculate confidence score for periodic breathing detection."""
-        confidence = 0.5
-
-        if PDC.PERIODIC_MIN_CYCLE <= cycle_length <= PDC.PERIODIC_MAX_CYCLE:
-            confidence += 0.1
+        confidence = 0.5 + 0.1 * periodicity
 
         if regularity > PDC.PERIODIC_HIGH_REGULARITY:
             confidence += 0.2
