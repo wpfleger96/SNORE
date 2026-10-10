@@ -300,12 +300,22 @@ class TestGetAnalysisStatus:
 
         assert status == AnalysisStatus.STALE_VERSION
 
-    async def test_stale_version_for_format_version_3_identity(self, async_db_session):
-        """A stored identity from before the validity-flags bump classifies STALE.
+    @pytest.mark.parametrize(
+        ("format_version", "missing_keys"),
+        [
+            (3, ("validity_flags", "pattern_detector")),
+            (4, ("pattern_detector",)),
+        ],
+    )
+    async def test_stale_version_for_legacy_format_version_identity(
+        self, async_db_session, format_version, missing_keys
+    ):
+        """A stored identity from before a key was stamped classifies STALE.
 
-        Legacy format_version=3 rows lack the ``validity_flags`` field; pydantic
-        back-fills it from the default, so the ``format_version`` bump to 4 is
-        what makes the comparison fail — this test pins that behavior.
+        Legacy rows lack the later keys (``validity_flags`` from 4,
+        ``pattern_detector`` from 5); pydantic back-fills them from defaults, so
+        the ``format_version`` bump is what makes the comparison fail — this
+        test pins that behavior.
         """
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -314,8 +324,9 @@ class TestGetAnalysisStatus:
         )
 
         stored = _make_algo_versions().model_dump()
-        stored["identity"]["format_version"] = 3
-        del stored["identity"]["validity_flags"]  # legacy rows never stored it
+        stored["identity"]["format_version"] = format_version
+        for key in missing_keys:
+            stored["identity"].pop(key, None)  # legacy rows never stored it
         ar = models.AnalysisResult(
             session_id=session.id,
             timestamp_start=session.start_time,

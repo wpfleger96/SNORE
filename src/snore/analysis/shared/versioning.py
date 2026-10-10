@@ -27,7 +27,8 @@ from snore.analysis.modes.config import AVAILABLE_CONFIGS
 # ---------------------------------------------------------------------------
 # Versioned algorithm constants
 # Each constant is stamped into AlgorithmIdentity; bumping any value makes
-# prior rows stale and prevents cross-version aggregation.
+# prior rows stale. Keys in CROSS_VERSION_REFUSAL_KEYS also refuse (or warn on)
+# cross-version comparison.
 # ---------------------------------------------------------------------------
 
 SEGMENTER_ALGO_VERSION: str = "v1"
@@ -46,6 +47,10 @@ RECOVERY_DETECTOR_ALGO_VERSION: str = "v2"
 # ramp_active / mask_off breath validity flags: settings-driven timed ramp
 # heuristic + persisted mask-on-segment gap overlap.
 VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
+# CSR/PB confidence graded on bias-corrected autocorrelation periodicity
+# strength; before this key existed, scoring had an always-earned cycle-range
+# bonus.
+PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
 
 # Flow-derived MV fallback used by get_events' per-event ventilatory context
 # when a session has no device MV channel. NOT part of AlgorithmIdentity — it
@@ -81,15 +86,16 @@ class AlgorithmIdentity(BaseModel):
     AnalysisRunMetadata — not here.
     """
 
-    # 4 = validity_flags stamped; 3 = PR-A nested format; 2 = flat legacy rows.
-    # The bump to 4 is mandatory: pydantic validation back-fills missing fields
-    # from defaults, so without it legacy rows lacking validity_flags would
-    # compare equal to the current identity and silently stay OK.
+    # 5 = pattern_detector stamped; 4 = validity_flags stamped; 3 = PR-A nested
+    # format; 2 = flat legacy rows.
+    # Each bump is mandatory: pydantic validation back-fills missing fields from
+    # defaults, so without it legacy rows lacking the new key would compare
+    # equal to the current identity and silently stay OK.
     #
     # RELEASE NOTE: bumping format_version marks every stored AnalysisResult
     # STALE_VERSION — the next batch analysis re-processes all sessions.
     # Call this out explicitly in release notes whenever format_version is bumped.
-    format_version: int = 4
+    format_version: int = 5
     segmenter: str = SEGMENTER_ALGO_VERSION
     fl_classifier: str = FL_CLASSIFIER_ALGO_VERSION
     flattening: str = FLATTENING_ALGO_VERSION
@@ -97,6 +103,7 @@ class AlgorithmIdentity(BaseModel):
     leak_valid: str = LEAK_VALID_ALGO
     recovery_detector: str = RECOVERY_DETECTOR_ALGO_VERSION
     validity_flags: str = VALIDITY_FLAGS_ALGO_VERSION
+    pattern_detector: str = PATTERN_DETECTOR_ALGO_VERSION
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AlgorithmIdentity):
@@ -112,12 +119,13 @@ class AlgorithmIdentity(BaseModel):
 # Fields whose mismatch triggers different behavior per call site: find_windows
 # hard-refuses for all criteria except ca_centered; compare_epochs emits
 # non-blocking version_warnings (distributions are still computed).
-# trigger_cycle and validity_flags are intentionally excluded: neither feeds a
-# cross-epoch distribution (trigger/cycle labels are per-breath experimental
-# metadata; ramp_active/mask_off validity flags gate rows, not aggregates), so
-# a version bump in either need not refuse comparisons.  A solo bump of an
-# excluded key MUST be accompanied by a format_version bump so old rows still
-# go stale — format_version is in this set and catches it.
+# trigger_cycle, validity_flags and pattern_detector are intentionally excluded:
+# none feeds a cross-epoch distribution (trigger/cycle labels are per-breath
+# experimental metadata; ramp_active/mask_off validity flags gate rows, not
+# aggregates; CSR/PB confidence is a per-session score), so a version bump in
+# any of them need not refuse comparisons. A solo bump of an excluded key MUST
+# be accompanied by a format_version bump so old rows still go stale —
+# format_version is in this set and catches it.
 CROSS_VERSION_REFUSAL_KEYS: frozenset[str] = frozenset(
     {
         "format_version",
