@@ -34,7 +34,7 @@ jobs:
           - name: test
             recipe: test
           - name: web
-            recipe: web-install web-check
+            recipe: web-check
 
     steps:
       - name: Checkout
@@ -70,7 +70,12 @@ jobs:
 
       - name: Install dependencies
         if: matrix.name != 'web'
-        run: just sync
+        run: uv sync --locked
+
+      - name: Install web dependencies
+        if: matrix.name == 'web'
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
 
       - name: Run ${{ matrix.name }}
         run: just ${{ matrix.recipe }}
@@ -110,7 +115,7 @@ jobs:
         uses: extractions/setup-just@v4
 
       - name: Install dependencies
-        run: just sync
+        run: uv sync --locked
 
       - name: Run end-to-end tests
         run: just test-e2e
