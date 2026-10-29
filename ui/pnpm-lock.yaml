@@ -385,8 +385,8 @@ packages:
   '@dotenvx/primitives@3.3.1':
     resolution: {integrity: sha512-ykX29rVnHwwV6m3AMmvR+niFSwhOG2TYttJjURz3n/3iHtpWC8gEptojYY+eHgBAV4fkaGRM1Rf0wgQ6/DeUYQ==}
 
-  '@dotenvx/primitives@4.2.1':
-    resolution: {integrity: sha512-+ftpSgkUTCx83G33CVKbfGRp36uPLP5UKgmW7VQK8lo2QXJDEpNxutxolcT/q/ySV9n+MO8v2aTpUT8UxbU73w==}
+  '@dotenvx/primitives@4.3.0':
+    resolution: {integrity: sha512-yTtZaVQt7DYnOaCm9BzhoTytGDAL5j49HCoFd9Vt/UlEFVSbkTEPHd23QmlPARYEqsJSUZEx43Avw9oQrWJINg==}
 
   '@dotenvx/providers@0.3.12':
     resolution: {integrity: sha512-myvAAeabjTTeqJRq/iURozIrzl5nYzxDprT3d00yJg5kqkXznl1TXxJS5s8Oy62gZnqSzSiDxM8W1KZRtj1Ojg==}
@@ -3183,11 +3183,11 @@ snapshots:
 
   '@dotenvx/primitives@3.3.1': {}
 
-  '@dotenvx/primitives@4.2.1': {}
+  '@dotenvx/primitives@4.3.0': {}
 
   '@dotenvx/providers@0.3.12':
     dependencies:
-      '@dotenvx/primitives': 4.2.1
+      '@dotenvx/primitives': 4.3.0
       '@dotenvx/tooling': 1.0.6
 
   '@dotenvx/tooling@1.0.6': {}
