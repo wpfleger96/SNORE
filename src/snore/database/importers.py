@@ -204,16 +204,6 @@ class SessionImporter:
                 )
             counts[model_cls.__tablename__] = count
 
-        # Removing orphaned waveform rows frees SQLite rowids that a later import
-        # can reuse; drop the id-keyed array cache so a reused id never serves a
-        # deleted row's arrays.
-        if counts[models.Waveform.__tablename__]:
-            from snore.services.waveform_service import (  # noqa: PLC0415
-                clear_waveform_array_cache,
-            )
-
-            clear_waveform_array_cache()
-
         # No db.commit() — caller owns the transaction boundary.
         return counts
 
@@ -571,17 +561,6 @@ class SessionImporter:
                         # its Day row; recalculate_day prunes the orphaned row.
                         await DayManager.recalculate_day(day_record, db)
 
-        # Force and overlap-replace imports delete existing sessions (cascading
-        # to their waveforms) before inserting replacements, so SQLite may reuse
-        # the freed rowids.  Clear unconditionally — a reused id serving a deleted
-        # row's arrays is a correctness bug, while an over-clear only costs the
-        # next reader one re-deserialize.
-        from snore.services.waveform_service import (  # noqa: PLC0415
-            clear_waveform_array_cache,
-        )
-
-        clear_waveform_array_cache()
-
         return imported, skipped, failed, all_imported_ids
 
     async def _import_batch_with_session(
@@ -683,6 +662,7 @@ class SessionImporter:
             )
 
         if mappings:
+            # Waveforms must go under a new session; see _WaveformArrayCache.
             await db.execute(insert(models.Waveform), mappings)
         logger.debug(f"Bulk imported {len(mappings)} waveforms")
 

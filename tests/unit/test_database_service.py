@@ -13,12 +13,14 @@ from snore.database.models import (
     User,
     Waveform,
 )
+from snore.services import waveform_service as waveform_service_module
 from snore.services.database_service import DatabaseService
 
 # Import the real _vacuum_background at module level so we bypass the autouse
 # _disable_background_vacuum fixture that replaces it with a no-op per test.
 from snore.services.database_service import _vacuum_background as _REAL_VACUUM_BG
 from snore.services.device_service import DeviceService
+from snore.services.waveform_service import WaveformService
 
 
 class TestDatabaseService:
@@ -660,6 +662,47 @@ class TestDeleteUserDataCommitFailure:
         quarantine_dst = raw_root / ".quarantine" / str(profile.id)
         assert quarantine_dst.exists(), "Quarantine dir must remain when rmtree fails"
         assert not profile_dir.exists(), "Source must be gone (renamed to quarantine)"
+
+
+class TestDeleteUserDataWaveformCache:
+    """delete_user_data must not leave a user's arrays in process memory."""
+
+    async def test_delete_drops_cached_arrays(
+        self, async_db_session, async_test_profile, async_test_device, tmp_path
+    ):
+        """Arrays cached before the delete are gone from the cache afterwards."""
+        now = datetime(2025, 1, 1)
+        session = Session(
+            device_id=async_test_device.id,
+            device_session_id="cached",
+            start_time=now,
+            end_time=now + timedelta(hours=8),
+            duration_seconds=28800,
+        )
+        async_db_session.add(session)
+        await async_db_session.flush()
+        async_db_session.add(
+            Waveform(
+                session_id=session.id,
+                waveform_type="flow",
+                sample_rate=25.0,
+                unit="L/min",
+                sample_count=10,
+                data_blob=bytes(10 * 8),  # 10 (timestamp, value) float32 pairs
+            )
+        )
+        await async_db_session.flush()
+
+        service = WaveformService(async_db_session, profile_id=async_test_profile.id)
+        await service.get_waveform_data(session.id, "flow")
+        cache = waveform_service_module._waveform_array_cache
+        assert len(cache._entries) == 1
+
+        await DatabaseService.delete_user_data(
+            async_db_session, async_test_profile.user_id, tmp_path / "raw"
+        )
+
+        assert len(cache._entries) == 0
 
 
 class TestStartupVacuumRecovery:

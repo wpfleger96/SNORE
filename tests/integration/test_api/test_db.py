@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session as SyncSession
 from snore.auth.actor import ActorContext, AuthMode, Role
 from snore.database import models
 from snore.database.models import Base
+from snore.services.waveform_service import _waveform_array_cache
 from tests.helpers.api_client import make_test_client
 from tests.integration.test_api.conftest import _multiuser_env
 
@@ -182,6 +183,34 @@ class TestDbReset:
         data = response.json()
         assert data["status"] == "success"
         assert data.get("bootstrap_invite_url") is None
+
+    def test_reset_empties_waveform_array_cache(
+        self, api_client, db_session, test_device, test_session_factory, temp_db
+    ):
+        """Arrays cached by a waveform read are gone after the reset."""
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2025, 1, 1, 22, 0)
+        )
+        db_session.add(
+            models.Waveform(
+                session_id=session.id,
+                waveform_type="flow",
+                sample_rate=25.0,
+                unit="L/min",
+                sample_count=10,
+                data_blob=bytes(10 * 8),  # 10 (timestamp, value) float32 pairs
+            )
+        )
+        db_session.commit()
+        read = api_client.get(f"/api/v1/sessions/{session.id}/waveforms/flow")
+        assert read.status_code == 200
+        assert len(_waveform_array_cache._entries) == 1
+
+        with _patch_target(temp_db, api_client):
+            response = api_client.post("/api/v1/db/reset")
+
+        assert response.json()["status"] == "success"
+        assert not _waveform_array_cache._entries
 
 
 class TestDbResetMultiuser:

@@ -551,7 +551,8 @@ async def _do_scrub_demo(session: Any, source_profile_id: int) -> None:
         counts["sessions"] += 1
 
         # Waveforms have no date columns and no PII — copy at the SQL layer
-        # so LargeBinary blobs never enter Python memory.
+        # so LargeBinary blobs never enter Python memory.  They must go under a
+        # new session; see _WaveformArrayCache.
         wf_result = await db.execute(
             text(
                 "INSERT INTO waveforms "
