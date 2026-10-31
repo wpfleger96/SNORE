@@ -7,6 +7,7 @@ from snore.api.deps import service_dep
 from snore.services import StatsService
 from snore.services.schemas import (
     DataRange,
+    ExperimentalStats,
     PeriodStatistics,
     RecordsResponse,
     TherapySummary,
@@ -34,6 +35,14 @@ async def get_summary(
     if result is None:
         return Response(status_code=204)
     return result
+
+
+@router.get("/experimental", response_model=ExperimentalStats, tags=["experimental"])
+async def get_experimental_stats(
+    service: StatsServiceDep,
+    days_limit: int | None = Query(default=None),
+) -> ExperimentalStats:
+    return await service.get_experimental_stats(days_limit)
 
 
 @router.get("/periods", response_model=list[PeriodStatistics])

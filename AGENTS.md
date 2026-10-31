@@ -322,9 +322,9 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 **Provenance tagging:** every reported metric carries one of three tiers (`snore/provenance.py`):
 - **Device**: verbatim device data (device-scored events and their counts, waveforms, STR values, settings).
 - **Derived**: deterministic math on device data (index recounts over SNORE mask-on hours, percentiles, usage, roll-ups).
-- **Experimental**: SNORE's own detection/classification heuristics and invented measures (FL classes,
-  RERA proxy, breath segmentation features, MV slope and stability, programmatic event detection,
-  SNORE-vs-device agreement scores).
+- **Experimental**: SNORE's own detection/classification heuristics and invented measures or judgements
+  (FL classes, RERA proxy, breath segmentation features, MV slope and stability, programmatic event
+  detection, SNORE-vs-device agreement scores, the therapy effectiveness band, AHI trend direction).
 
 Aggregates inherit the weakest input: anything built on an experimental input stays Experimental;
 aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
@@ -366,6 +366,14 @@ not read breath rows, so their device data does not depend on analysis having ru
 default tool to its response model: a new tool must be added to that map or take the `experimental_`
 prefix. `tests/integration/test_mcp_device_waveform_aggregates.py` enforces the no-breath-rows rule by
 running every `DEFAULT_TOOLS` entry with SQL capture.
+
+**REST gating rule:** no default REST operation may return an Experimental-tagged field. Experimental
+operations keep their URLs and carry the FastAPI `experimental` tag: at `include_router` for the
+analysis and validation routers, per operation elsewhere (`GET /days/{date}/experimental`,
+`GET /stats/experimental`, `/sessions/{id}/events/match`, `/sessions/{id}/waveforms/compare`).
+`GET /days/{date}` does not touch analysis tables. `tests/unit/test_provenance_tags.py` enforces the
+rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there pins
+the tagged list, so tagging a route to escape the check fails until that list is edited too.
 
 CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
 field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;
@@ -578,7 +586,7 @@ Integration test seed helpers (`_make_profile`, `_make_device`, `_make_day_sessi
 | Tune detection thresholds | `src/snore/analysis/modes/config.py` (DetectionModeConfig fields), validate with `validate_against_machine_events()` |
 | Modify data models | `src/snore/parsers/unified.py` (data), `database/models.py` (ORM), use Pydantic; keep `test_schema_alignment.py` passing |
 | Add waveform visualization | `src/snore/waveform/renderer.py` (ASCII/plotext), `inspector.py` (data loading) |
-| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; then `just ui-generate-types` |
+| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; `EXPERIMENTAL_OPERATIONS` in `tests/unit/test_provenance_tags.py` if it carries the `experimental` tag; then `just ui-generate-types` |
 | Add/modify service | `src/snore/services/`, `services/schemas.py` |
 | Frontend development | `ui/src/views/`, `ui/src/components/`, `ui/src/api/`, `ui/src/composables/`, `ui/src/utils/` |
 | Regenerate UI API types | `just ui-generate-types` (`scripts/export_openapi.py` → `ui/src/types/generated.ts`) |

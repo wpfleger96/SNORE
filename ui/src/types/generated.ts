@@ -980,6 +980,23 @@ export interface paths {
         patch?: never
         trace?: never
     }
+    '/api/v1/days/{day_date}/experimental': {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        /** Get Day Experimental */
+        get: operations['get_day_experimental_api_v1_days__day_date__experimental_get']
+        put?: never
+        post?: never
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
     '/api/v1/db/reset': {
         parameters: {
             query?: never
@@ -1783,6 +1800,23 @@ export interface paths {
         }
         /** Get Data Range */
         get: operations['get_data_range_api_v1_stats_data_range_get']
+        put?: never
+        post?: never
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/api/v1/stats/experimental': {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        /** Get Experimental Stats */
+        get: operations['get_experimental_stats_api_v1_stats_experimental_get']
         put?: never
         post?: never
         delete?: never
@@ -2924,11 +2958,6 @@ export interface components {
         /**
          * DayDetail
          * @description Full detail of a therapy day including per-metric stats.
-         *
-         *     The FL/RERA proxy fields below carry ``*_reason`` companions (unlike the
-         *     older nullable stats) because null here is ambiguous — "analysis not run"
-         *     versus a genuine zero — so a companion code disambiguates, mirroring the
-         *     MCP nightly-summary null-with-reason convention.
          */
         DayDetail: {
             /**
@@ -3004,13 +3033,6 @@ export interface components {
              * @description [DERIVED] Min EPAP (cmH2O)
              */
             epap_min?: number | null
-            /**
-             * Fl Class Ge4 Pct
-             * @description [EXPERIMENTAL] Percent of rule-classified breaths flagged flow-class >= 4 (flow-limitation proxy).
-             */
-            fl_class_ge4_pct?: number | null
-            /** Fl Class Ge4 Pct Reason */
-            fl_class_ge4_pct_reason?: string | null
             health_sleep?: components['schemas']['HealthNightSummaryRead'] | null
             /**
              * Hi
@@ -3087,20 +3109,6 @@ export interface components {
              */
             pressure_min?: number | null
             /**
-             * Rera Count
-             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`.
-             */
-            rera_count?: number | null
-            /** Rera Count Reason */
-            rera_count_reason?: string | null
-            /**
-             * Rera Index
-             * @description [EXPERIMENTAL] RERA-proxy events per mask-on hour of analyzed sessions (FL-run proxy, not device-scored).
-             */
-            rera_index?: number | null
-            /** Rera Index Reason */
-            rera_index_reason?: string | null
-            /**
              * Reras
              * @description [DEVICE] Device-scored RERA count for the night
              * @default 0
@@ -3125,6 +3133,46 @@ export interface components {
              * @description [DERIVED] Total mask-on hours across the day's sessions
              */
             total_therapy_hours?: number | null
+        }
+        /**
+         * DayExperimentalMetrics
+         * @description Nightly FL / RERA-proxy metrics, sourced read-time from BreathService.
+         *
+         *     Each metric carries a ``*_reason`` companion because null here is
+         *     ambiguous ("analysis not run" versus a genuine zero), mirroring the MCP
+         *     null-with-reason convention.  An ordinary un-analyzed night (sessions
+         *     present, none with an OK analysis) is null with "not_available"; a lookup
+         *     failure (no sessions for the device, breath-table DB error, device
+         *     resolution declining) or a night with every session disabled is null with
+         *     "analysis_not_run".
+         */
+        DayExperimentalMetrics: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string
+            /**
+             * Fl Class Ge4 Pct
+             * @description [EXPERIMENTAL] Percent of rule-classified breaths flagged flow-class >= 4 (flow-limitation proxy).
+             */
+            fl_class_ge4_pct?: number | null
+            /** Fl Class Ge4 Pct Reason */
+            fl_class_ge4_pct_reason?: string | null
+            /**
+             * Rera Count
+             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`.
+             */
+            rera_count?: number | null
+            /** Rera Count Reason */
+            rera_count_reason?: string | null
+            /**
+             * Rera Index
+             * @description [EXPERIMENTAL] RERA-proxy events per mask-on hour of analyzed sessions (FL-run proxy, not device-scored).
+             */
+            rera_index?: number | null
+            /** Rera Index Reason */
+            rera_index_reason?: string | null
         }
         /**
          * DayListItem
@@ -3463,6 +3511,22 @@ export interface components {
              * @description [DERIVED] Share of all device-scored events (%)
              */
             percentage: number
+        }
+        /**
+         * ExperimentalStats
+         * @description SNORE's own judgements about a therapy range, kept out of ``TherapySummary``.
+         */
+        ExperimentalStats: {
+            /**
+             * Ahi Trend Direction
+             * @description [EXPERIMENTAL] SNORE's AHI trend call: the latest week's AHI against the earlier weeks in the range (improving, worsening, stable; null with too little data).
+             */
+            ahi_trend_direction?: string | null
+            /**
+             * Effectiveness
+             * @description [EXPERIMENTAL] SNORE's therapy effectiveness band from average AHI (excellent, good, fair, poor; unknown without an average AHI).
+             */
+            effectiveness: string
         }
         /**
          * FlAggregateMetrics
@@ -5860,11 +5924,6 @@ export interface components {
          */
         TherapySummary: {
             /**
-             * Ahi Trend Direction
-             * @description [DERIVED] AHI trend direction over the range
-             */
-            ahi_trend_direction?: string | null
-            /**
              * Avg Ahi
              * @description [DERIVED] Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
              */
@@ -5929,12 +5988,6 @@ export interface components {
              * @description [DERIVED] Days with therapy hours from enabled sessions
              */
             days_with_data: number
-            /**
-             * Effectiveness
-             * @description [DERIVED] Therapy effectiveness band from average AHI
-             * @default unknown
-             */
-            effectiveness: string
             /** Event Counts */
             event_counts?: components['schemas']['EventTypeCount'][]
             /**
@@ -7647,6 +7700,39 @@ export interface operations {
             }
         }
     }
+    get_day_experimental_api_v1_days__day_date__experimental_get: {
+        parameters: {
+            query?: {
+                device_id?: number | null
+            }
+            header?: never
+            path: {
+                day_date: string
+            }
+            cookie?: never
+        }
+        requestBody?: never
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['DayExperimentalMetrics']
+                }
+            }
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError']
+                }
+            }
+        }
+    }
     reset_db_api_v1_db_reset_post: {
         parameters: {
             query?: never
@@ -9058,6 +9144,37 @@ export interface operations {
                 }
                 content: {
                     'application/json': components['schemas']['DataRange']
+                }
+            }
+        }
+    }
+    get_experimental_stats_api_v1_stats_experimental_get: {
+        parameters: {
+            query?: {
+                days_limit?: number | null
+            }
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['ExperimentalStats']
+                }
+            }
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError']
                 }
             }
         }

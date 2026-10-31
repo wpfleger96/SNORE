@@ -22,7 +22,7 @@
                 <span>Apple Health</span>
             </RouterLink>
 
-            <span class="nav-group-label">Analysis</span>
+            <span class="nav-group-label">Experimental</span>
             <RouterLink to="/analysis" class="nav-item">
                 <Brain class="h-4 w-4" />
                 <span>Analysis</span>

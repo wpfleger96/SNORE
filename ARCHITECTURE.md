@@ -331,9 +331,9 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | waveforms | `/sessions` | List types, get data (LTTB downsampling), compare events |
 | events | `/sessions` | List, match machine vs programmatic |
 | analysis | (v1 prefix) | List status, get result, run, delete, batch analysis |
-| stats | `/stats` | Summary, periods, trends, records |
+| stats | `/stats` | Summary, periods, trends, records, data range; experimental effectiveness band and AHI trend direction (`GET /stats/experimental`) |
 | devices | `/devices` | List, detail |
-| days | `/days` | List, detail |
+| days | `/days` | List, detail; experimental FL and RERA-proxy metrics (`GET /days/{date}/experimental`) |
 | rx | `/rx` | History, current, compare |
 | equipment | `/equipment` | Mask log CRUD (`GET/POST /masks`, `PATCH/DELETE /masks/{id}`); device mask-type epochs (`GET /masks/epochs`); write ops guarded by `RequireWritable` |
 | reports | `/reports` | Report generation |
@@ -341,6 +341,8 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | export | `/export` | CSV, JSON, raw file download |
 | db | `/db` | Stats, vacuum; reset (local mode only) |
 | validation | `/validate` | Batch validation report |
+
+**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/events/match`, `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list in `EXPERIMENTAL_OPERATIONS`.
 
 **Key patterns:**
 - Dependency injection: `db: Session = Depends(get_db)` for database sessions

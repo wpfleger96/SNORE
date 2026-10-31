@@ -3667,11 +3667,11 @@ class TestNightlyPeriodicBreathing:
         assert night.fl_class_ge4_pct == pytest.approx(100.0)
         assert night.fl_class_ge4_pct_reason is None
 
-    async def test_malformed_pb_episodes_leave_day_detail_fl_rera_intact(
+    async def test_malformed_pb_episodes_leave_day_experimental_fl_rera_intact(
         self, async_db_session
     ):
-        """DayService day detail reads the same nightly summary: malformed PB
-        episodes must not null its FL/RERA metrics."""
+        """DayService's experimental metrics read the same nightly summary:
+        malformed PB episodes must not null its FL/RERA metrics."""
         from snore.services.day_service import DayService  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
@@ -3689,14 +3689,14 @@ class TestNightlyPeriodicBreathing:
         }
         await async_db_session.flush()
 
-        detail = await DayService(async_db_session, profile_id=profile_id).get_day(
-            therapy_date, device_id=dev.id
-        )
+        metrics = await DayService(
+            async_db_session, profile_id=profile_id
+        ).get_day_experimental(therapy_date, device_id=dev.id)
 
-        assert detail.fl_class_ge4_pct == pytest.approx(100.0)
-        assert detail.fl_class_ge4_pct_reason is None
-        assert detail.rera_count is not None
-        assert detail.rera_count_reason is None
+        assert metrics.fl_class_ge4_pct == pytest.approx(100.0)
+        assert metrics.fl_class_ge4_pct_reason is None
+        assert metrics.rera_count is not None
+        assert metrics.rera_count_reason is None
 
 
 @pytest.mark.unit

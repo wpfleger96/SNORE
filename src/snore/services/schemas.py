@@ -720,11 +720,6 @@ class TherapySummary(BaseModel):
         " (can mix device-reported and recounted days)",
         default=None,
     )
-    effectiveness: str = provenance_field(
-        Provenance.DERIVED,
-        "Therapy effectiveness band from average AHI",
-        default="unknown",
-    )
     avg_rei: float | None = provenance_field(
         Provenance.DERIVED, "Average REI", default=None
     )
@@ -764,10 +759,23 @@ class TherapySummary(BaseModel):
     avg_minute_ventilation: float | None = provenance_field(
         Provenance.DERIVED, "Average minute ventilation (L/min)", default=None
     )
-    ahi_trend_direction: str | None = provenance_field(
-        Provenance.DERIVED, "AHI trend direction over the range", default=None
-    )
     event_counts: list[EventTypeCount] = Field(default_factory=list)
+
+
+class ExperimentalStats(BaseModel):
+    """SNORE's own judgements about a therapy range, kept out of ``TherapySummary``."""
+
+    effectiveness: str = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "SNORE's therapy effectiveness band from average AHI "
+        "(excellent, good, fair, poor; unknown without an average AHI).",
+    )
+    ahi_trend_direction: str | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "SNORE's AHI trend call: the latest week's AHI against the earlier weeks "
+        "in the range (improving, worsening, stable; null with too little data).",
+        default=None,
+    )
 
 
 class WaveformInfo(BaseModel):
@@ -991,13 +999,7 @@ class DayListItem(BaseModel):
 
 
 class DayDetail(DayListItem):
-    """Full detail of a therapy day including per-metric stats.
-
-    The FL/RERA proxy fields below carry ``*_reason`` companions (unlike the
-    older nullable stats) because null here is ambiguous — "analysis not run"
-    versus a genuine zero — so a companion code disambiguates, mirroring the
-    MCP nightly-summary null-with-reason convention.
-    """
+    """Full detail of a therapy day including per-metric stats."""
 
     oai: float | None = provenance_field(
         Provenance.DEVICE,
@@ -1101,12 +1103,23 @@ class DayDetail(DayListItem):
     reras: int = provenance_field(
         Provenance.DEVICE, "Device-scored RERA count for the night", default=0
     )
-    # Nightly breath-analysis proxy metrics, sourced read-time from
-    # BreathService (same path as the MCP nightly summary).  Reason semantics:
-    # an ordinary un-analyzed night (sessions present, none with an OK analysis)
-    # is null with "not_available"; a lookup failure (no sessions for the
-    # device, breath-table DB error, device resolution declining) is null with
-    # "analysis_not_run".  Day detail never fails on missing breath analysis.
+    session_ids: list[int] = Field(default_factory=list)
+    health_sleep: HealthNightSummaryRead | None = None
+
+
+class DayExperimentalMetrics(BaseModel):
+    """Nightly FL / RERA-proxy metrics, sourced read-time from BreathService.
+
+    Each metric carries a ``*_reason`` companion because null here is
+    ambiguous ("analysis not run" versus a genuine zero), mirroring the MCP
+    null-with-reason convention.  An ordinary un-analyzed night (sessions
+    present, none with an OK analysis) is null with "not_available"; a lookup
+    failure (no sessions for the device, breath-table DB error, device
+    resolution declining) or a night with every session disabled is null with
+    "analysis_not_run".
+    """
+
+    date: date
     fl_class_ge4_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of rule-classified breaths flagged flow-class >= 4 "
@@ -1128,8 +1141,6 @@ class DayDetail(DayListItem):
         default=None,
     )
     rera_count_reason: str | None = None
-    session_ids: list[int] = Field(default_factory=list)
-    health_sleep: HealthNightSummaryRead | None = None
 
 
 class RxPeriodResponse(BaseModel):

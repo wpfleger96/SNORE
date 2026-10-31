@@ -26,7 +26,7 @@ from snore.provenance import (
     provenance_field,
     response_provenance,
 )
-from snore.services.schemas import SessionStatistics
+from snore.services.schemas import ExperimentalStats, SessionStatistics
 
 pytestmark = pytest.mark.unit
 
@@ -208,6 +208,33 @@ _UNTYPED_METRIC_ROUTES = {
     "GET /api/v1/reports/comparison",
 }
 
+# Every REST operation carrying the ``experimental`` tag.  Pinned so that tagging
+# a route cannot quietly exempt it from
+# test_default_rest_operations_return_no_experimental_field.
+EXPERIMENTAL_OPERATIONS = {
+    "DELETE /api/v1/analysis",
+    "DELETE /api/v1/analysis/jobs/{job_id}",
+    "DELETE /api/v1/validate/runs/{run_id}",
+    "GET /api/v1/analysis/delete-preview",
+    "GET /api/v1/analysis/jobs",
+    "GET /api/v1/analysis/sessions",
+    "GET /api/v1/days/{day_date}/experimental",
+    "GET /api/v1/sessions/{session_id}/analysis",
+    "GET /api/v1/sessions/{session_id}/events/match",
+    "GET /api/v1/sessions/{session_id}/waveforms/compare",
+    "GET /api/v1/stats/experimental",
+    "GET /api/v1/validate/runs",
+    "GET /api/v1/validate/runs/{run_id}",
+    "POST /api/v1/analysis/batch",
+    "POST /api/v1/sessions/{session_id}/analysis",
+    "POST /api/v1/validate/",
+    "POST /api/v1/validate/apple",
+    "POST /api/v1/validate/breaths",
+    "POST /api/v1/validate/fl",
+    "POST /api/v1/validate/rera",
+    "POST /api/v1/validate/runs",
+}
+
 _FIX_HINT = (
     "Wrap each metric in provenance_field(Provenance.X, ...); if a field is "
     "bookkeeping (ids, positions), add it to _NON_METRIC_FIELDS; a coverage "
@@ -312,6 +339,26 @@ def _is_exempt(model: str, field: str) -> bool:
     )
 
 
+def _operations(*, experimental: bool) -> dict[str, dict[str, Any]]:
+    return {
+        f"{method.upper()} {path}": op
+        for path, ops in _openapi()["paths"].items()
+        for method, op in ops.items()
+        if ("experimental" in op.get("tags", [])) is experimental
+    }
+
+
+def _reachable(op: dict[str, Any]) -> set[str]:
+    """Component schemas an operation's responses can return, transitively."""
+    components = _openapi()["components"]["schemas"]
+    pending, seen = _refs(op.get("responses", {})), set()
+    while pending:
+        name = pending.pop()
+        seen.add(name)
+        pending |= _refs(components[name]) - seen
+    return seen
+
+
 def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
     offenders = sorted(
         {
@@ -357,6 +404,27 @@ def test_model_fields_with_context_dependent_tier_are_tagged() -> None:
         "Fields holding a model that inherits its tier from the parent field, "
         "missing x-provenance:\n" + "\n".join(sorted(offenders)) + f"\n{_FIX_HINT}"
     )
+
+
+def test_default_rest_operations_return_no_experimental_field() -> None:
+    components = _openapi()["components"]["schemas"]
+    offenders = sorted(
+        {
+            f"{route} -> {model}.{field}"
+            for route, op in _operations(experimental=False).items()
+            for model in _reachable(op)
+            for field, prop in components[model].get("properties", {}).items()
+            if prop.get("x-provenance") == Provenance.EXPERIMENTAL
+        }
+    )
+    assert not offenders, (
+        "Default REST operations returning Experimental fields:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_experimental_operation_list_is_pinned() -> None:
+    assert set(_operations(experimental=True)) == EXPERIMENTAL_OPERATIONS
 
 
 def test_untyped_metric_routes_match_known_gap_list() -> None:
@@ -436,3 +504,8 @@ def test_waveform_recomputed_statistic_is_derived(field: str) -> None:
 
 def test_rest_waveform_values_are_tagged_device() -> None:
     assert field_provenance(WaveformDataResponse, "values") == Provenance.DEVICE
+
+
+@pytest.mark.parametrize("field", ["effectiveness", "ahi_trend_direction"])
+def test_snore_judgements_are_tagged_experimental(field: str) -> None:
+    assert field_provenance(ExperimentalStats, field) == Provenance.EXPERIMENTAL

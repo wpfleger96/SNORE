@@ -28,6 +28,10 @@ vi.mock('@/api/analysis', async (importOriginal) => {
         cancelAnalysisJob: vi.fn(),
     }
 })
+vi.mock('@/api/stats', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/api/stats')>()),
+    getExperimentalStats: vi.fn(),
+}))
 
 import AnalysisManagementView from '@/views/AnalysisManagementView.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -37,6 +41,7 @@ import {
     getAnalysisJobs,
     cancelAnalysisJob,
 } from '@/api/analysis'
+import { getExperimentalStats } from '@/api/stats'
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { setMediaMatches } from './matchMedia'
 
@@ -54,6 +59,10 @@ describe('AnalysisManagementView — analyze missing', () => {
         })
         vi.mocked(getAnalysisJobs).mockResolvedValue({ jobs: [] })
         vi.mocked(runBatchAnalysis).mockResolvedValue({ job_id: 'job-1', session_count: 5 })
+        vi.mocked(getExperimentalStats).mockResolvedValue({
+            effectiveness: 'unknown',
+            ahi_trend_direction: null,
+        })
     })
 
     afterEach(() => {
@@ -147,5 +156,69 @@ describe('AnalysisManagementView — analyze missing', () => {
 
         expect(wrapper.find('.card-list').exists()).toBe(true)
         expect(wrapper.find('table').exists()).toBe(false)
+    })
+
+    it('test_therapy_assessment_shows_effectiveness_and_trend_under_a_banner', async () => {
+        vi.mocked(getExperimentalStats).mockResolvedValue({
+            effectiveness: 'good',
+            ahi_trend_direction: 'worsening',
+        })
+
+        const wrapper = await mountView()
+
+        const card = wrapper.find('.section-card')
+        expect(card.findAll('[role="note"]')).toHaveLength(1)
+        expect(card.text()).toContain('good')
+        const trend = card.find('.trend-badge')
+        expect(trend.text()).toBe('worsening')
+        expect(trend.classes()).toContain('trend-worsening')
+    })
+
+    it('test_therapy_assessment_hides_unknown_band_but_keeps_a_real_trend', async () => {
+        vi.mocked(getExperimentalStats).mockResolvedValue({
+            effectiveness: 'unknown',
+            ahi_trend_direction: 'stable',
+        })
+
+        const wrapper = await mountView()
+
+        const card = wrapper.find('.section-card')
+        expect(card.text()).not.toContain('unknown')
+        expect(card.text()).not.toContain('Effectiveness')
+        expect(card.find('.trend-badge').text()).toBe('stable')
+    })
+
+    it('test_therapy_assessment_shows_empty_state_when_nothing_to_show', async () => {
+        const wrapper = await mountView()
+
+        const card = wrapper.find('.section-card')
+        expect(card.find('.assessment-row').exists()).toBe(false)
+        expect(card.find('.assessment-empty').exists()).toBe(true)
+    })
+
+    it('test_failed_assessment_load_leaves_the_session_list_working', async () => {
+        vi.mocked(getExperimentalStats).mockRejectedValue(new Error('boom'))
+        vi.mocked(getAnalysisSessions).mockResolvedValue({
+            items: [
+                {
+                    session_id: 1470,
+                    session_date: '2026-04-06',
+                    has_analysis: true,
+                    analysis_id: 7,
+                    duration_hours: 9.6,
+                },
+            ],
+            total: 1,
+            limit: 25,
+            offset: 0,
+        })
+
+        const wrapper = mount(AnalysisManagementView, {
+            global: { components: { RouterLink: { template: '<a><slot /></a>' } } },
+        })
+        await flushPromises()
+
+        expect(wrapper.find('.section-card .error-state').text()).toContain('boom')
+        expect(wrapper.find('table').text()).toContain('2026-04-06')
     })
 })

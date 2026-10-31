@@ -38,7 +38,11 @@ async def list_waveforms(
     return await service.list_waveforms(session_id)
 
 
-@router.get("/{session_id}/waveforms/compare", response_model=EventComparisonResult)
+@router.get(
+    "/{session_id}/waveforms/compare",
+    response_model=EventComparisonResult,
+    tags=["experimental"],
+)
 async def compare_waveform_events(
     session_id: int,
     service: WaveformServiceDep,

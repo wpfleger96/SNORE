@@ -19,6 +19,7 @@ from snore.services._base import ProfileScopedService
 from snore.services.schemas import (
     DataRange,
     EventTypeCount,
+    ExperimentalStats,
     PeriodStatistics,
     RecordsResponse,
     TherapySummary,
@@ -179,15 +180,6 @@ class StatsService(ProfileScopedService):
         last_date = max(dates)
         days_since_last = (date.today() - last_date).days
 
-        avg_ahi = calculate_average_ahi(day_records)
-        effectiveness = assess_therapy_effectiveness(avg_ahi)
-
-        weekly_periods = calculate_period_statistics(day_records, "week")
-        weekly_ahi_values = [
-            ps.avg_ahi for ps in weekly_periods if ps.avg_ahi is not None
-        ]
-        ahi_trend_direction = calculate_ahi_trend_direction(weekly_ahi_values)
-
         # Averages are usage-weighted by Day.total_therapy_hours; min/max stay
         # over the raw per-day values.
         day_means = usage_weighted_means(
@@ -285,8 +277,7 @@ class StatsService(ProfileScopedService):
             total_hours=total_hours,
             avg_hours=avg_hours,
             days_with_data=days_with_data,
-            avg_ahi=avg_ahi,
-            effectiveness=effectiveness,
+            avg_ahi=calculate_average_ahi(day_records),
             avg_rei=usage_means["rei"],
             avg_pressure=avg_pressure,
             min_pressure=min_pressure,
@@ -300,8 +291,25 @@ class StatsService(ProfileScopedService):
             avg_respiratory_rate=usage_means["rr"],
             avg_tidal_volume=usage_means["tv"],
             avg_minute_ventilation=usage_means["mv"],
-            ahi_trend_direction=ahi_trend_direction,
             event_counts=event_type_counts,
+        )
+
+    async def get_experimental_stats(
+        self, days_limit: int | None = None
+    ) -> ExperimentalStats:
+        """SNORE's effectiveness band and AHI trend call over a range.
+
+        An empty range is ``effectiveness="unknown"`` with no trend direction.
+        """
+        day_records = await self._query_days(days_limit)
+        weekly_periods = calculate_period_statistics(day_records, "week")
+        return ExperimentalStats(
+            effectiveness=assess_therapy_effectiveness(
+                calculate_average_ahi(day_records)
+            ),
+            ahi_trend_direction=calculate_ahi_trend_direction(
+                [ps.avg_ahi for ps in weekly_periods if ps.avg_ahi is not None]
+            ),
         )
 
     async def get_period_statistics(

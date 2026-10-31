@@ -51,7 +51,55 @@ class TestStatsSummary:
         data = response.json()
         assert data["days_with_data"] == 1
         assert data["total_hours"] == pytest.approx(7.0)
-        assert "ahi_trend_direction" in data
+        assert not {"effectiveness", "ahi_trend_direction"} & data.keys()
+
+
+class TestStatsExperimental:
+    def test_range_with_data(self, api_client, db_session, test_device):
+        """Weeks at AHI 8, 8, 2 average 6 ("good"); the last week is improving."""
+        for week, ahi in enumerate([8.0, 8.0, 2.0]):
+            db_session.add(
+                Day(
+                    device_id=test_device.id,
+                    date=date(2024, 1, 1) + timedelta(weeks=week),
+                    session_count=1,
+                    total_therapy_hours=7.0,
+                    ahi=ahi,
+                )
+            )
+        db_session.flush()
+
+        response = api_client.get("/api/v1/stats/experimental")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "effectiveness": "good",
+            "ahi_trend_direction": "improving",
+        }
+
+    def test_empty_range(self, api_client):
+        response = api_client.get("/api/v1/stats/experimental")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "effectiveness": "unknown",
+            "ahi_trend_direction": None,
+        }
+
+    def test_days_limit_excludes_older_data(self, api_client, db_session, test_device):
+        db_session.add(
+            Day(
+                device_id=test_device.id,
+                date=date.today() - timedelta(days=200),
+                total_therapy_hours=7.0,
+                ahi=20.0,
+            )
+        )
+        db_session.flush()
+
+        data = api_client.get("/api/v1/stats/experimental?days_limit=90").json()
+
+        assert data["effectiveness"] == "unknown"
 
 
 class TestStatsPeriods:

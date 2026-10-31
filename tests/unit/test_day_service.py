@@ -469,10 +469,10 @@ class TestDayServiceGet:
 
 
 class TestDayServiceFlReraProxy:
-    async def test_get_day_populates_fl_rera_when_analysis_present(
+    async def test_populates_fl_rera_when_analysis_present(
         self, async_db_session, async_test_device, monkeypatch
     ):
-        """FL/RERA proxy fields carry BreathService values onto DayDetail.
+        """FL/RERA proxy fields carry BreathService values for the night.
 
         ``rera_count_reason`` is aliased from the DTO's ``rera_reason``.
         """
@@ -497,8 +497,9 @@ class TestDayServiceFlReraProxy:
         await async_db_session.flush()
 
         service = DayService(async_db_session, profile_id=1)
-        result = await service.get_day(date(2025, 9, 1))
+        result = await service.get_day_experimental(date(2025, 9, 1))
 
+        assert result.date == date(2025, 9, 1)
         assert result.fl_class_ge4_pct == pytest.approx(12.5)
         assert result.fl_class_ge4_pct_reason is None
         assert result.rera_index == pytest.approx(3.2)
@@ -506,7 +507,7 @@ class TestDayServiceFlReraProxy:
         assert result.rera_count == 7
         assert result.rera_count_reason is None
 
-    async def test_get_day_nulls_fl_rera_when_analysis_absent(
+    async def test_nulls_fl_rera_when_analysis_absent(
         self, async_db_session, async_test_device
     ):
         """An un-analyzed night (sessions present, none OK) nulls with
@@ -516,7 +517,7 @@ class TestDayServiceFlReraProxy:
         await async_db_session.flush()
 
         service = DayService(async_db_session, async_test_device.profile_id)
-        result = await service.get_day(date(2025, 9, 2))
+        result = await service.get_day_experimental(date(2025, 9, 2))
 
         assert result.fl_class_ge4_pct is None
         assert result.fl_class_ge4_pct_reason == "not_available"
@@ -525,7 +526,7 @@ class TestDayServiceFlReraProxy:
         assert result.rera_count is None
         assert result.rera_count_reason == "not_available"
 
-    async def test_get_day_nulls_and_warns_when_day_has_no_sessions(
+    async def test_nulls_and_warns_when_day_has_no_sessions(
         self, async_db_session, async_test_device, caplog
     ):
         """A Day row with no sessions is anomalous: null with ``analysis_not_run``
@@ -535,7 +536,7 @@ class TestDayServiceFlReraProxy:
 
         service = DayService(async_db_session, async_test_device.profile_id)
         with caplog.at_level(logging.WARNING, logger="snore.services.day_service"):
-            result = await service.get_day(date(2025, 9, 3))
+            result = await service.get_day_experimental(date(2025, 9, 3))
 
         assert result.fl_class_ge4_pct_reason == "analysis_not_run"
         assert result.rera_index_reason == "analysis_not_run"
@@ -543,7 +544,7 @@ class TestDayServiceFlReraProxy:
         assert "no analyzable sessions" in caplog.text
         assert "2025-09-03" in caplog.text
 
-    async def test_get_day_nulls_without_warning_when_all_sessions_disabled(
+    async def test_nulls_without_warning_when_all_sessions_disabled(
         self, async_db_session, async_test_device, caplog
     ):
         """Disabling every session of a night is a normal user choice: the
@@ -555,8 +556,52 @@ class TestDayServiceFlReraProxy:
 
         service = DayService(async_db_session, async_test_device.profile_id)
         with caplog.at_level(logging.WARNING, logger="snore.services.day_service"):
-            result = await service.get_day(date(2025, 9, 4))
+            result = await service.get_day_experimental(date(2025, 9, 4))
 
         assert result.rera_index_reason == "analysis_not_run"
         assert result.fl_class_ge4_pct_reason == "analysis_not_run"
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    async def test_device_id_selects_the_devices_night(
+        self, async_db_session, async_test_device, async_test_profile, monkeypatch
+    ):
+        """device_id= picks the night looked up, matching get_day's selection."""
+        second_device = Device(
+            profile_id=async_test_profile.id,
+            manufacturer="OtherCo",
+            model="OtherModel",
+            serial_number="DAY_SVC_TEST_004",
+        )
+        async_db_session.add(second_device)
+        await async_db_session.flush()
+        await _create_day(async_db_session, async_test_device, date(2025, 9, 5))
+        await _create_day(async_db_session, second_device, date(2025, 9, 5))
+        await async_db_session.flush()
+        looked_up: list[int] = []
+
+        async def _fake_summary(self, therapy_date, device_id=None, **kwargs):
+            looked_up.append(device_id)
+            return SimpleNamespace(
+                fl_class_ge4_pct=None,
+                fl_class_ge4_pct_reason=None,
+                rera_index=None,
+                rera_index_reason=None,
+                rera_count=None,
+                rera_reason=None,
+            )
+
+        monkeypatch.setattr(
+            "snore.services.breath_service.BreathService.get_nightly_summary",
+            _fake_summary,
+        )
+
+        service = DayService(async_db_session, async_test_profile.id)
+        await service.get_day_experimental(date(2025, 9, 5), device_id=second_device.id)
+
+        assert looked_up == [second_device.id]
+
+    async def test_unknown_date_raises_not_found(self, async_db_session):
+        """A date with no Day row raises NotFoundError, not null metrics."""
+        service = DayService(async_db_session, profile_id=1)
+        with pytest.raises(NotFoundError):
+            await service.get_day_experimental(date(2024, 1, 1))

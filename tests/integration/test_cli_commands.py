@@ -1329,6 +1329,17 @@ class TestStatsEnhanced:
         assert result.exit_code == 0
         assert "Time below 90%:" in result.output or "below 90" in result.output
 
+    def test_stats_omits_effectiveness(self, cli_runner, populated_test_db_full):
+        """The effectiveness band is experimental, so `snore stats` does not show it."""
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_full)],
+        )
+
+        assert result.exit_code == 0
+        assert "Average AHI" in result.output
+        assert "Effectiveness" not in result.output
+
 
 @pytest.fixture
 async def populated_test_db_with_day_stats(populated_test_db_full):
@@ -1367,6 +1378,7 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0, result.output
         assert "AHI Trend†" in result.output
+        plotext_stub.figure.title.assert_called_once_with("AHI Over Time")
         assert result.output.count(_DERIVED_LEGEND) == 1
         assert result.output.rstrip().endswith(_DERIVED_LEGEND)
 

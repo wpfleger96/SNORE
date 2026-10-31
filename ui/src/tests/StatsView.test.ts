@@ -10,7 +10,6 @@ vi.mock('uplot', () => ({
 vi.mock('@/composables/useAuth')
 
 vi.mock('@/api/stats', () => ({
-    getSummary: vi.fn(),
     getPeriods: vi.fn(),
     getTrends: vi.fn(),
     getRecords: vi.fn(),
@@ -72,7 +71,7 @@ vi.mock('@/components/ErrorState.vue', () => ({
 
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { useAuth } from '@/composables/useAuth'
-import { getSummary, getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
+import { getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
 import StatsView from '@/views/StatsView.vue'
 
 const EMPTY_TRENDS = { ahi: [], usage: [], spo2: [], leak: [] }
@@ -91,38 +90,18 @@ describe('StatsView', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         setupAuthMock()
-        vi.mocked(getSummary).mockResolvedValue(null)
         vi.mocked(getPeriods).mockResolvedValue([])
         vi.mocked(getTrends).mockResolvedValue(EMPTY_TRENDS)
         vi.mocked(getRecords).mockResolvedValue({})
         vi.mocked(getDataRange).mockResolvedValue({ latest_date: null })
     })
 
-    it('test_badge_hidden_when_summary_is_null', async () => {
-        vi.mocked(getSummary).mockResolvedValue(null)
-
-        const wrapper = await mountAndLoad()
-
-        expect(wrapper.find('.trend-badge').exists()).toBe(false)
-    })
-
-    it('test_badge_shown_when_ahi_trend_is_worsening', async () => {
-        vi.mocked(getSummary).mockResolvedValue({
-            ahi_trend_direction: 'worsening',
-        } as never)
-
-        const wrapper = await mountAndLoad()
-
-        const badge = wrapper.find('.trend-badge')
-        expect(badge.exists()).toBe(true)
-        expect(badge.text()).toContain('worsening')
-    })
-
-    it('test_getSummary_called_with_numeric_days_limit', async () => {
+    it('test_periods_and_trends_called_with_numeric_days_limit', async () => {
         // Default daysRange is '90d' which maps to 90 in rangeDaysMap.
         await mountAndLoad()
 
-        expect(getSummary).toHaveBeenCalledWith(90)
+        expect(getPeriods).toHaveBeenCalledWith('month', 90)
+        expect(getTrends).toHaveBeenCalledWith('month', 90)
     })
 
     it('test_periods_empty_message_includes_date_and_hint_when_data_range_known', async () => {
@@ -151,7 +130,7 @@ describe('StatsView', () => {
         expect(msg).toContain('Try a wider range')
     })
 
-    it('test_getSummary_called_with_undefined_when_range_is_all', async () => {
+    it('test_periods_and_trends_called_with_undefined_when_range_is_all', async () => {
         const wrapper = await mountAndLoad()
 
         // The Range toggle is the second ToggleGroup (after Granularity, before Metrics).
@@ -159,6 +138,7 @@ describe('StatsView', () => {
         await rangeToggle.vm.$emit('update:model-value', 'all')
         await flushPromises()
 
-        expect(getSummary).toHaveBeenLastCalledWith(undefined)
+        expect(getPeriods).toHaveBeenLastCalledWith('month', undefined)
+        expect(getTrends).toHaveBeenLastCalledWith('month', undefined)
     })
 })

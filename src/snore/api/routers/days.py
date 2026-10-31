@@ -7,6 +7,7 @@ from snore.api.deps import DateRangeParams, PaginationParams, service_dep
 from snore.api.schemas import (
     DateListResponse,
     DayDetail,
+    DayExperimentalMetrics,
     DayListItem,
     PaginatedResponse,
 )
@@ -49,3 +50,16 @@ async def get_day(
     device_id: int | None = Query(default=None),
 ) -> DayDetail:
     return await service.get_day(day_date, device_id=device_id)
+
+
+@router.get(
+    "/{day_date}/experimental",
+    response_model=DayExperimentalMetrics,
+    tags=["experimental"],
+)
+async def get_day_experimental(
+    day_date: date,
+    service: DayServiceDep,
+    device_id: int | None = Query(default=None),
+) -> DayExperimentalMetrics:
+    return await service.get_day_experimental(day_date, device_id=device_id)

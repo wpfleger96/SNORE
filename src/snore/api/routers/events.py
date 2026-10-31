@@ -38,7 +38,11 @@ async def list_events(
     return [_event_to_item(e, session_start) for e in events]
 
 
-@router.get("/{session_id}/events/match", response_model=EventMatchResult)
+@router.get(
+    "/{session_id}/events/match",
+    response_model=EventMatchResult,
+    tags=["experimental"],
+)
 async def match_events(
     session_id: int,
     svc: EventServiceDep,

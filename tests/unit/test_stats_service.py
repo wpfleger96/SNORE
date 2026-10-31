@@ -87,7 +87,6 @@ class TestStatsService:
         assert summary.avg_hours == 7.5
         # Usage-weighted by total_therapy_hours: (2.5*8 + 3.0*7) / 15 = 41/15.
         assert summary.avg_ahi == pytest.approx(41.0 / 15.0)
-        assert summary.effectiveness == "excellent"
         assert summary.first_date == day1.date
         assert summary.last_date == day2.date
 
@@ -438,11 +437,60 @@ class TestStatsService:
             async_db_session, async_test_device, date.today(), ahi=0.0
         )
 
-        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+        service = StatsService(async_db_session, profile_id=1)
+        summary = await service.get_summary()
+        experimental = await service.get_experimental_stats()
 
         assert summary is not None
         assert summary.avg_ahi == 0.0
-        assert summary.effectiveness == "excellent"
+        assert experimental.effectiveness == "excellent"
+
+
+class TestExperimentalStats:
+    async def test_empty_range_is_unknown_with_no_trend(self, async_db_session):
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "unknown"
+        assert result.ahi_trend_direction is None
+
+    async def test_band_and_trend_come_from_weekly_ahi(
+        self, async_db_session, async_test_device
+    ):
+        """Weeks at AHI 8, 8, 2 average 6 ("good"); the last week is improving."""
+        for week, ahi in enumerate([8.0, 8.0, 2.0]):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                date(2024, 1, 1) + timedelta(weeks=week),
+                ahi=ahi,
+            )
+
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "good"
+        assert result.ahi_trend_direction == "improving"
+
+    async def test_days_limit_restricts_range(
+        self, async_db_session, async_test_device
+    ):
+        """days_limit filters as it does for get_summary."""
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            date.today() - timedelta(days=200),
+            ahi=20.0,
+        )
+
+        service = StatsService(async_db_session, profile_id=1)
+
+        assert (await service.get_experimental_stats()).effectiveness == "poor"
+        assert (
+            await service.get_experimental_stats(days_limit=90)
+        ).effectiveness == "unknown"
 
 
 class TestChunkedIdBinds:

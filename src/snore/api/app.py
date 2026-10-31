@@ -856,7 +856,9 @@ def create_app() -> FastAPI:
         events.router, prefix=f"{API_V1_PREFIX}/sessions", tags=["events"]
     )
 
-    app.include_router(analysis.router, prefix=API_V1_PREFIX, tags=["analysis"])
+    app.include_router(
+        analysis.router, prefix=API_V1_PREFIX, tags=["analysis", "experimental"]
+    )
     app.include_router(days.router, prefix=f"{API_V1_PREFIX}/days", tags=["days"])
     app.include_router(
         health_routes.router, prefix=f"{API_V1_PREFIX}/health", tags=["health"]
@@ -891,7 +893,9 @@ def create_app() -> FastAPI:
     app.include_router(db.router, prefix=f"{API_V1_PREFIX}/db", tags=["database"])
 
     app.include_router(
-        validation.router, prefix=f"{API_V1_PREFIX}/validate", tags=["validation"]
+        validation.router,
+        prefix=f"{API_V1_PREFIX}/validate",
+        tags=["validation", "experimental"],
     )
     app.include_router(
         profiles.router, prefix=f"{API_V1_PREFIX}/profiles", tags=["profiles"]

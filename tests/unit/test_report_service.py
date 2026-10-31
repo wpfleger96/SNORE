@@ -109,6 +109,24 @@ class TestReportService:
         assert "<td>" in html
         assert "days" in html.lower() or "/</td>" in html or "<td>7" in html
 
+    async def test_reports_do_not_render_effectiveness(
+        self, async_db_session, async_test_device
+    ):
+        """The effectiveness band is experimental, so no report shows it."""
+        today = date.today()
+        range_a = (today - timedelta(days=60), today - timedelta(days=31))
+        range_b = (today - timedelta(days=30), today)
+        await _seed_days(async_db_session, async_test_device, range_a[0], range_b[1])
+
+        service = ReportService(async_db_session, profile_id=1)
+        summary_html = await service.generate_summary_report(range_a[0], range_b[1])
+        comparison_html = await service.generate_comparison_report(range_a, range_b)
+
+        assert "Avg AHI" in summary_html
+        assert "Avg AHI" in comparison_html
+        assert "Effectiveness" not in summary_html
+        assert "Effectiveness" not in comparison_html
+
     async def test_comparison_contains_both_range_headings_and_delta_sign(
         self, async_db_session, async_test_device
     ):
