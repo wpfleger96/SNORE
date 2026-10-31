@@ -405,8 +405,8 @@ async def delete_my_data(
     renamed into ``.quarantine/`` BEFORE the commit so that a container restart
     between quarantine and commit leaves dirs visible to
     ``DeletionSaga.recover()`` case 2 on next boot.  DB rows survive so the
-    state is consistent.  New imports proceed normally — re-upload and
-    deduplication make the loss harmless.
+    state is consistent.  New imports proceed normally, but the raw archive
+    is lost and cannot be rebuilt from the database.
 
     NOTE: Concurrent in-flight imports for this user's devices will fail if
     their device rows are deleted mid-import; this is accepted behavior.

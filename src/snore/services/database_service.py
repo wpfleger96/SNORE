@@ -307,7 +307,8 @@ class DatabaseService(ProfileScopedService):
 
         Trade-off: a crash between quarantine and commit means DB rows survive
         but raw backups are swept by startup recovery.  New imports proceed
-        normally — re-upload and deduplication make the loss harmless.
+        normally, but the raw archive is lost and cannot be rebuilt from the
+        database.
 
         NOTE: Concurrent in-flight imports for this user's devices will fail if
         their device rows are deleted mid-import; this is accepted behavior.
