@@ -149,7 +149,7 @@ src/snore/
 │   ├── backup_service.py    # Raw file backup
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_service.py       # Day aggregation
-│   ├── event_service.py     # Event queries + matching
+│   ├── event_service.py     # Event queries
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
@@ -372,7 +372,7 @@ running every `DEFAULT_TOOLS` entry with SQL capture.
 **REST gating rule:** no default REST operation may return an Experimental-tagged field. Experimental
 operations keep their URLs and carry the FastAPI `experimental` tag: at `include_router` for the
 analysis and validation routers, per operation elsewhere (`GET /days/{date}/experimental`,
-`GET /stats/experimental`, `/sessions/{id}/events/match`, `/sessions/{id}/waveforms/compare`).
+`GET /stats/experimental`, `/sessions/{id}/waveforms/compare`).
 `GET /days/{date}` does not touch analysis tables. `tests/unit/test_provenance_tags.py` enforces the
 rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there pins
 the tagged list, so tagging a route to escape the check fails until that list is edited too. HTML

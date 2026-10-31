@@ -30,7 +30,6 @@ export type WaveformDataResponse = Schemas['WaveformDataResponse']
 
 // Events
 export type EventItem = Schemas['EventItem']
-export type EventMatchResult = Schemas['EventMatchResult']
 
 // Devices
 export type DeviceInfo = Schemas['DeviceInfo']

@@ -10,9 +10,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.analysis.modes.postprocess import EVENT_MATCH_TOLERANCE_SECONDS
+from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
+from snore.analysis.types import AnalysisEvent
 from snore.database.models import Device, Profile, Session, User, Waveform
 from snore.exceptions import NotFoundError
 from snore.services import waveform_service as waveform_service_module
+from snore.services.schemas import EventComparisonResult
 from snore.services.session_service import SessionService
 from snore.services.waveform_service import WaveformService
 
@@ -338,36 +342,39 @@ class TestWaveformService:
         assert len(timestamps) == len(values)
 
 
-def _make_event(
-    start_time: float,
-    duration: float = 10.0,
-    event_type: str = "OA",
-    confidence: float | None = None,
-    flow_reduction: float | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        start_time=start_time,
-        duration=duration,
-        event_type=event_type,
-        confidence=confidence,
-        flow_reduction=flow_reduction,
+def _machine_event(start_time: float, event_type: str = "OA") -> AnalysisEvent:
+    return AnalysisEvent(
+        event_type=event_type, start_time=start_time, duration=10.0, source="machine"
     )
 
 
-def _make_machine_event(
-    start_time: float, duration: float = 10.0, event_type: str = "OA"
-) -> SimpleNamespace:
-    return SimpleNamespace(
+def _apnea(start_time: float, event_type: str = "OA") -> ApneaEvent:
+    return ApneaEvent(
         start_time=start_time,
-        duration=duration,
+        end_time=start_time + 10.0,
+        duration=10.0,
         event_type=event_type,
+        flow_reduction=0.9,
+        confidence=0.8,
+        baseline_flow=30.0,
+    )
+
+
+def _hypopnea(start_time: float) -> HypopneaEvent:
+    return HypopneaEvent(
+        start_time=start_time,
+        end_time=start_time + 10.0,
+        duration=10.0,
+        flow_reduction=0.4,
+        confidence=0.7,
+        baseline_flow=30.0,
     )
 
 
 def _make_analysis_result(
-    machine_events: list[SimpleNamespace] | None = None,
-    apneas: list[SimpleNamespace] | None = None,
-    hypopneas: list[SimpleNamespace] | None = None,
+    machine_events: list[AnalysisEvent] | None = None,
+    apneas: list[ApneaEvent] | None = None,
+    hypopneas: list[HypopneaEvent] | None = None,
     mode: str = "aasm",
 ) -> SimpleNamespace:
     mode_result = SimpleNamespace(
@@ -378,6 +385,38 @@ def _make_analysis_result(
         machine_events=machine_events or [],
         mode_results={mode: mode_result},
     )
+
+
+@pytest.fixture
+def compare(async_db_session, async_test_device, monkeypatch):
+    """Run ``compare_events`` on a fresh session against the given analysis."""
+
+    async def run(
+        machine_events: list[AnalysisEvent] | None = None,
+        apneas: list[ApneaEvent] | None = None,
+        hypopneas: list[HypopneaEvent] | None = None,
+    ) -> EventComparisonResult:
+        now = datetime(2025, 1, 1, 0, 0, 0)
+        session = Session(
+            device_id=async_test_device.id,
+            device_session_id="test_compare",
+            start_time=now,
+            end_time=now + timedelta(hours=8),
+            duration_seconds=28800,
+        )
+        async_db_session.add(session)
+        await async_db_session.flush()
+        monkeypatch.setattr(
+            WaveformService,
+            "_load_analysis_result",
+            AsyncMock(
+                return_value=_make_analysis_result(machine_events, apneas, hypopneas)
+            ),
+        )
+        service = WaveformService(async_db_session, profile_id=1)
+        return await service.compare_events(session.id)
+
+    return run
 
 
 class TestCompareEvents:
@@ -428,175 +467,124 @@ class TestCompareEvents:
         with pytest.raises(NotFoundError, match="Mode.*not found"):
             await service.compare_events(session.id, mode="resmed")
 
-    async def test_no_events_returns_empty(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        now = datetime(2025, 1, 1, 0, 0, 0)
-        session = Session(
-            device_id=async_test_device.id,
-            device_session_id="test_compare_empty",
-            start_time=now,
-            end_time=now + timedelta(hours=8),
-            duration_seconds=28800,
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
+    async def test_no_events_returns_empty(self, compare):
+        result = await compare()
 
-        fake_result = _make_analysis_result()
-        monkeypatch.setattr(
-            WaveformService,
-            "_load_analysis_result",
-            AsyncMock(return_value=fake_result),
-        )
-        monkeypatch.setattr(
-            "snore.analysis.utils.convert_machine_events",
-            lambda events: ([], []),
-        )
-
-        service = WaveformService(async_db_session, profile_id=1)
-        result = await service.compare_events(session.id)
+        assert result.machine_event_count == 0
+        assert result.programmatic_event_count == 0
+        assert result.matched == 0
         assert result.false_negatives == []
         assert result.false_positives_apnea == []
         assert result.false_positives_hypopnea == []
 
-    async def test_false_negative_detected(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """Machine event with no matching programmatic event → false negative."""
-        now = datetime(2025, 1, 1, 0, 0, 0)
-        session = Session(
-            device_id=async_test_device.id,
-            device_session_id="test_compare_fn",
-            start_time=now,
-            end_time=now + timedelta(hours=8),
-            duration_seconds=28800,
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
-
-        m_event = _make_machine_event(start_time=100.0, event_type="OA")
-        fake_result = _make_analysis_result(machine_events=[m_event])
-        monkeypatch.setattr(
-            WaveformService,
-            "_load_analysis_result",
-            AsyncMock(return_value=fake_result),
-        )
-        monkeypatch.setattr(
-            "snore.analysis.utils.convert_machine_events",
-            lambda events: ([m_event], []),
+    async def test_unmatched_events_keep_their_detail(self, compare):
+        result = await compare(
+            machine_events=[_machine_event(100.0)],
+            apneas=[_apnea(1000.0, event_type="CA")],
+            hypopneas=[_hypopnea(2000.0)],
         )
 
-        service = WaveformService(async_db_session, profile_id=1)
-        result = await service.compare_events(session.id)
-        assert len(result.false_negatives) == 1
-        assert result.false_negatives[0].start_time == 100.0
+        assert [
+            (e.event_type, e.start_time, e.source, e.confidence, e.flow_reduction)
+            for e in result.false_negatives
+        ] == [("OA", 100.0, "machine", None, None)]
+        assert [
+            (e.event_type, e.start_time, e.source, e.confidence, e.flow_reduction)
+            for e in result.false_positives_apnea
+        ] == [("CA", 1000.0, "programmatic", 0.8, 0.9)]
+        assert [
+            (e.event_type, e.start_time, e.source, e.confidence, e.flow_reduction)
+            for e in result.false_positives_hypopnea
+        ] == [("H", 2000.0, "programmatic", 0.7, 0.4)]
 
-    async def test_false_positive_detected(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """Programmatic event with no matching machine event → false positive."""
-        now = datetime(2025, 1, 1, 0, 0, 0)
-        session = Session(
-            device_id=async_test_device.id,
-            device_session_id="test_compare_fp",
-            start_time=now,
-            end_time=now + timedelta(hours=8),
-            duration_seconds=28800,
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
+    async def test_missed_device_hypopnea_reports_type_h(self, compare):
+        result = await compare(machine_events=[_machine_event(100.0, "H")])
 
-        prog_event = _make_event(start_time=200.0, event_type="OA")
-        fake_result = _make_analysis_result(apneas=[prog_event])
-        monkeypatch.setattr(
-            WaveformService,
-            "_load_analysis_result",
-            AsyncMock(return_value=fake_result),
-        )
-        monkeypatch.setattr(
-            "snore.analysis.utils.convert_machine_events",
-            lambda events: ([], []),
+        assert [e.event_type for e in result.false_negatives] == ["H"]
+
+    async def test_matched_events_are_counted_and_not_listed(self, compare):
+        result = await compare(
+            machine_events=[_machine_event(100.0), _machine_event(200.0, "H")],
+            apneas=[_apnea(100.0)],
+            hypopneas=[_hypopnea(200.0)],
         )
 
-        service = WaveformService(async_db_session, profile_id=1)
-        result = await service.compare_events(session.id)
-        assert len(result.false_positives_apnea) == 1
-        assert result.false_positives_apnea[0].start_time == 200.0
-
-    async def test_matching_events_excluded(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """Events at same time should not appear in false positive/negative lists."""
-        now = datetime(2025, 1, 1, 0, 0, 0)
-        session = Session(
-            device_id=async_test_device.id,
-            device_session_id="test_compare_match",
-            start_time=now,
-            end_time=now + timedelta(hours=8),
-            duration_seconds=28800,
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
-
-        m_event = _make_machine_event(start_time=100.0)
-        prog_event = _make_event(start_time=100.0, event_type="OA")
-        fake_result = _make_analysis_result(
-            machine_events=[m_event], apneas=[prog_event]
-        )
-        monkeypatch.setattr(
-            WaveformService,
-            "_load_analysis_result",
-            AsyncMock(return_value=fake_result),
-        )
-        monkeypatch.setattr(
-            "snore.analysis.utils.convert_machine_events",
-            lambda events: ([m_event], []),
-        )
-
-        service = WaveformService(async_db_session, profile_id=1)
-        result = await service.compare_events(session.id)
+        assert result.matched == 2
         assert result.false_negatives == []
         assert result.false_positives_apnea == []
+        assert result.false_positives_hypopnea == []
 
-    async def test_event_source_names_machine_or_programmatic(
-        self, async_db_session, async_test_device, monkeypatch
+    async def test_apnea_and_hypopnea_match_across_types(self, compare):
+        """Both sides are pooled, so a device OA can pair with a SNORE hypopnea."""
+        result = await compare(
+            machine_events=[_machine_event(100.0)], hypopneas=[_hypopnea(101.0)]
+        )
+
+        assert result.matched == 1
+        assert result.false_negatives == []
+        assert result.false_positives_hypopnea == []
+
+    @pytest.mark.parametrize("event_type", ["FL", "RE", "LL", "VS", "PB"])
+    async def test_non_matchable_device_types_are_ignored(self, compare, event_type):
+        result = await compare(
+            machine_events=[_machine_event(99.0, event_type), _machine_event(100.0)],
+            apneas=[_apnea(100.0)],
+        )
+
+        assert result.machine_event_count == 1
+        assert result.matched == 1
+        assert result.false_negatives == []
+
+    async def test_second_programmatic_event_near_one_machine_event_is_false_positive(
+        self, compare
     ):
-        """Unmatched machine events are tagged "machine"; detected ones "programmatic"."""
-        now = datetime(2025, 1, 1, 0, 0, 0)
-        session = Session(
-            device_id=async_test_device.id,
-            device_session_id="test_compare_source",
-            start_time=now,
-            end_time=now + timedelta(hours=8),
-            duration_seconds=28800,
-        )
-        async_db_session.add(session)
-        await async_db_session.flush()
-
-        m_event = _make_machine_event(start_time=100.0)
-        prog_apnea = _make_event(start_time=1000.0, event_type="CA")
-        prog_hypopnea = _make_event(
-            start_time=2000.0, confidence=0.8, flow_reduction=0.4
-        )
-        fake_result = _make_analysis_result(
-            machine_events=[m_event], apneas=[prog_apnea], hypopneas=[prog_hypopnea]
-        )
-        monkeypatch.setattr(
-            WaveformService,
-            "_load_analysis_result",
-            AsyncMock(return_value=fake_result),
-        )
-        monkeypatch.setattr(
-            "snore.analysis.utils.convert_machine_events",
-            lambda events: ([m_event], []),
+        result = await compare(
+            machine_events=[_machine_event(100.0)],
+            apneas=[_apnea(99.0), _apnea(101.0)],
         )
 
-        service = WaveformService(async_db_session, profile_id=1)
-        result = await service.compare_events(session.id)
+        assert result.matched == 1
+        assert [e.start_time for e in result.false_positives_apnea] == [101.0]
+        assert result.false_negatives == []
 
-        assert [e.source for e in result.false_negatives] == ["machine"]
-        assert [e.source for e in result.false_positives_apnea] == ["programmatic"]
-        assert [e.source for e in result.false_positives_hypopnea] == ["programmatic"]
+    async def test_second_machine_event_near_one_programmatic_event_is_false_negative(
+        self, compare
+    ):
+        result = await compare(
+            machine_events=[_machine_event(99.0), _machine_event(101.0)],
+            apneas=[_apnea(100.0)],
+        )
+
+        assert result.matched == 1
+        assert [e.start_time for e in result.false_negatives] == [101.0]
+        assert result.false_positives_apnea == []
+
+    @pytest.mark.parametrize(
+        ("offset", "expected_matched"),
+        [
+            (EVENT_MATCH_TOLERANCE_SECONDS, 1),
+            (EVENT_MATCH_TOLERANCE_SECONDS + 0.001, 0),
+        ],
+    )
+    async def test_start_difference_at_tolerance_boundary(
+        self, compare, offset, expected_matched
+    ):
+        result = await compare(
+            machine_events=[_machine_event(100.0)], apneas=[_apnea(100.0 + offset)]
+        )
+
+        assert result.matched == expected_matched
+
+    async def test_zero_machine_events_makes_every_detection_a_false_positive(
+        self, compare
+    ):
+        result = await compare(apneas=[_apnea(100.0)], hypopneas=[_hypopnea(200.0)])
+
+        assert result.machine_event_count == 0
+        assert result.programmatic_event_count == 2
+        assert result.matched == 0
+        assert len(result.false_positives_apnea) == 1
+        assert len(result.false_positives_hypopnea) == 1
 
     async def test_get_waveform_data_leaves_session_open_for_subsequent_queries(
         self, async_db_session, async_test_device

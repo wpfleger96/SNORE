@@ -342,7 +342,7 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | db | `/db` | Stats, vacuum; reset (local mode only) |
 | validation | `/validate` | Batch validation report |
 
-**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/events/match`, `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list in `EXPERIMENTAL_OPERATIONS`.
+**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list in `EXPERIMENTAL_OPERATIONS`.
 
 **Key patterns:**
 - Dependency injection: `db: Session = Depends(get_db)` for database sessions
@@ -382,7 +382,7 @@ Imports and analysis run as serialised background jobs to avoid SQLite write-loc
 | DayService | Day aggregation and lookup |
 | DemoService | Demo mode bootstrap — provisions the demo user, profile, and fixture session data for local evaluation |
 | DeviceService | Device listing and per-device detail (usage summary, current settings, settings history) |
-| EventService | Event queries and matching |
+| EventService | Event queries |
 | ExportService | Data export (CSV, JSON, raw files) |
 | ImportService | CPAP data import: source detection, file upload, backup, parse orchestration |
 | lttb (module) | Largest-Triangle-Three-Buckets downsampling via `lttb_downsample()` |

@@ -30,7 +30,6 @@ __all__ = [
     "AnalysisListItem",
     "AnalysisSessionDetail",
     "AnalysisDeletePreview",
-    "EventMatchResult",
     "DeviceInfo",
     "SettingChangeEntry",
     "SettingsChange",
@@ -792,28 +791,6 @@ class WaveformInfo(BaseModel):
     )
 
 
-class EventMatchResult(BaseModel):
-    """Result of matching machine vs programmatic events."""
-
-    machine_count: int = provenance_field(
-        Provenance.DEVICE, "Machine-scored apneas and hypopneas"
-    )
-    programmatic_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Programmatically detected apneas and hypopneas"
-    )
-    matched: int = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Programmatic/machine event pairs matched one-to-one within tolerance "
-        "(each event in at most one pair)",
-    )
-    false_positives: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Programmatic events unmatched"
-    )
-    false_negatives: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Machine events unmatched"
-    )
-
-
 class AnalysisListItem(BaseModel):
     """Session with analysis status for listing."""
 
@@ -1332,10 +1309,15 @@ class EventComparisonResult(BaseModel):
     session_id: int = Field(description="Session database ID")
     mode: str = Field(description="Detection mode used (e.g., 'aasm')")
     machine_event_count: int = provenance_field(
-        Provenance.DEVICE, "Total machine-detected events"
+        Provenance.DEVICE, "Machine-scored apneas and hypopneas"
     )
     programmatic_event_count: int = provenance_field(
         Provenance.EXPERIMENTAL, "Total programmatically-detected events"
+    )
+    matched: int = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Programmatic/machine event pairs matched one-to-one within tolerance "
+        "(each event in at most one pair)",
     )
     false_negatives: list[EventComparisonDetail] = provenance_field(
         Provenance.EXPERIMENTAL,

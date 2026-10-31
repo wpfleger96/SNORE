@@ -30,6 +30,7 @@ const ANALYSIS = {
 const COMPARISON = {
     machine_event_count: 3,
     programmatic_event_count: 4,
+    matched: 2,
     false_negatives: [{ event_type: 'OA', start_time: 100, duration: 12, source: 'machine' }],
     false_positives_apnea: [
         { event_type: 'CA', start_time: 200, duration: 15, source: 'programmatic' },
@@ -96,5 +97,35 @@ describe('AnalysisView', () => {
         expect(section.text()).toContain(
             'False Positives: SNORE-detected Events the Device Did Not Score',
         )
+    })
+
+    function statValue(wrapper: Awaited<ReturnType<typeof mountView>>, label: string) {
+        const section = wrapper
+            .findAll('.section-card')
+            .find((s) => s.find('h2').text() === 'Event Comparison')!
+        return section
+            .findAll('.stat-card')
+            .find((c) => c.find('.stat-label').text().startsWith(label))!
+            .find('.stat-value')
+            .text()
+    }
+
+    it('test_event_comparison_shows_matched_and_sensitivity', async () => {
+        const wrapper = await mountView()
+
+        expect(statValue(wrapper, 'Matched')).toBe('2')
+        expect(statValue(wrapper, 'Sensitivity')).toBe('66.7 %')
+    })
+
+    it('test_sensitivity_is_empty_with_no_device_events', async () => {
+        vi.mocked(getWaveformCompare).mockResolvedValue({
+            ...COMPARISON,
+            machine_event_count: 0,
+            matched: 0,
+        } as never)
+        const wrapper = await mountView()
+
+        expect(statValue(wrapper, 'Matched')).toBe('0')
+        expect(statValue(wrapper, 'Sensitivity')).toBe('---')
     })
 })

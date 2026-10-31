@@ -391,12 +391,21 @@
                     :value="comparison.machine_event_count"
                     :decimals="0"
                     glossary-key="machine_events"
-                />
+                    >Apneas and hypopneas only</StatCard
+                >
                 <StatCard
                     label="SNORE-detected Events"
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
+                />
+                <StatCard label="Matched" :value="comparison.matched" :decimals="0" />
+                <StatCard
+                    label="Sensitivity"
+                    :value="sensitivity"
+                    unit="%"
+                    :decimals="1"
+                    glossary-key="sensitivity"
                 />
                 <StatCard
                     label="False Negatives"
@@ -637,6 +646,11 @@ const eventsPageSize = 25
 const flLegendOpen = ref(false)
 
 const modeOptions = computed(() => Object.keys(analysis.value?.mode_results ?? {}))
+
+const sensitivity = computed(() => {
+    if (!comparison.value?.machine_event_count) return null
+    return (comparison.value.matched / comparison.value.machine_event_count) * 100
+})
 
 const selectedModeResult = computed(() => {
     if (!analysis.value || !selectedMode.value) return null

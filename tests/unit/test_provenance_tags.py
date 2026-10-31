@@ -227,7 +227,6 @@ EXPERIMENTAL_OPERATIONS = {
     "GET /api/v1/analysis/sessions",
     "GET /api/v1/days/{day_date}/experimental",
     "GET /api/v1/sessions/{session_id}/analysis",
-    "GET /api/v1/sessions/{session_id}/events/match",
     "GET /api/v1/sessions/{session_id}/waveforms/compare",
     "GET /api/v1/stats/experimental",
     "GET /api/v1/validate/runs",

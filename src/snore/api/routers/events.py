@@ -4,16 +4,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from snore.api.deps import service_dep
-from snore.api.errors import NotFoundError
 from snore.api.schemas import EventItem
 from snore.database import models
-from snore.services import AnalysisFacade, EventService
-from snore.services.schemas import EventMatchResult
+from snore.services import EventService
 
 router = APIRouter()
 
 EventServiceDep = Annotated[EventService, Depends(service_dep(EventService))]
-AnalysisFacadeDep = Annotated[AnalysisFacade, Depends(service_dep(AnalysisFacade))]
 
 
 def _event_to_item(event: models.Event, session_start: datetime) -> EventItem:
@@ -36,32 +33,3 @@ async def list_events(
 ) -> list[EventItem]:
     events, session_start = await svc.list_session_events(session_id, event_type)
     return [_event_to_item(e, session_start) for e in events]
-
-
-@router.get(
-    "/{session_id}/events/match",
-    response_model=EventMatchResult,
-    tags=["experimental"],
-)
-async def match_events(
-    session_id: int,
-    svc: EventServiceDep,
-    facade: AnalysisFacadeDep,
-    mode: str = Query(default="aasm"),
-) -> EventMatchResult:
-    machine_times = await svc.get_machine_apnea_hypopnea_times(session_id)
-
-    analysis = await facade.get_analysis_result(session_id)
-    if not analysis:
-        raise NotFoundError(f"No analysis results found for session {session_id}")
-
-    programmatic_times: list[float] = []
-    mode_result = analysis.mode_results.get(mode)
-    if mode_result is not None:
-        for apnea in mode_result.apneas:
-            programmatic_times.append(analysis.timestamp_start + apnea.start_time)
-        for hyp in mode_result.hypopneas:
-            programmatic_times.append(analysis.timestamp_start + hyp.start_time)
-        programmatic_times.sort()
-
-    return svc.match_events(machine_times, programmatic_times)
