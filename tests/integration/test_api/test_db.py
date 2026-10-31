@@ -325,6 +325,28 @@ class TestDbResetMultiuser:
         ).scalar()
         assert session_count == 0, "All sessions must be deleted by data-only reset"
 
+    def test_data_only_reset_preserves_totp_recovery_codes(
+        self, async_db_session, db_session, monkeypatch, temp_db
+    ):
+        """Data-only reset keeps 2FA recovery codes; totp_secret lives on users and survives."""
+        client, user, _ = self._make_admin_client(
+            async_db_session, db_session, monkeypatch
+        )
+        recovery_code = models.TotpRecoveryCode(user_id=user.id, code_hash="hash")
+        db_session.add(recovery_code)
+        db_session.flush()
+        recovery_code_id = recovery_code.id
+
+        with _patch_target(temp_db, client):
+            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+
+        assert response.status_code == 200
+        db_session.expire_all()
+        assert db_session.get(models.TotpRecoveryCode, recovery_code_id) is not None, (
+            "Recovery codes must survive data-only reset"
+        )
+        assert "totp_recovery_codes" not in response.json()["tables_cleared"]
+
     def test_include_accounts_reset_empties_users_returns_invite_url(
         self,
         async_db_session,
@@ -339,6 +361,8 @@ class TestDbResetMultiuser:
         client, user, profile = self._make_admin_client(
             async_db_session, db_session, monkeypatch
         )
+        db_session.add(models.TotpRecoveryCode(user_id=user.id, code_hash="hash"))
+        db_session.flush()
 
         with _patch_target(temp_db, client):
             response = client.post("/api/v1/db/reset", json={"include_accounts": True})
@@ -367,17 +391,21 @@ class TestDbResetMultiuser:
             "Exactly one bootstrap admin invite should exist after full reset"
         )
 
+        recovery_code_count = db_session.execute(
+            sa_select(func.count()).select_from(models.TotpRecoveryCode)
+        ).scalar()
+        assert recovery_code_count == 0, "Factory reset must delete recovery codes"
+        assert data["tables_cleared"]["totp_recovery_codes"] == 1
+
         # Every table in the schema must appear in tables_cleared.
         assert set(data["tables_cleared"].keys()) == set(Base.metadata.tables.keys()), (
             "tables_cleared must include every table for a full factory reset"
         )
 
-    def test_data_only_reset_with_zero_data_succeeds(
+    def test_data_only_reset_clears_exactly_the_data_tables(
         self, async_db_session, db_session, monkeypatch, temp_db
     ):
-        """Data-only reset on a database with no sleep data succeeds (no-op for data tables)."""
-        from snore.api.routers.db import _DATA_RESET_SKIP  # noqa: PLC0415
-
+        """Data-only reset clears only the listed data tables, even with no sleep data."""
         client, _, _ = self._make_admin_client(
             async_db_session, db_session, monkeypatch
         )
@@ -389,10 +417,29 @@ class TestDbResetMultiuser:
         data = response.json()
         assert data["status"] == "success"
 
-        # Data-only reset must clear exactly the non-skipped tables.
-        expected_keys = set(Base.metadata.tables.keys()) - _DATA_RESET_SKIP
+        # Literal on purpose: a new table in the schema fails this test until
+        # someone decides whether a data-only reset should delete it.
+        expected_keys = {
+            "analysis_job_records",
+            "analysis_results",
+            "breaths",
+            "days",
+            "detected_patterns",
+            "devices",
+            "events",
+            "health_nightly_summaries",
+            "health_samples",
+            "import_job_records",
+            "mask_log",
+            "sessions",
+            "settings",
+            "statistics",
+            "validation_runs",
+            "waveforms",
+        }
         assert set(data["tables_cleared"].keys()) == expected_keys, (
-            "tables_cleared must cover every non-skipped table for a data-only reset"
+            "List each new table here if a data-only reset should delete it, "
+            "or in _DATA_RESET_SKIP if it must survive"
         )
 
     def test_data_only_reset_purges_raw_dirs(
