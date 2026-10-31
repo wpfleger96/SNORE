@@ -401,9 +401,7 @@ class SessionService(ProfileScopedService):
             )
             deleted += cursor.rowcount or 0
 
-        # Deleting sessions cascades to their waveform rows, freeing SQLite
-        # rowids that a later import can reuse.  Drop the id-keyed array cache so
-        # a reused id never serves a deleted row's arrays.
+        # The user asked for this data to be gone; see clear_waveform_array_cache.
         clear_waveform_array_cache()
 
         # day_ids were collected under the profile filter; the join repeats it

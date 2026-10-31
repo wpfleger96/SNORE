@@ -2,6 +2,7 @@
 
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -11,7 +12,11 @@ from sqlalchemy import select
 from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.database import models
 from snore.exceptions import NotFoundError
-from snore.services._base import ProfileScopedService, require_owned_session
+from snore.services._base import (
+    ProfileScopedService,
+    require_owned_session,
+    session_device_join,
+)
 from snore.services.lttb import lttb_downsample
 from snore.services.schemas import (
     EventComparisonDetail,
@@ -27,44 +32,63 @@ __all__ = ["WaveformService", "clear_waveform_array_cache"]
 # insert, so a patched value takes effect immediately).
 WAVEFORM_ARRAY_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
+# ``(Waveform.id, Session.import_date)``; see :class:`_WaveformArrayCache`.
+type _WaveformCacheKey = tuple[int, datetime]
+
 
 class _WaveformArrayCache:
     """Module-level, byte-capped LRU of deserialized waveform arrays.
 
-    Keyed by ``Waveform.id`` (the row primary key), which gives automatic
-    staleness invalidation for free: row ids are never mutated in place, and a
-    session delete + re-import produces a *new* row id.  (SQLite can reuse a
-    rowid after deleting the max row — which is exactly why the key must be the
-    id fetched fresh from the DB on every request, never a ``(session_id,
-    type)`` pair.)
+    Keyed by ``(Waveform.id, Session.import_date)``.  ``Waveform.id`` alone is
+    not an identity: it is a bare SQLite rowid alias (no
+    ``sqlite_autoincrement``), so a later insert can reuse a deleted row's id.
+    ``import_date`` closes that gap.  Waveform rows are only ever inserted with
+    a brand-new session and ``import_date`` is never rewritten, so a reused id
+    always arrives with a different ``import_date`` and misses the cache,
+    including when that row belongs to another profile.
 
-    Confinement: FastAPI serves requests on a single event loop, and no ``await``
-    occurs between the ``OrderedDict`` operations below, so they execute
-    atomically under the GIL.  No lock is required or used.
+    The key cannot be reused, so correctness does not depend on anyone calling
+    :func:`clear_waveform_array_cache`, which matters because a separate process
+    (``snore import``) can delete and insert rows without reaching this memory.
+    Both key parts are read fresh from the DB on every request; an entry for a
+    deleted row is simply never looked up again and ages out through the LRU.
+
+    Confinement: in the API server, every read (the ``get_waveform`` route) and
+    clear (the user-delete routes) runs on the one event loop, and no ``await``
+    occurs between the ``OrderedDict`` operations below, so they never interleave
+    and no lock is used.  The one caller off that loop is multi-channel ``snore
+    waveform show``, which loads up to four channels on worker threads in its own
+    short-lived process.  Cached arrays are read-only and each entry is complete
+    before it is inserted, so a thread race there can skew the byte count or fail
+    one channel with a warning, but never serve wrong data.
     """
 
     def __init__(self) -> None:
-        self._entries: OrderedDict[int, tuple[np.ndarray, np.ndarray]] = OrderedDict()
+        self._entries: OrderedDict[_WaveformCacheKey, tuple[np.ndarray, np.ndarray]] = (
+            OrderedDict()
+        )
         self._total_bytes = 0
 
-    def get(self, waveform_id: int) -> tuple[np.ndarray, np.ndarray] | None:
-        """Return cached ``(timestamps, values)`` for a row id, or ``None``."""
-        entry = self._entries.get(waveform_id)
+    def get(self, key: _WaveformCacheKey) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return cached ``(timestamps, values)`` for a key, or ``None``."""
+        entry = self._entries.get(key)
         if entry is not None:
-            self._entries.move_to_end(waveform_id)
+            self._entries.move_to_end(key)
         return entry
 
-    def put(self, waveform_id: int, timestamps: np.ndarray, values: np.ndarray) -> None:
-        """Insert arrays for a row id, evicting least-recently-used past the cap.
+    def put(
+        self, key: _WaveformCacheKey, timestamps: np.ndarray, values: np.ndarray
+    ) -> None:
+        """Insert arrays for a key, evicting least-recently-used past the cap.
 
         ``get`` is called before ``put`` on the miss path, so a repeat key is not
         expected; the guard makes a double insert idempotent rather than
         double-counting bytes.  The just-inserted entry is never evicted, so a
         single oversized channel is still served (all others make way for it).
         """
-        if waveform_id in self._entries:
+        if key in self._entries:
             return
-        self._entries[waveform_id] = (timestamps, values)
+        self._entries[key] = (timestamps, values)
         self._total_bytes += timestamps.nbytes + values.nbytes
         while (
             self._total_bytes > WAVEFORM_ARRAY_CACHE_MAX_BYTES
@@ -74,7 +98,7 @@ class _WaveformArrayCache:
             self._total_bytes -= old_ts.nbytes + old_vals.nbytes
 
     def clear(self) -> None:
-        """Drop all entries (used to reset state between tests)."""
+        """Drop all entries."""
         self._entries.clear()
         self._total_bytes = 0
 
@@ -85,13 +109,10 @@ _waveform_array_cache = _WaveformArrayCache()
 def clear_waveform_array_cache() -> None:
     """Drop every entry in the module-level deserialized-array cache.
 
-    The cache is keyed by ``Waveform.id``, but that row id is a bare SQLite
-    rowid alias (no ``sqlite_autoincrement``), so SQLite *reuses* an id after the
-    max row is deleted or the table is emptied.  A reused id would otherwise
-    serve the deleted row's arrays — even to a different profile, since the
-    per-request ownership check validates session→profile, not cache-entry→row.
-    Id-keying alone therefore cannot detect a delete→re-import; every code path
-    that deletes waveform rows MUST call this so a reused id starts cold.
+    User-requested deletes call this so deleted health data doesn't linger in
+    memory until LRU eviction.  Nothing depends on it for correctness (see
+    :class:`_WaveformArrayCache`), and it is best-effort: a read already in flight
+    can re-add an entry, which can never be served and ages out through the LRU.
     """
     _waveform_array_cache.clear()
 
@@ -147,31 +168,48 @@ class WaveformService(ProfileScopedService):
 
     async def _fetch_waveform_metadata(
         self, session_id: int, waveform_type: str
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], _WaveformCacheKey]:
         """Light query for a Waveform row's scalar metadata, WITHOUT the blob.
 
-        Selects only scalar columns so warm-cache requests never page the ~MB
-        ``data_blob``.  The returned dict mirrors ``fetch_waveform_blob``'s
-        ``metadata_scalars`` key-for-key (including ``waveform_id`` and
-        ``sample_count``), keeping :meth:`get_waveform_data`'s return contract
-        identical whether arrays come from the cache or a fresh deserialize.
+        Selects only scalar columns, so the ~MB ``data_blob`` never reaches Python
+        here.  SQLite still walks its overflow pages, because ``sample_count`` is
+        stored after ``data_blob`` in the row.  The returned dict mirrors
+        ``fetch_waveform_blob``'s ``metadata_scalars`` key-for-key (including
+        ``waveform_id`` and ``sample_count``), keeping
+        :meth:`get_waveform_data`'s return contract identical whether arrays come
+        from the cache or a fresh deserialize.
+
+        Scoped to this profile through Session → Device, so a row the profile
+        does not own reads as not found.
+
+        Returns:
+            Tuple of (metadata, the row's array cache key).  The key is returned
+            separately because ``import_date`` is not part of the metadata
+            contract.
 
         Raises:
             ValueError: If the waveform row is not found.
         """
         row = (
             await self.db_session.execute(
-                select(
-                    models.Waveform.id,
-                    models.Waveform.session_id,
-                    models.Waveform.waveform_type,
-                    models.Waveform.sample_rate,
-                    models.Waveform.unit,
-                    models.Waveform.min_value,
-                    models.Waveform.max_value,
-                    models.Waveform.mean_value,
-                    models.Waveform.sample_count,
-                ).filter_by(session_id=session_id, waveform_type=waveform_type)
+                session_device_join(
+                    select(
+                        models.Waveform.id,
+                        models.Waveform.session_id,
+                        models.Waveform.waveform_type,
+                        models.Waveform.sample_rate,
+                        models.Waveform.unit,
+                        models.Waveform.min_value,
+                        models.Waveform.max_value,
+                        models.Waveform.mean_value,
+                        models.Waveform.sample_count,
+                        models.Session.import_date,
+                    ).join(models.Waveform.session)
+                ).where(
+                    models.Waveform.session_id == session_id,
+                    models.Waveform.waveform_type == waveform_type,
+                    self._profile_filter(),
+                )
             )
         ).first()
 
@@ -190,6 +228,7 @@ class WaveformService(ProfileScopedService):
             max_value,
             mean_value,
             sample_count,
+            import_date,
         ) = row
         metadata = {
             "waveform_id": waveform_id,
@@ -202,7 +241,7 @@ class WaveformService(ProfileScopedService):
             "mean_value": mean_value,
             "sample_count": sample_count,
         }
-        return metadata
+        return metadata, (waveform_id, import_date)
 
     async def get_waveform_data(
         self,
@@ -225,10 +264,10 @@ class WaveformService(ProfileScopedService):
         2. **Compute phase** (``deserialize_waveform_blob``): converts raw bytes to
            numpy arrays.  No DB session access occurs here.
 
-        Deserialized arrays are cached module-level by row id (see
-        :class:`_WaveformArrayCache`), so a warm request skips both the ~MB blob
-        fetch and the deserialize.  Metadata always comes from the fresh light
-        query, so unit/sample_rate/etc. stay current.  Cached arrays are marked
+        Deserialized arrays are cached module-level by row id and session import
+        date (see :class:`_WaveformArrayCache`), so a warm request skips both the
+        ~MB blob fetch and the deserialize.  Metadata always comes from the fresh
+        light query, so unit/sample_rate/etc. stay current.  Cached arrays are marked
         read-only; the windowing slice below is a read-only view of them, and the
         no-window/no-downsample path returns the read-only arrays directly (the
         router only reads them via ``.tolist()``; LTTB allocates its own output).
@@ -251,24 +290,27 @@ class WaveformService(ProfileScopedService):
         # profile that does not own its session.
         await self._assert_session_owned(session_id)
         try:
-            metadata = await self._fetch_waveform_metadata(session_id, waveform_type)
+            metadata, cache_key = await self._fetch_waveform_metadata(
+                session_id, waveform_type
+            )
         except ValueError as e:
             raise NotFoundError(str(e)) from e
 
         # --- Compute phase: no DB session needed unless the blob must be read ---
         # Do NOT close self.db_session here: the caller may hold it open for
         # subsequent queries (e.g. loading analysis overlays in waveform show).
-        waveform_id = metadata["waveform_id"]
-        cached = _waveform_array_cache.get(waveform_id)
+        cached = _waveform_array_cache.get(cache_key)
         if cached is None:
             # Fetch only the blob, keyed by the id the metadata query already
-            # resolved — no second scalar-column round trip.  The row can vanish
-            # between the two queries (concurrent delete); surface that as the
+            # resolved — no second scalar-column round trip.  A request reads one
+            # snapshot on SQLite WAL, so this always finds that row there; the
+            # session filter and the None check are defensive, and fail as the
             # same 404 as a metadata miss above.
             blob_row = (
                 await self.db_session.execute(
                     select(models.Waveform.data_blob).where(
-                        models.Waveform.id == waveform_id
+                        models.Waveform.id == metadata["waveform_id"],
+                        models.Waveform.session_id == session_id,
                     )
                 )
             ).first()
@@ -283,7 +325,7 @@ class WaveformService(ProfileScopedService):
             # can never mutate the shared cached arrays.
             timestamps.flags.writeable = False
             values.flags.writeable = False
-            _waveform_array_cache.put(waveform_id, timestamps, values)
+            _waveform_array_cache.put(cache_key, timestamps, values)
         else:
             timestamps, values = cached
 

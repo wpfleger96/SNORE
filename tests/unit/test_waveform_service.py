@@ -719,6 +719,29 @@ def _constant_blob(sample_count: int, value: float) -> bytes:
     return np.column_stack([timestamps, values]).astype(np.float32).tobytes()
 
 
+async def _cache_then_delete_without_clear(
+    async_db_session: AsyncSession, device: Device
+) -> int:
+    """Cache a session's arrays, delete its rows, and leave the cache alone.
+
+    A separate ``snore import`` process deletes rows this way: it cannot reach
+    this process's cache.  Returns the freed ``Waveform.id``, the table's max
+    rowid, so SQLite hands it to the next insert.
+    """
+    session = await _seed_session(async_db_session, device, "deleted")
+    waveform = await _seed_waveform(async_db_session, session.id)
+    freed_id = waveform.id
+    service = WaveformService(async_db_session, profile_id=device.profile_id)
+    _, cached_vals, _ = await service.get_waveform_data(session.id, "flow")
+    assert not np.allclose(cached_vals, 42.0)  # sin data, not the sentinel
+
+    await async_db_session.delete(session)
+    await async_db_session.flush()
+
+    assert len(waveform_service_module._waveform_array_cache._entries) == 1
+    return freed_id
+
+
 class TestWaveformArrayCache:
     """The module-level deserialized-array cache in get_waveform_data.
 
@@ -845,13 +868,100 @@ class TestWaveformArrayCache:
         with pytest.raises(NotFoundError):
             await intruder.get_waveform_data(session.id, "flow")
 
+    async def test_metadata_query_foreign_profile_not_found(
+        self, async_db_session, async_test_device, monkeypatch
+    ):
+        """The metadata query alone refuses a row the profile doesn't own."""
+        session = await _seed_session(async_db_session, async_test_device, "scoped")
+        await _seed_waveform(async_db_session, session.id)
+        intruder = WaveformService(async_db_session, profile_id=999)
+        monkeypatch.setattr(intruder, "_assert_session_owned", AsyncMock())
+
+        with pytest.raises(NotFoundError, match="Waveform not found"):
+            await intruder.get_waveform_data(session.id, "flow")
+
+    async def test_blob_query_other_session_not_found(
+        self, async_db_session, async_test_device, monkeypatch
+    ):
+        """A resolved row id from another session is a 404, not that row's blob."""
+        requested = await _seed_session(async_db_session, async_test_device, "asked")
+        other = await _seed_session(async_db_session, async_test_device, "other")
+        other_wf = await _seed_waveform(async_db_session, other.id)
+        service = WaveformService(async_db_session, profile_id=1)
+        monkeypatch.setattr(
+            service,
+            "_fetch_waveform_metadata",
+            AsyncMock(
+                return_value=(
+                    {"waveform_id": other_wf.id, "sample_count": 1000},
+                    (other_wf.id, other.import_date),
+                )
+            ),
+        )
+
+        with pytest.raises(NotFoundError, match="Waveform not found"):
+            await service.get_waveform_data(requested.id, "flow")
+
+    async def test_reused_row_id_served_fresh_without_clear(
+        self, async_db_session, async_test_device
+    ):
+        """A reused row id serves the NEW row even though nothing cleared the cache."""
+        freed_id = await _cache_then_delete_without_clear(
+            async_db_session, async_test_device
+        )
+
+        new_session = await _seed_session(async_db_session, async_test_device, "new")
+        new_wf = await _seed_waveform(
+            async_db_session, new_session.id, blob=_constant_blob(1000, 42.0)
+        )
+        assert new_wf.id == freed_id  # SQLite reused the freed max rowid
+
+        service = WaveformService(
+            async_db_session, profile_id=async_test_device.profile_id
+        )
+        _, fresh_vals, _ = await service.get_waveform_data(new_session.id, "flow")
+        np.testing.assert_allclose(fresh_vals, 42.0)
+
+    async def test_reused_row_id_on_other_profile_served_own_data(
+        self, async_db_session, async_test_device
+    ):
+        """A profile whose new row reuses an id never sees the old owner's arrays."""
+        user = User(canonical_email="other@example.com", role="member")
+        async_db_session.add(user)
+        await async_db_session.flush()
+        other_profile = Profile(user_id=user.id, name="Other")
+        async_db_session.add(other_profile)
+        await async_db_session.flush()
+        other_device = Device(
+            profile_id=other_profile.id,
+            manufacturer="M",
+            model="X",
+            serial_number="SN_OTHER",
+        )
+        async_db_session.add(other_device)
+        await async_db_session.flush()
+
+        freed_id = await _cache_then_delete_without_clear(
+            async_db_session, async_test_device
+        )
+
+        other_session = await _seed_session(async_db_session, other_device, "other")
+        other_wf = await _seed_waveform(
+            async_db_session, other_session.id, blob=_constant_blob(1000, 42.0)
+        )
+        assert other_wf.id == freed_id  # SQLite reused the freed max rowid
+
+        service = WaveformService(async_db_session, profile_id=other_profile.id)
+        _, own_vals, _ = await service.get_waveform_data(other_session.id, "flow")
+        np.testing.assert_allclose(own_vals, 42.0)
+
     async def test_reused_rowid_after_delete_served_fresh(self, async_db_session):
-        """delete_sessions clears the cache so a reused rowid serves the NEW row.
+        """delete_sessions frees the max rowid and its reuse serves the NEW row.
 
         Complements ``test_replaced_row_served_fresh`` (which keeps a decoy max
         row so no id is reused): here the cached waveform holds the max rowid and
         is removed via the real deletion path, so SQLite reuses its id for the
-        next insert — the case id-keying alone cannot distinguish.
+        next insert.
         """
         # Enable FK enforcement as the FIRST statement, before any transaction
         # begins (SQLite ignores this pragma mid-transaction), so the Core DELETE
@@ -887,6 +997,7 @@ class TestWaveformArrayCache:
             async_db_session, profile_id=profile.id
         ).delete_sessions([session.id])
         assert deleted == 1
+        assert not waveform_service_module._waveform_array_cache._entries
         # The Core DELETE leaves the now-deleted row in the ORM identity map;
         # drop it so the reused-id insert below does not collide with it.
         async_db_session.expunge(old_wf)

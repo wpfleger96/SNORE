@@ -295,8 +295,7 @@ async def reset_db(
                 caller_email,
             )
 
-    # The reset emptied the waveforms table, so every deserialized-array cache
-    # entry is now stale and its rowid is free for reuse by the next import.
+    # The user asked for this data to be gone; see clear_waveform_array_cache.
     clear_waveform_array_cache()
 
     # Best-effort rmtree of quarantined dirs after a successful commit.

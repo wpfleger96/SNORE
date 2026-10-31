@@ -78,11 +78,9 @@ def reset_auth_config():
 def _reset_waveform_array_cache():
     """Clear the process-global deserialized-waveform array cache between tests.
 
-    The cache in ``waveform_service`` is keyed by ``Waveform.id``.  Each test
-    uses its own database, but row ids restart per DB, so without this reset a
-    cached array from one test's row id would be served for a different test's
-    row that happens to reuse that id — an isolation artifact that never occurs
-    in production (one process serves one database).
+    The cache in ``waveform_service`` outlives each test's database, so without
+    this reset one test's entries would appear in another's assertions on the
+    cache contents and count against its byte cap.
     """
     from snore.services.waveform_service import clear_waveform_array_cache as _reset
 

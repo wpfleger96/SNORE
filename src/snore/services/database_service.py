@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.database import models
 from snore.services._base import ProfileScopedService, session_device_join
 from snore.services.schemas import DatabaseStats, VacuumResult
+from snore.services.waveform_service import clear_waveform_array_cache
 
 __all__ = ["DatabaseService", "_vacuum_background", "file_size_mb"]
 
@@ -377,6 +378,9 @@ class DatabaseService(ProfileScopedService):
                         pid,
                     )
             raise
+
+        # The user asked for this data to be gone; see clear_waveform_array_cache.
+        clear_waveform_array_cache()
 
         # Commit succeeded — best-effort rmtree.  CancelledError may skip this;
         # startup recovery (DeletionSaga case 2) purges .quarantine/ leftovers.
