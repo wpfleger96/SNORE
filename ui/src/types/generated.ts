@@ -999,9 +999,9 @@ export interface paths {
          *         Delete all sleep data (devices, sessions, waveforms, events, statistics,
          *         settings, analysis results, breaths, detected patterns, days, import job
          *         records) and purge every ``raw/<profile_id>/`` backup directory.
-         *         User accounts, auth identities, invites, and profile containers are
-         *         preserved.  Safe for multiuser deployments — users keep their accounts
-         *         and can re-import data afterward.
+         *         User accounts, auth identities, 2FA recovery codes, invites, and profile
+         *         containers are preserved, so users keep their accounts and can re-import
+         *         whatever is still on their SD cards.
          *
          *     ``include_accounts=true``:
          *         Full factory reset (every row in every table) plus raw-dir purge and
