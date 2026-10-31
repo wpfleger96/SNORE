@@ -698,8 +698,8 @@ export interface paths {
          *     renamed into ``.quarantine/`` BEFORE the commit so that a container restart
          *     between quarantine and commit leaves dirs visible to
          *     ``DeletionSaga.recover()`` case 2 on next boot.  DB rows survive so the
-         *     state is consistent.  New imports proceed normally — re-upload and
-         *     deduplication make the loss harmless.
+         *     state is consistent.  New imports proceed normally, but the raw archive
+         *     is lost and cannot be rebuilt from the database.
          *
          *     NOTE: Concurrent in-flight imports for this user's devices will fail if
          *     their device rows are deleted mid-import; this is accepted behavior.
@@ -997,7 +997,8 @@ export interface paths {
          *
          *     ``include_accounts=false`` (default):
          *         Delete all sleep data (devices, sessions, waveforms, events, statistics,
-         *         settings, analysis results, breaths, detected patterns, days, import job
+         *         settings, analysis results, breaths, detected patterns, days, Apple Health
+         *         samples and summaries, mask log, validation runs, analysis and import job
          *         records) and purge every ``raw/<profile_id>/`` backup directory.
          *         User accounts, auth identities, 2FA recovery codes, invites, and profile
          *         containers are preserved, so users keep their accounts and can re-import
@@ -1022,8 +1023,8 @@ export interface paths {
          *     renamed into ``.quarantine/`` BEFORE the commit.  A crash between quarantine
          *     and commit leaves dirs in ``.quarantine/`` for ``DeletionSaga.recover()``
          *     case 2 to sweep on next boot; DB rows survive so the state is consistent.
-         *     New imports proceed normally — re-upload deduplication makes the loss
-         *     harmless.
+         *     New imports proceed normally, but the raw archive is lost and cannot be
+         *     rebuilt from the database.
          *
          *     Note: this handler holds the SQLite write lock for the entire delete+commit,
          *     so on large databases concurrent import/analysis writers may hit their 5 s

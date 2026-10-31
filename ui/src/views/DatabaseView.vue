@@ -184,13 +184,14 @@
                         <p class="vacuum-title">Reset Database</p>
                         <p class="vacuum-subtitle">
                             <template v-if="isLocal">
-                                Delete all session data, devices, and profiles. The schema is
-                                preserved — you can re-import data afterward.
+                                Delete all sleep data, devices, and the raw file archive. Profiles
+                                and the schema are preserved, so you can re-import data afterward.
                             </template>
                             <template v-else>
-                                Delete all sleep data across every user account. Profiles and
-                                accounts are preserved by default.
+                                Delete all sleep data and raw file archives across every user
+                                account. Profiles and accounts are preserved by default.
                             </template>
+                            {{ RESET_RESTORE_WARNING }}
                         </p>
 
                         <!-- Multiuser-only: include_accounts checkbox -->
@@ -268,6 +269,7 @@
             :loading="false"
             :deleting="resetting"
             confirm-phrase="reset"
+            content-class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
             @confirm="handleReset"
         >
             <template v-if="data" #preview>
@@ -296,7 +298,7 @@
                         <span>Devices</span>
                         <span class="font-medium">{{ data.device_count }}</span>
                     </div>
-                    <div class="reset-preview-row">
+                    <div v-if="isFactoryReset" class="reset-preview-row">
                         <span>Profiles</span>
                         <span class="font-medium">{{ data.profile_count }}</span>
                     </div>
@@ -362,11 +364,16 @@ const includeAccounts = ref(false)
 const bootstrapInviteUrl = ref<string | null>(null)
 const inviteCopied = ref(false)
 
+const RESET_RESTORE_WARNING =
+    "Re-importing only restores what is still on the SD card. Apple Health data, the mask log, and validation runs are also deleted and won't come back from the card, and disabled sessions come back enabled."
+
+const isFactoryReset = computed(() => !isLocal.value && includeAccounts.value)
+
 const resetDialogMessage = computed(() => {
-    if (!isLocal.value && includeAccounts.value) {
-        return 'This will permanently delete ALL data AND all user accounts. Every user (including you) will be signed out. A one-time admin invite URL will be returned so you can regain access.'
+    if (isFactoryReset.value) {
+        return `This will permanently delete ALL data, raw file archives, AND all user accounts. Every user (including you) will be signed out. A one-time admin invite URL will be returned so you can regain access. ${RESET_RESTORE_WARNING}`
     }
-    return 'This will permanently delete ALL sleep data from the database. User accounts and profiles are preserved. This cannot be undone.'
+    return `This will permanently delete ALL sleep data and raw file archives. User accounts and profiles are preserved. ${RESET_RESTORE_WARNING} This cannot be undone.`
 })
 
 async function handleReset(): Promise<void> {

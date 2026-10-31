@@ -7,15 +7,16 @@ vi.mock('@/composables/useAuth')
 vi.mock('@/api/db')
 vi.mock('@/utils/formatting', () => ({ formatDateShort: (d: string) => d }))
 
-// Stub DeleteConfirmDialog: renders a plain button visible when `visible` is
-// true; fires `confirm` on click.  Avoids portal/jsdom incompatibilities while
-// still testing the view's wiring (dialog open state, confirm handler, etc.).
+// Stub DeleteConfirmDialog: renders the preview slot and a plain button when
+// `visible` is true; fires `confirm` on click.  Avoids portal/jsdom
+// incompatibilities while still testing the view's wiring (dialog open state,
+// confirm handler, etc.).
 vi.mock('@/components/DeleteConfirmDialog.vue', () => ({
     default: defineComponent({
         name: 'DeleteConfirmDialog',
         props: ['visible', 'title', 'message', 'loading', 'deleting', 'confirmPhrase'],
         emits: ['update:visible', 'confirm'],
-        template: `<button v-if="visible" class="stub-confirm" @click="$emit('confirm')">Confirm</button>`,
+        template: `<div v-if="visible"><slot name="preview" /><button class="stub-confirm" @click="$emit('confirm')">Confirm</button></div>`,
     }),
 }))
 
@@ -201,5 +202,121 @@ describe('DatabaseView — danger zone', () => {
 
         expect(wrapper.find('.error-state').exists()).toBe(true)
         expect(wrapper.find('.error-state').text()).toContain('Server error')
+    })
+
+    describe('reset text', () => {
+        function resetCardText(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+            return wrapper.find('.danger-card .vacuum-subtitle').text()
+        }
+
+        function resetDialogMessage(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+            return wrapper.findComponent({ name: 'DeleteConfirmDialog' }).props('message') as string
+        }
+
+        function expectUnrestorableDataWarning(text: string) {
+            expect(text).toMatch(/raw file archive/i)
+            expect(text).toContain('Re-importing only restores what is still on the SD card')
+            expect(text).toContain('Apple Health data')
+            expect(text).toContain('mask log')
+            expect(text).toContain('validation runs')
+            expect(text).toContain('disabled sessions come back enabled')
+        }
+
+        async function openResetDialog(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+            await wrapper.find('.danger-card button').trigger('click')
+            await wrapper.vm.$nextTick()
+        }
+
+        function previewLabels(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+            return wrapper.findAll('.reset-preview-row span:first-child').map((s) => s.text())
+        }
+
+        it('test_reset_card_local_mode_warns_about_raw_archive_and_unrestorable_data', async () => {
+            makeAuthMock({ isLocal: ref(true) })
+            const wrapper = await mountAndLoad()
+
+            expectUnrestorableDataWarning(resetCardText(wrapper))
+        })
+
+        it('test_reset_card_multiuser_mode_warns_about_raw_archive_and_unrestorable_data', async () => {
+            const wrapper = await mountAndLoad()
+
+            expectUnrestorableDataWarning(resetCardText(wrapper))
+        })
+
+        it('test_reset_card_local_mode_does_not_say_profiles_are_deleted', async () => {
+            makeAuthMock({ isLocal: ref(true) })
+            const wrapper = await mountAndLoad()
+
+            const text = resetCardText(wrapper)
+            expect(text).not.toMatch(/delet[^.]*profiles/i)
+            expect(text).toContain('Profiles and the schema are preserved')
+        })
+
+        it('test_data_only_dialog_message_warns_about_raw_archive_and_unrestorable_data', async () => {
+            const wrapper = await mountAndLoad()
+
+            const message = resetDialogMessage(wrapper)
+            expectUnrestorableDataWarning(message)
+            expect(message).toContain('User accounts and profiles are preserved')
+            expect(message).toContain('This cannot be undone.')
+        })
+
+        it('test_data_only_dialog_message_local_mode_warns_about_raw_archive', async () => {
+            makeAuthMock({ isLocal: ref(true) })
+            const wrapper = await mountAndLoad()
+
+            expectUnrestorableDataWarning(resetDialogMessage(wrapper))
+        })
+
+        it('test_factory_reset_dialog_message_names_raw_archives_and_accounts', async () => {
+            const wrapper = await mountAndLoad()
+
+            await wrapper.find('.include-accounts-checkbox').setValue(true)
+            await wrapper.vm.$nextTick()
+
+            const message = resetDialogMessage(wrapper)
+            expect(message).toMatch(/raw file archives/i)
+            expect(message).toContain('all user accounts')
+            expect(message).toContain('one-time admin invite URL')
+            expect(message).not.toContain('preserved')
+        })
+
+        it('test_factory_reset_dialog_message_warns_about_unrestorable_data', async () => {
+            const wrapper = await mountAndLoad()
+
+            await wrapper.find('.include-accounts-checkbox').setValue(true)
+            await wrapper.vm.$nextTick()
+
+            expectUnrestorableDataWarning(resetDialogMessage(wrapper))
+        })
+
+        it('test_reset_preview_data_only_reset_omits_profiles_row', async () => {
+            const wrapper = await mountAndLoad()
+
+            await openResetDialog(wrapper)
+
+            expect(previewLabels(wrapper)).toContain('Sessions')
+            expect(previewLabels(wrapper)).not.toContain('Profiles')
+        })
+
+        it('test_reset_preview_local_mode_omits_profiles_row', async () => {
+            makeAuthMock({ isLocal: ref(true) })
+            const wrapper = await mountAndLoad()
+
+            await openResetDialog(wrapper)
+
+            expect(previewLabels(wrapper)).toContain('Sessions')
+            expect(previewLabels(wrapper)).not.toContain('Profiles')
+        })
+
+        it('test_reset_preview_factory_reset_shows_profiles_row', async () => {
+            const wrapper = await mountAndLoad()
+
+            await wrapper.find('.include-accounts-checkbox').setValue(true)
+            await openResetDialog(wrapper)
+
+            expect(previewLabels(wrapper)).toContain('Profiles')
+        })
     })
 })
