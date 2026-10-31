@@ -142,7 +142,8 @@ async def reset_db(
 
     ``include_accounts=false`` (default):
         Delete all sleep data (devices, sessions, waveforms, events, statistics,
-        settings, analysis results, breaths, detected patterns, days, import job
+        settings, analysis results, breaths, detected patterns, days, Apple Health
+        samples and summaries, mask log, validation runs, analysis and import job
         records) and purge every ``raw/<profile_id>/`` backup directory.
         User accounts, auth identities, invites, and profile containers are
         preserved.  Safe for multiuser deployments — users keep their accounts
@@ -167,8 +168,8 @@ async def reset_db(
     renamed into ``.quarantine/`` BEFORE the commit.  A crash between quarantine
     and commit leaves dirs in ``.quarantine/`` for ``DeletionSaga.recover()``
     case 2 to sweep on next boot; DB rows survive so the state is consistent.
-    New imports proceed normally — re-upload deduplication makes the loss
-    harmless.
+    New imports proceed normally, but the raw archive is lost and cannot be
+    rebuilt from the database.
 
     Note: this handler holds the SQLite write lock for the entire delete+commit,
     so on large databases concurrent import/analysis writers may hit their 5 s

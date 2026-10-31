@@ -1,6 +1,6 @@
 <template>
     <AlertDialog :open="visible" @update:open="$emit('update:visible', $event)">
-        <AlertDialogContent class="max-w-[450px]">
+        <AlertDialogContent :class="['max-w-[450px]', contentClass]">
             <AlertDialogHeader>
                 <AlertDialogTitle>{{ title }}</AlertDialogTitle>
                 <AlertDialogDescription as-template>
@@ -45,6 +45,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import type { HTMLAttributes } from 'vue'
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -68,6 +69,8 @@ const props = withDefaults(
         confirmPhrase?: string
         /** Label for the confirm button. Defaults to "Delete". */
         confirmLabel?: string
+        /** Extra classes for the dialog panel, e.g. to bound and scroll a long dialog. */
+        contentClass?: HTMLAttributes['class']
     }>(),
     { confirmLabel: 'Delete' },
 )
