@@ -4,7 +4,8 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from snore.database.models import Day, Session
+from snore.constants import OSCAR_BINARY_PARSER_ID
+from snore.database.models import Day, Session, Statistics
 from snore.provenance import IndexSource
 from snore.services.session_service import SessionService
 
@@ -175,6 +176,45 @@ class TestSessionServiceDetail:
         assert detail.duration_hours == 8.0
         assert detail.statistics is not None
         assert detail.statistics.ahi == 2.5
+
+    @pytest.mark.parametrize(
+        ("import_source", "stored", "expected_ml"),
+        [
+            (OSCAR_BINARY_PARSER_ID, 450.0, 450.0),
+            ("resmed_edf", 0.45, 450.0),
+        ],
+    )
+    async def test_get_session_detail_reports_tidal_volume_in_ml(
+        self,
+        async_db_session,
+        async_test_device,
+        async_test_session_factory,
+        import_source,
+        stored,
+        expected_ml,
+    ):
+        session = await async_test_session_factory(
+            async_test_device.id, datetime.now(), duration_hours=8.0
+        )
+        session.import_source = import_source
+        async_db_session.add(
+            Statistics(
+                session_id=session.id,
+                tidal_volume_mean=stored,
+                tidal_volume_max=stored * 2,
+                tidal_volume_95th=stored * 1.5,
+            )
+        )
+        await async_db_session.flush()
+
+        detail = await SessionService(
+            async_db_session, profile_id=1
+        ).get_session_detail(session.id)
+
+        assert detail.statistics.tidal_volume_mean == pytest.approx(expected_ml)
+        assert detail.statistics.tidal_volume_max == pytest.approx(expected_ml * 2)
+        assert detail.statistics.tidal_volume_95th == pytest.approx(expected_ml * 1.5)
+        assert detail.statistics.tidal_volume_min is None
 
     async def test_get_session_detail_not_found(self, async_db_session):
         """Raises ValueError if session not found."""

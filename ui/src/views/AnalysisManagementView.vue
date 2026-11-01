@@ -9,6 +9,8 @@
             @cancel="handleCancelJob"
         />
 
+        <TherapyAssessmentCard />
+
         <!-- Filter bar -->
         <div class="filter-bar">
             <DatePickerInput
@@ -273,6 +275,7 @@ import PaginationBar from '@/components/PaginationBar.vue'
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog.vue'
 import AnalysisJobsBanner from '@/components/AnalysisJobsBanner.vue'
 import DatePickerInput from '@/components/DatePickerInput.vue'
+import TherapyAssessmentCard from '@/components/TherapyAssessmentCard.vue'
 import { Loader2, AlertTriangle, Play, Trash2 } from '@lucide/vue'
 import {
     getAnalysisSessions,

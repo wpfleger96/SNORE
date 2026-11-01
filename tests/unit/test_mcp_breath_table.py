@@ -161,7 +161,7 @@ class TestGetBreathTableRoundtrip:
             ],
         ) as client:
             result = await client.call_tool(
-                "get_breath_table",
+                "experimental_get_breath_table",
                 {
                     "date": "2024-01-01",
                     "offset_start": 0.0,
@@ -222,7 +222,7 @@ class TestGetBreathTableRoundtrip:
             ],
         ) as client:
             result = await client.call_tool(
-                "get_breath_table",
+                "experimental_get_breath_table",
                 {
                     "date": "2024-01-01",
                     "offset_start": 0.0,
@@ -269,7 +269,7 @@ class TestGetBreathTableRoundtrip:
             ],
         ) as client:
             result = await client.call_tool(
-                "get_breath_table",
+                "experimental_get_breath_table",
                 {
                     "date": "2024-01-01",
                     "offset_start": 0.0,
@@ -310,7 +310,7 @@ class TestGetBreathTableRoundtrip:
             ],
         ) as client:
             result = await client.call_tool(
-                "get_breath_table",
+                "experimental_get_breath_table",
                 {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
             )
 
@@ -359,7 +359,7 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
                 )
 
@@ -388,7 +388,7 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {
                         "date": "2024-01-01",
                         "offset_start": 0.0,
@@ -417,7 +417,7 @@ class TestGetBreathTableRoundtrip:
             async with mcp_client_factory(mock_db_session) as client:
                 with pytest.raises(ToolError, match="bin_minutes"):
                     await client.call_tool(
-                        "get_breath_table",
+                        "experimental_get_breath_table",
                         {
                             "date": "2024-01-01",
                             "offset_start": 0.0,
@@ -447,7 +447,7 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="table_missing"):
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
                 )
 
@@ -475,7 +475,7 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
                 )
 
@@ -512,7 +512,7 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
                 )
 
@@ -541,6 +541,6 @@ class TestGetBreathTableRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="Narrow your query"):
                 await client.call_tool(
-                    "get_breath_table",
+                    "experimental_get_breath_table",
                     {"date": "2024-01-01", "offset_start": 0.0, "offset_end": 300.0},
                 )

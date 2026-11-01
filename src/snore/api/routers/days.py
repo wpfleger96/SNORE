@@ -1,12 +1,18 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
-from snore.api.deps import DateRangeParams, PaginationParams, service_dep
+from snore.api.deps import (
+    BoundedQueryId,
+    DateRangeParams,
+    PaginationParams,
+    service_dep,
+)
 from snore.api.schemas import (
     DateListResponse,
     DayDetail,
+    DayExperimentalMetrics,
     DayListItem,
     PaginatedResponse,
 )
@@ -22,7 +28,7 @@ async def list_days(
     service: DayServiceDep,
     pagination: PaginationParams = Depends(),
     dates: DateRangeParams = Depends(),
-    device_id: int | None = Query(default=None),
+    device_id: BoundedQueryId = None,
 ) -> PaginatedResponse[DayListItem]:
     items, total = await service.list_days(
         from_date=dates.from_date,
@@ -46,6 +52,19 @@ async def list_dates(service: DayServiceDep) -> DateListResponse:
 async def get_day(
     day_date: date,
     service: DayServiceDep,
-    device_id: int | None = Query(default=None),
+    device_id: BoundedQueryId = None,
 ) -> DayDetail:
     return await service.get_day(day_date, device_id=device_id)
+
+
+@router.get(
+    "/{day_date}/experimental",
+    response_model=DayExperimentalMetrics,
+    tags=["experimental"],
+)
+async def get_day_experimental(
+    day_date: date,
+    service: DayServiceDep,
+    device_id: BoundedQueryId = None,
+) -> DayExperimentalMetrics:
+    return await service.get_day_experimental(day_date, device_id=device_id)

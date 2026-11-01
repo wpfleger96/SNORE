@@ -129,19 +129,19 @@ src/snore/
 │   ├── schemas.py      # MCP response Pydantic models (SCHEMA_MODEL_MAP for docs://)
 │   ├── validation.py   # parse_date, parse_date_range, validate_* helpers
 │   └── tools/
-│       ├── _helpers.py         # _str_or_none shared helper
-│       ├── _scaffold.py        # _scope_and_run, tool_error_boundary, _check_response_size
+│       ├── _helpers.py         # str_or_none shared helper
+│       ├── _scaffold.py        # _scope_and_run, tool_error_boundary, _check_response_size, _with_experimental_disclaimer
 │       ├── _service_errors.py  # MAPPED_SERVICE_ERRORS, raise_mapped_service_error
 │       ├── _capabilities.py    # build_device_capabilities, get_device_id_for_session
 │       ├── _coverage.py        # map_session_coverage
 │       ├── overview.py         # get_data_overview tool
 │       ├── settings.py         # get_settings_timeline tool
 │       ├── changes.py          # get_settings_changes tool
-│       ├── summary.py          # get_nightly_summary tool
-│       ├── events.py           # get_events tool
-│       ├── breath_table.py     # get_breath_table tool
-│       ├── windows.py          # find_windows tool
-│       ├── epochs.py           # compare_epochs tool
+│       ├── summary.py          # get_nightly_summary + experimental_get_nightly_metrics tools
+│       ├── events.py           # get_events + experimental_get_event_context tools
+│       ├── breath_table.py     # experimental_get_breath_table tool
+│       ├── windows.py          # experimental_find_windows tool
+│       ├── epochs.py           # compare_epochs + experimental_compare_epochs tools
 │       └── waveform.py         # get_waveform + render_window tools
 ├── services/           # Business logic layer (between CLI/API and database)
 │   ├── schemas.py      # Service response schemas (Pydantic)
@@ -149,11 +149,12 @@ src/snore/
 │   ├── backup_service.py    # Raw file backup
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_service.py       # Day aggregation
-│   ├── event_service.py     # Event queries + matching
+│   ├── event_service.py     # Event queries
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
 │   ├── stats_service.py     # Statistics calculations
+│   ├── tidal_volume.py      # tidal_volume_ml: stored Statistics.tidal_volume_* (mixed units) to mL
 │   └── waveform_service.py  # Waveform data access (single entry point)
 ├── validation/         # Data validation
 │   ├── batch.py        # BatchValidator
@@ -200,7 +201,7 @@ tests/
 
 **OSCAR parsers:** `parsers/oscar_device.py` (main), `oscar_summary.py`, `oscar_events.py`, `qdatastream.py`
 
-**Golden reference for ResMed STR decoding:** local OSCAR clone at `/home/will/Development/OSCAR-code`,
+**Golden reference for ResMed STR decoding:** local OSCAR clone at `~/Development/OSCAR-code`,
 file `oscar/SleepLib/loader_plugins/resmed_loader.cpp`. Comments in `resmed_edf.py` cite it as
 `OSCAR :NNNN` (line numbers in that file). When changing STR decode logic, verify against the OSCAR
 source first and keep the citations current.
@@ -322,17 +323,21 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 **Provenance tagging:** every reported metric carries one of three tiers (`snore/provenance.py`):
 - **Device**: verbatim device data (device-scored events and their counts, waveforms, STR values, settings).
 - **Derived**: deterministic math on device data (index recounts over SNORE mask-on hours, percentiles, usage, roll-ups).
-- **Experimental**: SNORE's own detection/classification heuristics (FL classes, RERA proxy, breath
-  segmentation features, programmatic event detection, SNORE-vs-device agreement scores).
+- **Experimental**: SNORE's own detection/classification heuristics and invented measures or judgements
+  (FL classes, RERA proxy, breath segmentation features, MV slope and stability, programmatic event
+  detection, SNORE-vs-device agreement scores, the therapy effectiveness band, AHI trend direction).
 
 Aggregates inherit the weakest input: anything built on an experimental input stays Experimental;
 aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
 (across sessions, days, or a validation run) stays Device; rates, means, percentiles and recounts
 are Derived. A field with a preferred source and a fallback is tagged with the preferred source's
 tier and its description names the fallback, in both directions: pressure/EPAP/leak percentiles
-recomputed from the waveform when present are Derived (falling back to the device's summary value);
-`respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR
-value and are Device (falling back to the OSCAR session summary).
+recomputed from the waveform when present are Derived (falling back to the device's summary value),
+because `finalize_statistics()` overwrites the STR values with the waveform's; `spo2_max` prefers the
+oximeter waveform and stays Derived (falling back to the device's STR value);
+`respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR value
+and are Device (falling back to the OSCAR session summary); on ResMed the `*_mean` columns hold the
+STR median. Day-level and MCP `NightlyRow` pressure/EPAP/leak values are aggregates and stay Derived.
 Day-level `ahi/oai/cai/hi` (`Day` rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are
 source-dependent headlines: the device-reported daily value when trusted, otherwise SNORE's recount;
 `index_source` (`IndexSource.DEVICE`/`DERIVED`) says which. They are tagged Device with
@@ -350,17 +355,43 @@ or column label backed by a tagged field must read its tier this way (or via `ma
 hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field.
 MCP responses get a top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
 `tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
-response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that are never metrics
-(ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts keyed by
-`(model, field)`; it also requires a tag on fields holding a model whose tier depends on the parent.
+and enum or `Literal` response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that
+are never metrics (ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts and
+origin labels keyed by `(model, field)`; it also requires a tag on fields holding a model whose tier
+depends on the parent. A plain `str` field is not checked, so type a string judgement as a `Literal`
+or enum (as `ExperimentalStats` does) to bring it under the rule.
+
+**MCP gating rule:** no Experimental-tagged field may appear in any default MCP response.
+Experimental data lives in `experimental_*` tools, and calling one is the opt-in. Default paths must
+not read breath rows, so their device data does not depend on analysis having run (the
+`analysis_run` and `has_analysis` bookkeeping flags read `analysis_results`, not breaths).
+`tests/unit/test_mcp_provenance.py` enforces the field rule through `DEFAULT_TOOLS`, which maps each
+default tool to its response model: a new tool must be added to that map or take the `experimental_`
+prefix. `tests/integration/test_mcp_device_waveform_aggregates.py` enforces the no-breath-rows rule by
+running every `DEFAULT_TOOLS` entry with SQL capture.
+
+**REST gating rule:** no default REST operation may return an Experimental-tagged field. Experimental
+operations keep their URLs and carry the FastAPI `experimental` tag: at `include_router` for the
+analysis and validation routers, per operation elsewhere (`GET /days/{date}/experimental`,
+`GET /stats/experimental`, `/sessions/{id}/waveforms/compare`).
+`GET /days/{date}` does not touch analysis tables. `tests/unit/test_provenance_tags.py` enforces the
+rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there, read
+from `ui/src/tests/experimentalOperations.json`, pins the tagged list, so tagging a route to escape the
+check fails until that list is edited too. `ui/src/tests/experimentalBoundary.test.ts` reads the same
+file: every listed operation needs a wrapper in `ui/src/api/`, and default pages may not import those
+wrappers, the experimental views or the other modules on its allowlist, or call an experimental path
+through the raw API client. HTML reports have no response schema: `tests/unit/test_report_service.py` checks that the models a report
+fetches carry no Experimental field.
 
 CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
 field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;
 `print_kv(..., provenance=...)` and `Column(header, width, provenance)` for `print_table` mark keys
 and headers. The legend line prints automatically only for commands wrapped in
 `profile_scoped_command` (`cli/decorators.py`), including when the command exits with an error
-after printing markers; elsewhere markers appear with no legend. Exports carry a JSON `provenance`
-header and a CSV `columns.csv` sidecar.
+after printing markers; elsewhere markers appear with no legend. The CLI is marked, not separated:
+Experimental values stay on ordinary commands with their tier marker, because running a local command
+is already an explicit request. Exports carry a JSON `provenance` header and a CSV `columns.csv`
+sidecar, and `tests/unit/test_provenance_tags.py` keeps Experimental columns out of them.
 
 The web UI does not mark individual fields. A section or card whose content is an Experimental
 metric gets one `<ExperimentalBanner>` (pass a short `body` on small cards; `ValidationPanelShell`
@@ -493,7 +524,7 @@ gh api -X DELETE repos/<owner>/<repo>/issues/comments/<stale-comment-id>
 15. **Fresh worktree setup:** run `uv sync` and `just web-install` once per new worktree — the managed pre-commit hook (`.hooks/pre-commit` → `just pre-commit`) auto-fixes and re-stages lint/format issues including the web legs, and `just check-all` runs the check-mode web variants.
 16. **Two-phase import / background worker location:** `POST /import` accepts uploads and returns a `job_id` immediately; the actual import runs in a background thread driven by the persistent worker in `api/import_worker.py` (not inside the router). The worker emits a non-terminal `phase_complete` SSE event after the import commits, then enqueues a downstream `AnalysisJob`, then terminates the import job. Every terminal payload carries `import_committed=True` and the full import result if the import phase committed to the DB — this durability guarantee applies to success, analysis-failure, and cancellation payloads alike. The worker is passed to `start_import_worker()` during app lifespan startup (`app.py`); tests import it from `snore.api.import_worker`.
 17. **Mobile responsiveness conventions:** single breakpoint — mobile is `< 768px` (`@media (max-width: 767.98px)` in CSS, matching Tailwind's `max-md`; the JS side is the `useIsMobile()` singleton in `ui/src/composables/useIsMobile.ts`). Use CSS for styling differences; use `useIsMobile` + `v-if`/`v-else` only when the rendered structure or props must differ (e.g. table ↔ card list). Wide tables get a mobile card branch built from the shared unlayered classes in `layout.css` (`.card-list`, `.data-card`, `.data-card-header`, `.data-card-row`, `.data-card-label`, `.data-card-value`, `.data-card-actions`) — do not invent per-view header/action classes; extract a per-view card child component (see `SessionCard.vue`, `UserCard.vue`) when the branch grows interactive state. Touch targets use `var(--tap-target)` (44px) from `layout.css`, never a hardcoded size. In unit tests, jsdom's `matchMedia` mock (`ui/src/tests/matchMedia.ts`) defaults to desktop; flip a test to the mobile branch with `setMediaMatches(true)`.
-18. **FL confidence gate and the RERA fallback:** FL classifications carry a confidence gate. Fallback flatness-triage guesses sit at exactly `FL_DEFAULT_CONFIDENCE` and are excluded from nightly `fl_class_ge4_pct` and from `compare_epochs`' `flow_class_distribution` (they land in `flow_class_distribution_fallback` instead), but the RERA proxy's FL-run scan deliberately includes them — removing them zeroes the proxy (probed 2026-08-23). FL/RERA metrics are experimental relative-trend instruments, not validated absolute measurements; read `docs/fl-rera-validation.md` before touching these paths.
+18. **FL confidence gate and the RERA fallback:** FL classifications carry a confidence gate. Fallback flatness-triage guesses sit at exactly `FL_DEFAULT_CONFIDENCE` and are excluded from `experimental_get_nightly_metrics`' `fl_class_ge4_pct` and from `experimental_compare_epochs`' `flow_class_distribution` (they land in `flow_class_distribution_fallback` instead), but the RERA proxy's FL-run scan deliberately includes them — removing them zeroes the proxy (probed 2026-08-23). FL/RERA metrics are experimental relative-trend instruments, not validated absolute measurements; read `docs/fl-rera-validation.md` before touching these paths.
 19. **`Waveform` columns after `data_blob`:** SQLite stores columns in order, so selecting `sample_count` (or any column added by migration, since `ADD COLUMN` appends) walks the blob's whole overflow chain even when the blob isn't returned. Keep metadata queries to columns stored before it. Bare `length(data_blob)` is safe; wrapping it in `cast` or `coalesce` loads the blob.
 
 ## MCP Development
@@ -505,9 +536,11 @@ Each tool lives in `src/snore/mcp/tools/<name>.py` and follows a two-part struct
 1. A module-level async function that accepts an `AsyncSession` and returns a Pydantic model — this is what tests call directly.
 2. A `register(mcp: FastMCP) -> None` function at the bottom of the module that defines the `@mcp.tool()` closure and wires it to the common scaffold.
 
-The common scaffold for the eight standard-pattern tools lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools that expose experimental metrics wrap their description with `_with_experimental_disclaimer` (`tools/_scaffold.py`). Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+The common scaffold for the 11 standard-pattern tools (all 13 except the waveform pair) lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
 
-There is deliberately no per-event-type tool: event-type-specific context (e.g. MV slope/stability/PS before a central apnea) belongs in `get_events`' per-event context block, and night-level metrics (e.g. `periodic_breathing_pct`) belong in `get_nightly_summary` rows.
+Experimental metrics never go on a default tool, behind a parameter or otherwise. Each gets a separate tool with the `experimental_` prefix and `_with_experimental_disclaimer` (`tools/_scaffold.py`) applied below `@mcp.tool()`, registered in the same module as its default sibling (`summary.py`, `events.py`, `epochs.py`). `breath_table.py` and `windows.py` have no default sibling: they set the tool name with `@mcp.tool(name=...)` and keep the impl names `get_breath_table` and `find_windows`. See the MCP gating rule under Provenance tagging.
+
+There is deliberately no per-event-type tool: device-channel context (e.g. delivered PS at the event) belongs in `get_events`' per-event context block, MV slope and stability before an event belong in `experimental_get_event_context` rows, and experimental night-level metrics (e.g. `periodic_breathing_pct`) belong in `experimental_get_nightly_metrics` rows.
 
 ### Service error mapping seam
 
@@ -517,7 +550,8 @@ There is deliberately no per-event-type tool: event-type-specific context (e.g. 
 - `DeviceAmbiguityError` → "Multiple devices have sessions on DATE: ... Devices: device_id=X (serial=Y), ..."
 - `MultiSessionAmbiguityError` → "Multiple sessions on DATE for device_id=X: ..."
 - `NoSessionsInRangeError` → "No therapy data found for date/range ..."
-- `OperationalError("no such table")` → "Breath-level data tables are missing ..."
+- `OperationalError("no such table")` → "A required table is missing from this database ..."
+- Any other `OperationalError` → "A database error occurred. ..."
 
 Any tool that calls `BreathService` should use `except MAPPED_SERVICE_ERRORS as exc: raise_mapped_service_error(exc)`. Do not write per-tool except branches for these exceptions.
 
@@ -551,7 +585,7 @@ Integration test seed helpers (`_make_profile`, `_make_device`, `_make_day_sessi
 
 | Task | Files |
 |------|-------|
-| Add MCP tool | `src/snore/mcp/tools/<name>.py` (impl + register); `src/snore/mcp/schemas.py` (response schema); `tests/unit/test_mcp_<name>.py` + `tests/integration/test_mcp_<name>.py` |
+| Add MCP tool | `src/snore/mcp/tools/<name>.py` (impl + register); `src/snore/mcp/schemas.py` (response schema); `DEFAULT_TOOLS` in `tests/unit/test_mcp_provenance.py` (default tools; experimental tools take the `experimental_` prefix instead); `tests/unit/test_mcp_<name>.py` + `tests/integration/test_mcp_<name>.py` |
 | Add CLI command | `src/snore/cli/groups/` (subcommand group) or `cli/commands/` (standalone); helpers in `cli/decorators.py`, `cli/display/` |
 | Add device parser | `src/snore/parsers/base.py`, `src/snore/parsers/register_all.py`, create new parser file |
 | Modify ResMed STR settings decoding | `src/snore/parsers/resmed_edf.py` (per-mode signal maps, `_parse_str_settings`), `tests/unit/test_resmed_str_converter.py`, `tests/unit/test_resmed_str_backup.py` |
@@ -563,7 +597,7 @@ Integration test seed helpers (`_make_profile`, `_make_device`, `_make_day_sessi
 | Tune detection thresholds | `src/snore/analysis/modes/config.py` (DetectionModeConfig fields), validate with `validate_against_machine_events()` |
 | Modify data models | `src/snore/parsers/unified.py` (data), `database/models.py` (ORM), use Pydantic; keep `test_schema_alignment.py` passing |
 | Add waveform visualization | `src/snore/waveform/renderer.py` (ASCII/plotext), `inspector.py` (data loading) |
-| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; then `just ui-generate-types` |
+| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; `ui/src/tests/experimentalOperations.json` if it carries the `experimental` tag; then `just ui-generate-types` |
 | Add/modify service | `src/snore/services/`, `services/schemas.py` |
 | Frontend development | `ui/src/views/`, `ui/src/components/`, `ui/src/api/`, `ui/src/composables/`, `ui/src/utils/` |
 | Regenerate UI API types | `just ui-generate-types` (`scripts/export_openapi.py` → `ui/src/types/generated.ts`) |

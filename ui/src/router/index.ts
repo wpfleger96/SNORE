@@ -32,6 +32,11 @@ function sessionIdProp(route: { params: { id: string | string[] } }) {
     return { sessionId: Number.isFinite(id) ? id : -1 }
 }
 
+function dayDateProp(route: { params: { date: string | string[] } }) {
+    const { date } = route.params
+    return { dayDate: Array.isArray(date) ? date[0] : date }
+}
+
 const router = createRouter({
     history: createWebHistory(),
     routes: [
@@ -139,11 +144,13 @@ const router = createRouter({
             path: '/days/:date',
             name: 'day-detail',
             component: () => import('@/views/DayDetailView.vue'),
-            props: (route: { params: { date: string | string[] } }) => ({
-                dayDate: Array.isArray(route.params.date)
-                    ? route.params.date[0]
-                    : route.params.date,
-            }),
+            props: dayDateProp,
+        },
+        {
+            path: '/days/:date/experimental',
+            name: 'day-experimental',
+            component: () => import('@/views/DayExperimentalView.vue'),
+            props: dayDateProp,
         },
         {
             path: '/apple-health',

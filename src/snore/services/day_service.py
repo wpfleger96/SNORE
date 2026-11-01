@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
@@ -13,7 +13,12 @@ from sqlalchemy import select
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, paginate
-from snore.services.schemas import DayDetail, DayListItem, HealthNightSummaryRead
+from snore.services.schemas import (
+    DayDetail,
+    DayExperimentalMetrics,
+    DayListItem,
+    HealthNightSummaryRead,
+)
 
 if TYPE_CHECKING:
     from snore.analysis.shared.versioning import NullReason
@@ -31,16 +36,14 @@ _DAY_DETAIL_IDENTITY_FIELDS = tuple(
 )
 
 
-def _null_fl_rera(reason: str) -> dict[str, Any]:
+def _null_fl_rera(day_date: date, reason: str) -> DayExperimentalMetrics:
     """The six FL/RERA fields all null, sharing one companion reason code."""
-    return {
-        "fl_class_ge4_pct": None,
-        "fl_class_ge4_pct_reason": reason,
-        "rera_index": None,
-        "rera_index_reason": reason,
-        "rera_count": None,
-        "rera_count_reason": reason,
-    }
+    return DayExperimentalMetrics(
+        date=day_date,
+        fl_class_ge4_pct_reason=reason,
+        rera_index_reason=reason,
+        rera_count_reason=reason,
+    )
 
 
 def _reason_value(reason: NullReason | None) -> str | None:
@@ -92,8 +95,8 @@ class DayService(ProfileScopedService):
         rows = (await self.db_session.execute(query)).scalars().all()
         return list(rows)
 
-    async def get_day(self, day_date: date, device_id: int | None = None) -> DayDetail:
-        """Return detailed day record with session IDs.
+    async def _select_day(self, day_date: date, device_id: int | None) -> models.Day:
+        """Return the Day row for a date in the actor's profile.
 
         When multiple devices have Day rows on the same date (e.g. a machine-switch
         date), returns the first row ordered by device_id with a warning rather than
@@ -127,16 +130,23 @@ class DayService(ProfileScopedService):
                 f"returning device_id={rows[0].device_id}"
             )
 
-        day = rows[0]
+        return rows[0]
 
-        session_rows = (
-            await self.db_session.execute(
-                select(models.Session.id, models.Session.enabled)
-                .where(models.Session.day_id == day.id)
-                .order_by(models.Session.start_time)
+    async def get_day(self, day_date: date, device_id: int | None = None) -> DayDetail:
+        """Return detailed day record with session IDs (see ``_select_day``)."""
+        day = await self._select_day(day_date, device_id)
+
+        session_ids = (
+            (
+                await self.db_session.execute(
+                    select(models.Session.id)
+                    .where(models.Session.day_id == day.id)
+                    .order_by(models.Session.start_time)
+                )
             )
-        ).all()
-        session_ids = [row.id for row in session_rows]
+            .scalars()
+            .all()
+        )
 
         health_summary_row = (
             await self.db_session.execute(
@@ -153,13 +163,6 @@ class DayService(ProfileScopedService):
             else None
         )
 
-        fl_rera = await self._nightly_fl_rera(
-            day_date,
-            day.device_id,
-            all_sessions_disabled=bool(session_rows)
-            and not any(row.enabled for row in session_rows),
-        )
-
         identity = {name: getattr(day, name) for name in _DAY_DETAIL_IDENTITY_FIELDS}
         return DayDetail.model_validate(
             {
@@ -173,21 +176,39 @@ class DayService(ProfileScopedService):
                 "reras": day.reras or 0,
                 "session_ids": session_ids,
                 "health_sleep": health_sleep,
-                **fl_rera,
             }
+        )
+
+    async def get_day_experimental(
+        self, day_date: date, device_id: int | None = None
+    ) -> DayExperimentalMetrics:
+        """Return FL / RERA-proxy metrics for the Day row ``get_day`` would select."""
+        day = await self._select_day(day_date, device_id)
+        enabled_flags = (
+            (
+                await self.db_session.execute(
+                    select(models.Session.enabled).where(
+                        models.Session.day_id == day.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return await self._nightly_fl_rera(
+            day_date,
+            day.device_id,
+            all_sessions_disabled=bool(enabled_flags) and not any(enabled_flags),
         )
 
     async def _nightly_fl_rera(
         self, day_date: date, device_id: int, *, all_sessions_disabled: bool
-    ) -> dict[str, Any]:
+    ) -> DayExperimentalMetrics:
         """Read-time flow-limitation / RERA-proxy metrics for one night.
 
-        Sourced from BreathService.get_nightly_summary — the same latest-run
-        aggregation the MCP nightly summary uses — so day detail never
-        recomputes breath logic.  Waveform stats are skipped
-        (``include_waveform_stats=False``): the FL/RERA fields come from the
-        breath table alone, and loading the full-night waveform blobs on every
-        ``GET /days/{date}`` is pure overhead here.
+        Sourced from BreathService.get_experimental_nightly_summary — the same
+        latest-run aggregation the experimental MCP nightly tool uses — so this
+        never recomputes breath logic.
 
         Two distinct null-with-reason outcomes are possible:
 
@@ -196,8 +217,8 @@ class DayService(ProfileScopedService):
           ``not_available`` — this is the success path, not an error.
         * A genuine lookup failure (the device has no sessions on the date, a
           breath-table DB error, or device resolution declining) degrades to
-          null values with an ``analysis_not_run`` reason, so day detail never
-          fails on missing breath analysis.
+          null values with an ``analysis_not_run`` reason, so this never fails
+          on missing breath analysis.
 
         A night whose sessions are all disabled (``all_sessions_disabled``) is
         a normal user choice the breath service skips, so it short-circuits to
@@ -213,18 +234,17 @@ class DayService(ProfileScopedService):
             DeviceNotOwnedError,
         )
 
+        not_run = _null_fl_rera(day_date, NullReason.ANALYSIS_NOT_RUN.value)
         if all_sessions_disabled:
-            return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
+            return not_run
 
         try:
             night = await BreathService(
                 self.db_session, self.profile_id
-            ).get_nightly_summary(
-                day_date, device_id=device_id, include_waveform_stats=False
-            )
+            ).get_experimental_nightly_summary(day_date, device_id=device_id)
         except (DeviceAmbiguityError, DeviceNotOwnedError):
             # Device resolution declined — degrade quietly (expected edge case).
-            return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
+            return not_run
         except SQLAlchemyError:
             logger.warning(
                 "FL/RERA nightly lookup for %s hit a breath-table DB error; "
@@ -232,7 +252,7 @@ class DayService(ProfileScopedService):
                 day_date,
                 exc_info=True,
             )
-            return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
+            return not_run
         except ValueError:
             # Day row exists but the device has no sessions on this date —
             # anomalous, so surface it rather than silently nulling.
@@ -241,13 +261,14 @@ class DayService(ProfileScopedService):
                 "returning null metrics",
                 day_date,
             )
-            return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
+            return not_run
 
-        return {
-            "fl_class_ge4_pct": night.fl_class_ge4_pct,
-            "fl_class_ge4_pct_reason": _reason_value(night.fl_class_ge4_pct_reason),
-            "rera_index": night.rera_index,
-            "rera_index_reason": _reason_value(night.rera_index_reason),
-            "rera_count": night.rera_count,
-            "rera_count_reason": _reason_value(night.rera_reason),
-        }
+        return DayExperimentalMetrics(
+            date=day_date,
+            fl_class_ge4_pct=night.fl_class_ge4_pct,
+            fl_class_ge4_pct_reason=_reason_value(night.fl_class_ge4_pct_reason),
+            rera_index=night.rera_index,
+            rera_index_reason=_reason_value(night.rera_index_reason),
+            rera_count=night.rera_count,
+            rera_count_reason=_reason_value(night.rera_reason),
+        )

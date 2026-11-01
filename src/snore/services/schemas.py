@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from snore.constants import AhiTrendDirection, TherapyEffectiveness
 from snore.metrics import COVERAGE_TOLERANCE_FRACTION, COVERAGE_TOLERANCE_HOURS
 from snore.provenance import IndexSource, Provenance, provenance_field
 
@@ -29,7 +30,6 @@ __all__ = [
     "AnalysisListItem",
     "AnalysisSessionDetail",
     "AnalysisDeletePreview",
-    "EventMatchResult",
     "DeviceInfo",
     "SettingChangeEntry",
     "SettingsChange",
@@ -501,7 +501,7 @@ class SessionStatistics(BaseModel):
     )
     tidal_volume_mean: float | None = provenance_field(
         Provenance.DEVICE,
-        "Tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports",
+        "Mean tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports",
         default=None,
     )
     tidal_volume_min: float | None = provenance_field(
@@ -542,7 +542,8 @@ class SessionStatistics(BaseModel):
     rin: float | None = provenance_field(Provenance.DEVICE, "RERA index", default=None)
     csr_pct: float | None = provenance_field(
         Provenance.DEVICE,
-        "Percent of session in Cheyne-Stokes respiration",
+        "Device STR CSR value. The unit is unverified: OSCAR stores this signal as a "
+        "per-hour rate, not a percent of session time",
         default=None,
     )
     spont_cyc_pct: float | None = provenance_field(
@@ -719,11 +720,6 @@ class TherapySummary(BaseModel):
         " (can mix device-reported and recounted days)",
         default=None,
     )
-    effectiveness: str = provenance_field(
-        Provenance.DERIVED,
-        "Therapy effectiveness band from average AHI",
-        default="unknown",
-    )
     avg_rei: float | None = provenance_field(
         Provenance.DERIVED, "Average REI", default=None
     )
@@ -763,10 +759,24 @@ class TherapySummary(BaseModel):
     avg_minute_ventilation: float | None = provenance_field(
         Provenance.DERIVED, "Average minute ventilation (L/min)", default=None
     )
-    ahi_trend_direction: str | None = provenance_field(
-        Provenance.DERIVED, "AHI trend direction over the range", default=None
-    )
     event_counts: list[EventTypeCount] = Field(default_factory=list)
+
+
+class ExperimentalStats(BaseModel):
+    """SNORE's own judgements about a therapy range, kept out of ``TherapySummary``."""
+
+    effectiveness: TherapyEffectiveness = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "SNORE's therapy effectiveness band from average AHI "
+        "(excellent, good, fair, poor; unknown without an average AHI).",
+    )
+    ahi_trend_direction: AhiTrendDirection | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "SNORE's AHI trend call: the latest week's AHI against the earlier weeks "
+        "in the range (improving, worsening, stable; null with too little data or "
+        "when the earlier weeks average 0).",
+        default=None,
+    )
 
 
 class WaveformInfo(BaseModel):
@@ -778,28 +788,6 @@ class WaveformInfo(BaseModel):
     unit: str | None = None
     duration_hours: float = provenance_field(
         Provenance.DEVICE, "Recorded duration in hours"
-    )
-
-
-class EventMatchResult(BaseModel):
-    """Result of matching machine vs programmatic events."""
-
-    machine_count: int = provenance_field(
-        Provenance.DEVICE, "Machine-scored apneas and hypopneas"
-    )
-    programmatic_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Programmatically detected apneas and hypopneas"
-    )
-    matched: int = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Programmatic/machine event pairs matched one-to-one within tolerance "
-        "(each event in at most one pair)",
-    )
-    false_positives: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Programmatic events unmatched"
-    )
-    false_negatives: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Machine events unmatched"
     )
 
 
@@ -990,13 +978,7 @@ class DayListItem(BaseModel):
 
 
 class DayDetail(DayListItem):
-    """Full detail of a therapy day including per-metric stats.
-
-    The FL/RERA proxy fields below carry ``*_reason`` companions (unlike the
-    older nullable stats) because null here is ambiguous — "analysis not run"
-    versus a genuine zero — so a companion code disambiguates, mirroring the
-    MCP nightly-summary null-with-reason convention.
-    """
+    """Full detail of a therapy day including per-metric stats."""
 
     oai: float | None = provenance_field(
         Provenance.DEVICE,
@@ -1100,12 +1082,23 @@ class DayDetail(DayListItem):
     reras: int = provenance_field(
         Provenance.DEVICE, "Device-scored RERA count for the night", default=0
     )
-    # Nightly breath-analysis proxy metrics, sourced read-time from
-    # BreathService (same path as the MCP nightly summary).  Reason semantics:
-    # an ordinary un-analyzed night (sessions present, none with an OK analysis)
-    # is null with "not_available"; a lookup failure (no sessions for the
-    # device, breath-table DB error, device resolution declining) is null with
-    # "analysis_not_run".  Day detail never fails on missing breath analysis.
+    session_ids: list[int] = Field(default_factory=list)
+    health_sleep: HealthNightSummaryRead | None = None
+
+
+class DayExperimentalMetrics(BaseModel):
+    """Nightly FL / RERA-proxy metrics, sourced read-time from BreathService.
+
+    Each metric carries a ``*_reason`` companion because null here is
+    ambiguous ("analysis not run" versus a genuine zero), mirroring the MCP
+    null-with-reason convention.  An ordinary un-analyzed night (sessions
+    present, none with an OK analysis) is null with "not_available"; a lookup
+    failure (no sessions for the device, breath-table DB error, device
+    resolution declining) or a night with every session disabled is null with
+    "analysis_not_run".
+    """
+
+    date: date
     fl_class_ge4_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of rule-classified breaths flagged flow-class >= 4 "
@@ -1127,8 +1120,6 @@ class DayDetail(DayListItem):
         default=None,
     )
     rera_count_reason: str | None = None
-    session_ids: list[int] = Field(default_factory=list)
-    health_sleep: HealthNightSummaryRead | None = None
 
 
 class RxPeriodResponse(BaseModel):
@@ -1318,10 +1309,17 @@ class EventComparisonResult(BaseModel):
     session_id: int = Field(description="Session database ID")
     mode: str = Field(description="Detection mode used (e.g., 'aasm')")
     machine_event_count: int = provenance_field(
-        Provenance.DEVICE, "Total machine-detected events"
+        Provenance.DEVICE,
+        "Machine-scored apneas and hypopneas, plus RERAs when the device scored any",
     )
     programmatic_event_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Total programmatically-detected events"
+        Provenance.EXPERIMENTAL,
+        "Programmatically-detected apneas and hypopneas, plus RERAs when the device scored any",
+    )
+    matched_events: int = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Programmatic/machine event pairs matched one-to-one within tolerance "
+        "(each event in at most one pair)",
     )
     false_negatives: list[EventComparisonDetail] = provenance_field(
         Provenance.EXPERIMENTAL,
@@ -1336,6 +1334,12 @@ class EventComparisonResult(BaseModel):
     false_positives_hypopnea: list[EventComparisonDetail] = provenance_field(
         Provenance.EXPERIMENTAL,
         "Programmatic hypopneas not in machine events",
+        default_factory=list,
+    )
+    false_positives_rera: list[EventComparisonDetail] = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Programmatic RERAs not in machine events; always empty when the device "
+        "scored no RERAs",
         default_factory=list,
     )
 

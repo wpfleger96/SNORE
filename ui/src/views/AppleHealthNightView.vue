@@ -197,12 +197,6 @@ watch(
     margin-top: 0.25rem;
 }
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.75rem;
-}
-
 .mb-6 {
     margin-bottom: 1.5rem;
 }
@@ -242,9 +236,5 @@ watch(
     align-items: flex-start;
     gap: 1rem;
     padding: 2rem 0;
-}
-
-.empty-message {
-    color: var(--color-muted-foreground);
 }
 </style>

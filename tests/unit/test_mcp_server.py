@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -343,6 +345,19 @@ class TestValidatePageArgs:
         with pytest.raises(ValidationError, match="page_size must be between 1 and 90"):
             validate_page_args(1, 91)
 
+    def test_page_beyond_cap_raises(self) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_page_args
+
+        with pytest.raises(ValidationError, match="page must be <= 1000000"):
+            validate_page_args(2**70, 30)
+
+    def test_page_at_cap_keeps_offset_in_sqlite_range(self) -> None:
+        from snore.mcp.validation import _MAX_PAGE, validate_page_args
+
+        assert validate_page_args(_MAX_PAGE, 90) == 90
+        assert (_MAX_PAGE - 1) * 90 < 2**63
+
     def test_page_size_200_raises(self) -> None:
         from snore.mcp.errors import ValidationError
         from snore.mcp.validation import validate_page_args
@@ -401,6 +416,16 @@ class TestValidateComplianceThreshold:
         ):
             validate_compliance_threshold(-1.0)
 
+    @pytest.mark.parametrize("hours", [math.nan, math.inf, -math.inf])
+    def test_non_finite_raises(self, hours: float) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_compliance_threshold
+
+        with pytest.raises(
+            ValidationError, match="compliance_threshold_hours must be a finite number"
+        ):
+            validate_compliance_threshold(hours)
+
 
 class TestValidateMinDuration:
     """validate_min_duration rejects negative durations."""
@@ -427,12 +452,22 @@ class TestValidateMinDuration:
         with pytest.raises(ValidationError, match="min_duration must be >= 0"):
             validate_min_duration(-0.1)
 
+    @pytest.mark.parametrize("min_duration", [math.nan, math.inf, -math.inf])
+    def test_non_finite_raises(self, min_duration: float) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_min_duration
+
+        with pytest.raises(
+            ValidationError, match="min_duration must be a finite number"
+        ):
+            validate_min_duration(min_duration)
+
 
 class TestStage2ToolsRegistered:
-    """The three Stage-2 tools appear in make_server() tool listing."""
+    """The breath-level tools appear in make_server() tool listing."""
 
-    async def test_make_server_registers_exactly_ten_tools(self) -> None:
-        """make_server() registers exactly ten tools (five Stage-1 + three Stage-2 + two Stage-3)."""
+    async def test_make_server_registers_exactly_thirteen_tools(self) -> None:
+        """make_server() registers exactly thirteen tools (eight default + five experimental)."""
         from unittest.mock import patch
 
         import fastmcp
@@ -445,9 +480,14 @@ class TestStage2ToolsRegistered:
                 tools = await client.list_tools()
 
         tool_names = {t.name for t in tools}
-        assert "get_breath_table" in tool_names
-        assert "find_windows" in tool_names
+        assert "experimental_get_breath_table" in tool_names
+        assert "experimental_find_windows" in tool_names
+        assert "experimental_compare_epochs" in tool_names
+        assert "experimental_get_nightly_metrics" in tool_names
+        assert "experimental_get_event_context" in tool_names
         assert "compare_epochs" in tool_names
+        assert "get_breath_table" not in tool_names
+        assert "find_windows" not in tool_names
         # Stage-1 tools still present
         assert "get_data_overview" in tool_names
         assert "get_events" in tool_names
@@ -456,7 +496,7 @@ class TestStage2ToolsRegistered:
         assert "get_waveform" in tool_names
         assert "render_window" in tool_names
         assert "get_ca_analysis" not in tool_names
-        assert len(tool_names) == 10
+        assert len(tool_names) == 13
 
     async def test_compare_epochs_schema_has_epochs_parameter(self) -> None:
         """compare_epochs tool schema includes an 'epochs' parameter."""

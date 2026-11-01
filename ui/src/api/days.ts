@@ -1,5 +1,11 @@
 import { apiGet } from './client'
-import type { PaginatedResponse, DayListItem, DayDetail, DateListResponse } from '@/types'
+import type {
+    PaginatedResponse,
+    DayListItem,
+    DayDetail,
+    DayExperimentalMetrics,
+    DateListResponse,
+} from '@/types'
 
 export interface DaysParams {
     limit?: number
@@ -15,5 +21,9 @@ export const getDays = apiGet<PaginatedResponse<DayListItem>, [params?: DaysPara
 )
 
 export const getDay = apiGet<DayDetail, [date: string]>((date) => `/days/${date}`)
+
+export const getDayExperimental = apiGet<DayExperimentalMetrics, [date: string]>(
+    (date) => `/days/${date}/experimental`,
+)
 
 export const getDates = apiGet<DateListResponse>('/days/dates')

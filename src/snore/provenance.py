@@ -6,7 +6,11 @@ Each metric is one of three tiers:
   waveforms, STR values, oximeter or Apple Health samples).
 - ``DERIVED``: deterministic math on device data (index recounts, percentiles,
   usage, roll-ups).
-- ``EXPERIMENTAL``: SNORE's own detection and classification heuristics.
+- ``EXPERIMENTAL``: SNORE's own detection/classification heuristics and
+  invented measures or judgements (FL classes, RERA proxy, breath segmentation
+  features, MV slope and stability, programmatic event detection,
+  SNORE-vs-device agreement scores, the therapy effectiveness band, AHI trend
+  direction).
 
 Aggregates inherit the weakest input tier: anything built on an experimental
 input stays experimental; aggregates of device/derived inputs are derived.
@@ -16,11 +20,11 @@ means, percentiles and recounts of those events are derived.
 
 A field with a preferred source and a fallback is tagged with the preferred
 source's tier, and its description names the fallback.  This runs in both
-directions: pressure/EPAP/leak percentiles are recomputed from the waveform
-when present (Derived) and fall back to the device's summary value;
-``respiratory_rate_mean/max`` and tidal volume / minute ventilation mean/max
-prefer the device STR value (Device) and fall back to the OSCAR session
-summary.
+directions: pressure/EPAP/leak percentiles recomputed from the waveform when
+present, and ``spo2_max`` from the oximeter waveform, are Derived and fall back
+to the device's summary value; ``respiratory_rate_mean/max`` and tidal volume /
+minute ventilation mean/max prefer the device STR value (Device) and fall back
+to the OSCAR session summary.
 
 Response fields declare their tier with :func:`provenance_field`, which both
 prefixes the description (visible to LLMs and in generated TS JSDoc) and adds a
@@ -128,7 +132,8 @@ def response_provenance(model: type[BaseModel]) -> ProvenanceBlock:
     {path: sibling_path}}``; ``[]`` marks list items (``nights[].rdi``), ``{}``
     marks dict values, and empty keys are omitted.  A field nested in a tagged
     parent takes the weaker of the two tiers.  ``source_dependent`` lists
-    fields whose tier is set per value by a sibling field (e.g. ``mv_source``).
+    fields whose tier is set per value by a sibling field (e.g.
+    ``index_source``).
     A model that references itself is walked only once per path: tagged fields
     below the recursion point are not listed (no MCP response model is
     recursive today).  Returns a fresh dict on every call; the schema walk

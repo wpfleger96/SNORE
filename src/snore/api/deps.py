@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Callable
 from datetime import date, datetime, time
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Query, Request
+from fastapi import Depends, HTTPException, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.auth.actor import ActorContext, AuthMode
@@ -30,6 +30,11 @@ async def get_db_immediate() -> AsyncGenerator[AsyncSession]:
     async with session_scope(immediate=True) as session:
         yield session
 
+
+# SQLite INTEGER is a signed 64-bit value; larger ids overflow the driver.
+_MAX_DB_ID = 2**63 - 1
+BoundedPathId = Annotated[int, Path(le=_MAX_DB_ID)]
+BoundedQueryId = Annotated[int | None, Query(le=_MAX_DB_ID)]
 
 ImmediateDbDep = Annotated[AsyncSession, Depends(get_db_immediate)]
 

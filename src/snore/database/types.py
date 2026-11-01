@@ -91,6 +91,8 @@ class ValidatedJSONWithDefault(ValidatedJSON):
         print(obj.metadata)
     """
 
+    cache_ok = True
+
     def process_result_value(self, value: str | None, dialect: Any) -> Any:
         """
         Convert JSON string to Python object, returning {} if None.

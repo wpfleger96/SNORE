@@ -9,6 +9,13 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.analysis.calculations import (
+    assess_therapy_effectiveness,
+    calculate_ahi_trend_direction,
+    calculate_average_ahi,
+    calculate_period_statistics,
+)
+from snore.constants import OSCAR_BINARY_PARSER_ID
 from snore.database.models import Day, Device, Event, Profile, Session, Statistics, User
 from snore.services.stats_service import StatsService
 
@@ -87,9 +94,50 @@ class TestStatsService:
         assert summary.avg_hours == 7.5
         # Usage-weighted by total_therapy_hours: (2.5*8 + 3.0*7) / 15 = 41/15.
         assert summary.avg_ahi == pytest.approx(41.0 / 15.0)
-        assert summary.effectiveness == "excellent"
         assert summary.first_date == day1.date
         assert summary.last_date == day2.date
+
+    async def test_summary_avg_tidal_volume_is_ml_across_mixed_sources(
+        self, async_db_session, async_test_device
+    ):
+        """An OSCAR night (mL) and a ResMed night (litres) average in mL."""
+        today = date.today()
+        for offset, source, stored in [
+            (2, OSCAR_BINARY_PARSER_ID, 400.0),
+            (1, "resmed_edf", 0.6),
+        ]:
+            _, sess = await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                today - timedelta(days=offset),
+                duration_hours=8.0,
+            )
+            sess.import_source = source
+            async_db_session.add(
+                Statistics(
+                    session_id=sess.id, usage_hours=8.0, tidal_volume_mean=stored
+                )
+            )
+        await async_db_session.flush()
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.avg_tidal_volume == pytest.approx(500.0)
+
+    async def test_summary_avg_tidal_volume_none_without_data(
+        self, async_db_session, async_test_device
+    ):
+        _, sess = await _create_day_with_session(
+            async_db_session, async_test_device, date.today()
+        )
+        async_db_session.add(Statistics(session_id=sess.id, usage_hours=8.0))
+        await async_db_session.flush()
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.avg_tidal_volume is None
 
     async def test_summary_days_limit(self, async_db_session, async_test_device):
         """days_limit parameter filters Day records correctly."""
@@ -438,11 +486,112 @@ class TestStatsService:
             async_db_session, async_test_device, date.today(), ahi=0.0
         )
 
-        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+        service = StatsService(async_db_session, profile_id=1)
+        summary = await service.get_summary()
+        experimental = await service.get_experimental_stats()
 
         assert summary is not None
         assert summary.avg_ahi == 0.0
-        assert summary.effectiveness == "excellent"
+        assert experimental.effectiveness == "excellent"
+
+
+class TestExperimentalStats:
+    async def test_empty_range_is_unknown_with_no_trend(self, async_db_session):
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "unknown"
+        assert result.ahi_trend_direction is None
+
+    async def test_band_and_trend_come_from_weekly_ahi(
+        self, async_db_session, async_test_device
+    ):
+        """Weeks at AHI 8, 8, 2 average 6 ("good"); the last week is improving."""
+        for week, ahi in enumerate([8.0, 8.0, 2.0]):
+            await _create_day_with_session(
+                async_db_session,
+                async_test_device,
+                date(2024, 1, 1) + timedelta(weeks=week),
+                ahi=ahi,
+            )
+
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "good"
+        assert result.ahi_trend_direction == "improving"
+
+    async def test_weekly_trend_matches_period_statistics(
+        self, async_db_session, async_test_device
+    ):
+        """Gaps, short nights and null AHIs bucket as period statistics do.
+
+        Sunday and Monday fall in different weeks, a day without an AHI or
+        without therapy hours adds nothing, and a week of only those is skipped.
+        """
+        seeds = [
+            (date(2024, 1, 7), 8.0, 2.0),  # Sunday: last day of its week
+            (date(2024, 1, 8), 4.0, 8.0),  # Monday: first day of the next
+            (date(2024, 1, 10), 12.0, 2.0),
+            (date(2024, 1, 12), None, 8.0),
+            (date(2024, 1, 13), 40.0, 0.0),
+            (date(2024, 1, 16), None, 8.0),  # A week with no usable AHI
+            (date(2024, 1, 30), 6.0, 8.0),  # Then a gap of weeks
+        ]
+        days = [
+            (
+                await _create_day_with_session(
+                    async_db_session,
+                    async_test_device,
+                    day_date,
+                    duration_hours=hours,
+                    ahi=ahi,
+                )
+            )[0]
+            for day_date, ahi, hours in seeds
+        ]
+        weekly = calculate_period_statistics(days, "week")
+
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == assess_therapy_effectiveness(
+            calculate_average_ahi(days)
+        )
+        assert result.ahi_trend_direction == calculate_ahi_trend_direction(
+            [ps.avg_ahi for ps in weekly if ps.avg_ahi is not None]
+        )
+        assert result.ahi_trend_direction is not None
+
+    async def test_covers_all_recorded_days(self, async_db_session, async_test_device):
+        await _create_day_with_session(
+            async_db_session,
+            async_test_device,
+            date.today() - timedelta(days=4000),
+            ahi=20.0,
+        )
+
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "poor"
+
+    async def test_other_profile_days_are_excluded(
+        self, async_db_session, async_test_device
+    ):
+        await _create_day_with_session(
+            async_db_session, async_test_device, date.today(), ahi=20.0
+        )
+
+        result = await StatsService(
+            async_db_session, profile_id=async_test_device.profile_id + 1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "unknown"
 
 
 class TestChunkedIdBinds:

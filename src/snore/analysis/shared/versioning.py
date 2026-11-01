@@ -52,9 +52,9 @@ VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
 # bonus.
 PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
 
-# Flow-derived MV fallback used by get_events' per-event ventilatory context
-# when a session has no device MV channel. NOT part of AlgorithmIdentity — it
-# labels query-time derivation only.
+# Flow-derived MV fallback used by experimental_get_event_context when a session
+# has no device MV channel. NOT part of AlgorithmIdentity — it labels query-time
+# derivation only.
 MV_FALLBACK_ALGO_VERSION: str = "v1"
 
 # Query-time RERA-proxy criterion (FL runs ending in recovery). NOT part of
@@ -116,8 +116,8 @@ class AlgorithmIdentity(BaseModel):
         return cls()
 
 
-# Fields whose mismatch triggers different behavior per call site: find_windows
-# hard-refuses for all criteria except ca_centered; compare_epochs emits
+# Fields whose mismatch triggers different behavior per call site: experimental_find_windows
+# hard-refuses for all criteria except ca_centered; experimental_compare_epochs emits
 # non-blocking version_warnings (distributions are still computed).
 # trigger_cycle, validity_flags and pattern_detector are intentionally excluded:
 # none feeds a cross-epoch distribution (trigger/cycle labels are per-breath
@@ -225,6 +225,7 @@ class NullReason(StrEnum):
     ALGO_VERSION_MISMATCH = "algo_version_mismatch"
     PRIMARY_MODE_MISMATCH = "primary_mode_mismatch"
     CHANNEL_ABSENT = "channel_absent"
+    CHANNEL_CORRUPT = "channel_corrupt"
     CHANNEL_UNALIGNED = "channel_unaligned"
     NOT_AVAILABLE = "not_available"
     SMART_RAMP_INDETERMINATE = "smart_ramp_indeterminate"

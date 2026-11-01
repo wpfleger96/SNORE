@@ -5,7 +5,8 @@ Covers:
   mask-on hours but analysis IS present (NullReason.DURATION_ZERO branch).
 - rera_index divides by the mask-on hours of analyzed (OK, enabled) sessions only.
 - Compliance block present even on empty range-mode responses (no day rows).
-- get_events max_events truncation: total_events keeps untruncated count; truncated=True
+- get_events and experimental_get_event_context max_events truncation:
+  total_events keeps untruncated count; truncated=True
   when cut; validate_max_events raises ValidationError for max_events < 1.
 - DeviceNotOwnedError maps to a client-safe error message that does NOT leak the
   internal profile id ("profile" must not appear in the message).
@@ -77,7 +78,7 @@ class TestDurationZeroReason:
         """rera_index and rdi are null with reason 'duration_zero' when analysis is
         present but the analyzed sessions last 0 h (cannot divide RERA count by hours).
         """
-        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
 
         target_date = date(2024, 3, 10)
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -90,7 +91,7 @@ class TestDurationZeroReason:
         ar = await _make_analysis_result(async_db_session, sess)
         await _make_breath(async_db_session, ar, sess, breath_number=1)
 
-        result = await get_nightly_summary(
+        result = await experimental_get_nightly_metrics(
             async_db_session,
             target_date,
             target_date,
@@ -108,7 +109,7 @@ class TestDurationZeroReason:
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         """Positive total_therapy_hours with analysis produces rera_index (not null)."""
-        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
 
         target_date = date(2024, 3, 11)
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -123,7 +124,7 @@ class TestDurationZeroReason:
         ar = await _make_analysis_result(async_db_session, sess)
         await _make_breath(async_db_session, ar, sess, breath_number=1)
 
-        result = await get_nightly_summary(
+        result = await experimental_get_nightly_metrics(
             async_db_session,
             target_date,
             target_date,
@@ -195,7 +196,10 @@ class TestReraIndexAnalyzedHours:
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         """20 RERAs over the one analyzed 4 h session → 5.0/h, not 20 / 8 h."""
-        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.mcp.tools.summary import (
+            experimental_get_nightly_metrics,
+            get_nightly_summary,
+        )
 
         target_date = date(2024, 3, 12)
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -213,16 +217,21 @@ class TestReraIndexAnalyzedHours:
         ar = await _make_analysis_result(async_db_session, analyzed)
         await _seed_rera_proxies(async_db_session, ar, analyzed, count=20)
 
-        result = await get_nightly_summary(
+        experimental = await experimental_get_nightly_metrics(
+            async_db_session,
+            target_date,
+            target_date,
+            profile_id=async_test_profile.id,
+        )
+        device_summary = await get_nightly_summary(
             async_db_session,
             target_date,
             target_date,
             profile_id=async_test_profile.id,
         )
 
-        night = result.nights[0]
-        assert night.rera_index == pytest.approx(5.0)
-        assert night.usage_hours == pytest.approx(8.0)
+        assert experimental.nights[0].rera_index == pytest.approx(5.0)
+        assert device_summary.nights[0].usage_hours == pytest.approx(8.0)
 
     async def test_rera_index_divides_by_usage_hours_not_span(
         self, async_db_session: AsyncSession, async_test_profile: Any
@@ -241,7 +250,7 @@ class TestReraIndexAnalyzedHours:
 
         night = await BreathService(
             async_db_session, profile_id=async_test_profile.id
-        ).get_nightly_summary(target_date)
+        ).get_experimental_nightly_summary(target_date)
 
         assert night.rera_count == 12
         assert night.rera_index == pytest.approx(4.0)
@@ -276,7 +285,7 @@ class TestReraIndexAnalyzedHours:
 
         night = await BreathService(
             async_db_session, profile_id=async_test_profile.id
-        ).get_nightly_summary(
+        ).get_experimental_nightly_summary(
             target_date, device_id=device.id if explicit_device else None
         )
 
@@ -297,7 +306,7 @@ class TestReraIndexAnalyzedHours:
         with pytest.raises(NoSessionsInRangeError):
             await BreathService(
                 async_db_session, profile_id=async_test_profile.id
-            ).get_nightly_summary(target_date)
+            ).get_experimental_nightly_summary(target_date)
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +378,10 @@ class TestDisabledSessionsExcluded:
         from snore.mcp.tools.breath_table import get_breath_table
         from snore.mcp.tools.epochs import compare_epochs
         from snore.mcp.tools.events import get_events
-        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.mcp.tools.summary import (
+            experimental_get_nightly_metrics,
+            get_nightly_summary,
+        )
         from snore.mcp.tools.waveform import fetch_waveform_raw
         from snore.mcp.tools.windows import find_windows
 
@@ -388,16 +400,20 @@ class TestDisabledSessionsExcluded:
                 )
             ).nights[0]
             assert night.session_count == 0
-            assert night.rera_index_reason == "analysis_not_run"
-            assert night.fl_median is None
-            assert night.fl_5th is None
-            assert night.fl_min is None
+            assert night.leak_above_24_pct is None
             assert (
-                night.fl_median_reason
-                == night.fl_5th_reason
-                == night.fl_min_reason
-                == "analysis_not_run"
+                night.leak_above_24_pct_reason
+                == night.device_flg_reason
+                == night.snore_reason
+                == night.ti_median_reason
+                == night.ie_ratio_reason
+                == "no_sessions"
             )
+            experimental = await experimental_get_nightly_metrics(
+                db, target_date, target_date, profile_id=pid, device_id=dev_id
+            )
+            assert experimental.nights == []
+            assert experimental.total_nights == 0
         elif tool == "events":
             events = await get_events(db, target_date, profile_id=pid, device_id=dev_id)
             assert events.events == []
@@ -562,6 +578,40 @@ class TestMaxEventsTruncation:
         assert result.total_events == 3
         assert len(result.events) == 3
         assert result.truncated is False
+
+    async def test_experimental_event_context_truncates_like_get_events(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """experimental_get_event_context with max_events=2 on a 4-event night
+        returns the first 2 events, total_events=4, and truncated=True.
+        """
+        from snore.mcp.tools.events import experimental_get_event_context
+
+        target_date = date(2024, 6, 22)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+
+        for i, ev_type in enumerate(["OA", "CA", "H", "OA"]):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type=ev_type,
+                    start_time=sess.start_time + timedelta(minutes=10 + i * 5),
+                    duration_seconds=15.0,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await experimental_get_event_context(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            max_events=2,
+        )
+
+        assert result.total_events == 4
+        assert [ev.event_type for ev in result.events] == ["OA", "CA"]
+        assert result.truncated is True
 
     def test_validate_max_events_below_one_raises(self) -> None:
         """validate_max_events raises ValidationError with the expected message."""

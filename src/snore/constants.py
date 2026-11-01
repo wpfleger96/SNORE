@@ -38,6 +38,9 @@ CPAP_EPR_LEVEL = 0x1403  # Expiratory pressure relief
 OXI_SPO2 = 0x2000
 OXI_PULSE = 0x2001
 
+# OSCAR profile parser; also its sessions' ``import_source``.
+OSCAR_BINARY_PARSER_ID = "oscar_binary"
+
 
 # ============================================================================
 # Measurement Units
@@ -53,6 +56,10 @@ UNIT_PERCENT = "%"
 UNIT_BPM = "bpm"
 UNIT_ML = "mL"
 UNIT_SECONDS = "seconds"
+
+# OSCAR's default large-leak redline (L/min), the threshold for time over leak.
+# Deliberately separate from LEAK_VALID_THRESHOLD_LPM, which is versioned analysis state.
+LEAK_REDLINE_LPM = 24.0
 
 
 # ============================================================================
@@ -342,6 +349,10 @@ EVENT_TYPE_UNCLASSIFIED_APNEA = "UA"
 
 # Type alias for valid apnea event types (used by ApneaEvent model)
 type ApneaEventType = Literal["OA", "CA", "MA", "UA"]
+
+# SNORE's own judgements about a therapy range (see ExperimentalStats)
+TherapyEffectiveness = Literal["excellent", "good", "fair", "poor", "unknown"]
+AhiTrendDirection = Literal["improving", "worsening", "stable"]
 
 # Mapping from storage event types to ApneaEventType
 APNEA_TYPE_MAP: dict[str, ApneaEventType] = {

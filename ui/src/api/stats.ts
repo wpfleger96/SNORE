@@ -1,10 +1,19 @@
 import { apiGet, apiGetOrNull } from './client'
-import type { TherapySummary, PeriodStatistics, TrendData, RecordsData, DataRange } from '@/types'
+import type {
+    TherapySummary,
+    ExperimentalStats,
+    PeriodStatistics,
+    TrendData,
+    RecordsData,
+    DataRange,
+} from '@/types'
 
 export const getSummary = apiGetOrNull<TherapySummary, [daysLimit?: number]>(
     '/stats/summary',
     (daysLimit) => ({ params: daysLimit != null ? { days_limit: daysLimit } : {} }),
 )
+
+export const getExperimentalStats = apiGet<ExperimentalStats>('/stats/experimental')
 
 export const getPeriods = apiGet<PeriodStatistics[], [periodType?: string, daysLimit?: number]>(
     '/stats/periods',

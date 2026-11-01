@@ -75,11 +75,7 @@ class TestEventsRouter:
         assert len(data) == 1
         assert data[0]["event_type"] == "OA"
 
-    def test_match_events_session_not_found(self, api_client):
-        response = api_client.get("/api/v1/sessions/99999/events/match")
-        assert response.status_code == 404
-
-    def test_match_events_no_analysis(
+    def test_match_route_is_gone(
         self, api_client, db_session, test_device, test_session_factory
     ):
         session = test_session_factory(
@@ -87,3 +83,4 @@ class TestEventsRouter:
         )
         response = api_client.get(f"/api/v1/sessions/{session.id}/events/match")
         assert response.status_code == 404
+        assert response.json()["detail"] == "Not Found"

@@ -27,28 +27,7 @@
                 :decimals="0"
                 glossary-key="days_with_data"
             />
-            <div class="stat-card-ahi">
-                <StatCard
-                    label="Avg AHI"
-                    :value="summary.avg_ahi"
-                    :decimals="1"
-                    glossary-key="ahi"
-                />
-                <Badge
-                    v-if="summary.effectiveness !== 'unknown'"
-                    v-bind="effectivenessBadgeAttrs(summary.effectiveness)"
-                    class="effectiveness-badge"
-                >
-                    {{ summary.effectiveness }}<InfoHint glossary-key="effectiveness" />
-                </Badge>
-                <span
-                    v-if="summary.ahi_trend_direction"
-                    class="trend-badge"
-                    :class="'trend-' + summary.ahi_trend_direction"
-                >
-                    {{ summary.ahi_trend_direction }}<InfoHint glossary-key="ahi_trend" />
-                </span>
-            </div>
+            <StatCard label="Avg AHI" :value="summary.avg_ahi" :decimals="1" glossary-key="ahi" />
             <StatCard
                 label="Avg Hours"
                 :value="summary.avg_hours"
@@ -323,15 +302,6 @@ const trendDatasets = computed(() => {
     return datasets
 })
 
-function effectivenessBadgeAttrs(e: string): Record<string, string> {
-    if (e === 'excellent' || e === 'good')
-        return { class: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' }
-    if (e === 'fair')
-        return { class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' }
-    if (e === 'poor') return { variant: 'destructive' }
-    return { variant: 'secondary' }
-}
-
 function navigateToSession(session: SessionListItem): void {
     void router.push({ name: 'session-detail', params: { id: session.id } })
 }
@@ -359,40 +329,6 @@ function eventTextColor(type: string): string {
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.5rem;
-}
-
-.stat-card-ahi {
-    position: relative;
-}
-
-.effectiveness-badge {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-}
-
-.trend-badge {
-    position: absolute;
-    bottom: 0.5rem;
-    right: 0.5rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: capitalize;
-    padding: 0.1rem 0.35rem;
-    border-radius: 0.25rem;
-    border: 1px solid currentColor;
-}
-
-.trend-improving {
-    color: var(--color-success);
-}
-
-.trend-worsening {
-    color: var(--color-destructive);
-}
-
-.trend-stable {
-    color: var(--muted-foreground);
 }
 
 .no-data {

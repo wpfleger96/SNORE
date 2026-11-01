@@ -5,10 +5,13 @@ from typing import Any
 
 import pytest
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Day, Device, Session
+from snore.provenance import response_provenance
 from snore.services.report_service import ReportService
+from snore.services.schemas import TherapySummary
 from snore.services.stats_service import StatsService
 
 
@@ -108,6 +111,50 @@ class TestReportService:
         assert "<svg" in html
         assert "<td>" in html
         assert "days" in html.lower() or "/</td>" in html or "<td>7" in html
+
+    async def test_reports_do_not_render_effectiveness(
+        self, async_db_session, async_test_device
+    ):
+        """The effectiveness band is experimental, so no report shows it."""
+        today = date.today()
+        range_a = (today - timedelta(days=60), today - timedelta(days=31))
+        range_b = (today - timedelta(days=30), today)
+        await _seed_days(async_db_session, async_test_device, range_a[0], range_b[1])
+
+        service = ReportService(async_db_session, profile_id=1)
+        summary_html = await service.generate_summary_report(range_a[0], range_b[1])
+        comparison_html = await service.generate_comparison_report(range_a, range_b)
+
+        assert "Avg AHI" in summary_html
+        assert "Avg AHI" in comparison_html
+        for html in (summary_html, comparison_html):
+            assert "effectiveness" not in html.lower()
+            assert "excellent" not in html.lower()  # The band of the seeded AHI
+
+    async def test_report_data_carries_no_experimental_field(
+        self, async_db_session, async_test_device
+    ):
+        """Whatever a report fetches, nothing it can render is Experimental."""
+        today = date.today()
+        range_a = (today - timedelta(days=60), today - timedelta(days=31))
+        range_b = (today - timedelta(days=30), today)
+        await _seed_days(async_db_session, async_test_device, range_a[0], range_b[1])
+
+        service = ReportService(async_db_session, profile_id=1)
+        fetched = [
+            *(await service._fetch_summary_data(range_a[0], range_b[1])).values(),
+            *(await service._fetch_comparison_data(range_a, range_b)).values(),
+        ]
+
+        models = {
+            type(item)
+            for value in fetched
+            for item in (value if isinstance(value, list) else [value])
+            if isinstance(item, BaseModel)
+        }
+        assert TherapySummary in models
+        for model in models:
+            assert "experimental" not in response_provenance(model)
 
     async def test_comparison_contains_both_range_headings_and_delta_sign(
         self, async_db_session, async_test_device

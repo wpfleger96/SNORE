@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
 import re
 
 from datetime import date
 
 from snore.mcp.errors import ValidationError
+from snore.services.breath.dtos import MAX_PAGE
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -68,30 +70,44 @@ def parse_date_range(
 
 
 _PAGE_SIZE_CAP = 90
+_MAX_PAGE = MAX_PAGE
+
+
+def _require_finite(value: float, param_name: str) -> None:
+    """Raise ValidationError for NaN or infinity, which every comparison mishandles."""
+    if not math.isfinite(value):
+        raise ValidationError(f"{param_name} must be a finite number")
 
 
 def validate_page_args(page: int, page_size: int) -> int:
     """Validate pagination args; return the validated page_size.
 
     Raises:
-        ValidationError: If ``page < 1`` or ``page_size`` is outside [1, _PAGE_SIZE_CAP].
+        ValidationError: If ``page`` is outside [1, _MAX_PAGE] or ``page_size``
+            is outside [1, _PAGE_SIZE_CAP].
     """
     if page < 1:
         raise ValidationError("page must be >= 1")
+    if page > _MAX_PAGE:
+        raise ValidationError(f"page must be <= {_MAX_PAGE}")
     if page_size < 1 or page_size > _PAGE_SIZE_CAP:
         raise ValidationError(f"page_size must be between 1 and {_PAGE_SIZE_CAP}")
     return page_size
 
 
 def validate_compliance_threshold(hours: float) -> None:
-    """Raise ValidationError if compliance threshold is negative."""
+    """Raise ValidationError if compliance threshold is negative or non-finite."""
+    _require_finite(hours, "compliance_threshold_hours")
     if hours < 0:
         raise ValidationError("compliance_threshold_hours must be >= 0")
 
 
 def validate_min_duration(min_duration: float | None) -> None:
-    """Raise ValidationError if min_duration is negative."""
-    if min_duration is not None and min_duration < 0:
+    """Raise ValidationError if min_duration is negative or non-finite."""
+    if min_duration is None:
+        return
+    _require_finite(min_duration, "min_duration")
+    if min_duration < 0:
         raise ValidationError("min_duration must be >= 0")
 
 

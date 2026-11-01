@@ -95,6 +95,11 @@ def mcp_client_factory() -> Any:
     """
     from snore.mcp.server import make_server  # noqa: PLC0415
 
+    # make_server() imports the tool modules lazily. Import them here, before a
+    # test's patch() blocks start, or a module first imported under a patch keeps
+    # the mock in its from-imports for the rest of the worker.
+    make_server()
+
     @asynccontextmanager
     async def _client_context(
         session: MagicMock,

@@ -17,6 +17,7 @@ from pydantic import (
 from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import (
     DayDetail,
+    DayExperimentalMetrics,
     DayListItem,
     HealthNightDetailRead,
     HealthNightSummaryRead,
@@ -51,6 +52,7 @@ __all__ = [
     "ReraValidationRequest",
     "EventItem",
     "DayDetail",
+    "DayExperimentalMetrics",
     "DayListItem",
     "RxAllResponse",
     "RxPeriodResponse",

@@ -1,8 +1,10 @@
 import type {
     TherapySummary,
+    ExperimentalStats,
     TrendData,
     PaginatedResponse,
     DayListItem,
+    DayExperimentalMetrics,
     SessionListItem,
     DeviceInfo,
     DeviceDetail,
@@ -29,7 +31,6 @@ export const summaryFixture: TherapySummary = {
     avg_hours: 7.0520915365467305,
     days_with_data: 491,
     avg_ahi: 0.523102059176919,
-    effectiveness: 'excellent',
     avg_rei: null,
     avg_pressure: 7.792179227118094,
     min_pressure: 4.0,
@@ -50,6 +51,18 @@ export const summaryFixture: TherapySummary = {
         { event_type: 'RE', count: 54, percentage: 2.69 },
         { event_type: 'UA', count: 18, percentage: 0.9 },
     ],
+}
+
+export const experimentalStatsFixture: ExperimentalStats = {
+    effectiveness: 'excellent',
+    ahi_trend_direction: 'stable',
+}
+
+export const dayExperimentalFixture: DayExperimentalMetrics = {
+    date: '2026-04-06',
+    fl_class_ge4_pct: 3.2,
+    rera_index: 1.46,
+    rera_count: 14,
 }
 
 export const trendsFixture: TrendData = {
