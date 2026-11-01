@@ -1,4 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>wpfleger96/github-config//renovate-config/default"]
+  "extends": ["github>wpfleger96/github-config//renovate-config/default"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "corepack installed via npm in the Dockerfile UI build stage",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["npm install -g (?<depName>corepack)@(?<currentValue>[0-9][^\\s]*)"],
+      "datasourceTemplate": "npm"
+    }
+  ]
 }
