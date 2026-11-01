@@ -1,5 +1,5 @@
 # Stage 1: build the Vue SPA
-FROM node:24-slim AS ui-builder
+FROM node:26-slim AS ui-builder
 
 WORKDIR /app/ui
 
