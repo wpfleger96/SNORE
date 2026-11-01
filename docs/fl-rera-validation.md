@@ -6,12 +6,26 @@ This document is the canonical record of SNORE's flow-limitation (FL) and RERA v
 
 SNORE's flow-limitation and RERA metrics are **experimental relative trend instruments, not validated absolute measurements**. They are not validated against device-scored events, and they are not clinically validated. Device-scored events remain the reference standard; the FL/RERA metrics are useful for tracking relative change (for example, night-over-night or across pressure epochs), not for asserting an absolute event count or a clinical severity.
 
-This framing is not aspirational hedging — it is the honest current state, and it must survive edits. The canonical one-line tier definition is `PROVENANCE_NOTES[Provenance.EXPERIMENTAL]` in `src/snore/provenance.py` ("SNORE's own heuristic; an experimental trend instrument, not clinically validated."), which the MCP tool disclaimers, server instructions, `docs://capabilities` legend, and CLI legend all read rather than restate. MCP and REST response fields declare their tier with `provenance_field`, which adds a machine-readable `x-provenance` key to the JSON schema (`docs://schemas`, OpenAPI) and prefixes the description with `[EXPERIMENTAL]`; field descriptions do not repeat the note. The `/validation` UI view, the day-view glossary, and the API `DayDetail` field descriptions carry equivalent labeling. Any surface that reports these metrics should reach for `provenance_field` and `PROVENANCE_NOTES` rather than restating the disclaimer inline; the CLI and exports read a field's tier back with `field_provenance` (or `mark_field` in the CLI) instead of hardcoding it, so the schema stays the single source.
+This framing is not aspirational hedging — it is the honest current state, and it must survive edits. The canonical one-line tier definition is `PROVENANCE_NOTES[Provenance.EXPERIMENTAL]` in `src/snore/provenance.py` ("SNORE's own heuristic; an experimental trend instrument, not clinically validated."), which the MCP tool disclaimers, server instructions, `docs://capabilities` legend, and CLI legend all read rather than restate. MCP and REST response fields declare their tier with `provenance_field`, which adds a machine-readable `x-provenance` key to the JSON schema (`docs://schemas`, OpenAPI) and prefixes the description with `[EXPERIMENTAL]`; field descriptions do not repeat the note. The `/validation` UI view, the day-view glossary, and the API `DayExperimentalMetrics` field descriptions carry equivalent labeling. Any surface that reports these metrics should reach for `provenance_field` and `PROVENANCE_NOTES` rather than restating the disclaimer inline; the CLI and exports read a field's tier back with `field_provenance` (or `mark_field` in the CLI) instead of hardcoding it, so the schema stays the single source.
+
+No default MCP response contains an Experimental-tagged field. MCP clients get these metrics only from tools prefixed `experimental_`, and calling one is the opt-in. `tests/unit/test_mcp_provenance.py` enforces this.
+
+No default REST operation returns an Experimental-tagged field either. REST clients get these metrics only from operations carrying the FastAPI `experimental` tag, and `tests/unit/test_provenance_tags.py` enforces this.
 
 ## The metrics
 
 - **`fl_class_ge4_pct`** — the percent of leak-valid, rule-matched-classified breaths whose `flow_class >= 4`. The rule-matched qualifier is load-bearing: only breaths classified by a shape rule (confidence strictly above `FL_DEFAULT_CONFIDENCE`) are counted. Fallback flatness-triage breaths are excluded. See the fallback mechanism below.
 - **`rera_index` / `rera_proxy_count`** — a query-time FL-run proxy for RERA. It counts runs of two or more consecutive breaths with `flow_class >= 4` that end in a recovery breath. The run-detection logic is `iter_fl_run_recoveries` in `src/snore/services/breath/algorithms.py`, versioned as `RERA_PROXY_ALGO_VERSION`. This proxy is distinct from the analysis-time amplitude-crescendo RERA detector; they are separate definitions with separate version constants, and the proxy is what the validation work below scores.
+
+MCP clients read these metrics from the `experimental_*` tools:
+
+- **`experimental_get_nightly_metrics`:** `fl_median`, `fl_5th`, `fl_min`, `fl_class_ge4_pct`, `rera_index`, `rera_proxy_count`, `rera_proxy_version`, `rdi` and `periodic_breathing_pct`, plus the segmented-breath values `segmented_ti_median_s` and `segmented_ie_ratio`. `segmented_ie_ratio` is unitless Ti/Te and is not comparable to the device `ie_ratio_median`, whose scale is unconfirmed.
+- **`experimental_compare_epochs`:** `flow_class_distribution`, `flow_class_distribution_fallback`, `rera_proxy_count`, and the breath-feature distributions.
+- **`experimental_get_breath_table`, `experimental_find_windows`:** per-breath rows and bins, and window search over them.
+
+REST clients read `fl_class_ge4_pct`, `rera_index` and `rera_count` for one night from `GET /days/{date}/experimental` (`DayExperimentalMetrics`).
+
+For flow limitation and RERAs, the default `get_nightly_summary` and `compare_epochs` carry device data only: the device flow-limitation and snore channels and, in `get_nightly_summary`, the device-scored `reras` count. Findings and decision-log entries dated before 2026-10-31 name the tools as they stood then: `fl_class_ge4_pct` and `rera_index` on `get_nightly_summary` are now on `experimental_get_nightly_metrics`, `flow_class_distribution` on `compare_epochs` is now on `experimental_compare_epochs`, and the FL/RERA fields on `DayDetail` are now on `DayExperimentalMetrics`.
 
 ## Validation platform
 
@@ -114,6 +128,14 @@ This is the follow-up the open question called for: decompose the fallback-exclu
 - Coverage note: Apple pairing thins out after mid-2026 (P23 has only 4 paired nights), so the BiPAP-era epochs are underpowered for this comparison.
 
 Decision: no algorithm or reporting change. The open question narrows from "is SNORE FL confounded or fallback noise?" to "why does rule-matched FL prevalence inversely track Apple BD while the RERA proxy does not?"
+
+### 2026-10-31 — FL and RERA metrics moved behind `experimental_*` MCP tools and experimental REST operations
+
+The default MCP tools no longer return SNORE's FL or RERA metrics. Those metrics moved to separately named `experimental_*` tools, because the recorded evidence does not support default placement: the RERA proxy sits at about 1.6x chance precision and about 5% sensitivity against device RE events, and FL prevalence runs inverse to Apple's breathing-disturbance signal. Default surfaces hold device data and plain arithmetic on it, and the tools that carry these metrics are named above under "The metrics".
+
+The REST surface follows the same rule. `DayDetail` no longer carries `fl_class_ge4_pct`, `rera_index` or `rera_count`, and `GET /days/{date}` no longer computes them. They moved to `GET /days/{date}/experimental`, with the same null-with-reason behavior, so day detail no longer depends on analysis having run.
+
+This is a surface change only. No algorithm or threshold changed, and analysis still runs on import.
 
 ## Open questions
 

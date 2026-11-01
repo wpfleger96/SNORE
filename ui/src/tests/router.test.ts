@@ -602,3 +602,12 @@ describe('routes: apple-health routes', () => {
         expect(resolved.params.date).toBe('2024-01-15')
     })
 })
+
+describe('routes: day routes', () => {
+    it('test_day_experimental_route_passes_date_to_view', () => {
+        const resolved = router.resolve('/days/2026-05-03/experimental')
+        expect(resolved.name).toBe('day-experimental')
+        const props = resolved.matched[0].props.default as (r: typeof resolved) => unknown
+        expect(props(resolved)).toEqual({ dayDate: '2026-05-03' })
+    })
+})

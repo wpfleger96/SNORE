@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from statistics import median
 from typing import TYPE_CHECKING, Literal
 
+from snore.constants import AhiTrendDirection, TherapyEffectiveness
 from snore.database import models
 from snore.utils.stats import weighted_mean
 
@@ -71,7 +72,7 @@ def calculate_average_hours_per_day(days: list[models.Day]) -> float:
     return total_hours / len(days_with_usage)
 
 
-def assess_therapy_effectiveness(avg_ahi: float | None) -> str:
+def assess_therapy_effectiveness(avg_ahi: float | None) -> TherapyEffectiveness:
     """
     Assess therapy effectiveness based on AHI.
 
@@ -423,7 +424,9 @@ def calculate_records(
     return records
 
 
-def calculate_ahi_trend_direction(ahi_values: list[float]) -> str | None:
+def calculate_ahi_trend_direction(
+    ahi_values: list[float],
+) -> AhiTrendDirection | None:
     """
     Determine AHI trend direction from a time-ordered list of period AHI values.
 

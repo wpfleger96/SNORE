@@ -80,7 +80,6 @@ async def stats(
         "avg_ahi",
         f"{summary.avg_ahi:.1f}" if summary.avg_ahi is not None else "N/A",
     )
-    _summary_kv("Effectiveness", "effectiveness", str(summary.effectiveness))
     if summary.avg_rei is not None:
         _summary_kv("Average REI", "avg_rei", f"{summary.avg_rei:.1f}")
 
@@ -246,13 +245,6 @@ async def stats(
                     date_labels = [d.strftime("%Y-%m-%d") for d in dates_for_plot]
                     x_indices = list(range(len(ahi_values)))
 
-                    from snore.analysis.calculations import (  # noqa: PLC0415
-                        calculate_ahi_trend_direction,
-                    )
-
-                    direction_str = calculate_ahi_trend_direction(ahi_values)
-                    direction = f"({direction_str})" if direction_str else ""
-
                     print_header(
                         mark_field("AHI Trend", TrendsResponse, "ahi"), wide=True
                     )
@@ -263,7 +255,7 @@ async def stats(
                         fig.signal(x_indices, ahi_values, marker="braille").lines()
                     )
                     fig.ruler("x").ticks(x_indices, date_labels)
-                    fig.title(f"AHI Over Time {direction}")
+                    fig.title("AHI Over Time")
                     fig.label("Period", axis="x")
                     fig.label("AHI (events/hour)", axis="y")
                     # fig.show() writes to fd 1 from native code, bypassing sys.stdout

@@ -25,10 +25,18 @@ from snore.services.schemas import (
     SessionSetting,
     SessionStatistics,
 )
+from snore.services.tidal_volume import tidal_volume_ml
 from snore.services.waveform_service import clear_waveform_array_cache
 from snore.utils.db_chunk import iter_id_chunks
 
 __all__ = ["SessionService"]
+
+_TIDAL_VOLUME_FIELDS = (
+    "tidal_volume_mean",
+    "tidal_volume_min",
+    "tidal_volume_max",
+    "tidal_volume_95th",
+)
 
 
 class SessionService(ProfileScopedService):
@@ -192,7 +200,14 @@ class SessionService(ProfileScopedService):
 
         statistics = None
         if stats_record:
-            statistics = SessionStatistics.model_validate(stats_record)
+            statistics = SessionStatistics.model_validate(stats_record).model_copy(
+                update={
+                    field: tidal_volume_ml(
+                        getattr(stats_record, field), session.import_source
+                    )
+                    for field in _TIDAL_VOLUME_FIELDS
+                }
+            )
 
         settings_list = None
         if include_settings:

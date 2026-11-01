@@ -226,29 +226,7 @@
                     </TableBody>
                 </Table>
 
-                <div v-if="totalEventPages > 1" class="flex items-center justify-between px-2 py-4">
-                    <span class="text-sm text-muted-foreground">
-                        Page {{ eventsPage + 1 }} of {{ totalEventPages }}
-                    </span>
-                    <div class="flex gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            :disabled="eventsPage === 0"
-                            @click="eventsPage--"
-                        >
-                            Previous
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            :disabled="eventsPage >= totalEventPages - 1"
-                            @click="eventsPage++"
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </div>
+                <PaginationBar v-bind="eventsBar" @page="setEventsOffset" />
             </div>
         </div>
 
@@ -383,20 +361,38 @@
         </div>
 
         <!-- Event Comparison -->
-        <div v-if="comparison" class="section-card">
+        <div v-if="comparisonLoading && !comparison" class="loading-state">
+            <Loader2 class="inline h-4 w-4 animate-spin" /> Loading event comparison...
+        </div>
+        <ErrorState
+            v-else-if="comparisonError"
+            :message="comparisonError"
+            :retry="loadComparison"
+        />
+        <div v-else-if="comparison" class="section-card">
             <h2>Event Comparison</h2>
+            <p class="mb-3 text-sm text-muted-foreground">Detection mode: {{ comparison.mode }}</p>
             <div class="summary-row" style="margin-bottom: 1rem">
                 <StatCard
                     label="Device-scored Events"
                     :value="comparison.machine_event_count"
                     :decimals="0"
                     glossary-key="machine_events"
-                />
+                    >Apneas and hypopneas, plus RERAs when the device scored any</StatCard
+                >
                 <StatCard
                     label="SNORE-detected Events"
                     :value="comparison.programmatic_event_count"
                     :decimals="0"
                     glossary-key="programmatic_events"
+                />
+                <StatCard label="Matched" :value="comparison.matched_events" :decimals="0" />
+                <StatCard
+                    label="Sensitivity"
+                    :value="sensitivity"
+                    unit="%"
+                    :decimals="1"
+                    glossary-key="sensitivity"
                 />
                 <StatCard
                     label="False Negatives"
@@ -408,7 +404,8 @@
                     label="False Positives"
                     :value="
                         (comparison.false_positives_apnea?.length ?? 0) +
-                        (comparison.false_positives_hypopnea?.length ?? 0)
+                        (comparison.false_positives_hypopnea?.length ?? 0) +
+                        (comparison.false_positives_rera?.length ?? 0)
                     "
                     :decimals="0"
                     glossary-key="false_positives"
@@ -418,11 +415,7 @@
             <div v-if="comparison.false_negatives?.length" class="compare-table-section">
                 <h3>False Negatives: Device-scored Events SNORE Missed</h3>
                 <div v-if="isMobile" class="card-list">
-                    <div
-                        v-for="(e, i) in comparison.false_negatives"
-                        :key="'fn-' + i"
-                        class="data-card"
-                    >
+                    <div v-for="(e, i) in pagedFalseNegatives" :key="'fn-' + i" class="data-card">
                         <div class="data-card-header">
                             <span
                                 class="event-badge"
@@ -456,7 +449,7 @@
                     </TableHeader>
                     <TableBody>
                         <TableRow
-                            v-for="(e, i) in comparison.false_negatives"
+                            v-for="(e, i) in pagedFalseNegatives"
                             :key="'fn-' + i"
                             class="odd:bg-muted/50"
                         >
@@ -483,18 +476,20 @@
                         </TableRow>
                     </TableBody>
                 </Table>
+                <PaginationBar v-bind="falseNegativesBar" @page="setFalseNegativesOffset" />
             </div>
 
             <div
                 v-if="
                     comparison.false_positives_apnea?.length ||
-                    comparison.false_positives_hypopnea?.length
+                    comparison.false_positives_hypopnea?.length ||
+                    comparison.false_positives_rera?.length
                 "
                 class="compare-table-section"
             >
                 <h3>False Positives: SNORE-detected Events the Device Did Not Score</h3>
                 <div v-if="isMobile" class="card-list">
-                    <div v-for="(e, i) in allFalsePositives" :key="'fp-' + i" class="data-card">
+                    <div v-for="(e, i) in pagedFalsePositives" :key="'fp-' + i" class="data-card">
                         <div class="data-card-header">
                             <span
                                 class="event-badge"
@@ -544,7 +539,7 @@
                     </TableHeader>
                     <TableBody>
                         <TableRow
-                            v-for="(e, i) in allFalsePositives"
+                            v-for="(e, i) in pagedFalsePositives"
                             :key="'fp-' + i"
                             class="odd:bg-muted/50"
                         >
@@ -579,6 +574,7 @@
                         </TableRow>
                     </TableBody>
                 </Table>
+                <PaginationBar v-bind="falsePositivesBar" @page="setFalsePositivesOffset" />
             </div>
         </div>
     </div>
@@ -586,6 +582,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { isAxiosError } from 'axios'
 import {
     Table,
     TableBody,
@@ -604,10 +601,14 @@ import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import FlowClassGlyph from '@/components/FlowClassGlyph.vue'
 import FlowClassPopover from '@/components/FlowClassPopover.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
+import PaginationBar from '@/components/PaginationBar.vue'
+import ErrorState from '@/components/ErrorState.vue'
 import { getAnalysis, runAnalysis } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { useAuth } from '@/composables/useAuth'
+import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { usePagedRows } from '@/composables/usePagedRows'
 import { formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import { FLOW_LIMITATION_CLASSES } from '@/utils/flowLimitation'
@@ -630,13 +631,55 @@ const error = ref<string | null>(null)
 const noAnalysis = ref(false)
 const running = ref(false)
 const analysis = ref<AnalysisResult | null>(null)
-const comparison = ref<EventComparisonResult | null>(null)
 const selectedMode = ref('')
-const eventsPage = ref(0)
-const eventsPageSize = 25
 const flLegendOpen = ref(false)
 
+// Results per mode; cleared when the session changes or an analysis run replaces them.
+// A null entry is a mode the server has no comparison for (404).
+const comparisonCache = new Map<string, EventComparisonResult | null>()
+
+const {
+    data: comparisonData,
+    loading: comparisonLoading,
+    error: comparisonError,
+    reload: loadComparison,
+} = useApiLoad(async () => {
+    const mode = selectedMode.value
+    if (!mode) return null
+    const cached = comparisonCache.get(mode)
+    if (cached !== undefined) return cached
+    try {
+        const result = await getWaveformCompare(props.sessionId, { mode })
+        comparisonCache.set(mode, result)
+        return result
+    } catch (err: unknown) {
+        // A 404 means no comparison for this mode: hide the card. Anything else is a failure.
+        if (isAxiosError(err) && err.response?.status === 404) {
+            comparisonCache.set(mode, null)
+            return null
+        }
+        throw err
+    }
+}, 'Failed to load event comparison')
+
+// Data for another mode stays hidden until its own load lands.
+const comparison = computed(() =>
+    comparisonData.value?.mode === selectedMode.value ? comparisonData.value : null,
+)
+
+// Mount, running an analysis and the mode toggle all land here.
+watch([analysis, selectedMode], () => void loadComparison())
+watch(
+    () => props.sessionId,
+    () => comparisonCache.clear(),
+)
+
 const modeOptions = computed(() => Object.keys(analysis.value?.mode_results ?? {}))
+
+const sensitivity = computed(() => {
+    if (!comparison.value?.machine_event_count) return null
+    return (comparison.value.matched_events / comparison.value.machine_event_count) * 100
+})
 
 const selectedModeResult = computed(() => {
     if (!analysis.value || !selectedMode.value) return null
@@ -707,12 +750,11 @@ const modeEvents = computed<EventRow[]>(() => {
     return events
 })
 
-const paginatedEvents = computed(() => {
-    const start = eventsPage.value * eventsPageSize
-    return modeEvents.value.slice(start, start + eventsPageSize)
-})
-
-const totalEventPages = computed(() => Math.ceil(modeEvents.value.length / eventsPageSize))
+const {
+    pageRows: paginatedEvents,
+    barProps: eventsBar,
+    setOffset: setEventsOffset,
+} = usePagedRows(modeEvents)
 
 interface FlDistRow {
     classNum: number
@@ -754,17 +796,32 @@ const allFalsePositives = computed(() =>
     [
         ...(comparison.value?.false_positives_apnea ?? []),
         ...(comparison.value?.false_positives_hypopnea ?? []),
+        ...(comparison.value?.false_positives_rera ?? []),
     ].sort((a, b) => a.start_time - b.start_time),
 )
 
-watch(selectedMode, () => {
-    eventsPage.value = 0
-})
+const sortedFalseNegatives = computed(() =>
+    [...(comparison.value?.false_negatives ?? [])].sort((a, b) => a.start_time - b.start_time),
+)
+
+const {
+    pageRows: pagedFalsePositives,
+    barProps: falsePositivesBar,
+    setOffset: setFalsePositivesOffset,
+} = usePagedRows(allFalsePositives)
+
+const {
+    pageRows: pagedFalseNegatives,
+    barProps: falseNegativesBar,
+    setOffset: setFalseNegativesOffset,
+} = usePagedRows(sortedFalseNegatives)
 
 async function handleRunAnalysis(): Promise<void> {
     running.value = true
     try {
-        analysis.value = await runAnalysis(props.sessionId)
+        const result = await runAnalysis(props.sessionId)
+        comparisonCache.clear()
+        analysis.value = result
         noAnalysis.value = false
         if (modeOptions.value.length > 0) {
             selectedMode.value = modeOptions.value[0]
@@ -792,12 +849,6 @@ onMounted(async () => {
         }
     } finally {
         loading.value = false
-    }
-
-    try {
-        comparison.value = await getWaveformCompare(props.sessionId)
-    } catch {
-        // Comparison data not available — section won't render
     }
 })
 </script>

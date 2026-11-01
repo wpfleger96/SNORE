@@ -5,15 +5,18 @@ Coverage:
 - get_analysis_status: NOT_RUN, OK, STALE_VERSION
 - get_breath_table: empty → NOT_RUN, paginated BreathRow, time-binned BreathBin
 - find_windows: empty → NOT_RUN result, WORST_FLATTENING_LEAK_VALID criterion
-- compare_epochs: empty range → NO_DATA_IN_RANGE + null algorithm_identity;
+- compare_experimental_epochs: empty range → NO_DATA_IN_RANGE + null algorithm_identity;
                   populated → nights_with_data > 0
-- get_nightly_summary: ValueError no sessions, OK day with analyzed_session_count
-- get_nightly_range_summary: empty range returns n_nights=0
+- get_experimental_nightly_summary: ValueError no sessions, OK day with analyzed_session_count
+- get_experimental_nightly_range: empty range returns n_nights=0
+- get_nightly_device_summary: empty range, calendar compliance, range validation
 - get_device_capabilities: no sessions → null_reason; with sessions → date range
 - get_contextual_events: no events → empty; with events → ContextualEvent list
-- get_contextual_events ventilatory context: MV slope/stability, delivered PS,
-  flow-derived MV fallback
-- get_nightly_summary periodic_breathing_pct from persisted PB episodes
+- get_contextual_events default context: delivered PS and device MV only, no
+  flow fetch
+- get_contextual_events include_ventilatory: MV slope/stability, flow-derived
+  MV fallback
+- get_experimental_nightly_summary periodic_breathing_pct from persisted PB episodes
 - get_waveform_window: no waveform data → empty channels
 - fetch_waveform_window_raw (module-level): missing session raises ValueError
 - compute_waveform_window (module-level): empty raw data round-trip
@@ -446,6 +449,16 @@ class TestBreathQueryRangeValidation:
                 bin_minutes=5.0,
             )
 
+    def test_page_above_cap_is_rejected(self):
+        """page beyond MAX_PAGE would overflow SQLite's OFFSET and is refused."""
+        with pytest.raises(ValueError, match="page"):
+            BreathQueryRange(
+                therapy_date=date(2025, 1, 1),
+                offset_start=0.0,
+                offset_end=60.0,
+                page=2**62,
+            )
+
     def test_infinite_offset_start_is_rejected(self):
         """offset_start=inf is rejected by validate_window."""
         with pytest.raises(ValueError, match="finite"):
@@ -731,7 +744,7 @@ class TestFindWindows:
 
 
 # ---------------------------------------------------------------------------
-# compare_epochs
+# compare_experimental_epochs
 # ---------------------------------------------------------------------------
 
 
@@ -740,10 +753,10 @@ class TestCompareEpochs:
     async def test_empty_range_yields_no_data_in_range_and_null_identity(
         self, async_db_session
     ):
-        """compare_epochs with no sessions → null algorithm_identity + NO_DATA_IN_RANGE."""
+        """compare_experimental_epochs with no sessions → null algorithm_identity + NO_DATA_IN_RANGE."""
         _, profile_id = await _make_profile(async_db_session)
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="empty",
@@ -757,12 +770,44 @@ class TestCompareEpochs:
         es = result.epochs[0]
         assert es.algorithm_identity is None
         assert es.null_reason == NullReason.NO_DATA_IN_RANGE
+        assert es.rera_reason == NullReason.NO_DATA_IN_RANGE
         assert es.nights_with_data == 0
+
+    async def test_rera_reason_tells_no_sessions_from_no_analysis(
+        self, async_db_session
+    ):
+        """In a comparison that has sessions, a no-session epoch reports the same
+        rera_reason as an all-empty comparison; unanalyzed sessions say so."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        await _make_day_and_session(async_db_session, dev.id, date(2025, 1, 2))
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        result = await svc.compare_experimental_epochs(
+            epochs=[
+                EpochRequest(
+                    label="unanalyzed",
+                    date_start=date(2025, 1, 1),
+                    date_end=date(2025, 1, 7),
+                ),
+                EpochRequest(
+                    label="empty",
+                    date_start=date(2025, 2, 1),
+                    date_end=date(2025, 2, 7),
+                ),
+            ]
+        )
+
+        unanalyzed, empty = result.epochs
+        assert unanalyzed.null_reason == NullReason.NO_DATA_IN_RANGE
+        assert unanalyzed.rera_reason == NullReason.ANALYSIS_NOT_RUN
+        assert empty.null_reason == NullReason.NO_DATA_IN_RANGE
+        assert empty.rera_reason == NullReason.NO_DATA_IN_RANGE
 
     async def test_analyzed_session_count_positive_when_analysis_exists(
         self, async_db_session
     ):
-        """compare_epochs sets nights_with_data > 0 when a session has an OK analysis."""
+        """compare_experimental_epochs sets nights_with_data > 0 when a session has an OK analysis."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 2, 1)
@@ -770,7 +815,7 @@ class TestCompareEpochs:
         await _store_analysis_with_breaths(async_db_session, session, profile_id)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="feb",
@@ -819,7 +864,7 @@ class TestCompareEpochs:
         )
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="apr",
@@ -842,21 +887,21 @@ class TestCompareEpochs:
 
 
 # ---------------------------------------------------------------------------
-# get_nightly_summary
+# get_experimental_nightly_summary
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestGetNightlySummary:
     async def test_not_run_when_no_sessions_for_date(self, async_db_session):
-        """get_nightly_summary raises ValueError when no sessions exist for date."""
+        """get_experimental_nightly_summary raises ValueError when no sessions exist for date."""
         _, profile_id = await _make_profile(async_db_session)
         svc = BreathService(async_db_session, profile_id=profile_id)
         with pytest.raises(ValueError, match="No sessions found"):
-            await svc.get_nightly_summary(date(2025, 3, 1))
+            await svc.get_experimental_nightly_summary(date(2025, 3, 1))
 
     async def test_ok_day_returns_analyzed_session_count(self, async_db_session):
-        """get_nightly_summary returns analyzed_session_count >= 1 for an analyzed day."""
+        """get_experimental_nightly_summary returns analyzed_session_count >= 1 for an analyzed day."""
         from snore.services.breath_service import DayAnalysisStatus  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
@@ -868,7 +913,9 @@ class TestGetNightlySummary:
         )
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_summary(therapy_date, device_id=dev.id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=dev.id
+        )
 
         assert summary.therapy_date == therapy_date
         assert summary.device_id == dev.id
@@ -876,7 +923,7 @@ class TestGetNightlySummary:
         assert summary.analyzed_session_count >= 1
 
     async def test_not_run_day_returns_not_run_status(self, async_db_session):
-        """get_nightly_summary returns NOT_RUN when session has no analysis."""
+        """get_experimental_nightly_summary returns NOT_RUN when session has no analysis."""
         from snore.services.breath_service import DayAnalysisStatus  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
@@ -885,77 +932,85 @@ class TestGetNightlySummary:
         await _make_day_and_session(async_db_session, dev.id, therapy_date)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_summary(therapy_date, device_id=dev.id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=dev.id
+        )
 
         # plan §1 line 864 rule 3: all-not-run → NOT_RUN
         assert summary.day_status == DayAnalysisStatus.NOT_RUN
         assert summary.analyzed_session_count == 0
         assert summary.fl_reason == NullReason.NOT_AVAILABLE
 
-    async def test_waveform_opt_out_preserves_fl_rera_fields(self, async_db_session):
-        """``include_waveform_stats=False`` leaves the breath-derived FL/RERA
-        fields byte-identical; only the waveform ``device_flg_*`` fields differ.
 
-        Pins the day-detail hot-path optimization: skipping the waveform blobs
-        must not perturb the metrics day detail actually consumes.
-        """
+# ---------------------------------------------------------------------------
+# get_nightly_device_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetNightlyDeviceSummary:
+    async def test_no_sessions_returns_empty_range(self, async_db_session):
+        """No sessions to auto-select from → empty range, device_id 0, no error."""
+        _, profile_id = await _make_profile(async_db_session)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        summary = await svc.get_nightly_device_summary(
+            date(2025, 3, 1), date(2025, 3, 10)
+        )
+
+        assert summary.device_id == 0
+        assert summary.nights == []
+        assert summary.n_calendar_nights == 10
+        assert summary.compliance_pct == 0.0
+
+    async def test_compliance_is_over_calendar_nights(self, async_db_session):
+        """One compliant night in a four-night range is 25 %."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 3, 12)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        # Rule-matched high-confidence class-5 breaths → non-zero
-        # fl_class_ge4_pct, so the equality check compares a real value.
-        await _store_analysis_with_breaths(
-            async_db_session, session, profile_id, n_breaths=8, flow_class=5
-        )
-        # A real fl waveform blob so the with-stats path aggregates device_flg.
-        samples = np.array([[float(i), 0.4] for i in range(10)], dtype=np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="fl",
-                sample_rate=1.0,
-                sample_count=10,
-                data_blob=samples.tobytes(),
-            )
-        )
+        therapy_date = date(2025, 3, 2)
+        day, _ = await _make_day_and_session(async_db_session, dev.id, therapy_date)
+        day.total_therapy_hours = 7.0
         await async_db_session.flush()
-
         svc = BreathService(async_db_session, profile_id=profile_id)
-        with_stats = await svc.get_nightly_summary(
-            therapy_date, device_id=dev.id, include_waveform_stats=True
-        )
-        without_stats = await svc.get_nightly_summary(
-            therapy_date, device_id=dev.id, include_waveform_stats=False
+
+        summary = await svc.get_nightly_device_summary(
+            date(2025, 3, 1), date(2025, 3, 4), device_id=dev.id
         )
 
-        assert with_stats.fl_class_ge4_pct is not None
-        assert with_stats.fl_class_ge4_pct == without_stats.fl_class_ge4_pct
-        assert (
-            with_stats.fl_class_ge4_pct_reason == without_stats.fl_class_ge4_pct_reason
-        )
-        assert with_stats.rera_index == without_stats.rera_index
-        assert with_stats.rera_index_reason == without_stats.rera_index_reason
-        assert with_stats.rera_count == without_stats.rera_count
-        assert with_stats.rera_reason == without_stats.rera_reason
+        assert [n.therapy_date for n in summary.nights] == [therapy_date]
+        assert summary.n_nights == 1
+        assert summary.days_compliant == 1
+        assert summary.compliance_pct == pytest.approx(25.0)
 
-        # The opt-out actually skipped waveform aggregation.
-        assert with_stats.device_flg_median is not None
-        assert without_stats.device_flg_median is None
+    @pytest.mark.parametrize(
+        ("date_start", "date_end", "match"),
+        [
+            (date(2025, 3, 2), date(2025, 3, 1), "must be >= date_start"),
+            (date(2025, 1, 1), date(2025, 4, 30), "maximum per call is 90"),
+        ],
+    )
+    async def test_invalid_range_raises(
+        self, async_db_session, date_start, date_end, match
+    ):
+        _, profile_id = await _make_profile(async_db_session)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        with pytest.raises(ValueError, match=match):
+            await svc.get_nightly_device_summary(date_start, date_end)
 
 
 # ---------------------------------------------------------------------------
-# get_nightly_range_summary
+# get_experimental_nightly_range
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestGetNightlyRangeSummary:
     async def test_empty_range_returns_zero_nights(self, async_db_session):
-        """get_nightly_range_summary over a range with no sessions returns n_nights=0."""
+        """get_experimental_nightly_range over a range with no sessions returns n_nights=0."""
         _, profile_id = await _make_profile(async_db_session)
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=date(2025, 4, 1),
             date_end=date(2025, 4, 3),
         )
@@ -964,14 +1019,14 @@ class TestGetNightlyRangeSummary:
         assert summary.nights == []
 
     async def test_range_with_one_session_returns_one_night(self, async_db_session):
-        """get_nightly_range_summary over a range with one session returns n_nights=1."""
+        """get_experimental_nightly_range over a range with one session returns n_nights=1."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 4, 2)
         await _make_day_and_session(async_db_session, dev.id, therapy_date)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=date(2025, 4, 1),
             date_end=date(2025, 4, 3),
             device_id=dev.id,
@@ -1980,7 +2035,7 @@ class TestTwoProfileIsolation:
     async def test_compare_epochs_foreign_device_returns_not_available(
         self, async_db_session
     ):
-        """compare_epochs with a foreign device_id returns NOT_AVAILABLE (not NO_DATA_IN_RANGE).
+        """compare_experimental_epochs with a foreign device_id returns NOT_AVAILABLE (not NO_DATA_IN_RANGE).
 
         A device owned by profile B is not accessible by profile A's service.
         The structured null_reason must be NOT_AVAILABLE, distinguishing it from
@@ -1996,7 +2051,7 @@ class TestTwoProfileIsolation:
         ) = await self._setup_two_profiles(async_db_session)
 
         svc_a = BreathService(async_db_session, profile_id=profile_a_id)
-        result = await svc_a.compare_epochs(
+        result = await svc_a.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="b_epoch",
@@ -2279,7 +2334,7 @@ class TestStaleCoverageStateMachine:
     """Status-precedence and stale-row exclusion tests for finding #3."""
 
     async def test_all_stale_nightly_summary_is_stale(self, async_db_session):
-        """get_nightly_summary returns STALE (not NOT_RUN) when analysis exists but is stale."""
+        """get_experimental_nightly_summary returns STALE (not NOT_RUN) when analysis exists but is stale."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 3, 1)
@@ -2289,7 +2344,7 @@ class TestStaleCoverageStateMachine:
         await _store_stale_analysis_with_breaths(async_db_session, session, n_breaths=3)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_nightly_summary(therapy_date)
+        result = await svc.get_experimental_nightly_summary(therapy_date)
 
         # plan §1 line 864 rule 4: all-stale → STALE, not NOT_RUN
         assert result.day_status == DayAnalysisStatus.STALE
@@ -2393,7 +2448,7 @@ class TestSameProfileTwoDevice:
     async def test_two_device_same_profile_nightly_summary_raises_device_ambiguity(
         self, async_db_session
     ):
-        """get_nightly_summary without device_id raises DeviceAmbiguityError."""
+        """get_experimental_nightly_summary without device_id raises DeviceAmbiguityError."""
         from snore.services.breath_service import DeviceAmbiguityError  # noqa: PLC0415
 
         therapy_date = date(2025, 11, 1)
@@ -2403,7 +2458,7 @@ class TestSameProfileTwoDevice:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with pytest.raises(DeviceAmbiguityError) as exc_info:
-            await svc.get_nightly_summary(therapy_date)
+            await svc.get_experimental_nightly_summary(therapy_date)
 
         err = exc_info.value
         assert dev_a.id in err.owned_device_ids
@@ -2680,12 +2735,12 @@ class TestContextualEventsInputValidation:
 @pytest.mark.unit
 class TestNightlyRangeDateValidation:
     async def test_reversed_date_range_raises_value_error(self, async_db_session):
-        """get_nightly_range_summary with date_end < date_start raises ValueError."""
+        """get_experimental_nightly_range with date_end < date_start raises ValueError."""
         _, profile_id = await _make_profile(async_db_session)
         svc = BreathService(async_db_session, profile_id=profile_id)
 
         with pytest.raises(ValueError, match="date_end"):
-            await svc.get_nightly_range_summary(
+            await svc.get_experimental_nightly_range(
                 date_start=date(2025, 4, 10),
                 date_end=date(2025, 4, 1),  # reversed
             )
@@ -2710,89 +2765,63 @@ def _make_corrupt_waveform_blob() -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Corrupt-blob propagation through public seams (Thufir pass-2 IMPORTANT-8)
+# Corrupt-blob handling through public seams
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestCorruptBlobThroughPublicSeams:
-    """Corrupt waveform blobs must propagate as ValueError, not silently become
-    NOT_AVAILABLE, through the get_contextual_events seam."""
+    """A corrupt waveform blob nulls only the context that needs it: the night's
+    events still return through the get_contextual_events seam."""
 
-    async def test_corrupt_pressure_blob_raises_in_contextual_events(
-        self, async_db_session
+    @pytest.mark.parametrize(
+        ("corrupt_channel", "nulled", "reason_field"),
+        [
+            ("pressure", "pressure_at_event_cmh2o", "pressure_reason"),
+            ("leak", "leak_at_event_lpm", "leak_reason"),
+            ("mv", "mv_prior_120s_lpm", "mv_reason"),
+        ],
+    )
+    async def test_corrupt_channel_nulls_only_its_context(
+        self, async_db_session, corrupt_channel, nulled, reason_field
     ):
-        """get_contextual_events re-raises ValueError when pressure blob is corrupt.
-
-        plan IMPORTANT-8: sanitized invalid-waveform errors must propagate through
-        public seams, not be swallowed as NOT_AVAILABLE.
-        """
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         therapy_date = date(2025, 7, 1)
         _, session = await _make_day_and_session(
             async_db_session, dev.id, therapy_date, duration_hours=1.0
         )
-
+        intact_fields = {
+            "pressure": "pressure_at_event_cmh2o",
+            "leak": "leak_at_event_lpm",
+            "mv": "mv_prior_120s_lpm",
+        }
+        for channel in intact_fields:
+            if channel != corrupt_channel:
+                await _add_waveform(
+                    async_db_session, session, channel, np.full(300, 6.0)
+                )
         async_db_session.add(
             models.Waveform(
                 session_id=session.id,
-                waveform_type="pressure",
+                waveform_type=corrupt_channel,
                 sample_rate=1.0,
                 sample_count=100,
                 data_blob=_make_corrupt_waveform_blob(),
             )
         )
-        # OA event at 120s → triggers ±5 s pressure waveform fetch
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="OA",
-                start_time=session.start_time + timedelta(seconds=120),
-                duration_seconds=10.0,
-            )
-        )
-        await async_db_session.flush()
+        await _add_event(async_db_session, session, 120.0, "OA")
 
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        with pytest.raises(ValueError):
-            await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+        events = await BreathService(
+            async_db_session, profile_id=profile_id
+        ).get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
 
-    async def test_corrupt_mv_blob_raises_in_contextual_events(self, async_db_session):
-        """get_contextual_events re-raises ValueError when the MV blob is corrupt.
-
-        plan IMPORTANT-8: MV now feeds the per-event ventilatory context, so the
-        same propagation requirement applies.
-        """
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 7, 2)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="mv",
-                sample_rate=1.0,
-                sample_count=100,
-                data_blob=_make_corrupt_waveform_blob(),
-            )
-        )
-        async_db_session.add(
-            models.Event(
-                session_id=session.id,
-                event_type="CA",
-                start_time=session.start_time + timedelta(seconds=300),
-                duration_seconds=12.0,
-            )
-        )
-        await async_db_session.flush()
-
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        with pytest.raises(ValueError):
-            await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+        assert len(events) == 1
+        assert getattr(events[0], nulled) is None
+        assert getattr(events[0], reason_field) == NullReason.NOT_AVAILABLE
+        for channel, field in intact_fields.items():
+            if channel != corrupt_channel:
+                assert getattr(events[0], field) == pytest.approx(6.0)
 
     async def test_corrupt_flow_blob_nulls_mv_fields_without_failing(
         self, async_db_session
@@ -2818,7 +2847,11 @@ class TestCorruptBlobThroughPublicSeams:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source is None
@@ -2863,7 +2896,11 @@ class TestCorruptBlobThroughPublicSeams:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.ps_delivered_cmh2o is None
@@ -2875,7 +2912,7 @@ class TestCorruptBlobThroughPublicSeams:
 
 
 # ---------------------------------------------------------------------------
-# Per-event ventilatory context (get_contextual_events)
+# Per-event context (get_contextual_events)
 # ---------------------------------------------------------------------------
 
 
@@ -2917,18 +2954,158 @@ async def _add_event(
 
 
 async def _single_contextual_event(
-    db: AsyncSession, profile_id: int, therapy_date: date, device_id: int
+    db: AsyncSession,
+    profile_id: int,
+    therapy_date: date,
+    device_id: int,
+    *,
+    include_ventilatory: bool = False,
 ) -> Any:
     events = await BreathService(db, profile_id=profile_id).get_contextual_events(
-        therapy_date=therapy_date, device_id=device_id
+        therapy_date=therapy_date,
+        device_id=device_id,
+        include_ventilatory=include_ventilatory,
     )
     assert len(events) == 1
     return events[0]
 
 
 @pytest.mark.unit
+class TestDefaultEventContext:
+    """Without include_ventilatory: device channels only, no flow I/O."""
+
+    async def test_no_device_mv_never_fetches_flow_and_nulls_mv(self, async_db_session):
+        """No device MV, flow seeded → FLOW is never requested and there is no
+        flow-derived fallback: mv_prior_120s is null + NOT_AVAILABLE."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        import snore.services.breath_service as bs_mod  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 8)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "flow", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        requested: list[WaveformChannelName] = []
+        original_fetch = bs_mod._fetch_waveform_blobs  # noqa: SLF001
+
+        async def recording_fetch(db, request, *args, **kwargs):
+            requested.extend(request.channels)
+            return await original_fetch(db, request, *args, **kwargs)
+
+        with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
+            ev = await _single_contextual_event(
+                async_db_session, profile_id, therapy_date, dev.id
+            )
+
+        assert requested
+        assert WaveformChannelName.FLOW not in requested
+        assert ev.mv_prior_120s_lpm is None
+        assert ev.mv_reason == NullReason.NOT_AVAILABLE
+        assert ev.mv_source is None
+
+    async def test_delivered_ps_computes_without_mv(self, async_db_session):
+        """Delivered PS needs no MV series: THERAPY_PRESSURE 20.0 − EPAP 8.0
+        → 12.0 with no MV channel seeded."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 9)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(
+            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
+        )
+        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, rel=1e-9)
+        assert ev.ps_reason is None
+
+    async def test_device_mv_keeps_prior_120s_but_no_ventilatory_metrics(
+        self, async_db_session
+    ):
+        """Device MV present → mv_prior_120s is computed, while slope, stability
+        and mv_source stay null."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 10)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.mv_prior_120s_lpm == pytest.approx(8.0)
+        assert ev.mv_reason is None
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.stability_index is None
+        assert ev.mv_source is None
+
+
+@pytest.mark.unit
+class TestVentilatoryOnlyEventContext:
+    """include_device_context=False: only the MV channel is decoded."""
+
+    async def test_ventilatory_only_requests_mv_channel_and_nulls_device_values(
+        self, async_db_session
+    ):
+        from unittest.mock import patch  # noqa: PLC0415
+
+        import snore.services.breath_service as bs_mod  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 11)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.arange(3600.0))
+        await _add_waveform(async_db_session, session, "pressure", np.full(3600, 9.0))
+        await _add_waveform(async_db_session, session, "leak", np.full(3600, 3.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        requested: list[WaveformChannelName] = []
+        original_fetch = bs_mod._fetch_waveform_blobs  # noqa: SLF001
+
+        async def recording_fetch(db, request, *args, **kwargs):
+            requested.extend(request.channels)
+            return await original_fetch(db, request, *args, **kwargs)
+
+        with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
+            events = await BreathService(
+                async_db_session, profile_id=profile_id
+            ).get_contextual_events(
+                therapy_date=therapy_date,
+                device_id=dev.id,
+                include_ventilatory=True,
+                include_device_context=False,
+            )
+
+        assert requested == [WaveformChannelName.MV]
+        ev = events[0]
+        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, rel=1e-9)
+        assert ev.pressure_at_event_cmh2o is None
+        assert ev.leak_at_event_lpm is None
+        assert ev.ps_delivered_cmh2o is None
+
+
+@pytest.mark.unit
 class TestEventVentilatoryContext:
-    """Per-event MV slope / stability / delivered PS, numerically checked."""
+    """include_ventilatory: MV slope / stability / flow-derived MV, numerically
+    checked."""
 
     async def test_mv_slope_from_linear_ramp_is_60_lpm_per_min(self, async_db_session):
         """MV = t (unit ramp), event at 300 s → per-second slope 1.0 over the
@@ -2943,7 +3120,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, rel=1e-9)
@@ -2966,34 +3147,17 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 90.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         window = vals[30:91]  # offsets 30..90 inclusive
         expected = float(np.std(window, ddof=1)) / float(window.mean())
         assert ev.stability_index == pytest.approx(expected, rel=1e-9)
         assert ev.stability_reason is None
-
-    async def test_ps_delivered_is_therapy_pressure_minus_epap(self, async_db_session):
-        """THERAPY_PRESSURE 20.0, EPAP 8.0 → PS 12.0 over ±5 s."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 7, 12)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-        await _add_waveform(
-            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
-        )
-        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
-        await _add_event(async_db_session, session, 300.0, event_type="OA")
-
-        ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
-        )
-
-        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, rel=1e-9)
-        assert ev.ps_reason is None
 
     async def test_absent_channels_yield_null_with_not_available(
         self, async_db_session
@@ -3009,7 +3173,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0, event_type="H")
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_lpm_per_min is None
@@ -3039,7 +3207,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, -10.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
@@ -3064,7 +3236,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source == "flow_derived"
@@ -3101,7 +3277,11 @@ class TestEventVentilatoryContext:
 
         with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
             ev = await _single_contextual_event(
-                async_db_session, profile_id, therapy_date, dev.id
+                async_db_session,
+                profile_id,
+                therapy_date,
+                dev.id,
+                include_ventilatory=True,
             )
 
         assert ev.mv_source == "device"
@@ -3139,7 +3319,9 @@ class TestEventVentilatoryContext:
 
         events = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+        ).get_contextual_events(
+            therapy_date=therapy_date, device_id=dev.id, include_ventilatory=True
+        )
 
         source_by_session = {ev.session_id: ev.mv_source for ev in events}
         assert source_by_session == {
@@ -3176,7 +3358,10 @@ class TestEventVentilatoryContext:
             events = await BreathService(
                 async_db_session, profile_id=profile_id
             ).get_contextual_events(
-                therapy_date=therapy_date, device_id=dev.id, include_context=False
+                therapy_date=therapy_date,
+                device_id=dev.id,
+                include_context=False,
+                include_ventilatory=True,
             )
 
         assert call_count == 0
@@ -3212,7 +3397,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source == "device"
@@ -3308,7 +3497,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct == pytest.approx(10.0)
         assert night.pb_reason is None
@@ -3333,7 +3522,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct == pytest.approx(10.0)
 
@@ -3354,7 +3543,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct == pytest.approx(20.0)
 
@@ -3373,7 +3562,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct == 0.0
         assert night.pb_reason is None
@@ -3386,7 +3575,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct is None
         assert night.pb_reason == NullReason.NOT_AVAILABLE
@@ -3405,7 +3594,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct is None
         assert night.pb_reason == NullReason.NOT_AVAILABLE
@@ -3454,7 +3643,7 @@ class TestNightlyPeriodicBreathing:
         ):
             night = await BreathService(
                 async_db_session, profile_id=profile_id
-            ).get_nightly_summary(therapy_date, device_id=dev.id)
+            ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.day_status == DayAnalysisStatus.MIXED_VERSION
         assert night.periodic_breathing_pct is None
@@ -3490,7 +3679,7 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct == pytest.approx(20.0)
         assert night.pb_reason is None
@@ -3528,18 +3717,18 @@ class TestNightlyPeriodicBreathing:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.periodic_breathing_pct is None
         assert night.pb_reason == NullReason.NOT_AVAILABLE
         assert night.fl_class_ge4_pct == pytest.approx(100.0)
         assert night.fl_class_ge4_pct_reason is None
 
-    async def test_malformed_pb_episodes_leave_day_detail_fl_rera_intact(
+    async def test_malformed_pb_episodes_leave_day_experimental_fl_rera_intact(
         self, async_db_session
     ):
-        """DayService day detail reads the same nightly summary: malformed PB
-        episodes must not null its FL/RERA metrics."""
+        """DayService's experimental metrics read the same nightly summary:
+        malformed PB episodes must not null its FL/RERA metrics."""
         from snore.services.day_service import DayService  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
@@ -3557,14 +3746,14 @@ class TestNightlyPeriodicBreathing:
         }
         await async_db_session.flush()
 
-        detail = await DayService(async_db_session, profile_id=profile_id).get_day(
-            therapy_date, device_id=dev.id
-        )
+        metrics = await DayService(
+            async_db_session, profile_id=profile_id
+        ).get_day_experimental(therapy_date, device_id=dev.id)
 
-        assert detail.fl_class_ge4_pct == pytest.approx(100.0)
-        assert detail.fl_class_ge4_pct_reason is None
-        assert detail.rera_count is not None
-        assert detail.rera_count_reason is None
+        assert metrics.fl_class_ge4_pct == pytest.approx(100.0)
+        assert metrics.fl_class_ge4_pct_reason is None
+        assert metrics.rera_count is not None
+        assert metrics.rera_count_reason is None
 
 
 @pytest.mark.unit
@@ -3637,7 +3826,7 @@ class TestSameProfileTwoDeviceExtended:
     async def test_two_device_compare_epochs_raises_device_ambiguity(
         self, async_db_session
     ):
-        """compare_epochs with same-profile two devices and no device_id raises DeviceAmbiguityError."""
+        """compare_experimental_epochs with same-profile two devices and no device_id raises DeviceAmbiguityError."""
         from snore.services.breath_service import DeviceAmbiguityError  # noqa: PLC0415
 
         therapy_date = date(2026, 1, 15)
@@ -3647,7 +3836,7 @@ class TestSameProfileTwoDeviceExtended:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with pytest.raises(DeviceAmbiguityError) as exc_info:
-            await svc.compare_epochs(
+            await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
                         label="ambiguous",
@@ -3664,7 +3853,7 @@ class TestSameProfileTwoDeviceExtended:
     async def test_two_device_disjoint_date_range_raises_device_ambiguity(
         self, async_db_session
     ):
-        """Two devices with sessions on disjoint date ranges → DeviceAmbiguityError in compare_epochs."""
+        """Two devices with sessions on disjoint date ranges → DeviceAmbiguityError in compare_experimental_epochs."""
         from snore.services.breath_service import DeviceAmbiguityError  # noqa: PLC0415
 
         _, profile_id = await _make_profile(async_db_session)
@@ -3678,7 +3867,7 @@ class TestSameProfileTwoDeviceExtended:
         svc = BreathService(async_db_session, profile_id=profile_id)
         # Range spans both dates — two distinct devices found → DeviceAmbiguityError
         with pytest.raises(DeviceAmbiguityError) as exc_info:
-            await svc.compare_epochs(
+            await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
                         label="cross_month",
@@ -3692,7 +3881,7 @@ class TestSameProfileTwoDeviceExtended:
         assert dev_b.id in err.owned_device_ids
 
     async def test_explicit_foreign_device_id_raises_in_epochs(self, async_db_session):
-        """Foreign device_id in compare_epochs returns NOT_AVAILABLE (not NO_DATA_IN_RANGE)."""
+        """Foreign device_id in compare_experimental_epochs returns NOT_AVAILABLE (not NO_DATA_IN_RANGE)."""
         _, profile_a_id = await _make_profile(async_db_session)
         _, profile_b_id = await _make_profile(async_db_session)
         dev_b = await _make_device(async_db_session, profile_b_id)
@@ -3701,7 +3890,7 @@ class TestSameProfileTwoDeviceExtended:
 
         # Profile A asks for device_b (owned by profile B) → structured error, not NO_DATA_IN_RANGE
         svc_a = BreathService(async_db_session, profile_id=profile_a_id)
-        result = await svc_a.compare_epochs(
+        result = await svc_a.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="foreign_device",
@@ -3717,7 +3906,7 @@ class TestSameProfileTwoDeviceExtended:
     async def test_two_device_nightly_range_raises_device_ambiguity(
         self, async_db_session
     ):
-        """get_nightly_range_summary with two devices and no device_id raises DeviceAmbiguityError.
+        """get_experimental_nightly_range with two devices and no device_id raises DeviceAmbiguityError.
 
         Before the fix, the per-date loop resolved independently and mixed both devices.
         """
@@ -3730,7 +3919,7 @@ class TestSameProfileTwoDeviceExtended:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with pytest.raises(DeviceAmbiguityError) as exc_info:
-            await svc.get_nightly_range_summary(
+            await svc.get_experimental_nightly_range(
                 date_start=therapy_date,
                 date_end=therapy_date,
             )
@@ -3763,7 +3952,7 @@ class TestSameProfileTwoDeviceExtended:
     async def test_foreign_device_id_in_nightly_range_raises_device_not_owned(
         self, async_db_session
     ):
-        """get_nightly_range_summary with a foreign device_id raises DeviceNotOwnedError.
+        """get_experimental_nightly_range with a foreign device_id raises DeviceNotOwnedError.
 
         Before the fix, the ValueError was caught and a valid-looking empty summary
         was returned with device_id=<foreign>, n_nights=0, compliance_pct=0.0.
@@ -3778,7 +3967,7 @@ class TestSameProfileTwoDeviceExtended:
 
         svc_a = BreathService(async_db_session, profile_id=profile_a_id)
         with pytest.raises(DeviceNotOwnedError):
-            await svc_a.get_nightly_range_summary(
+            await svc_a.get_experimental_nightly_range(
                 date_start=therapy_date,
                 date_end=therapy_date,
                 device_id=dev_b.id,
@@ -3787,12 +3976,12 @@ class TestSameProfileTwoDeviceExtended:
     async def test_valid_device_with_no_sessions_in_range_returns_empty_summary(
         self, async_db_session
     ):
-        """get_nightly_range_summary for an owned device with no sessions returns n_nights=0."""
+        """get_experimental_nightly_range for an owned device with no sessions returns n_nights=0."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.get_nightly_range_summary(
+        result = await svc.get_experimental_nightly_range(
             date_start=date(2026, 3, 1),
             date_end=date(2026, 3, 7),
             device_id=dev.id,
@@ -3822,7 +4011,7 @@ class TestSameProfileTwoDeviceExtended:
         svc = BreathService(async_db_session, profile_id=profile_id)
         # Two separate, disjoint-date EpochRequests with no device_id
         with pytest.raises(DeviceAmbiguityError) as exc_info:
-            await svc.compare_epochs(
+            await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
                         label="epoch_a",
@@ -3844,7 +4033,7 @@ class TestSameProfileTwoDeviceExtended:
 
 
 # ---------------------------------------------------------------------------
-# compare_epochs refusal tests (two-phase: RX + identity checks before breath queries)
+# compare_experimental_epochs refusal tests (two-phase: RX + identity checks before breath queries)
 # ---------------------------------------------------------------------------
 
 
@@ -3926,7 +4115,7 @@ class TestCompareEpochsRefusal:
         )  # differs
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="same_night_rx",
@@ -3946,7 +4135,7 @@ class TestCompareEpochsRefusal:
         assert result.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH
 
     async def test_one_violating_epoch_among_three_nulls_only_itself(
-        self, async_db_session, monkeypatch
+        self, async_db_session
     ):
         """A mid-epoch RX change nulls only its own epoch; the two clean epochs
         still compute, and the top-level null_reason stays None."""
@@ -3983,22 +4172,8 @@ class TestCompareEpochsRefusal:
             async_db_session, s4, profile_id, n_breaths=3
         )
 
-        waveform_session_ids: list[int] = []
-
-        async def _record_waveform_session_ids(
-            _db: AsyncSession, session_ids: list[int]
-        ) -> tuple[dict[int, list[float]], dict[int, list[float]]]:
-            waveform_session_ids.extend(session_ids)
-            return {}, {}
-
-        monkeypatch.setattr(
-            BreathService,
-            "_fetch_waveform_channel_vals",
-            staticmethod(_record_waveform_session_ids),
-        )
-
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(
                     label="clean1", date_start=d1, date_end=d1, device_id=dev.id
@@ -4026,8 +4201,6 @@ class TestCompareEpochsRefusal:
         assert result.null_reason is None
         assert len(result.rx_violations) == 1
         assert result.rx_violations[0].epoch_label == "violating"
-        # Nulled epochs must not load and deserialize full-night waveform blobs.
-        assert set(waveform_session_ids) == {s1.id, s4.id}
 
     async def test_all_epochs_violating_sets_top_level_refusal(self, async_db_session):
         """When every epoch has a mid-epoch RX change, the top-level null_reason is
@@ -4063,7 +4236,7 @@ class TestCompareEpochsRefusal:
         await self._make_setting(async_db_session, sb2.id, rx_key, "13.0")
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        result = await svc.compare_epochs(
+        result = await svc.compare_experimental_epochs(
             epochs=[
                 EpochRequest(label="A", date_start=da1, date_end=da2, device_id=dev.id),
                 EpochRequest(label="B", date_start=db1, date_end=db2, device_id=dev.id),
@@ -4169,7 +4342,7 @@ class TestCompareEpochsRefusal:
         with patch.object(
             svc, "_latest_analysis_for_session", side_effect=_mocked_latest
         ):
-            result = await svc.compare_epochs(
+            result = await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
                         label="epoch_a",
@@ -4295,7 +4468,7 @@ class TestCompareEpochsRefusal:
         with patch.object(
             svc, "_latest_analysis_for_session", side_effect=_mocked_latest
         ):
-            result = await svc.compare_epochs(
+            result = await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
                         label="mixed_mode",
@@ -4318,6 +4491,90 @@ class TestCompareEpochsRefusal:
 # ---------------------------------------------------------------------------
 # event_types cap tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("method", "median_of"),
+    [
+        pytest.param(
+            "compare_experimental_epochs",
+            lambda e: e.mid_insp_flattening.median,
+            id="experimental",
+        ),
+        pytest.param(
+            "compare_device_epochs", lambda e: e.device_flg.median, id="device"
+        ),
+    ],
+)
+class TestEpochUnknownSettings:
+    """A session with no Setting rows has unknown settings, which is not an RX change."""
+
+    async def _compare(
+        self, db: AsyncSession, method: str, rx_values: list[str | None]
+    ) -> Any:
+        """Compare one epoch of analyzed nights from 2025-02-01; None seeds no settings."""
+        _, profile_id = await _make_profile(db)
+        dev = await _make_device(db, profile_id)
+        for offset, value in enumerate(rx_values, start=1):
+            _, sess = await _make_day_and_session(db, dev.id, date(2025, 2, offset))
+            await _store_analysis_with_breaths(db, sess, profile_id, n_breaths=2)
+            await _add_waveform(db, sess, "fl", np.full(4, 0.2))
+            if value is not None:
+                db.add(
+                    models.Setting(session_id=sess.id, key="pressure_min", value=value)
+                )
+        await db.flush()
+
+        compare = getattr(BreathService(db, profile_id=profile_id), method)
+        return await compare(
+            [
+                EpochRequest(
+                    label="A",
+                    date_start=date(2025, 2, 1),
+                    date_end=date(2025, 2, 28),
+                    device_id=dev.id,
+                )
+            ]
+        )
+
+    @pytest.mark.parametrize(
+        ("rx_values", "expected_rx"),
+        [
+            pytest.param([None, "8.0"], {"pressure_min": "8.0"}, id="unknown_first"),
+            pytest.param(["8.0", None], {"pressure_min": "8.0"}, id="unknown_last"),
+            pytest.param([None, None], {}, id="all_unknown"),
+        ],
+    )
+    async def test_unknown_settings_are_not_an_rx_change(
+        self,
+        async_db_session: AsyncSession,
+        method: str,
+        median_of: Any,
+        rx_values: list[str | None],
+        expected_rx: dict[str, str],
+    ) -> None:
+        result = await self._compare(async_db_session, method, rx_values)
+
+        epoch = result.epochs[0]
+        assert result.null_reason is None
+        assert result.rx_violations == []
+        assert epoch.null_reason is None
+        assert epoch.rx_settings == expected_rx
+        assert median_of(epoch) is not None
+
+    async def test_change_across_unknown_session_reports_later_known_date(
+        self, async_db_session: AsyncSession, method: str, median_of: Any
+    ) -> None:
+        result = await self._compare(async_db_session, method, ["8.0", None, "12.0"])
+
+        epoch = result.epochs[0]
+        assert epoch.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH
+        assert epoch.rx_settings == {"pressure_min": "8.0"}
+        assert median_of(epoch) is None
+        violation = result.rx_violations[0]
+        assert violation.changed_keys == ["pressure_min"]
+        assert violation.change_dates == [date(2025, 2, 3)]
 
 
 @pytest.mark.unit
@@ -4475,8 +4732,9 @@ class TestCodeReviewFixes:
 
         Before the fix, the function called _fetch_waveform_blobs twice per event
         (pressure/leak + MV), so N events = 2N blob reads.  The fix pre-loads
-        once before the loop and slices in Python; a session without a device
-        MV channel adds exactly one FLOW fetch for the flow-derived MV fallback.
+        once before the loop and slices in Python; with include_ventilatory, a
+        session without a device MV channel adds exactly one FLOW fetch for the
+        flow-derived MV fallback.
         """
         from unittest.mock import patch  # noqa: PLC0415
 
@@ -4525,37 +4783,39 @@ class TestCodeReviewFixes:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=counting_fetch):
-            await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+            await svc.get_contextual_events(
+                therapy_date=therapy_date, device_id=dev.id, include_ventilatory=True
+            )
 
         # Pre-load (+ FLOW fallback) per session, not 2 × N_events
         assert call_count == expected_calls
 
-    # --- Fix 4: 90-night cap on get_nightly_range_summary ---
+    # --- Fix 4: 90-night cap on get_experimental_nightly_range ---
 
     async def test_nightly_range_91_nights_raises_value_error(self, async_db_session):
-        """get_nightly_range_summary raises ValueError for ranges > 90 nights."""
+        """get_experimental_nightly_range raises ValueError for ranges > 90 nights."""
         _, profile_id = await _make_profile(async_db_session)
         svc = BreathService(async_db_session, profile_id=profile_id)
 
         with pytest.raises(ValueError, match="90"):
-            await svc.get_nightly_range_summary(
+            await svc.get_experimental_nightly_range(
                 date_start=date(2025, 1, 1),
                 date_end=date(2025, 4, 2),  # 91 days
             )
 
     async def test_nightly_range_90_nights_does_not_raise(self, async_db_session):
-        """get_nightly_range_summary succeeds for exactly 90 nights (cap boundary)."""
+        """get_experimental_nightly_range succeeds for exactly 90 nights (cap boundary)."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
         svc = BreathService(async_db_session, profile_id=profile_id)
 
         # 90-night range on an owned device → should not raise (may return empty)
-        result = await svc.get_nightly_range_summary(
+        result = await svc.get_experimental_nightly_range(
             date_start=date(2025, 1, 1),
             date_end=date(2025, 3, 31),  # exactly 90 days inclusive (90-1+1=90)
             device_id=dev.id,
         )
-        assert result.n_calendar_nights == 90
+        assert result.n_nights == 0
 
     # --- Fix 5: pb_pct=0.0 false-positive when duration_seconds is NULL ---
 
@@ -4661,7 +4921,7 @@ class TestNightlyRangeSummaryTiIe:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4689,7 +4949,7 @@ class TestNightlyRangeSummaryTiIe:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4720,7 +4980,7 @@ class TestNightlyRangeSummaryTiIe:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4747,7 +5007,7 @@ class TestNightlyRangeSummaryTiIe:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4775,7 +5035,7 @@ class TestNightlyRangeSummaryTiIe:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4798,7 +5058,7 @@ class TestNightlyRangeSummaryTiIe:
             breath_specs=[],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4835,7 +5095,7 @@ class TestNightlySummaryFlClassGe4Pct:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4859,7 +5119,7 @@ class TestNightlySummaryFlClassGe4Pct:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4888,7 +5148,7 @@ class TestNightlySummaryFlClassGe4Pct:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4917,7 +5177,7 @@ class TestNightlySummaryFlClassGe4Pct:
             ],
         )
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=therapy_date,
             date_end=therapy_date,
             device_id=device_id,
@@ -4926,95 +5186,6 @@ class TestNightlySummaryFlClassGe4Pct:
         night = summary.nights[0]
         assert night.fl_class_ge4_pct == pytest.approx(50.0)
         assert night.fl_class_ge4_pct_reason is None
-
-
-# ---------------------------------------------------------------------------
-# leak_above_24_pct on NightlyAnalysisSummary
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestNightlySummaryLeakAbove24Pct:
-    """leak_above_24_pct on per-night NightlyAnalysisSummary.
-
-    Denominator = breaths with determinate leak_valid (True or False).
-    Numerator   = breaths with leak_valid is False (leak > 24 L/min).
-    None breaths are excluded from both.
-    Result is rounded to 1 decimal.
-    """
-
-    async def test_mixed_leak_valid_values_pct_excludes_none(self, async_db_session):
-        """3 True, 1 False, 2 None → denominator=4, numerator=1, pct=25.0."""
-        therapy_date = date(2025, 7, 20)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": False},
-                {"leak_valid": None},
-                {"leak_valid": None},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct == 25.0
-        assert night.leak_above_24_pct_reason is None
-
-    async def test_all_leak_valid_true_pct_is_zero(self, async_db_session):
-        """All breaths leak_valid=True → 0 numerator → leak_above_24_pct == 0.0."""
-        therapy_date = date(2025, 7, 21)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": True},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct == 0.0
-        assert night.leak_above_24_pct_reason is None
-
-    async def test_all_leak_valid_none_pct_is_null_with_not_available_reason(
-        self, async_db_session
-    ):
-        """All breaths leak_valid=None → denominator=0 → leak_above_24_pct is None with NOT_AVAILABLE."""
-        therapy_date = date(2025, 7, 22)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": None},
-                {"leak_valid": None},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct is None
-        assert night.leak_above_24_pct_reason == NullReason.NOT_AVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -5120,7 +5291,9 @@ class TestNightlySummaryReraRdi:
         await async_db_session.flush()
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_summary(therapy_date, device_id=dev.id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=dev.id
+        )
 
         assert summary.rera_count == 1
         expected_rera_index = round(1 / 8.0, 2)
@@ -5163,7 +5336,9 @@ class TestNightlySummaryReraRdi:
         )
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_summary(therapy_date, device_id=dev.id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=dev.id
+        )
 
         assert summary.rera_index is None
         assert summary.rera_index_reason == NullReason.DURATION_ZERO
@@ -5181,13 +5356,15 @@ class TestNightlySummaryReraRdi:
         await _make_day_and_session(async_db_session, dev.id, therapy_date)
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_summary(therapy_date, device_id=dev.id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=dev.id
+        )
 
         assert summary.rera_count is None
         assert summary.rera_proxy_version is None
 
     async def test_range_summary_bulk_matches_per_night_summary(self, async_db_session):
-        """get_nightly_range_summary over N nights produces identical per-night fields as get_nightly_summary."""
+        """get_experimental_nightly_range over N nights produces identical per-night fields as get_experimental_nightly_summary."""
         therapy_dates = [date(2025, 8, 10), date(2025, 8, 11)]
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -5204,7 +5381,7 @@ class TestNightlySummaryReraRdi:
             )
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        range_summary = await svc.get_nightly_range_summary(
+        range_summary = await svc.get_experimental_nightly_range(
             date_start=therapy_dates[0],
             date_end=therapy_dates[-1],
             device_id=dev.id,
@@ -5212,7 +5389,7 @@ class TestNightlySummaryReraRdi:
 
         assert range_summary.n_nights == 2
         for i, d in enumerate(therapy_dates):
-            per_night = await svc.get_nightly_summary(d, device_id=dev.id)
+            per_night = await svc.get_experimental_nightly_summary(d, device_id=dev.id)
             bulk = range_summary.nights[i]
             assert bulk.therapy_date == per_night.therapy_date
             assert bulk.day_status == per_night.day_status
@@ -5236,8 +5413,6 @@ class TestNightlySummaryReraRdi:
             assert bulk.rera_index_reason == per_night.rera_index_reason
             assert bulk.rdi == per_night.rdi
             assert bulk.rdi_reason == per_night.rdi_reason
-            assert bulk.total_therapy_hours == per_night.total_therapy_hours
-            assert bulk.is_compliant == per_night.is_compliant
 
     async def test_range_summary_skips_nights_without_sessions(self, async_db_session):
         """3-night range with empty middle night → n_nights == 2, middle absent from nights."""
@@ -5252,7 +5427,7 @@ class TestNightlySummaryReraRdi:
         # No session on d2
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
+        summary = await svc.get_experimental_nightly_range(
             date_start=d1, date_end=d3, device_id=dev.id
         )
 
@@ -5450,7 +5625,9 @@ class TestReraProxyV2Scanner:
             n=50,
             device_id=device_id,
         )
-        summary = await svc.get_nightly_summary(therapy_date, device_id=device_id)
+        summary = await svc.get_experimental_nightly_summary(
+            therapy_date, device_id=device_id
+        )
 
         assert summary.rera_count == 2
         assert len(windows_result.windows) == summary.rera_count
@@ -5747,16 +5924,14 @@ class TestDeriveMvFromFlow:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_waveform_channel_vals — chunked ID binding (#280)
+# _fetch_channel_vals — chunked ID binding (#280)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestFetchWaveformChannelValsChunked:
-    async def test_fetch_waveform_channel_vals_chunked(
-        self, async_db_session, monkeypatch
-    ):
-        """fl/snore values survive the ID-chunk boundary in _fetch_waveform_channel_vals.
+class TestFetchChannelValsChunked:
+    async def test_fetch_channel_vals_chunked(self, async_db_session, monkeypatch):
+        """fl/snore values survive the ID-chunk boundary in _fetch_channel_vals.
 
         With ID_CHUNK_SIZE=2 and three sessions each carrying an fl AND a snore
         waveform, the session_ids span two chunks.  Both per-session dicts must
@@ -5801,19 +5976,22 @@ class TestFetchWaveformChannelValsChunked:
             expected_snore[session.id] = [float(v) for v in snore_vals]
         await async_db_session.flush()
 
-        fl_by_sess, snore_by_sess = await BreathService._fetch_waveform_channel_vals(
-            async_db_session, session_ids
+        channel_vals, corrupt = await BreathService._fetch_channel_vals(
+            async_db_session, session_ids, ["fl", "snore", "leak"]
         )
 
-        assert set(fl_by_sess) == set(session_ids)
-        assert set(snore_by_sess) == set(session_ids)
+        assert corrupt == {"fl": set(), "snore": set(), "leak": set()}
+        assert set(channel_vals["fl"]) == set(session_ids)
+        assert set(channel_vals["snore"]) == set(session_ids)
+        # A requested channel with no rows is still a key.
+        assert channel_vals["leak"] == {}
         for sid in session_ids:
-            assert fl_by_sess[sid] == pytest.approx(expected_fl[sid])
-            assert snore_by_sess[sid] == pytest.approx(expected_snore[sid])
+            assert channel_vals["fl"][sid] == pytest.approx(expected_fl[sid])
+            assert channel_vals["snore"][sid] == pytest.approx(expected_snore[sid])
 
 
 # ---------------------------------------------------------------------------
-# get_nightly_range_summary — chunked Day / AnalysisResult / Breath binds (#280)
+# get_experimental_nightly_range — chunked Day / AnalysisResult / Breath binds (#280)
 # ---------------------------------------------------------------------------
 
 
@@ -5853,7 +6031,7 @@ class TestNightlyRangeSummaryChunked:
         # Single-chunk baseline first (default ID_CHUNK_SIZE).
         baseline = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_range_summary(
+        ).get_experimental_nightly_range(
             date_start=date_start, date_end=date_end, device_id=dev.id
         )
 
@@ -5861,23 +6039,74 @@ class TestNightlyRangeSummaryChunked:
         monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
         chunked = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_range_summary(
+        ).get_experimental_nightly_range(
             date_start=date_start, date_end=date_end, device_id=dev.id
         )
 
         assert chunked.model_dump() == baseline.model_dump()
 
-        # Concrete behaviour: every seeded night is present, analysed, compliant,
-        # carries breath-derived metrics, and reflects the linked Day total.
+        # Concrete behaviour: every seeded night is present, analysed, and carries
+        # breath-derived metrics.
         assert chunked.n_nights == n_days
-        assert chunked.days_compliant == n_days
-        assert chunked.compliance_pct == pytest.approx(100.0)
         assert len(chunked.nights) == n_days
         for night in chunked.nights:
             assert night.day_status == DayAnalysisStatus.OK
             assert night.analyzed_session_count == 1
             assert night.fl_median == pytest.approx(0.35)
-            assert night.total_therapy_hours == pytest.approx(5.5)
+
+
+@pytest.mark.unit
+class TestNightlyRangePaging:
+    async def _seed(self, db: AsyncSession, n_days: int) -> tuple[int, int, date, date]:
+        _, profile_id = await _make_profile(db)
+        dev = await _make_device(db, profile_id)
+        start = date(2025, 9, 1)
+        for i in range(n_days):
+            day, session = await _make_day_and_session(
+                db, dev.id, start + timedelta(days=i)
+            )
+            day.total_therapy_hours = 5.5
+            await _store_analysis_with_breaths(db, session, profile_id, n_breaths=6)
+        await db.flush()
+        return profile_id, dev.id, start, start + timedelta(days=n_days - 1)
+
+    async def test_page_two_matches_slice_of_unpaged_build_and_keeps_total(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        profile_id, dev_id, start, end = await self._seed(async_db_session, 5)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        full = await svc.get_experimental_nightly_range(start, end, device_id=dev_id)
+        page2 = await svc.get_experimental_nightly_range(
+            start, end, device_id=dev_id, page=2, page_size=2
+        )
+
+        newest_first = sorted(full.nights, key=lambda n: n.therapy_date, reverse=True)
+        assert page2.n_nights == full.n_nights == 5
+        assert [n.model_dump() for n in page2.nights] == [
+            n.model_dump() for n in newest_first[2:4]
+        ]
+
+    async def test_paged_build_loads_analysis_for_page_sessions_only(
+        self, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        profile_id, dev_id, start, end = await self._seed(async_db_session, 5)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+        loaded: list[list[int]] = []
+        original = BreathService._latest_analysis_bulk
+
+        async def recording(self: BreathService, session_ids: list[int]) -> Any:
+            loaded.append(list(session_ids))
+            return await original(self, session_ids)
+
+        monkeypatch.setattr(BreathService, "_latest_analysis_bulk", recording)
+
+        await svc.get_experimental_nightly_range(
+            start, end, device_id=dev_id, page=1, page_size=2
+        )
+
+        assert len(loaded) == 1
+        assert len(loaded[0]) == 2
 
 
 @pytest.mark.unit
@@ -5899,7 +6128,7 @@ class TestNightlyFlatteningLowTail:
 
         night = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_nightly_summary(therapy_date, device_id=dev.id)
+        ).get_experimental_nightly_summary(therapy_date, device_id=dev.id)
 
         assert night.fl_min == pytest.approx(0.2)
         # Nearest rank: sorted[int(20 * 0.05)] = sorted[1].

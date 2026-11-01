@@ -2059,6 +2059,69 @@ class TestValidateAgainstMachineEvents:
         assert result["false_positive_events"] == []
         assert result["false_negative_events"] == []
 
+    @staticmethod
+    def _make_apnea(start_time: float) -> ApneaEvent:
+        return ApneaEvent(
+            start_time=start_time,
+            end_time=start_time + 10.0,
+            duration=10.0,
+            event_type="OA",
+            flow_reduction=0.9,
+            confidence=0.8,
+            baseline_flow=50.0,
+        )
+
+    @staticmethod
+    def _make_hypopnea(start_time: float) -> HypopneaEvent:
+        return HypopneaEvent(
+            start_time=start_time,
+            end_time=start_time + 10.0,
+            duration=10.0,
+            flow_reduction=0.4,
+            confidence=0.7,
+            baseline_flow=50.0,
+        )
+
+    def test_combined_lists_pair_a_machine_event_only_once(self, aasm_detector):
+        """A second programmatic event near a taken machine event is a false positive."""
+        result = aasm_detector.validate_against_machine_events(
+            [self._make_apnea(100.0), self._make_apnea(102.0)],
+            [],
+            [self._make_apnea(101.0)],
+            [],
+        )
+
+        assert [e.start_time for e in result["false_positive_events"]] == [102.0]
+        assert result["false_negative_events"] == []
+
+    def test_combined_lists_pair_a_programmatic_event_only_once(self, aasm_detector):
+        """A second machine event near a taken programmatic event is a false negative."""
+        result = aasm_detector.validate_against_machine_events(
+            [self._make_apnea(100.0)],
+            [],
+            [self._make_apnea(99.0), self._make_apnea(101.0)],
+            [],
+        )
+
+        assert [e.start_time for e in result["false_negative_events"]] == [101.0]
+        assert result["false_positive_events"] == []
+
+    def test_combined_lists_match_across_types_in_start_time_order(self, aasm_detector):
+        """Pooled matching follows time order, as ``snore waveform compare`` does.
+
+        Matching the apnea first would take the 101s machine event and strand
+        the hypopnea, which only 101s can reach.
+        """
+        result = aasm_detector.validate_against_machine_events(
+            [self._make_apnea(104.0)],
+            [self._make_hypopnea(97.0)],
+            [self._make_apnea(101.0), self._make_apnea(108.0)],
+            [],
+        )
+
+        assert result["false_positive_events"] == []
+        assert result["false_negative_events"] == []
+
     def test_validation_reras_average_is_three_way_when_machine_present(
         self, aasm_detector
     ):

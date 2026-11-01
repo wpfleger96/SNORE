@@ -34,6 +34,7 @@ from snore.constants import (
     CPAP_RERA,
     CPAP_RESPRATE,
     CPAP_TIDAL_VOLUME,
+    OSCAR_BINARY_PARSER_ID,
     OXI_PULSE,
     OXI_SPO2,
     PARSER_MAX_SEARCH_DEPTH,
@@ -130,7 +131,7 @@ class OscarDeviceParser(DeviceParser):
     def get_metadata(self) -> ParserMetadata:
         """Return OSCAR parser metadata."""
         return ParserMetadata(
-            parser_id="oscar_binary",
+            parser_id=OSCAR_BINARY_PARSER_ID,
             parser_version="1.0.0",
             manufacturer="OSCAR",
             supported_formats=["OSCAR Binary Cache"],
@@ -496,7 +497,7 @@ class OscarDeviceParser(DeviceParser):
             device_info=device_info,
             start_time=start_time,
             end_time=end_time,
-            import_source="oscar_binary",
+            import_source=OSCAR_BINARY_PARSER_ID,
             parser_version=self.metadata.parser_version,
             raw_data_path=str(base_path),
             mask_on_segments=[(0.0, duration_seconds)],

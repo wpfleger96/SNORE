@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
@@ -345,27 +346,23 @@ class _BreathServiceCore:
         return DayAnalysisStatus.PARTIAL
 
     @staticmethod
-    async def _fetch_waveform_channel_vals(
+    async def _fetch_channel_vals(
         db: AsyncSession,
         session_ids: list[int],
-    ) -> tuple[dict[int, list[float]], dict[int, list[float]]]:
-        """Fetch and deserialize fl and snore waveform values for a set of sessions.
+        channels: Sequence[str],
+    ) -> tuple[dict[str, dict[int, list[float]]], dict[str, set[int]]]:
+        """``(vals, corrupt)`` for ``channels``.
 
-        Returns (fl_vals_by_session, snore_vals_by_session).  Each map goes
-        session_id → list of raw float values including any negative sentinel values;
-        callers are responsible for applying filters (e.g. the fl >= 0 guard in
-        compare_epochs and _build_nightly_summary).  Snore zeros are legitimate
-        data and are retained.  Sessions without a channel row are absent from the
-        respective dict.
-
-        This is pure I/O + light compute (numpy deserialization); no analysis
-        state is consulted.
+        ``vals`` is channel → session_id → deserialized samples; ``corrupt`` is
+        channel → ids of sessions whose blob could not be decoded.  Every
+        requested channel is a key of both; sessions without a usable row for a
+        channel are absent from its ``vals`` map.  Values are raw, negative
+        sentinels included, so callers apply their own filter.  This is pure
+        I/O + light compute (numpy deserialization); no analysis state is
+        consulted.
         """
-        fl_by_sess: dict[int, list[float]] = {}
-        snore_by_sess: dict[int, list[float]] = {}
-
-        if not session_ids:
-            return fl_by_sess, snore_by_sess
+        vals_by_channel: dict[str, dict[int, list[float]]] = {c: {} for c in channels}
+        corrupt_by_channel: dict[str, set[int]] = {c: set() for c in channels}
 
         # Chunk the unbounded session_id list (SQLite bound-param cap); the
         # waveform_type IN-list is a constant kept in every chunk.  Each session
@@ -376,7 +373,7 @@ class _BreathServiceCore:
                     await db.execute(
                         select(models.Waveform).where(
                             models.Waveform.session_id.in_(chunk),
-                            models.Waveform.waveform_type.in_(["fl", "snore"]),
+                            models.Waveform.waveform_type.in_(channels),
                         )
                     )
                 )
@@ -390,17 +387,13 @@ class _BreathServiceCore:
                 try:
                     _ts, vals = deserialize_waveform_blob(wf.data_blob, wf.sample_count)
                 except ValueError:
+                    corrupt_by_channel[wf.waveform_type].add(int(wf.session_id))
                     continue
-                sid = int(wf.session_id)
-                if wf.waveform_type == "fl":
-                    # Retain raw values including any negative sentinels.
-                    # The caller (_build_nightly_summary) applies the >= 0 filter.
-                    fl_by_sess[sid] = [float(v) for v in vals]
-                elif wf.waveform_type == "snore":
-                    # Zeros are legitimate snore data — retain all values.
-                    snore_by_sess[sid] = [float(v) for v in vals]
+                vals_by_channel[wf.waveform_type][int(wf.session_id)] = [
+                    float(v) for v in vals
+                ]
 
-        return fl_by_sess, snore_by_sess
+        return vals_by_channel, corrupt_by_channel
 
     @staticmethod
     def _current_algorithm_identity() -> AlgorithmIdentity:

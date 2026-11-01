@@ -23,7 +23,7 @@ from snore.cli.display import (
     print_success,
     print_warning,
 )
-from snore.constants import DEFAULT_DATABASE_PATH
+from snore.constants import DEFAULT_DATABASE_PATH, OSCAR_BINARY_PARSER_ID
 from snore.database.day_manager import DayManager
 from snore.database.models import Base
 from snore.database.session import cleanup_database, init_database, session_scope
@@ -359,6 +359,12 @@ def scrub_demo(db: str | None, source_profile_id: int, yes: bool) -> None:
 # with the clone. Statistics has no surrogate ``id`` — session_id is its PK.
 _DAY_CLONE_EXCLUDED_COLUMNS = ("id", "device_id", "date", "created_at", "updated_at")
 _STATS_CLONE_EXCLUDED_COLUMNS = ("session_id",)
+_TIDAL_VOLUME_COLUMNS = (
+    "tidal_volume_min",
+    "tidal_volume_max",
+    "tidal_volume_mean",
+    "tidal_volume_95th",
+)
 
 
 async def _do_scrub_demo(session: Any, source_profile_id: int) -> None:
@@ -524,6 +530,8 @@ async def _do_scrub_demo(session: Any, source_profile_id: int) -> None:
     all_sessions_q = select(DbSession).where(DbSession.device_id.in_(source_dev_ids))
     all_src_sessions = (await db.execute(all_sessions_q)).scalars().all()
 
+    source_import_source = {s.id: s.import_source for s in all_src_sessions}
+
     for src_sess in all_src_sessions:
         demo_device_id = device_id_map[src_sess.device_id]
         demo_day_id = day_id_map.get(src_sess.day_id) if src_sess.day_id else None
@@ -597,6 +605,12 @@ async def _do_scrub_demo(session: Any, source_profile_id: int) -> None:
                     for c in Statistics.__table__.columns
                     if c.name not in _STATS_CLONE_EXCLUDED_COLUMNS
                 }
+                # Demo sessions are stamped import_source="demo", which readers
+                # treat as litres; OSCAR stores tidal volume in mL.
+                if source_import_source[src_stats.session_id] == OSCAR_BINARY_PARSER_ID:
+                    for name in _TIDAL_VOLUME_COLUMNS:
+                        if stats_payload[name] is not None:
+                            stats_payload[name] /= 1000
                 db.add(
                     Statistics(
                         session_id=src_to_demo_session[src_stats.session_id],

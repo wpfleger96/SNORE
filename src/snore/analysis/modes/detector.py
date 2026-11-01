@@ -21,7 +21,7 @@ from snore.analysis.modes.postprocess import (
     _deduplicate_events,
     _merge_adjacent_events,
     _validate_event,
-    split_by_tolerance_match,
+    match_events_by_start_time,
     validate_event_type,
 )
 from snore.analysis.modes.types import HypopneaMode, ModeResult
@@ -955,12 +955,10 @@ class EventDetector:
         if has_machine_reras:
             all_programmatic.extend(programmatic_reras)
             all_machine.extend(machine_reras)
+        all_programmatic.sort(key=lambda e: e.start_time)
         all_machine.sort(key=lambda e: e.start_time)
 
-        _, false_negative_events = split_by_tolerance_match(
-            all_machine, all_programmatic, tolerance_seconds
-        )
-        matched_events, false_positive_events = split_by_tolerance_match(
+        combined = match_events_by_start_time(
             all_programmatic, all_machine, tolerance_seconds
         )
 
@@ -984,9 +982,9 @@ class EventDetector:
             "apnea_matches": apnea_matches,
             "hypopnea_matches": hypopnea_matches,
             "rera_matches": rera_matches,
-            "matched_events": matched_events,
-            "false_negative_events": false_negative_events,
-            "false_positive_events": false_positive_events,
+            "matched_events": [programmatic for programmatic, _ in combined.matched],
+            "false_negative_events": combined.false_negatives,
+            "false_positive_events": combined.false_positives,
             "overall_agreement": {
                 "total_machine_events": total_machine,
                 "total_programmatic_events": total_programmatic,

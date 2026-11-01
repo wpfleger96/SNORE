@@ -12,9 +12,11 @@ from snore.mcp.schemas import (
     DeviceInfo,
     EventRow,
     EventsResponse,
+    ExperimentalNightlyRow,
     NightlyRow,
     model_to_schema,
 )
+from snore.provenance import Provenance, field_provenance
 
 
 class TestSchemaModelMap:
@@ -30,9 +32,13 @@ class TestSchemaModelMap:
             "nightly_row",
             "compliance_fields",
             "nightly_summary",
+            "experimental_nightly_row",
+            "experimental_nightly_metrics",
             "event_context",
             "event_row",
             "events_response",
+            "experimental_event_context_row",
+            "experimental_event_context_response",
             "capability_entry",
         }
         assert expected <= set(SCHEMA_MODEL_MAP.keys())
@@ -51,6 +57,9 @@ class TestSchemaModelMap:
             "epoch_distribution",
             "epoch_stats",
             "epoch_rx_violation",
+            "experimental_compare_epochs_response",
+            "device_epoch_distribution",
+            "device_epoch_stats",
             "compare_epochs_response",
         }
         assert stage2_keys <= set(SCHEMA_MODEL_MAP.keys())
@@ -69,47 +78,67 @@ class TestSchemaModelMap:
 
 
 class TestNightlyRowNullReasons:
-    def test_rera_index_nullable_with_reason(self) -> None:
+    def test_leak_above_24_pct_nullable_with_reason(self) -> None:
         from datetime import date
 
         row = NightlyRow(
             date=date(2024, 1, 1),
-            rera_index=None,
-            rera_index_reason="analysis_not_run",
+            leak_above_24_pct=None,
+            leak_above_24_pct_reason="channel_absent",
         )
-        assert row.rera_index is None
-        assert row.rera_index_reason == "analysis_not_run"
+        assert row.leak_above_24_pct is None
+        assert row.leak_above_24_pct_reason == "channel_absent"
 
-    def test_rdi_nullable_with_reason(self) -> None:
+    def test_device_summary_values_nullable_with_reason(self) -> None:
         from datetime import date
 
         row = NightlyRow(
             date=date(2024, 1, 1),
-            rdi=None,
-            rdi_reason="analysis_not_run",
+            ti_median_s=None,
+            ti_median_reason="channel_absent",
+            ie_ratio_median=None,
+            ie_ratio_reason="channel_absent",
         )
-        assert row.rdi is None
-
-    def test_fl_class_ge4_pct_nullable_with_reason(self) -> None:
-        from datetime import date
-
-        row = NightlyRow(
-            date=date(2024, 1, 1),
-            fl_class_ge4_pct=None,
-            fl_class_ge4_pct_reason="analysis_not_run",
-        )
-        assert row.fl_class_ge4_pct is None
-        assert row.fl_class_ge4_pct_reason == "analysis_not_run"
+        assert row.ti_median_s is None
+        assert row.ie_ratio_median is None
 
     def test_all_optional_fields_default_to_none(self) -> None:
         from datetime import date
 
         row = NightlyRow(date=date(2024, 1, 1))
         assert row.ahi is None
-        assert row.rera_index is None
-        assert row.fl_class_ge4_pct is None
+        assert row.reras is None
+        assert row.leak_above_24_pct is None
         assert row.leak_median_lpm is None
         assert row.spo2_mean_pct is None
+
+
+class TestExperimentalNightlyRow:
+    def test_nullable_with_reason(self) -> None:
+        from datetime import date
+
+        row = ExperimentalNightlyRow(
+            date=date(2024, 1, 1),
+            rera_index=None,
+            rera_index_reason="not_available",
+            fl_class_ge4_pct=None,
+            fl_class_ge4_pct_reason="not_available",
+        )
+        assert row.rera_index is None
+        assert row.rera_index_reason == "not_available"
+        assert row.fl_class_ge4_pct_reason == "not_available"
+
+    def test_every_metric_field_is_tagged_experimental(self) -> None:
+        for name in ExperimentalNightlyRow.model_fields:
+            if name.endswith("_reason") or name in {
+                "date",
+                "device_id",
+                "rera_proxy_version",
+            }:
+                continue
+            assert field_provenance(ExperimentalNightlyRow, name) == (
+                Provenance.EXPERIMENTAL
+            ), name
 
 
 class TestComplianceFields:

@@ -231,11 +231,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     sensitivity: {
         label: 'Sensitivity',
-        short: 'Share of device-scored events that SNORE also detected (true-positive rate / recall).',
+        short: 'Share of device-scored apneas and hypopneas (plus RERAs when the device scored any) that SNORE also detected (true-positive rate / recall).',
     },
     precision: {
         label: 'Precision',
-        short: 'Share of SNORE-detected events that match a device-scored event.',
+        short: 'Share of SNORE-detected events that match a device-scored event (RERAs are compared only when the device scored any).',
     },
     f1: {
         label: 'F1 Score',

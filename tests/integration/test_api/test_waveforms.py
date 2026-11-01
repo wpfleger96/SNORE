@@ -1,10 +1,16 @@
 from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import numpy as np
+import pytest
 
 from sqlalchemy.orm import Session
 
+from snore.analysis.shared.types import ApneaEvent
+from snore.analysis.types import AnalysisEvent
 from snore.database.models import Waveform
+from snore.services.waveform_service import WaveformService
 
 
 def _seed_waveform(
@@ -185,3 +191,57 @@ class TestWaveformCompare:
         )
         response = api_client.get(f"/api/v1/sessions/{session.id}/waveforms/compare")
         assert response.status_code == 404
+
+    def test_compare_returns_matched_count(
+        self, api_client, db_session, test_device, test_session_factory, monkeypatch
+    ):
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2024, 1, 1, 22, 0)
+        )
+        apnea = ApneaEvent(
+            start_time=100.0,
+            end_time=110.0,
+            duration=10.0,
+            event_type="OA",
+            flow_reduction=0.9,
+            confidence=0.8,
+            baseline_flow=30.0,
+        )
+        analysis = SimpleNamespace(
+            machine_events=[
+                AnalysisEvent(
+                    event_type=event_type,
+                    start_time=100.0,
+                    duration=10.0,
+                    source="machine",
+                )
+                for event_type in ("OA", "FL")
+            ],
+            mode_results={"aasm": SimpleNamespace(apneas=[apnea], hypopneas=[])},
+        )
+        monkeypatch.setattr(
+            WaveformService,
+            "_load_analysis_result",
+            AsyncMock(return_value=analysis),
+        )
+
+        response = api_client.get(f"/api/v1/sessions/{session.id}/waveforms/compare")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["machine_event_count"] == 1
+        assert data["matched_events"] == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/sessions/{id}/waveforms",
+        "/api/v1/sessions/{id}/waveforms/compare",
+        "/api/v1/sessions/{id}/waveforms/flow",
+    ],
+)
+def test_oversized_session_id_returns_422(api_client, path):
+    response = api_client.get(path.format(id=2**63))
+
+    assert response.status_code == 422

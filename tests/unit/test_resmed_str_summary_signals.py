@@ -5,7 +5,7 @@ Covers:
 - VAuto-only fields (ie_ratio_*, ti_*, spont_cyc_pct) read correctly when present.
 - APAP-only fields (rin, csr_pct) read correctly when present.
 - Absent signal → field stays None (device-conditional signals).
-- Leak.70 → leak_percentile_70 (pre-existing ORM field now wired into STR loader).
+- Leak.* → leak_* converted from L/s to L/min (leak_percentile_70 is STR-only).
 - spo2_max is populated from SpO2.Max alongside the new spo2_median / spo2_95th.
 - Negative-value sentinel filtering (no-usage days) is applied before storage.
 
@@ -97,12 +97,22 @@ def parser():
 class TestNewBothDeviceSignals:
     """Signals present on both AirSense and AirCurve that were previously dropped."""
 
-    def test_leak_70th_is_imported(self, parser, tmp_path):
-        """Leak.70 → leak_percentile_70 (field existed, now wired into STR loader)."""
-        edf = _make_str_edf(tmp_path, {"Leak.70": 18.5})
+    @pytest.mark.parametrize(
+        ("label", "stat"),
+        [
+            ("Leak.50", "leak_median"),
+            ("Leak Med", "leak_median"),
+            ("Leak.95", "leak_95th"),
+            ("Leak.Max", "leak_max"),
+            ("Leak.70", "leak_percentile_70"),
+        ],
+    )
+    def test_str_leak_is_converted_to_lpm(self, parser, tmp_path, label, stat):
+        """STR leak is L/s; statistics are L/min like the PLD leak waveform."""
+        edf = _make_str_edf(tmp_path, {label: 0.3})
         _, summaries = parser._preload_str_file(edf)
         assert summaries is not None
-        assert summaries[_DATE_0]["leak_percentile_70"] == pytest.approx(18.5, rel=1e-3)
+        assert summaries[_DATE_0][stat] == pytest.approx(18.0, rel=1e-3)
 
     def test_uai_imported(self, parser, tmp_path):
         """UAI → uai."""

@@ -201,8 +201,8 @@ async def _scope_and_run(
 ) -> dict[str, Any]:
     """Open a DB scope, call impl, and serialize the result via ``_dump_response``.
 
-    Shared scaffold for the 8 standard-pattern tools (all except the waveform pair,
-    which has non-standard return paths).  Each tool module's
+    Shared scaffold for every tool except the waveform pair, which has
+    non-standard return paths.  Each tool module's
     ``register`` closure calls this with the resolved date/validation kwargs.
     """
     runtime = _runtime(ctx)

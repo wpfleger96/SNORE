@@ -1,4 +1,4 @@
-"""find_windows tool — BreathService.find_windows() adapter.
+"""experimental_find_windows tool — BreathService.find_windows() adapter.
 
 Timestamp contract (A6):
 - Session wall-clock anchors are stored as naive device datetimes.
@@ -40,6 +40,7 @@ from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
 )
+from snore.mcp.validation import _require_finite
 
 
 async def find_windows(
@@ -100,6 +101,10 @@ async def find_windows(
             "worst_flattening_leak_valid, ca_centered, fl_run_ending_in_recovery, "
             "rera_proxy_centered"
         ) from None
+
+    _require_finite(context_seconds, "context_seconds")
+    if flattening_threshold is not None:
+        _require_finite(flattening_threshold, "flattening_threshold")
 
     opts = WindowCriterionOptions(
         include_unknown_leak=include_unknown_leak,
@@ -181,7 +186,7 @@ async def find_windows(
 def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import parse_date, validate_window_count  # noqa: PLC0415
 
-    @mcp.tool()
+    @mcp.tool(name="experimental_find_windows")
     @_with_experimental_disclaimer
     @tool_error_boundary
     async def find_windows(
@@ -203,7 +208,7 @@ def register(mcp: FastMCP) -> None:
         """Find the N worst breath windows matching a flow-limitation criterion for a night.
 
         Use this tool to locate specific regions in a therapy session worth reviewing in
-        detail (e.g. in ``get_breath_table`` or ``render_window``).  Each window
+        detail (e.g. in ``experimental_get_breath_table`` or ``render_window``).  Each window
         is a contiguous breath sequence ranked by severity; windows with >50% overlap
         (relative to the shorter) are deduped, keeping the higher-ranked.  Results are
         ordered worst-first, except ``ca_centered``, which is ordered by the CA event's
@@ -294,7 +299,7 @@ def register(mcp: FastMCP) -> None:
         return await _scope_and_run(
             ctx,
             _impl,
-            tool_name="find_windows",
+            tool_name="experimental_find_windows",
             therapy_date=therapy_date,
             criterion=criterion,
             n=n,

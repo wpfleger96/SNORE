@@ -32,8 +32,8 @@ from snore.database.models import (
 from snore.parsers.apple_health.models import apply_noon_split
 from snore.services.breath.dtos import (
     DeviceAmbiguityError,
+    ExperimentalNightlyRange,
     NightlyAnalysisSummary,
-    NightlyRangeSummary,
 )
 from snore.services.breath_service import BreathService
 from snore.validation.apple_cross_report import (
@@ -142,9 +142,6 @@ def _night(
         ti_median_reason=None,
         ie_ratio_median=None,
         ie_ratio_reason=None,
-        total_therapy_hours=7.0,
-        compliance_threshold_hours=4.0,
-        is_compliant=True,
         rera_index=rera_index,
         rera_index_reason=rera_index_reason,
     )
@@ -153,7 +150,7 @@ def _night(
 def _stub_nights(
     monkeypatch: pytest.MonkeyPatch, nights: list[NightlyAnalysisSummary]
 ) -> None:
-    """Patch BreathService.get_nightly_range_summary to return the given nights.
+    """Patch BreathService.get_experimental_nightly_range to return the given nights.
 
     Returns exactly the nights whose therapy_date falls in the requested chunk,
     so the validator's 90-night paging never double-counts.
@@ -161,19 +158,15 @@ def _stub_nights(
 
     async def _fake(self, date_start, date_end, **_kwargs):  # noqa: ANN001
         in_range = [n for n in nights if date_start <= n.therapy_date <= date_end]
-        return NightlyRangeSummary(
+        return ExperimentalNightlyRange(
             date_start=date_start,
             date_end=date_end,
             device_id=1,
-            compliance_threshold_hours=4.0,
-            n_calendar_nights=(date_end - date_start).days + 1,
             n_nights=len(in_range),
-            days_compliant=len(in_range),
-            compliance_pct=100.0,
             nights=in_range,
         )
 
-    monkeypatch.setattr(BreathService, "get_nightly_range_summary", _fake)
+    monkeypatch.setattr(BreathService, "get_experimental_nightly_range", _fake)
 
 
 def _stub_multi_device(
@@ -181,7 +174,7 @@ def _stub_multi_device(
     nights: list[NightlyAnalysisSummary],
     ambiguous: set[date],
 ) -> None:
-    """Stub get_nightly_range_summary to raise ambiguity for unpinned nights.
+    """Stub get_experimental_nightly_range to raise ambiguity for unpinned nights.
 
     A call is ambiguous when ``device_id`` is None and its span covers any
     ``ambiguous`` date — mirroring _resolve_range raising for a multi-device
@@ -199,19 +192,15 @@ def _stub_multi_device(
                     device_serials={1: "A", 2: "B"},
                 )
         in_range = [n for n in nights if date_start <= n.therapy_date <= date_end]
-        return NightlyRangeSummary(
+        return ExperimentalNightlyRange(
             date_start=date_start,
             date_end=date_end,
             device_id=device_id or 1,
-            compliance_threshold_hours=4.0,
-            n_calendar_nights=(date_end - date_start).days + 1,
             n_nights=len(in_range),
-            days_compliant=len(in_range),
-            compliance_pct=100.0,
             nights=in_range,
         )
 
-    monkeypatch.setattr(BreathService, "get_nightly_range_summary", _fake)
+    monkeypatch.setattr(BreathService, "get_experimental_nightly_range", _fake)
 
 
 async def _seed_apple_bd(
