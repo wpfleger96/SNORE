@@ -1,16 +1,18 @@
-"""Unit tests for device FL and snore waveform aggregation in _build_nightly_summary.
+"""Unit tests for device channel aggregation in _device_night_stats.
 
 Tests cover:
 - Correct median/95th/max computation for device FL channel
 - Negative sentinel filter for FL (values < 0 dropped; zeros retained)
 - snore_pct_time threshold (> 0.5, not >= 0.5)
+- Leak time over the 24 L/min redline (inclusive boundary, sentinels excluded)
 - Empty channel → null fields + CHANNEL_ABSENT reason
 - Multi-session night aggregation (values merged across sessions)
-- Analysis-not-run night still receives device waveform aggregates
+- Compliance from Day hours, falling back to session durations
 """
 
 from __future__ import annotations
 
+import math
 import statistics as stats_lib
 
 from datetime import date
@@ -33,23 +35,25 @@ def _call_build(
     day_sessions: list[Any],
     fl_by_session: dict[int, list[float]] | None = None,
     snore_by_session: dict[int, list[float]] | None = None,
+    leak_by_session: dict[int, list[float]] | None = None,
+    corrupt_leak_sessions: frozenset[int] = frozenset(),
+    day_row: Any | None = None,
 ) -> Any:
-    """Call _build_nightly_summary with minimal fixtures for waveform-only tests."""
-    from snore.analysis.shared.versioning import AnalysisStatus  # noqa: PLC0415
-    from snore.services.breath_service import BreathService  # noqa: PLC0415
+    """Call _device_night_stats with the given per-session channel samples."""
+    from snore.services.breath.nightly import _device_night_stats  # noqa: PLC0415
 
-    return BreathService._build_nightly_summary(
+    return _device_night_stats(
         therapy_date=date(2025, 6, 1),
         device_id=1,
         day_sessions=day_sessions,
-        day_row=None,
-        ar_classification={
-            s.id: (AnalysisStatus.NOT_RUN, None, None) for s in day_sessions
-        },
-        breath_rows_by_ar_id={},
+        day_row=day_row,
         compliance_threshold_hours=4.0,
-        fl_vals_by_session=fl_by_session,
-        snore_vals_by_session=snore_by_session,
+        channel_vals={
+            "fl": fl_by_session or {},
+            "snore": snore_by_session or {},
+            "leak": leak_by_session or {},
+        },
+        corrupt_leak_sessions=corrupt_leak_sessions,
     )
 
 
@@ -215,15 +219,93 @@ class TestMultiSessionNightAggregation:
         assert result.device_flg_median == pytest.approx(0.4)
         assert result.device_flg_reason is None
 
-    def test_analysis_not_run_still_gets_device_waveforms(self) -> None:
-        """Device waveform aggregates are populated even when analysis was not run."""
-        sess = _make_mock_session(1)
+    def test_leak_samples_merged_across_sessions(self) -> None:
+        """Leak percent is pooled over samples, not averaged per session."""
+        sess1 = _make_mock_session(1)
+        sess2 = _make_mock_session(2)
         result = _call_build(
-            day_sessions=[sess],
-            fl_by_session={1: [0.0, 0.3, 0.6]},
-            snore_by_session={1: [0.0, 0.0, 1.0]},
+            day_sessions=[sess1, sess2],
+            leak_by_session={1: [30.0, 0.0, 0.0, 0.0], 2: [0.0] * 6},
         )
-        # Analysis fields are null (no OK sessions), waveform fields are present
-        assert result.fl_median is None  # breath-level FL absent
-        assert result.device_flg_median == pytest.approx(0.3)
-        assert result.snore_pct_time == pytest.approx(1 / 3)
+        assert result.leak_above_24_pct == pytest.approx(10.0)  # 1 of 10 samples
+
+
+@pytest.mark.unit
+class TestLeakAbove24Pct:
+    def test_boundary_sample_counts_as_above(self) -> None:
+        """Exactly 24 L/min counts: the redline is inclusive."""
+        result = _call_build(
+            day_sessions=[_make_mock_session(1)],
+            leak_by_session={1: [23.99, 24.0, 10.0, 0.0]},
+        )
+        assert result.leak_above_24_pct == pytest.approx(25.0)
+        assert result.leak_above_24_pct_reason is None
+
+    def test_rounded_to_one_decimal(self) -> None:
+        result = _call_build(
+            day_sessions=[_make_mock_session(1)],
+            leak_by_session={1: [30.0, 0.0, 0.0]},
+        )
+        assert result.leak_above_24_pct == 33.3
+
+    @pytest.mark.parametrize("sentinel", [-1.0, -0.02, math.nan, math.inf, -math.inf])
+    def test_sentinels_excluded_from_numerator_and_denominator(
+        self, sentinel: float
+    ) -> None:
+        """Negative and non-finite samples count on neither side of the percent."""
+        result = _call_build(
+            day_sessions=[_make_mock_session(1)],
+            leak_by_session={1: [sentinel, sentinel, 30.0, 0.0]},
+        )
+        assert result.leak_above_24_pct == pytest.approx(50.0)
+
+    def test_zero_leak_is_zero_percent(self) -> None:
+        """A recorded night with no leak over the redline is 0.0, not null."""
+        result = _call_build(
+            day_sessions=[_make_mock_session(1)],
+            leak_by_session={1: [0.0, 5.0]},
+        )
+        assert result.leak_above_24_pct == 0.0
+        assert result.leak_above_24_pct_reason is None
+
+    @pytest.mark.parametrize("samples", [None, {1: [-1.0, math.nan]}])
+    def test_no_usable_samples_gives_null_reason(
+        self, samples: dict[int, list[float]] | None
+    ) -> None:
+        """No samples, or only sentinels → null + channel_absent."""
+        from snore.analysis.shared.versioning import NullReason  # noqa: PLC0415
+
+        result = _call_build(
+            day_sessions=[_make_mock_session(1)], leak_by_session=samples
+        )
+        assert result.leak_above_24_pct is None
+        assert result.leak_above_24_pct_reason == NullReason.CHANNEL_ABSENT
+
+    def test_corrupt_session_nulls_partial_value_with_corrupt_reason(self) -> None:
+        """A night never reports a share computed from its surviving sessions."""
+        from snore.analysis.shared.versioning import NullReason  # noqa: PLC0415
+
+        result = _call_build(
+            day_sessions=[_make_mock_session(1), _make_mock_session(2)],
+            leak_by_session={1: [30.0, 0.0]},
+            corrupt_leak_sessions=frozenset({2}),
+        )
+
+        assert result.leak_above_24_pct is None
+        assert result.leak_above_24_pct_reason == NullReason.CHANNEL_CORRUPT
+
+
+@pytest.mark.unit
+class TestDeviceNightCompliance:
+    def test_uses_day_therapy_hours_when_present(self) -> None:
+        """Day.total_therapy_hours wins over the 8 h session span."""
+        day = MagicMock()
+        day.total_therapy_hours = 3.5
+        result = _call_build(day_sessions=[_make_mock_session(1)], day_row=day)
+        assert result.total_therapy_hours == pytest.approx(3.5)
+        assert result.is_compliant is False
+
+    def test_falls_back_to_session_durations_without_day_hours(self) -> None:
+        result = _call_build(day_sessions=[_make_mock_session(1)])
+        assert result.total_therapy_hours == pytest.approx(8.0)
+        assert result.is_compliant is True

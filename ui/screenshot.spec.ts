@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route, type TestInfo } from '@playwright/test'
 import {
     summaryFixture,
+    experimentalStatsFixture,
+    dayExperimentalFixture,
     trendsFixture,
     daysFixture,
     sessionsFixture,
@@ -40,6 +42,8 @@ function routeApi(route: Route) {
     if (url.includes('/stats/data-range')) return route.fulfill({ json: dataRangeFixture })
     if (url.includes('/stats/records')) return route.fulfill({ json: recordsFixture })
     if (url.includes('/stats/summary')) return route.fulfill({ json: summaryFixture })
+    if (url.includes('/stats/experimental'))
+        return route.fulfill({ json: experimentalStatsFixture })
     if (url.includes('/stats/trends')) return route.fulfill({ json: trendsFixture })
     if (url.includes('/stats/periods')) return route.fulfill({ json: periodsFixture })
     if (url.includes('/equipment/masks/epochs')) return route.fulfill({ json: maskEpochsFixture })
@@ -56,6 +60,8 @@ function routeApi(route: Route) {
         return route.fulfill({ json: flowWaveformFixture })
     if (url.includes('/sessions/1470')) return route.fulfill({ json: sessionDetailFixture })
     if (url.includes('/days/dates')) return route.fulfill({ json: dateListFixture })
+    if (/\/days\/[^/]+\/experimental/.test(url))
+        return route.fulfill({ json: dayExperimentalFixture })
     if (url.includes('/days')) return route.fulfill({ json: daysFixture })
     if (url.includes('/sessions')) return route.fulfill({ json: sessionsFixture })
 

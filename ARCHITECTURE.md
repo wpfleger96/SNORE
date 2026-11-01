@@ -16,7 +16,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 ├──────────────┬──────────────┬──────────────┤
 │ FastAPI REST │   CLI (cli/) │  MCP Server  │
 │ API (api/)   │  Click cmds  │  (mcp/)      │
-│ 18 routers   │  snore cmds  │  10 tools    │
+│ 18 routers   │  snore cmds  │  13 tools    │
 ├──────────────┴──────────────┴──────────────┤
 │        Service Layer (services/)            │
 │  19 services: business logic between        │
@@ -329,11 +329,11 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | profiles | `/profiles` | Profile CRUD |
 | sessions | `/sessions` | List, detail, enable/disable, delete, bulk delete-preview |
 | waveforms | `/sessions` | List types, get data (LTTB downsampling), compare events |
-| events | `/sessions` | List, match machine vs programmatic |
+| events | `/sessions` | List |
 | analysis | (v1 prefix) | List status, get result, run, delete, batch analysis |
-| stats | `/stats` | Summary, periods, trends, records |
+| stats | `/stats` | Summary, periods, trends, records, data range; experimental effectiveness band and AHI trend direction (`GET /stats/experimental`) |
 | devices | `/devices` | List, detail |
-| days | `/days` | List, detail |
+| days | `/days` | List, detail; experimental FL and RERA-proxy metrics (`GET /days/{date}/experimental`) |
 | rx | `/rx` | History, current, compare |
 | equipment | `/equipment` | Mask log CRUD (`GET/POST /masks`, `PATCH/DELETE /masks/{id}`); device mask-type epochs (`GET /masks/epochs`); write ops guarded by `RequireWritable` |
 | reports | `/reports` | Report generation |
@@ -341,6 +341,8 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | export | `/export` | CSV, JSON, raw file download |
 | db | `/db` | Stats, vacuum; reset (local mode only) |
 | validation | `/validate` | Batch validation report |
+
+**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list against `ui/src/tests/experimentalOperations.json`, which `ui/src/tests/experimentalBoundary.test.ts` uses to keep default pages off those operations.
 
 **Key patterns:**
 - Dependency injection: `db: Session = Depends(get_db)` for database sessions
@@ -380,7 +382,7 @@ Imports and analysis run as serialised background jobs to avoid SQLite write-loc
 | DayService | Day aggregation and lookup |
 | DemoService | Demo mode bootstrap — provisions the demo user, profile, and fixture session data for local evaluation |
 | DeviceService | Device listing and per-device detail (usage summary, current settings, settings history) |
-| EventService | Event queries and matching |
+| EventService | Event queries |
 | ExportService | Data export (CSV, JSON, raw files) |
 | ImportService | CPAP data import: source detection, file upload, backup, parse orchestration |
 | lttb (module) | Largest-Triangle-Three-Buckets downsampling via `lttb_downsample()` |
@@ -568,11 +570,11 @@ StaticRuntime     — stdio path; profile_id resolved at startup
 ActorRuntime      — OAuth HTTP path; profile_id from per-request context var
 ```
 
-`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by eight of the ten tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → `_check_response_size`.
+`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 11 of the 13 tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
 
 ### Tool Modules
 
-Each tool is defined in `src/snore/mcp/tools/<name>.py` and owns a `register(mcp: FastMCP) -> None` function. `make_server` calls every module's `register` so the tool registration logic is co-located with the tool's DB-fetch and mapping code.
+Each tool module in `src/snore/mcp/tools/` owns a `register(mcp: FastMCP) -> None` function. `make_server` calls every module's `register` so the tool registration logic is co-located with the tool's DB-fetch and mapping code. An experimental tool is registered in the same module as its default sibling.
 
 | Module | Tool name | Pattern |
 |--------|-----------|---------|
@@ -580,22 +582,28 @@ Each tool is defined in `src/snore/mcp/tools/<name>.py` and owns a `register(mcp
 | `settings.py` | `get_settings_timeline` | `_scope_and_run` |
 | `changes.py` | `get_settings_changes` | `_scope_and_run` |
 | `summary.py` | `get_nightly_summary` | `_scope_and_run` |
+| `summary.py` | `experimental_get_nightly_metrics` | `_scope_and_run` |
 | `events.py` | `get_events` | `_scope_and_run` |
-| `breath_table.py` | `get_breath_table` | `_scope_and_run` |
-| `windows.py` | `find_windows` | `_scope_and_run` |
+| `events.py` | `experimental_get_event_context` | `_scope_and_run` |
 | `epochs.py` | `compare_epochs` | `_scope_and_run` |
+| `epochs.py` | `experimental_compare_epochs` | `_scope_and_run` |
+| `breath_table.py` | `experimental_get_breath_table` | `_scope_and_run` |
+| `windows.py` | `experimental_find_windows` | `_scope_and_run` |
 | `waveform.py` | `get_waveform` | `_fetch_waveform_for_tool` helper |
 | `waveform.py` | `render_window` | `_fetch_waveform_for_tool` helper |
 
-### Tiered Data Model
+### Default and Experimental Tools
 
-Tools implement progressive disclosure across three tiers:
+Default tools return device data plus arithmetic of the kind OSCAR does. They do not read breath rows, so their device data is available whether or not analysis has run. Device-scored events, device summaries and raw waveforms are the primary evidence. Experimental tools return SNORE's own heuristics; they are always listed, each carries `_with_experimental_disclaimer`, and calling one is the opt-in.
 
-| Tier | Tools | Description |
-|------|-------|-------------|
-| 1 (primary) | overview, summary, settings, changes, events, epochs | Computed metrics — indices, percentiles, aggregates |
-| 2 (secondary) | render_window | PNG charts — visual inspection of waveform windows ≤15 min |
-| 3 (escape hatch) | get_waveform, breath_table | Raw arrays and per-breath rows for deep inspection |
+| Surface | Tools | Content |
+|---------|-------|---------|
+| Default: summaries | `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_events`, `compare_epochs` | Device-scored events and counts, device summaries, settings, and arithmetic on device channels |
+| Default: charts | `render_window` | PNG charts of device waveforms, windows ≤15 min |
+| Default: raw samples | `get_waveform` | Per-sample device arrays, windows ≤2 min and ≤1000 points |
+| Experimental | `experimental_get_nightly_metrics`, `experimental_get_event_context`, `experimental_compare_epochs`, `experimental_get_breath_table`, `experimental_find_windows` | Per-night FL, RERA-proxy, segmented-breath and periodic-breathing metrics; MV slope and stability per event; breath-feature distributions across epochs; per-breath rows and bins; window search |
+
+`tests/unit/test_mcp_provenance.py` enforces the split: `DEFAULT_TOOLS` maps each default tool to its response model, no default response may contain an Experimental-tagged field, and any tool outside that map must carry the `experimental_` prefix.
 
 ---
 

@@ -24,6 +24,35 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from snore.services.breath_service import ExperimentalNightlyRange, NightlyDeviceRange
+
+
+def _empty_device_range() -> NightlyDeviceRange:
+    """A device range for January 2024 with no resolved device or nights."""
+    return NightlyDeviceRange(
+        date_start=date(2024, 1, 1),
+        date_end=date(2024, 1, 31),
+        device_id=0,
+        compliance_threshold_hours=4.0,
+        n_calendar_nights=31,
+        n_nights=0,
+        days_compliant=0,
+        compliance_pct=0.0,
+        nights=[],
+    )
+
+
+def _empty_analysis_range() -> ExperimentalNightlyRange:
+    """An analysis range for January 2024 with no resolved device or nights."""
+    return ExperimentalNightlyRange(
+        date_start=date(2024, 1, 1),
+        date_end=date(2024, 1, 31),
+        device_id=0,
+        n_nights=0,
+        nights=[],
+    )
+
+
 # ---------------------------------------------------------------------------
 # get_data_overview
 # ---------------------------------------------------------------------------
@@ -295,12 +324,10 @@ class TestGetNightlySummaryRoundtrip:
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
         """get_nightly_summary with no Day rows: no error, nights=[]."""
-        # Return None (no range summary) rather than raising — summary.py leaves
-        # bs_range as None and falls through to empty DB result → nights=[].
         with patch(
-            "snore.services.breath_service.BreathService.get_nightly_range_summary",
+            "snore.services.breath_service.BreathService.get_nightly_device_summary",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_empty_device_range(),
         ):
             async with mcp_client_factory(mock_db_session) as client:
                 result = await client.call_tool(
@@ -312,6 +339,7 @@ class TestGetNightlySummaryRoundtrip:
         payload = json.loads(result.content[0].text)
         assert payload["nights"] == []
         assert payload["total_nights"] == 0
+        assert payload["compliance"]["days_total"] == 31
 
     async def test_invalid_page_returns_error(
         self, mock_db_session: Any, mcp_client_factory: Any
@@ -357,9 +385,92 @@ class TestGetNightlySummaryRoundtrip:
                 )
 
 
+class TestExperimentalGetNightlyMetricsRoundtrip:
+    async def test_empty_range_returns_empty_nights(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        with patch(
+            "snore.services.breath_service.BreathService.get_experimental_nightly_range",
+            new_callable=AsyncMock,
+            return_value=_empty_analysis_range(),
+        ):
+            async with mcp_client_factory(mock_db_session) as client:
+                result = await client.call_tool(
+                    "experimental_get_nightly_metrics",
+                    {"start": "2024-01-01", "end": "2024-01-31"},
+                )
+
+        assert not result.is_error
+        payload = json.loads(result.content[0].text)
+        assert payload["nights"] == []
+        assert payload["total_nights"] == 0
+        assert payload["page"] == 1
+
+    @pytest.mark.parametrize(
+        ("args", "match"),
+        [
+            ({"end": "2024-04-30"}, "maximum per call is 90"),
+            ({"end": "2024-01-31", "page": 0}, "page must be >= 1"),
+            ({"end": "2024-01-31", "page_size": 91}, "page_size must be between"),
+        ],
+    )
+    async def test_invalid_args_raise_tool_error_without_db(
+        self,
+        mock_db_session: Any,
+        mcp_client_factory: Any,
+        args: dict[str, Any],
+        match: str,
+    ) -> None:
+        """Range and page limits match get_nightly_summary."""
+        from fastmcp.exceptions import ToolError  # noqa: PLC0415
+
+        async with mcp_client_factory(mock_db_session) as client:
+            with pytest.raises(ToolError, match=match):
+                await client.call_tool(
+                    "experimental_get_nightly_metrics",
+                    {"start": "2024-01-01", **args},
+                )
+
+        mock_db_session.execute.assert_not_called()
+
+    async def test_description_carries_experimental_disclaimer(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        async with mcp_client_factory(mock_db_session) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+
+        description = tools["experimental_get_nightly_metrics"].description
+        assert "Experimental metrics:" in description
+        assert "Experimental metrics:" not in tools["get_nightly_summary"].description
+
+
 # ---------------------------------------------------------------------------
 # get_events
 # ---------------------------------------------------------------------------
+
+
+def _ventilatory_event(**overrides: Any) -> Any:
+    """A ContextualEvent carrying MV slope and stability, as include_ventilatory returns."""
+    from snore.services.breath_service import ContextualEvent  # noqa: PLC0415
+
+    fields: dict[str, Any] = {
+        "session_id": 42,
+        "session_start_wall_clock": datetime(2024, 1, 1, 22, 0, 0),
+        "event_type": "OA",
+        "event_start_wall_clock": datetime(2024, 1, 1, 22, 30, 0),
+        "offset_seconds": 1800.0,
+        "duration_seconds": 12.0,
+        "pressure_at_event_cmh2o": None,
+        "pressure_reason": None,
+        "leak_at_event_lpm": None,
+        "leak_reason": None,
+        "mv_prior_120s_lpm": 6.1,
+        "mv_reason": None,
+        "minutes_since_session_start": 30.0,
+        "preceding_mv_slope_lpm_per_min": -1.5,
+        "stability_index": 0.12,
+    }
+    return ContextualEvent(**{**fields, **overrides})
 
 
 class TestGetEventsRoundtrip:
@@ -422,7 +533,7 @@ class TestGetEventsRoundtrip:
                 return_value=[ev],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -443,35 +554,17 @@ class TestGetEventsRoundtrip:
         assert ctx["pressure_at_event_cmh2o"] == pytest.approx(8.2)
         assert ctx["mv_prior_120s_lpm"] == pytest.approx(5.8)
 
-    async def test_ventilatory_context_serialized_on_wire(
+    async def test_ventilatory_fields_stay_off_the_wire(
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
-        """Ventilatory values land in ``context``; their null reasons and the
-        flow-derived MV provenance serialize as strings."""
+        """Default responses carry delivered PS but none of the experimental
+        ventilatory fields, even if the service returned them."""
         from snore.services.breath_service import (  # noqa: PLC0415
-            ContextualEvent,
             MvSource,
             NullReason,
         )
 
-        ev = ContextualEvent(
-            session_id=42,
-            session_start_wall_clock=datetime(2024, 1, 1, 22, 0, 0),
-            event_type="OA",
-            event_start_wall_clock=datetime(2024, 1, 1, 22, 30, 0),
-            offset_seconds=1800.0,
-            duration_seconds=12.0,
-            pressure_at_event_cmh2o=None,
-            pressure_reason=NullReason.NOT_AVAILABLE,
-            leak_at_event_lpm=None,
-            leak_reason=NullReason.NOT_AVAILABLE,
-            mv_prior_120s_lpm=6.1,
-            mv_reason=None,
-            minutes_since_session_start=30.0,
-            preceding_mv_slope_lpm_per_min=-1.5,
-            preceding_mv_slope_reason=None,
-            stability_index=0.12,
-            stability_reason=None,
+        ev = _ventilatory_event(
             ps_delivered_cmh2o=None,
             ps_reason=NullReason.NOT_AVAILABLE,
             mv_source=MvSource.FLOW_DERIVED,
@@ -484,7 +577,7 @@ class TestGetEventsRoundtrip:
                 return_value=[ev],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -493,15 +586,14 @@ class TestGetEventsRoundtrip:
                 result = await client.call_tool("get_events", {"date": "2024-01-01"})
 
         payload = json.loads(result.content[0].text)
-        assert payload["mv_fallback_version"] == "v1"
         row = payload["events"][0]
-        assert row["context"]["preceding_mv_slope_lpm_per_min"] == pytest.approx(-1.5)
-        assert row["context"]["stability_index"] == pytest.approx(0.12)
         assert row["context"]["ps_delivered_cmh2o"] is None
-        assert row["context"]["mv_source"] == "flow_derived"
-        assert row["preceding_mv_slope_reason"] is None
-        assert row["stability_reason"] is None
         assert row["ps_reason"] == "not_available"
+        for name in ("preceding_mv_slope_lpm_per_min", "stability_index", "mv_source"):
+            assert name not in row["context"]
+        for name in ("preceding_mv_slope_reason", "stability_reason"):
+            assert name not in row
+        assert "mv_fallback_version" not in payload
 
     async def test_invalid_date_format_raises_tool_error(
         self, mock_db_session: Any, mcp_client_factory: Any
@@ -524,7 +616,7 @@ class TestGetEventsRoundtrip:
                 return_value=[],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -589,7 +681,7 @@ class TestGetEventsRoundtrip:
                 return_value=[ev1, ev2],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -643,7 +735,7 @@ class TestGetEventsRoundtrip:
                 return_value=[_make_event() for _ in range(5)],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -689,7 +781,7 @@ class TestGetEventsRoundtrip:
                 return_value=[ev],
             ),
             patch(
-                "snore.mcp.tools._capabilities.build_device_capabilities",
+                "snore.mcp.tools.events.build_device_capabilities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -712,6 +804,73 @@ class TestGetEventsRoundtrip:
             with pytest.raises(ToolError, match="max_events must be >= 1"):
                 await client.call_tool(
                     "get_events", {"date": "2024-01-01", "max_events": 0}
+                )
+
+        mock_db_session.execute.assert_not_called()
+
+
+class TestExperimentalGetEventContextRoundtrip:
+    async def test_ventilatory_context_serialized_on_wire(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        """Ventilatory values and flow-derived MV provenance serialize flat on
+        the row, every MV field is listed experimental, and the service is
+        asked for ventilatory context."""
+        from snore.services.breath_service import (  # noqa: PLC0415
+            MvSource,
+            NullReason,
+        )
+
+        ev = _ventilatory_event(
+            stability_index=None,
+            stability_reason=NullReason.NOT_AVAILABLE,
+            mv_source=MvSource.FLOW_DERIVED,
+        )
+
+        with (
+            patch(
+                "snore.services.breath_service.BreathService.get_contextual_events",
+                new_callable=AsyncMock,
+                return_value=[ev],
+            ) as service_call,
+            patch(
+                "snore.mcp.tools.events.build_device_capabilities",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            async with mcp_client_factory(mock_db_session) as client:
+                result = await client.call_tool(
+                    "experimental_get_event_context", {"date": "2024-01-01"}
+                )
+
+        payload = json.loads(result.content[0].text)
+        assert service_call.call_args.kwargs["include_ventilatory"] is True
+        assert payload["mv_fallback_version"] == "v1"
+        row = payload["events"][0]
+        assert row["mv_prior_120s_lpm"] == pytest.approx(6.1)
+        assert row["preceding_mv_slope_lpm_per_min"] == pytest.approx(-1.5)
+        assert row["preceding_mv_slope_reason"] is None
+        assert row["stability_index"] is None
+        assert row["stability_reason"] == "not_available"
+        assert row["mv_source"] == "flow_derived"
+        assert set(payload["provenance"]["experimental"]) == {
+            "events[].mv_prior_120s_lpm",
+            "events[].preceding_mv_slope_lpm_per_min",
+            "events[].stability_index",
+        }
+
+    async def test_max_events_zero_raises_tool_error(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        """max_events=0 is rejected before the DB is touched."""
+        from fastmcp.exceptions import ToolError  # noqa: PLC0415
+
+        async with mcp_client_factory(mock_db_session) as client:
+            with pytest.raises(ToolError, match="max_events must be >= 1"):
+                await client.call_tool(
+                    "experimental_get_event_context",
+                    {"date": "2024-01-01", "max_events": 0},
                 )
 
         mock_db_session.execute.assert_not_called()

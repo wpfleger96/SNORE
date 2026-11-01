@@ -19,49 +19,6 @@
             <StatCard label="Types" :value="uniqueTypes.length" :decimals="0" />
         </div>
 
-        <!-- Event Match (if analysis exists) -->
-        <div v-if="matchResult" class="section-card">
-            <h2>Device-scored vs SNORE-detected</h2>
-            <ExperimentalBanner
-                class="mb-3"
-                body="SNORE's event detection scored against the device's events; not a clinical measurement."
-            />
-            <div class="match-grid">
-                <StatCard
-                    label="Device-scored"
-                    :value="matchResult.machine_count"
-                    :decimals="0"
-                    glossary-key="machine_events"
-                />
-                <StatCard
-                    label="SNORE-detected"
-                    :value="matchResult.programmatic_count"
-                    :decimals="0"
-                    glossary-key="programmatic_events"
-                />
-                <StatCard label="Matched" :value="matchResult.matched" :decimals="0" />
-                <StatCard
-                    label="False Positives"
-                    :value="matchResult.false_positives"
-                    :decimals="0"
-                    glossary-key="false_positives"
-                />
-                <StatCard
-                    label="False Negatives"
-                    :value="matchResult.false_negatives"
-                    :decimals="0"
-                    glossary-key="false_negatives"
-                />
-                <StatCard
-                    label="Sensitivity"
-                    :value="sensitivity"
-                    unit="%"
-                    :decimals="1"
-                    glossary-key="sensitivity"
-                />
-            </div>
-        </div>
-
         <div class="section-card">
             <h2>Device-scored Events</h2>
 
@@ -177,18 +134,13 @@
                 </TableBody>
             </Table>
 
-            <PaginationBar
-                :offset="currentPage * pageSize"
-                :page-size="pageSize"
-                :total="filteredEvents.length"
-                @page="(newOffset) => (currentPage = Math.floor(newOffset / pageSize))"
-            />
+            <PaginationBar v-bind="pagerProps" @page="setPageOffset" />
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
     Table,
@@ -203,15 +155,15 @@ import StatCard from '@/components/StatCard.vue'
 import PaginationBar from '@/components/PaginationBar.vue'
 import InfoHint from '@/components/InfoHint.vue'
 import EventTypeLegend from '@/components/EventTypeLegend.vue'
-import { getSessionEvents, getEventMatch } from '@/api/events'
+import { getSessionEvents } from '@/api/events'
 import { getSession } from '@/api/sessions'
 import { useApiLoad } from '@/composables/useApiLoad'
+import { usePagedRows } from '@/composables/usePagedRows'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
-import type { EventItem, EventMatchResult } from '@/types'
+import type { EventItem } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'
-import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 
 const emDash = '\u2014' // em-dash used for null display
 const props = defineProps<{ sessionId: number }>()
@@ -219,25 +171,16 @@ const router = useRouter()
 const { isMobile } = useIsMobile()
 
 const activeTypes = ref<Set<string>>(new Set())
-const currentPage = ref(0)
-const pageSize = 50
 
 const { data, loading, error, reload } = useApiLoad(async () => {
     const [events, session] = await Promise.all([
         getSessionEvents(props.sessionId),
         getSession(props.sessionId, false),
     ])
-    let match: EventMatchResult | null = null
-    try {
-        match = await getEventMatch(props.sessionId)
-    } catch {
-        // No analysis — match panel hidden
-    }
-    return { events, duration: session.duration_hours, match }
+    return { events, duration: session.duration_hours }
 }, 'Failed to load events')
 
 const allEvents = computed<EventItem[]>(() => data.value?.events ?? [])
-const matchResult = computed(() => data.value?.match ?? null)
 const sessionDuration = computed(() => data.value?.duration ?? 0)
 
 const uniqueTypes = computed(() => [...new Set(allEvents.value.map((e) => e.event_type))].sort())
@@ -247,23 +190,15 @@ const filteredEvents = computed(() => {
     return allEvents.value.filter((e) => activeTypes.value.has(e.event_type))
 })
 
-const paginatedEvents = computed(() => {
-    const start = currentPage.value * pageSize
-    return filteredEvents.value.slice(start, start + pageSize)
-})
+const {
+    pageRows: paginatedEvents,
+    barProps: pagerProps,
+    setOffset: setPageOffset,
+} = usePagedRows(filteredEvents, 50)
 
 const eventsPerHour = computed(() => {
     if (!sessionDuration.value) return null
     return filteredEvents.value.length / sessionDuration.value
-})
-
-const sensitivity = computed(() => {
-    if (!matchResult.value || matchResult.value.machine_count === 0) return null
-    return (matchResult.value.matched / matchResult.value.machine_count) * 100
-})
-
-watch(activeTypes, () => {
-    currentPage.value = 0
 })
 
 function toggleType(type: string): void {
@@ -292,12 +227,6 @@ function jumpToWaveform(offsetSec: number): void {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.25rem;
-}
-
-.match-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.5rem;
 }
 
 .type-chips {

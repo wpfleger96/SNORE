@@ -50,6 +50,24 @@
     text-decoration: underline;
 }
 
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.empty-day {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 2rem 0;
+}
+
+.empty-message {
+    color: var(--color-muted-foreground);
+}
+
 .filter-bar {
     display: flex;
     align-items: center;

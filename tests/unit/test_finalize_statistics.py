@@ -6,6 +6,8 @@ Covers:
 2. All per-hour indices (AHI, OAI, CAI, HI) are computed over usage hours.
 3. Span fallback: when mask_on_segments is None, duration_seconds is used.
 4. Zero-division guard: therapy_seconds == 0 leaves statistics as None.
+5. Waveform statistics replace the STR summary values; without a waveform the
+   device value stays.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from snore.parsers.unified import (
     RespiratoryEvent,
     RespiratoryEventType,
     UnifiedSession,
+    WaveformData,
+    WaveformType,
 )
 
 # ---------------------------------------------------------------------------
@@ -80,6 +84,47 @@ def _session(
 # ---------------------------------------------------------------------------
 # usage_hours from mask_on_segments
 # ---------------------------------------------------------------------------
+
+
+class TestWaveformStatisticsOverStrSummary:
+    @pytest.mark.parametrize(
+        ("waveform_type", "prefix"),
+        [
+            (WaveformType.THERAPY_PRESSURE, "pressure"),
+            (WaveformType.EPAP, "epap"),
+            (WaveformType.LEAK_RATE, "leak"),
+        ],
+    )
+    def test_waveform_replaces_str_value(
+        self, waveform_type: WaveformType, prefix: str
+    ) -> None:
+        session = _session(duration_s=3600)
+        for stat in ("max", "median", "95th"):
+            setattr(session.statistics, f"{prefix}_{stat}", 99.0)
+        session.add_waveform(
+            WaveformData(
+                waveform_type=waveform_type,
+                sample_rate=1.0,
+                unit="",
+                timestamps=[0.0, 1.0, 2.0],
+                values=[1.0, 2.0, 3.0],
+                max_value=3.0,
+            )
+        )
+
+        session.finalize_statistics()
+
+        assert getattr(session.statistics, f"{prefix}_max") == 3.0
+        assert getattr(session.statistics, f"{prefix}_median") == 2.0
+        assert getattr(session.statistics, f"{prefix}_95th") < 3.0
+
+    def test_str_value_stays_without_a_waveform(self) -> None:
+        session = _session(duration_s=3600)
+        session.statistics.leak_median = 12.0
+
+        session.finalize_statistics()
+
+        assert session.statistics.leak_median == 12.0
 
 
 class TestUsageHoursFromMaskOnSegments:

@@ -30,7 +30,6 @@ export type WaveformDataResponse = Schemas['WaveformDataResponse']
 
 // Events
 export type EventItem = Schemas['EventItem']
-export type EventMatchResult = Schemas['EventMatchResult']
 
 // Devices
 export type DeviceInfo = Schemas['DeviceInfo']
@@ -44,6 +43,7 @@ export type DeletePreview = Schemas['DeletePreview']
 
 // Stats
 export type TherapySummary = Schemas['TherapySummary']
+export type ExperimentalStats = Schemas['ExperimentalStats']
 export type EventTypeCount = Schemas['EventTypeCount']
 export type PeriodStatistics = Schemas['PeriodStatistics']
 export type DataRange = Schemas['DataRange']
@@ -51,6 +51,7 @@ export type DataRange = Schemas['DataRange']
 // Days
 export type DayListItem = Schemas['DayListItem']
 export type DayDetail = Schemas['DayDetail']
+export type DayExperimentalMetrics = Schemas['DayExperimentalMetrics']
 export type DateListResponse = Schemas['DateListResponse']
 
 // Equipment

@@ -57,7 +57,7 @@ async def _fetch_waveform_blobs(
                     waveform_type=ch,
                     unit=getattr(wf, "unit", None),
                     sample_rate=wf.sample_rate or 1.0,
-                    sample_count=getattr(wf, "sample_count", 0),
+                    sample_count=wf.sample_count or 0,
                     raw_bytes=wf.data_blob or b"",
                 )
             )

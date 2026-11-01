@@ -1,4 +1,4 @@
-"""get_breath_table tool — BreathService.get_breath_table() adapter.
+"""experimental_get_breath_table tool — BreathService.get_breath_table() adapter.
 
 Timestamp contract (A6):
 - Session wall-clock anchor (session_start_wall_clock) uses tier-2
@@ -262,7 +262,7 @@ async def get_breath_table(
 def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import parse_date  # noqa: PLC0415
 
-    @mcp.tool()
+    @mcp.tool(name="experimental_get_breath_table")
     @_with_experimental_disclaimer
     @tool_error_boundary
     async def get_breath_table(
@@ -320,7 +320,7 @@ def register(mcp: FastMCP) -> None:
             - Multiple devices on date and no ``device_id`` → tool error listing device IDs.
             - Multiple sessions on date and no ``session_id`` → tool error listing session IDs.
             - Raw window > 15 min without ``bin_minutes`` → tool error; set ``bin_minutes``.
-            - Breath-level tables missing → tool error; run ``snore analysis run``.
+            - Required tables missing → tool error; run ``snore db init``.
         """
         from snore.mcp.tools.breath_table import (
             get_breath_table as _impl,  # noqa: PLC0415
@@ -330,7 +330,7 @@ def register(mcp: FastMCP) -> None:
         return await _scope_and_run(
             ctx,
             _impl,
-            tool_name="get_breath_table",
+            tool_name="experimental_get_breath_table",
             therapy_date=therapy_date,
             device_id=device_id,
             session_id=session_id,

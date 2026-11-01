@@ -79,7 +79,9 @@ class ApneaEvent(BaseModel):
     duration: float = provenance_field(
         Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
     )
-    event_type: ApneaEventType = Field(description="Apnea type")
+    event_type: ApneaEventType = provenance_field(
+        Provenance.EXPERIMENTAL, "Apnea type, classified from flow alone"
+    )
     flow_reduction: float = provenance_field(
         Provenance.EXPERIMENTAL, "Flow reduction (0-1)", ge=0, le=1
     )

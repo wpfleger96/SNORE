@@ -187,7 +187,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -248,7 +248,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -275,7 +275,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {"date": "2025-07-14", "criterion": "bad_criterion"},
                 )
 
@@ -301,7 +301,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="1 and 50"):
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {
                         "date": "2025-07-14",
                         "criterion": "worst_flattening_leak_valid",
@@ -326,7 +326,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="1 and 50"):
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {
                         "date": "2025-07-14",
                         "criterion": "worst_flattening_leak_valid",
@@ -350,7 +350,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -395,7 +395,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "fl_run_ending_in_recovery"},
             )
 
@@ -427,7 +427,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
                 )
 
@@ -475,10 +475,34 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
         assert not result.is_error
         payload = json.loads(result.content[0].text)
         assert payload["primary_mode"] == "aasm"
+
+
+class TestNonFiniteOptions:
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")])
+    @pytest.mark.parametrize("name", ["context_seconds", "flattening_threshold"])
+    async def test_non_finite_option_is_refused_before_service_call(
+        self, name: str, value: float
+    ) -> None:
+        from snore.mcp.errors import ValidationError  # noqa: PLC0415
+        from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
+
+        mock_fw = AsyncMock()
+        with patch("snore.services.breath_service.BreathService.find_windows", mock_fw):
+            with pytest.raises(ValidationError, match=f"{name} must be a finite"):
+                await find_windows(
+                    AsyncMock(),
+                    date(2025, 7, 14),
+                    profile_id=1,
+                    criterion="worst_flattening_leak_valid",
+                    n=3,
+                    **{name: value},
+                )
+
+        mock_fw.assert_not_called()

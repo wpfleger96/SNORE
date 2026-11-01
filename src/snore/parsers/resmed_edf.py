@@ -75,8 +75,15 @@ _STR_NEGATIVE_OK_STATS: frozenset[str] = frozenset({"flow_5th"})
 
 # Unit conversions for STR summary stats, applied as ``value * scale``; stats
 # not listed are stored as read.  STR "Duration"/"Mask Dur" is mask-on minutes
-# (EDF dimension "min.", physical range 0-1440).
-_STR_SUMMARY_SCALE: dict[str, float] = {"usage_hours_device": 1 / 60}
+# (EDF dimension "min.", physical range 0-1440).  STR "Leak.*" is L/s, reported
+# as L/min like the PLD leak waveform (OSCAR :1960-1971).
+_STR_SUMMARY_SCALE: dict[str, float] = {
+    "usage_hours_device": 1 / 60,
+    "leak_median": 60.0,
+    "leak_95th": 60.0,
+    "leak_max": 60.0,
+    "leak_percentile_70": 60.0,
+}
 
 
 def _chain_therapy_days(segments: "dict[str, dict[str, Path]]") -> "set[date]":

@@ -1,6 +1,7 @@
-"""Integration tests for the compare_epochs MCP tool.
+"""Integration tests for the experimental_compare_epochs MCP tool.
 
-Exercises the full stack: compare_epochs adapter → BreathService → SQLite.
+Exercises the full stack: experimental_compare_epochs adapter → BreathService → SQLite.
+The default compare_epochs tool is covered in test_mcp_device_waveform_aggregates.py.
 
 Scenarios covered:
   1. Two homogeneous epochs → per-epoch distributions populated.
@@ -14,6 +15,7 @@ Scenarios covered:
   6. Only leak-valid breaths contribute to distributions.
   7. Profile isolation (adversarial): B's data never leaks into A's distributions;
      explicit foreign device_id → not_available (no exception).
+  8. Sessions with unknown settings are not an RX change.
 """
 
 from __future__ import annotations
@@ -84,7 +86,7 @@ class TestCompareEpochsTwoHomogeneousEpochs:
     ) -> None:
         """Two epochs with consistent RX and identical algorithm identity:
         distributions are populated, nights_with_data correct, rx_settings echoed."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
 
@@ -174,7 +176,7 @@ class TestCompareEpochsTwoHomogeneousEpochs:
         )
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -219,7 +221,7 @@ class TestCompareEpochsRxViolation:
     ) -> None:
         """RX change between two sessions inside one epoch nulls ALL epoch distributions
         and returns rx_violations listing the epoch label, changed key, and change date."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
 
@@ -241,7 +243,7 @@ class TestCompareEpochsRxViolation:
         await _make_breath(async_db_session, ar2, sess2, 1, mid_insp_flattening=0.3)
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -263,6 +265,76 @@ class TestCompareEpochsRxViolation:
         assert len(v.change_dates) == 1
         assert v.change_dates[0] == "2025-01-20"
 
+    async def _seed_nights(
+        self, db: AsyncSession, profile_id: int, rx_values: list[str | None]
+    ) -> None:
+        """One analyzed session per night from 2025-02-01; None seeds no settings."""
+        device = await _make_device(db, profile_id)
+        for offset, value in enumerate(rx_values, start=1):
+            _, sess = await _make_day_session(db, device, date(2025, 2, offset))
+            ar = await _make_analysis_result(db, sess)
+            await _make_breath(db, ar, sess, 1, mid_insp_flattening=0.5)
+            if value is not None:
+                db.add(Setting(session_id=sess.id, key="pressure_min", value=value))
+        await db.flush()
+
+    @pytest.mark.parametrize(
+        ("rx_values", "expected_rx"),
+        [
+            pytest.param([None, "8.0"], {"pressure_min": "8.0"}, id="unknown_first"),
+            pytest.param(["8.0", None], {"pressure_min": "8.0"}, id="unknown_last"),
+            pytest.param([None, None], {}, id="all_unknown"),
+        ],
+    )
+    async def test_unknown_settings_are_not_an_rx_change(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        rx_values: list[str | None],
+        expected_rx: dict[str, str],
+    ) -> None:
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
+
+        await self._seed_nights(async_db_session, async_test_profile.id, rx_values)
+
+        result = await experimental_compare_epochs(
+            async_db_session,
+            profile_id=async_test_profile.id,
+            epochs=[
+                EpochSpec(label="A", date_start="2025-02-01", date_end="2025-02-28")
+            ],
+        )
+
+        epoch = result.epochs[0]
+        assert result.null_reason is None
+        assert result.rx_violations == []
+        assert epoch.null_reason is None
+        assert epoch.rx_settings == expected_rx
+        assert epoch.mid_insp_flattening.median == pytest.approx(0.5)
+
+    async def test_change_across_unknown_session_reports_later_known_date(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
+
+        await self._seed_nights(
+            async_db_session, async_test_profile.id, ["8.0", None, "12.0"]
+        )
+
+        result = await experimental_compare_epochs(
+            async_db_session,
+            profile_id=async_test_profile.id,
+            epochs=[
+                EpochSpec(label="A", date_start="2025-02-01", date_end="2025-02-28")
+            ],
+        )
+
+        assert result.epochs[0].null_reason == "rx_changed_within_epoch"
+        assert result.epochs[0].rx_settings == {"pressure_min": "8.0"}
+        violation = result.rx_violations[0]
+        assert violation.changed_keys == ["pressure_min"]
+        assert violation.change_dates == ["2025-02-03"]
+
 
 class TestCompareEpochsAlgoMismatch:
     async def test_cross_epoch_algo_mismatch_warns_but_populates_distributions(
@@ -276,7 +348,7 @@ class TestCompareEpochsAlgoMismatch:
             AlgoVersions,
             AnalysisRunMetadata,
         )
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
         from snore.services.breath_service import (  # noqa: PLC0415
             AnalysisStatus,
             BreathService,
@@ -320,7 +392,7 @@ class TestCompareEpochsAlgoMismatch:
             return next(results_iter)
 
         with patch.object(BreathService, "_latest_analysis_for_session", _mock_latest):
-            result = await compare_epochs(
+            result = await experimental_compare_epochs(
                 async_db_session,
                 profile_id=async_test_profile.id,
                 epochs=[
@@ -355,7 +427,7 @@ class TestCompareEpochsMixedPrimaryMode:
         """Sessions within one epoch with different primary_mode values degrade only
         RERA fields (rera_proxy_count=None, rera_reason=primary_mode_mismatch) while
         mid_insp_flattening distribution is still populated."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
 
@@ -395,7 +467,7 @@ class TestCompareEpochsMixedPrimaryMode:
         )
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -424,7 +496,7 @@ class TestCompareEpochsNoData:
         """Epoch over a date range with no sessions returns no_data_in_range.
         A night that has a session but no OK analysis counts in nights_missing_analysis,
         not nights_with_data."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
 
@@ -435,7 +507,7 @@ class TestCompareEpochsNoData:
         # No AnalysisResult created for this session
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -460,7 +532,7 @@ class TestCompareEpochsNoData:
     ) -> None:
         """Epoch date range that has no sessions at all (not even missing-analysis ones):
         no_data_in_range, nights_with_data=0, nights_missing_analysis=0."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
         # Seed data in January, query February
@@ -468,7 +540,7 @@ class TestCompareEpochsNoData:
         await _make_analysis_result(async_db_session, sess)
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -481,6 +553,33 @@ class TestCompareEpochsNoData:
         assert ep.nights_with_data == 0
         assert ep.nights_missing_analysis == 0
 
+    async def test_explicit_owned_device_without_sessions_is_top_level_no_data(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """An owned device with no sessions in range gets the same top-level answer
+        as an auto-selected device: the shared union check, not a per-epoch fallback."""
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        await async_db_session.flush()
+
+        result = await experimental_compare_epochs(
+            async_db_session,
+            profile_id=async_test_profile.id,
+            epochs=[
+                EpochSpec(
+                    label="Feb",
+                    date_start="2025-02-01",
+                    date_end="2025-02-28",
+                    device_id=device.id,
+                )
+            ],
+        )
+
+        assert result.null_reason == "no_data_in_range"
+        assert result.epochs[0].null_reason == "no_data_in_range"
+        assert result.epochs[0].rera_reason == "no_data_in_range"
+
 
 class TestCompareEpochsLeakValid:
     async def test_only_leak_valid_breaths_contribute_to_distributions(
@@ -488,7 +587,7 @@ class TestCompareEpochsLeakValid:
     ) -> None:
         """Breaths with leak_valid=False or None are excluded from distributions;
         seeding extreme values for invalid breaths must not affect the median."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
         _, sess = await _make_day_session(async_db_session, device, date(2025, 1, 5))
@@ -510,7 +609,7 @@ class TestCompareEpochsLeakValid:
         )
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=async_test_profile.id,
             epochs=[
@@ -532,7 +631,7 @@ class TestCompareEpochsProfileIsolation:
     ) -> None:
         """Profile A comparing epochs over dates where only profile B has sessions
         → no_data_in_range (B's breaths never leak into A's distributions)."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         profile_a = async_test_profile
         profile_b = await _make_profile(async_db_session)
@@ -546,7 +645,7 @@ class TestCompareEpochsProfileIsolation:
         await _make_breath(async_db_session, ar_b, sess_b, 1, mid_insp_flattening=0.9)
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=profile_a.id,
             epochs=[
@@ -567,7 +666,7 @@ class TestCompareEpochsProfileIsolation:
     ) -> None:
         """Profile A explicitly passing profile B's device_id → all epochs
         not_available; no exception is raised (handled inside the service)."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
 
         profile_a = async_test_profile
         profile_b = await _make_profile(async_db_session)
@@ -579,7 +678,7 @@ class TestCompareEpochsProfileIsolation:
         await _make_analysis_result(async_db_session, sess_b)
         await async_db_session.flush()
 
-        result = await compare_epochs(
+        result = await experimental_compare_epochs(
             async_db_session,
             profile_id=profile_a.id,
             epochs=[

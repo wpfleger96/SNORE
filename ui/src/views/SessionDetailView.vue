@@ -516,30 +516,29 @@
                             unit="br/min"
                             :decimals="1"
                         />
-                        <!-- STR tidal-volume stats are in L on the device; convert to mL for display. -->
                         <StatCard
                             label="Tidal Volume Mean"
-                            :value="tvToMl(session.statistics.tidal_volume_mean)"
+                            :value="session.statistics.tidal_volume_mean"
                             unit="mL"
                             :decimals="0"
                             glossary-key="tidal_volume"
                         />
                         <StatCard
                             label="Tidal Volume Min"
-                            :value="tvToMl(session.statistics.tidal_volume_min)"
+                            :value="session.statistics.tidal_volume_min"
                             unit="mL"
                             :decimals="0"
                         />
                         <StatCard
                             label="Tidal Volume Max"
-                            :value="tvToMl(session.statistics.tidal_volume_max)"
+                            :value="session.statistics.tidal_volume_max"
                             unit="mL"
                             :decimals="0"
                         />
                         <StatCard
                             v-if="session.statistics.tidal_volume_95th != null"
                             label="Tidal Volume 95th"
-                            :value="tvToMl(session.statistics.tidal_volume_95th)"
+                            :value="session.statistics.tidal_volume_95th"
                             unit="mL"
                             :decimals="0"
                         />
@@ -1073,11 +1072,6 @@ const maskInfoLine = computed(() => {
     return line
 })
 
-// STR tidal-volume stats are stored in L; convert to mL for display.
-function tvToMl(val: number | null | undefined): number | null {
-    return val != null ? val * 1000 : null
-}
-
 // Conditional section visibility — collapses that only appear when the device
 // reported at least one of the enclosed fields for this session.
 const hasDeviceIndices = computed(() => {
@@ -1467,12 +1461,6 @@ watch(
     font-size: 1.1rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.75rem;
 }
 
 .stats-collapsible {

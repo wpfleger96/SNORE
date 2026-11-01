@@ -1,14 +1,18 @@
-"""Every numeric/boolean metric field in MCP and REST responses declares a tier.
+"""Every metric field in MCP and REST responses declares a tier.
 
 Walks the JSON schema of every MCP response model (``SCHEMA_MODEL_MAP``) and
 every OpenAPI schema a REST route can return, and requires an ``x-provenance``
-tag (see ``snore.provenance``) on each numeric or boolean property, so a new
-metric cannot ship without saying whether it is device, derived, or
-experimental data.  See AGENTS.md "Provenance tagging".
+tag (see ``snore.provenance``) on each numeric, boolean, enum or ``Literal``
+property, so a new metric or judgement cannot ship without saying whether it is
+device, derived, or experimental data.  See AGENTS.md "Provenance tagging".
 """
 
+import json
+
+from enum import StrEnum
 from functools import cache
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 
@@ -26,6 +30,7 @@ from snore.provenance import (
     provenance_field,
     response_provenance,
 )
+from snore.services.schemas import ExperimentalStats, SessionStatistics
 
 pytestmark = pytest.mark.unit
 
@@ -96,6 +101,8 @@ _NON_METRIC_SUFFIXES = ("_id", "_ids")  # identifiers
 _NON_METRIC_MODEL_FIELDS = {
     # Pagination / page-size totals
     ("EventsResponse", "total_events"),
+    ("ExperimentalEventContextResponse", "total_events"),
+    ("ExperimentalNightlyResponse", "total_nights"),
     ("NightlySummaryResponse", "total_nights"),
     ("SettingsChangesResponse", "total_changes"),
     ("SettingsTimelineResponse", "total_epochs"),
@@ -116,6 +123,8 @@ _NON_METRIC_MODEL_FIELDS = {
     ("EpochDistribution", "n_nights"),
     ("EpochStats", "nights_with_data"),
     ("EpochStats", "nights_missing_analysis"),
+    ("DeviceEpochDistribution", "n_nights"),
+    ("DeviceEpochStats", "nights_with_data"),
     # Validation-run session/night/sample coverage
     ("AggregateMetrics", "total_sessions"),
     ("AggregateMetrics", "low_sensitivity_sessions"),  # session ids
@@ -146,6 +155,11 @@ _NON_METRIC_MODEL_FIELDS = {
     # Configured parameters echoed back
     ("ReraAggregateMetrics", "match_tolerance_seconds"),
     ("ComplianceFields", "threshold_hours"),
+    # Enum labels of a value's origin, not judgements about it
+    ("DayDetail", "index_source"),
+    ("DayListItem", "index_source"),
+    ("NightlyRow", "index_source"),
+    ("EventComparisonDetail", "source"),
 }
 
 # Operational responses (auth, admin, jobs, imports, DB maintenance) whose
@@ -174,6 +188,7 @@ _OPERATIONAL_MODELS = {
     "TotpStatusResponse",
     "UserInfo",
     "UserItem",
+    "UserPreferences",
     "VacuumResult",
     "ValidationRunDetail",
     "ValidationRunStatus",
@@ -203,6 +218,18 @@ _UNTYPED_METRIC_ROUTES = {
     "GET /api/v1/reports/comparison",
 }
 
+# Every REST operation carrying the ``experimental`` tag.  Pinned so that tagging
+# a route cannot quietly exempt it from
+# test_default_rest_operations_return_no_experimental_field.  The UI's boundary
+# test reads the same file, so a tagged route also needs a wrapper the UI gates.
+EXPERIMENTAL_OPERATIONS = set(
+    json.loads(
+        (
+            Path(__file__).parents[2] / "ui/src/tests/experimentalOperations.json"
+        ).read_text()
+    )
+)
+
 _FIX_HINT = (
     "Wrap each metric in provenance_field(Provenance.X, ...); if a field is "
     "bookkeeping (ids, positions), add it to _NON_METRIC_FIELDS; a coverage "
@@ -226,22 +253,27 @@ def _openapi() -> dict[str, Any]:
     return create_app().openapi()
 
 
-def _rest_object_schemas() -> list[tuple[str, dict[str, Any]]]:
-    """OpenAPI component schemas reachable from any route's responses."""
-    spec = _openapi()
-    components = spec["components"]["schemas"]
-    pending = {
-        name
-        for path in spec["paths"].values()
-        for op in path.values()
-        for name in _refs(op.get("responses", {}))
-    }
-    seen: set[str] = set()
+def _reachable(node: Any) -> set[str]:
+    """Component schemas that ``node``'s ``$ref``s lead to, transitively."""
+    components = _openapi()["components"]["schemas"]
+    pending, seen = _refs(node), set()
     while pending:
         name = pending.pop()
         seen.add(name)
         pending |= _refs(components[name]) - seen
-    return [(name, components[name]) for name in seen]
+    return seen
+
+
+def _rest_object_schemas() -> list[tuple[str, dict[str, Any]]]:
+    """OpenAPI component schemas reachable from any route's responses."""
+    spec = _openapi()
+    components = spec["components"]["schemas"]
+    responses = [
+        op.get("responses", {})
+        for path in spec["paths"].values()
+        for op in path.values()
+    ]
+    return [(name, components[name]) for name in _reachable(responses)]
 
 
 def _mcp_object_schemas() -> list[tuple[str, dict[str, Any]]]:
@@ -298,6 +330,15 @@ def _is_scalar_metric(prop: dict[str, Any]) -> bool:
     )
 
 
+def _is_enum_valued(prop: dict[str, Any], schemas: dict[str, dict[str, Any]]) -> bool:
+    """``Literal`` or enum values, inline or by ``$ref``, alone or as list items."""
+    variants = prop.get("anyOf", [prop])
+    inline = (v for variant in variants for v in (variant, variant.get("items", {})))
+    return any("enum" in v or "const" in v for v in inline) or any(
+        "enum" in schemas.get(name, {}) for name in _refs(prop)
+    )
+
+
 def _is_exempt(model: str, field: str) -> bool:
     return (
         model in _OPERATIONAL_MODELS
@@ -305,6 +346,15 @@ def _is_exempt(model: str, field: str) -> bool:
         or (model, field) in _NON_METRIC_MODEL_FIELDS
         or field.endswith(_NON_METRIC_SUFFIXES)
     )
+
+
+def _operations(*, experimental: bool) -> dict[str, dict[str, Any]]:
+    return {
+        f"{method.upper()} {path}": op
+        for path, ops in _openapi()["paths"].items()
+        for method, op in ops.items()
+        if ("experimental" in op.get("tags", [])) is experimental
+    }
 
 
 def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
@@ -324,9 +374,62 @@ def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
     )
 
 
+def test_enum_and_literal_fields_have_provenance_tag() -> None:
+    # A plain ``str`` cannot be told from a label, so a SNORE judgement is typed
+    # as a Literal or enum, which puts it under this check.
+    offenders: set[str] = set()
+    for surface, objects in _surfaces():
+        schemas = dict(objects)
+        offenders |= {
+            f"{surface} {model}.{field}"
+            for model, schema in objects
+            for field, prop in schema.get("properties", {}).items()
+            if _is_enum_valued(prop, schemas)
+            and not _is_exempt(model, field)
+            and prop.get("x-provenance") not in _TIERS
+        }
+    assert not offenders, (
+        "Enum or Literal fields missing a valid x-provenance tag:\n"
+        + "\n".join(sorted(offenders))
+        + f"\n{_FIX_HINT}"
+    )
+
+
+class _Band(StrEnum):
+    HIGH = "high"
+
+
+class _Judged(BaseModel):
+    literal: Literal["a", "b"]
+    optional_literal: Literal["a", "b"] | None = None
+    single_literal: Literal["a"]
+    enum: _Band
+    enum_list: list[_Band]
+    plain: str
+    number: int
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("literal", True),
+        ("optional_literal", True),
+        ("single_literal", True),
+        ("enum", True),
+        ("enum_list", True),
+        ("plain", False),
+        ("number", False),
+    ],
+)
+def test_enum_check_sees_literals_and_enums_only(field: str, expected: bool) -> None:
+    schema = _Judged.model_json_schema()
+
+    assert _is_enum_valued(schema["properties"][field], schema["$defs"]) is expected
+
+
 def test_model_fields_with_context_dependent_tier_are_tagged() -> None:
-    # A model whose tier depends on where it is used (EpochDistribution is
-    # experimental under mid_insp_flattening, derived under device_flg) relies
+    # A model whose tier depends on where it is used (EpochDistribution's fields
+    # are tagged derived but it is experimental under mid_insp_flattening) relies
     # on every referencing field carrying the tier for it.
     offenders: set[str] = set()
     for surface, objects in _surfaces():
@@ -352,6 +455,27 @@ def test_model_fields_with_context_dependent_tier_are_tagged() -> None:
         "Fields holding a model that inherits its tier from the parent field, "
         "missing x-provenance:\n" + "\n".join(sorted(offenders)) + f"\n{_FIX_HINT}"
     )
+
+
+def test_default_rest_operations_return_no_experimental_field() -> None:
+    components = _openapi()["components"]["schemas"]
+    offenders = sorted(
+        {
+            f"{route} -> {model}.{field}"
+            for route, op in _operations(experimental=False).items()
+            for model in _reachable(op.get("responses", {}))
+            for field, prop in components[model].get("properties", {}).items()
+            if prop.get("x-provenance") == Provenance.EXPERIMENTAL
+        }
+    )
+    assert not offenders, (
+        "Default REST operations returning Experimental fields:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_experimental_operation_list_is_pinned() -> None:
+    assert set(_operations(experimental=True)) == EXPERIMENTAL_OPERATIONS
 
 
 def test_untyped_metric_routes_match_known_gap_list() -> None:
@@ -416,5 +540,38 @@ def test_field_description_strips_tier_prefix() -> None:
     assert field_description(_Leaf, "value") == "Value."
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        f"{channel}_{stat}"
+        for channel in ("pressure", "epap", "leak")
+        for stat in ("max", "median", "95th")
+    ],
+)
+def test_waveform_recomputed_statistic_is_derived(field: str) -> None:
+    assert field_provenance(SessionStatistics, field) is Provenance.DERIVED
+    assert "recomputed from the waveform" in field_description(SessionStatistics, field)
+
+
 def test_rest_waveform_values_are_tagged_device() -> None:
     assert field_provenance(WaveformDataResponse, "values") == Provenance.DEVICE
+
+
+@pytest.mark.parametrize("field", ["effectiveness", "ahi_trend_direction"])
+def test_snore_judgements_are_tagged_experimental(field: str) -> None:
+    assert field_provenance(ExperimentalStats, field) == Provenance.EXPERIMENTAL
+    prop = ExperimentalStats.model_json_schema()["properties"][field]
+    assert _is_enum_valued(prop, {})
+
+
+def test_export_columns_carry_no_experimental_tier():
+    """Exports are a default surface: an Experimental column would leak past the gate."""
+    from snore.services.export_service import EXPORT_COLUMN_PROVENANCE  # noqa: PLC0415
+
+    assert EXPORT_COLUMN_PROVENANCE
+    experimental = [
+        name
+        for name, tier in EXPORT_COLUMN_PROVENANCE.items()
+        if tier == Provenance.EXPERIMENTAL
+    ]
+    assert experimental == []

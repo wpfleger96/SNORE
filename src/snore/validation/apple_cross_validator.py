@@ -100,7 +100,7 @@ class AppleCrossValidator:
     async def _collect_snore_nights(
         self, start: date, end: date, device_id: int | None
     ) -> tuple[list[NightlyAnalysisSummary], list[date]]:
-        """Page ``get_nightly_range_summary`` over the range in <=90-night windows.
+        """Page ``get_experimental_nightly_range`` over the range in <=90-night windows.
 
         Returns ``(resolved_nights, ambiguous_dates)``.  A chunk that raises
         ``DeviceAmbiguityError`` (only possible when ``device_id`` is None) is
@@ -135,7 +135,7 @@ class AppleCrossValidator:
         propagates unchanged.
         """
         try:
-            summary = await breath_svc.get_nightly_range_summary(
+            summary = await breath_svc.get_experimental_nightly_range(
                 start, end, device_id=device_id
             )
             return list(summary.nights), []
@@ -147,7 +147,7 @@ class AppleCrossValidator:
             cursor = start
             while cursor <= end:
                 try:
-                    single = await breath_svc.get_nightly_range_summary(
+                    single = await breath_svc.get_experimental_nightly_range(
                         cursor, cursor, device_id=None
                     )
                     nights.extend(single.nights)

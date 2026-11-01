@@ -126,6 +126,10 @@ class NoSessionsInRangeError(ValueError):
         super().__init__(f"No sessions found in range {date_start} to {date_end}")
 
 
+# Keeps (page - 1) * page_size inside SQLite's signed 64-bit OFFSET.
+MAX_PAGE = 1_000_000
+
+
 class BreathQueryRange(BaseModel):
     """Identifies a contiguous waveform window within a therapy day."""
 
@@ -136,7 +140,7 @@ class BreathQueryRange(BaseModel):
     offset_end: float = Field(gt=0.0)
 
     # Pagination / binning
-    page: int = Field(default=1, ge=1)
+    page: int = Field(default=1, ge=1, le=MAX_PAGE)
     page_size: int = Field(default=500, ge=1, le=2000)
     bin_minutes: float | None = Field(default=None, ge=1.0)
 
@@ -336,8 +340,6 @@ class DistributionMetric(StrEnum):
     FLATNESS_INDEX = "flatness_index"
     TIDAL_VOLUME_ML = "tidal_volume_ml"
     IE_RATIO = "ie_ratio"
-    DEVICE_FLG = "device_flg"
-    SNORE = "snore"
 
 
 class DistributionStats(BaseModel):
@@ -348,6 +350,20 @@ class DistributionStats(BaseModel):
     p95: float | None
     n_breaths: int
     n_nights: int
+
+
+class DeviceDistributionStats(BaseModel):
+    """Descriptive stats for one device channel over one epoch.
+
+    The default instance is the "no valid samples" value.  ``n_nights`` counts
+    unique therapy dates with at least one valid sample.
+    """
+
+    median: float | None = None
+    iqr: float | None = None
+    p95: float | None = None
+    n_samples: int = 0
+    n_nights: int = 0
 
 
 class EpochRxViolation(BaseModel):
@@ -385,22 +401,10 @@ class EpochBreathStats(BaseModel):
     # RERA scan actually ran (rera_proxy_count is non-null); None otherwise.
     rera_proxy_version: str | None = None
     rx_settings: dict[str, str]
-    # Device waveform channel distributions (samples, not breaths; n_breaths
-    # field carries sample count).  Null when the channel was not recorded.
-    device_flg: DistributionStats = Field(
-        default_factory=lambda: DistributionStats(
-            median=None, iqr=None, p95=None, n_breaths=0, n_nights=0
-        )
-    )
-    snore_dist: DistributionStats = Field(
-        default_factory=lambda: DistributionStats(
-            median=None, iqr=None, p95=None, n_breaths=0, n_nights=0
-        )
-    )
 
 
-class CompareEpochsResult(BaseModel):
-    """Result of compare_epochs()."""
+class ExperimentalCompareEpochsResult(BaseModel):
+    """Result of compare_experimental_epochs()."""
 
     epochs: list[EpochBreathStats]
     null_reason: NullReason | None
@@ -409,6 +413,29 @@ class CompareEpochsResult(BaseModel):
     # differ across contributing sessions (previously a hard refusal, now a warning).
     # Also includes a warning when rera_proxy_version differs across epochs.
     version_warnings: list[str] = Field(default_factory=list)
+
+
+class DeviceEpochStats(BaseModel):
+    """Device-channel distributions for one epoch; needs no analysis."""
+
+    label: str
+    date_start: date
+    date_end: date
+    # Nights with at least one enabled session in the epoch.
+    nights_with_data: int = 0
+    null_reason: NullReason | None = None
+    rx_settings: dict[str, str] = Field(default_factory=dict)
+    # Null stats when the channel has no valid samples in the epoch's sessions.
+    device_flg: DeviceDistributionStats = Field(default_factory=DeviceDistributionStats)
+    snore_dist: DeviceDistributionStats = Field(default_factory=DeviceDistributionStats)
+
+
+class DeviceCompareEpochsResult(BaseModel):
+    """Result of compare_device_epochs()."""
+
+    epochs: list[DeviceEpochStats]
+    null_reason: NullReason | None
+    rx_violations: list[EpochRxViolation] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +478,8 @@ class ContextualEvent(VentilatoryContext):
     timezone_name: str | None = None  # IANA name when USER_DECLARED
     offset_seconds: float
     duration_seconds: float | None
+    spo2_drop: float | None = None
+    peak_flow_limitation: float | None = None
 
     pressure_at_event_cmh2o: float | None
     pressure_reason: NullReason | None
@@ -460,7 +489,8 @@ class ContextualEvent(VentilatoryContext):
     mv_reason: NullReason | None
     minutes_since_session_start: float
     # Provenance of the MV series behind mv_prior_120s_lpm and the MV-derived
-    # ventilatory metrics; None when neither device MV nor flow was usable.
+    # ventilatory metrics; None when neither device MV nor flow was usable, or
+    # when ventilatory context was not requested.
     mv_source: MvSource | None = None
 
 
@@ -621,10 +651,6 @@ class NightlyAnalysisSummary(BaseModel):
     ie_ratio_median: float | None
     ie_ratio_reason: NullReason | None
 
-    total_therapy_hours: float
-    compliance_threshold_hours: float
-    is_compliant: bool
-
     # rera_index = rera_count (FL-run proxy v2) per mask-on hour of analyzed
     # sessions (DURATION_ZERO when those hours are 0); rdi = day AHI + rera_index. RERAs come from the query-time FL-run proxy, NOT the
     # analysis-time amplitude-crescendo detector behind ModeResult.rdi, so this
@@ -633,11 +659,25 @@ class NightlyAnalysisSummary(BaseModel):
     rera_index_reason: NullReason | None = None
     rdi: float | None = None
     rdi_reason: NullReason | None = None
-    # Percent of breaths where leak_valid is False (i.e. leak > 24 L/min).
-    # Denominator: breaths where leak_valid is not None (excludes indeterminate).
-    # None when no breath has a determinate leak_valid value.
-    leak_above_24_pct: float | None = None
-    leak_above_24_pct_reason: NullReason | None = None
+
+    # Percent of OK-session time in persisted periodic-breathing episodes.
+    # 0.0 when PB detection ran and found none; null + reason otherwise
+    # (ALGO_VERSION_MISMATCH on mixed-version nights).
+    periodic_breathing_pct: float | None = None
+    pb_reason: NullReason | None = None
+
+
+class NightlyDeviceStats(BaseModel):
+    """Compliance and device-channel statistics for one therapy night.
+
+    Aggregated over all of the night's enabled sessions; independent of analysis.
+    """
+
+    therapy_date: date
+    device_id: int
+
+    total_therapy_hours: float
+    is_compliant: bool
 
     # Device-recorded flow-limitation channel (raw FL waveform "fl", 0–1 unitless).
     # Negative sentinel values (−0.01 from digital −1 at mask-off) are filtered before
@@ -656,25 +696,36 @@ class NightlyAnalysisSummary(BaseModel):
     snore_pct_time: float | None = None
     snore_reason: NullReason | None = None
 
-    # Percent of OK-session time in persisted periodic-breathing episodes.
-    # 0.0 when PB detection ran and found none; null + reason otherwise
-    # (ALGO_VERSION_MISMATCH on mixed-version nights).
-    periodic_breathing_pct: float | None = None
-    pb_reason: NullReason | None = None
+    # Percent of leak-channel samples at or above LEAK_REDLINE_LPM, OSCAR's time
+    # over the default redline.  Negative sentinels are filtered; None + reason
+    # when the channel was not recorded or any session's blob could not be decoded.
+    leak_above_24_pct: float | None = None
+    leak_above_24_pct_reason: NullReason | None = None
 
 
-class NightlyRangeSummary(BaseModel):
-    """Compliance + analysis summary over a date range."""
+class _NightlyRangeBase(BaseModel):
+    """A date range and how many of its nights have sessions."""
 
     date_start: date
     date_end: date
     device_id: int
+    n_nights: int
+
+
+class ExperimentalNightlyRange(_NightlyRangeBase):
+    """Analysis summary over a date range."""
+
+    nights: list[NightlyAnalysisSummary]
+
+
+class NightlyDeviceRange(_NightlyRangeBase):
+    """Compliance + device-channel summary over a date range."""
+
     compliance_threshold_hours: float
     n_calendar_nights: int
-    n_nights: int
     days_compliant: int
     compliance_pct: float
-    nights: list[NightlyAnalysisSummary]
+    nights: list[NightlyDeviceStats]
 
 
 # ---------------------------------------------------------------------------

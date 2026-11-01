@@ -19,13 +19,15 @@ from snore.services._base import ProfileScopedService
 from snore.services.schemas import (
     DataRange,
     EventTypeCount,
+    ExperimentalStats,
     PeriodStatistics,
     RecordsResponse,
     TherapySummary,
     TrendsResponse,
 )
+from snore.services.tidal_volume import tidal_volume_ml
 from snore.utils.db_chunk import iter_id_chunks
-from snore.utils.stats import usage_weighted_means
+from snore.utils.stats import usage_weighted_means, weighted_mean
 
 # ---------------------------------------------------------------------------
 # Type alias for the health nights list used across multiple helpers.
@@ -179,15 +181,6 @@ class StatsService(ProfileScopedService):
         last_date = max(dates)
         days_since_last = (date.today() - last_date).days
 
-        avg_ahi = calculate_average_ahi(day_records)
-        effectiveness = assess_therapy_effectiveness(avg_ahi)
-
-        weekly_periods = calculate_period_statistics(day_records, "week")
-        weekly_ahi_values = [
-            ps.avg_ahi for ps in weekly_periods if ps.avg_ahi is not None
-        ]
-        ahi_trend_direction = calculate_ahi_trend_direction(weekly_ahi_values)
-
         # Averages are usage-weighted by Day.total_therapy_hours; min/max stay
         # over the raw per-day values.
         day_means = usage_weighted_means(
@@ -243,32 +236,39 @@ class StatsService(ProfileScopedService):
             for event_type, count in event_counts
         ]
 
-        stats_records: list[models.Statistics] = []
+        stats_rows: list[Row[models.Statistics, str | None]] = []
         for chunk in iter_id_chunks(day_ids):
-            stats_records.extend(
+            stats_rows.extend(
                 (
                     await self.db_session.execute(
-                        select(models.Statistics)
+                        select(models.Statistics, models.Session.import_source)
                         .join(models.Session)
                         .join(models.Day)
                         .where(models.Day.id.in_(chunk))
                     )
-                )
-                .scalars()
-                .all()
+                ).all()
             )
+        stats_records = [stat for stat, _ in stats_rows]
 
         usage_means = usage_weighted_means(
             stats_records,
             {
                 "rr": "respiratory_rate_mean",
-                "tv": "tidal_volume_mean",
                 "mv": "minute_ventilation_mean",
                 "pulse": "pulse_mean",
                 "rei": "rei",
                 "epap": "epap_mean",
             },
             lambda stat: stat.usage_hours,
+        )
+        # Stored tidal volume mixes units by import source; weight it in mL.
+        avg_tidal_volume = weighted_mean(
+            (tv, stat.usage_hours)
+            for stat, import_source in stats_rows
+            if stat.usage_hours
+            and stat.usage_hours > 0
+            and (tv := tidal_volume_ml(stat.tidal_volume_mean, import_source))
+            is not None
         )
         total_spo2_time_below_90 = sum(
             stat.spo2_time_below_90
@@ -285,8 +285,7 @@ class StatsService(ProfileScopedService):
             total_hours=total_hours,
             avg_hours=avg_hours,
             days_with_data=days_with_data,
-            avg_ahi=avg_ahi,
-            effectiveness=effectiveness,
+            avg_ahi=calculate_average_ahi(day_records),
             avg_rei=usage_means["rei"],
             avg_pressure=avg_pressure,
             min_pressure=min_pressure,
@@ -298,10 +297,25 @@ class StatsService(ProfileScopedService):
             total_spo2_time_below_90=total_spo2_time_below_90,
             avg_pulse=usage_means["pulse"],
             avg_respiratory_rate=usage_means["rr"],
-            avg_tidal_volume=usage_means["tv"],
+            avg_tidal_volume=avg_tidal_volume,
             avg_minute_ventilation=usage_means["mv"],
-            ahi_trend_direction=ahi_trend_direction,
             event_counts=event_type_counts,
+        )
+
+    async def get_experimental_stats(self) -> ExperimentalStats:
+        """SNORE's effectiveness band and AHI trend call over all recorded days.
+
+        No recorded days is ``effectiveness="unknown"`` with no trend direction.
+        """
+        days = await self._query_days()
+        weekly_ahi = [
+            week.avg_ahi
+            for week in calculate_period_statistics(days, "week")
+            if week.avg_ahi is not None
+        ]
+        return ExperimentalStats(
+            effectiveness=assess_therapy_effectiveness(calculate_average_ahi(days)),
+            ahi_trend_direction=calculate_ahi_trend_direction(weekly_ahi),
         )
 
     async def get_period_statistics(

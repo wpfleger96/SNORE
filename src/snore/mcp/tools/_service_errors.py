@@ -82,14 +82,13 @@ def raise_mapped_service_error(exc: Exception) -> NoReturn:
     if isinstance(exc, OperationalError):
         if "no such table" in str(exc):
             raise ValidationError(
-                "Breath-level data tables are missing from this database "
-                "(reason: table_missing). Run 'snore analysis run' or re-import "
-                "with analysis enabled to generate breath data."
+                "A required table is missing from this database "
+                "(reason: table_missing). Run 'snore db init' to create it."
             ) from exc
         # Other OperationalErrors may include DB paths, column names, or SQL
         # fragments — sanitize to a generic message rather than leaking internals.
         raise ValidationError(
-            "A database error occurred while querying breath data. "
+            "A database error occurred. "
             "Retry; if the problem persists, check the server logs."
         ) from exc
 

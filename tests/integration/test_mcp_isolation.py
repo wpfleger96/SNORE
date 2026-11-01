@@ -161,6 +161,48 @@ class TestProfileIsolation:
         assert len(result_b.nights) == 1
         assert result_b.nights[0].ahi == pytest.approx(9.9, abs=0.01)
 
+    async def test_experimental_nightly_metrics_shows_only_own_nights(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """A sees its own night; B has no nights and no capabilities."""
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        profile_a = async_test_profile
+        profile_b = await _make_profile(async_db_session)
+
+        target_date = date(2024, 9, 6)
+        device_a = await _make_device(async_db_session, profile_a.id)
+        await _make_day_session(async_db_session, device_a, target_date)
+
+        result_a = await experimental_get_nightly_metrics(
+            async_db_session, target_date, target_date, profile_id=profile_a.id
+        )
+        result_b = await experimental_get_nightly_metrics(
+            async_db_session, target_date, target_date, profile_id=profile_b.id
+        )
+
+        assert [n.device_id for n in result_a.nights] == [device_a.id]
+        assert result_b.nights == []
+        assert result_b.device_capabilities is None
+
+    async def test_experimental_nightly_metrics_rejects_foreign_device(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        foreign_profile = await _make_profile(async_db_session)
+        foreign_device = await _make_device(async_db_session, foreign_profile.id)
+
+        with pytest.raises(ValidationError, match="not available in this session"):
+            await experimental_get_nightly_metrics(
+                async_db_session,
+                date(2024, 9, 6),
+                date(2024, 9, 6),
+                profile_id=async_test_profile.id,
+                device_id=foreign_device.id,
+            )
+
     async def test_events_shows_only_own_events(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
@@ -411,7 +453,7 @@ class TestComplianceDenominator:
 
 
 # ---------------------------------------------------------------------------
-# TestRdiTiIe — analysis-derived fields
+# TestRdiTiIe — experimental analysis-derived fields
 # ---------------------------------------------------------------------------
 
 
@@ -419,7 +461,7 @@ class TestRdiTiIe:
     async def test_rdi_ti_ie_populated_when_analysis_present(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """rdi, ti_median_s, and ie_ratio are non-null when valid analysis exists.
+        """rdi and the segmented Ti and I:E are non-null when valid analysis exists.
 
         Seeds: day with ahi=5.0, AnalysisResult with current identity,
         two leak-valid breaths with inspiration_time_s=1.2 and i_e_ratio=0.4.
@@ -428,10 +470,10 @@ class TestRdiTiIe:
         rera_index = round(0 / 8.0, 2) = 0.0
         rdi        = round(ahi_computed 5.0 + 0.0, 2) = 5.0
 
-        ti_median_s = median([1.2, 1.2]) = 1.2
-        ie_ratio    = median([0.4, 0.4]) = 0.4
+        segmented_ti_median_s = median([1.2, 1.2]) = 1.2
+        segmented_ie_ratio    = median([0.4, 0.4]) = 0.4
         """
-        from snore.mcp.tools.summary import get_nightly_summary
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
 
         target_date = date(2024, 7, 1)
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -463,7 +505,7 @@ class TestRdiTiIe:
             leak_valid=True,
         )
 
-        result = await get_nightly_summary(
+        result = await experimental_get_nightly_metrics(
             async_db_session,
             target_date,
             target_date,
@@ -473,26 +515,21 @@ class TestRdiTiIe:
         assert len(result.nights) == 1
         night = result.nights[0]
 
-        assert night.rdi is not None
-        assert night.rdi_reason is None
         # Arithmetic: rdi == round(ahi_computed + rera_index, 2), rera_index == 0.0
-        assert night.rdi == pytest.approx(
-            round((night.ahi_computed or 0.0) + 0.0, 2), abs=0.01
-        )
+        assert night.rdi == pytest.approx(5.0, abs=0.01)
+        assert night.rdi_reason is None
 
-        assert night.ti_median_s is not None
-        assert night.ti_median_reason is None
-        assert night.ti_median_s == pytest.approx(1.2, abs=0.01)
+        assert night.segmented_ti_median_s == pytest.approx(1.2, abs=0.01)
+        assert night.segmented_ti_median_reason is None
 
-        assert night.ie_ratio is not None
-        assert night.ie_ratio_reason is None
-        assert night.ie_ratio == pytest.approx(0.4, abs=0.01)
+        assert night.segmented_ie_ratio == pytest.approx(0.4, abs=0.01)
+        assert night.segmented_ie_ratio_reason is None
 
     async def test_rdi_ti_ie_null_when_analysis_absent(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """rdi, ti_median_s, ie_ratio are null with appropriate reasons when no analysis exists."""
-        from snore.mcp.tools.summary import get_nightly_summary
+        """rdi and the segmented Ti and I:E are null + reason when no analysis exists."""
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
 
         target_date = date(2024, 7, 5)
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -506,7 +543,7 @@ class TestRdiTiIe:
         )
         # No AnalysisResult seeded
 
-        result = await get_nightly_summary(
+        result = await experimental_get_nightly_metrics(
             async_db_session,
             target_date,
             target_date,
@@ -517,11 +554,11 @@ class TestRdiTiIe:
         night = result.nights[0]
 
         assert night.rdi is None
-        assert night.rdi_reason is not None
-        assert night.ti_median_s is None
-        assert night.ti_median_reason is not None
-        assert night.ie_ratio is None
-        assert night.ie_ratio_reason is not None
+        assert night.rdi_reason == "not_available"
+        assert night.segmented_ti_median_s is None
+        assert night.segmented_ti_median_reason == "not_available"
+        assert night.segmented_ie_ratio is None
+        assert night.segmented_ie_ratio_reason == "not_available"
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +616,34 @@ class TestCapabilityBlocks:
 
         assert result.device_capabilities is not None
         assert result.device_capabilities.manufacturer == "EvtCapMfr"
+
+    async def test_experimental_event_context_has_device_capabilities_block(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """ExperimentalEventContextResponse carries the same device_capabilities block."""
+        from snore.mcp.tools.events import experimental_get_event_context
+
+        target_date = date(2024, 6, 6)
+        device = await _make_device(
+            async_db_session, async_test_profile.id, manufacturer="CtxCapMfr"
+        )
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        async_db_session.add(
+            Event(
+                session_id=sess.id,
+                event_type="CA",
+                start_time=sess.start_time + timedelta(minutes=15),
+                duration_seconds=10.0,
+            )
+        )
+        await async_db_session.flush()
+
+        result = await experimental_get_event_context(
+            async_db_session, target_date, profile_id=async_test_profile.id
+        )
+
+        assert result.device_capabilities is not None
+        assert result.device_capabilities.manufacturer == "CtxCapMfr"
 
     async def test_device_capabilities_none_for_unowned_device(
         self, async_db_session: AsyncSession, async_test_profile: Any

@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.constants import OSCAR_BINARY_PARSER_ID
 from snore.database import models
 from tests.helpers.api_client import make_test_client
 
@@ -1016,6 +1017,50 @@ class TestScrubDemo:
                 assert getattr(demo_stats, col.name) == getattr(src_stats, col.name), (
                     f"Statistics.{col.name} not carried into demo clone"
                 )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("import_source", "expected_mean"),
+        [(OSCAR_BINARY_PARSER_ID, 0.45), ("original_import", 450.0)],
+    )
+    async def test_scrub_demo_tidal_volume_unit_follows_source(
+        self, async_db_session, patched_raw_backup_dir, import_source, expected_mean
+    ):
+        """OSCAR tidal volume (mL) is rescaled to litres; other sources copy as-is."""
+        from sqlalchemy import select  # noqa: PLC0415
+
+        from snore.cli.groups.db import _do_scrub_demo  # noqa: PLC0415
+
+        async with async_db_session.begin():
+            src_profile_id, meta = await _seed_source_profile(async_db_session)
+            src_session = await async_db_session.get(
+                models.Session, meta["src_session_id"]
+            )
+            src_session.import_source = import_source
+            src_stats = await async_db_session.get(
+                models.Statistics, meta["src_session_id"]
+            )
+            src_stats.tidal_volume_mean = 450.0
+            src_stats.tidal_volume_max = 900.0
+
+        async with async_db_session.begin():
+            await _do_scrub_demo(async_db_session, src_profile_id)
+
+        async with async_db_session.begin():
+            demo_stats = (
+                (
+                    await async_db_session.execute(
+                        select(models.Statistics)
+                        .join(models.Session)
+                        .where(models.Session.import_source == "demo")
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            assert demo_stats.tidal_volume_mean == pytest.approx(expected_mean)
+            assert demo_stats.tidal_volume_max == pytest.approx(expected_mean * 2)
+            assert demo_stats.tidal_volume_min is None
 
     @pytest.mark.asyncio
     async def test_scrub_demo_missing_source_profile_raises(self, async_db_session):
