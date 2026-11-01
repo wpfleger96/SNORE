@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from snore.constants import AhiTrendDirection, TherapyEffectiveness
 from snore.metrics import COVERAGE_TOLERANCE_FRACTION, COVERAGE_TOLERANCE_HOURS
 from snore.provenance import IndexSource, Provenance, provenance_field
 
@@ -765,15 +766,16 @@ class TherapySummary(BaseModel):
 class ExperimentalStats(BaseModel):
     """SNORE's own judgements about a therapy range, kept out of ``TherapySummary``."""
 
-    effectiveness: str = provenance_field(
+    effectiveness: TherapyEffectiveness = provenance_field(
         Provenance.EXPERIMENTAL,
         "SNORE's therapy effectiveness band from average AHI "
         "(excellent, good, fair, poor; unknown without an average AHI).",
     )
-    ahi_trend_direction: str | None = provenance_field(
+    ahi_trend_direction: AhiTrendDirection | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "SNORE's AHI trend call: the latest week's AHI against the earlier weeks "
-        "in the range (improving, worsening, stable; null with too little data).",
+        "in the range (improving, worsening, stable; null with too little data or "
+        "when the earlier weeks average 0).",
         default=None,
     )
 

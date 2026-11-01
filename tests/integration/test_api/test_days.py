@@ -253,7 +253,7 @@ class TestDaysRouter:
         def _fail(*args: Any, **kwargs: Any) -> NoReturn:
             raise AssertionError("GET /days/{date} must not read breath analysis")
 
-        monkeypatch.setattr(BreathService, "get_nightly_summary", _fail)
+        monkeypatch.setattr(BreathService, "get_experimental_nightly_summary", _fail)
         monkeypatch.setattr(DayService, "_nightly_fl_rera", _fail)
 
         response = api_client.get("/api/v1/days/2025-01-13")

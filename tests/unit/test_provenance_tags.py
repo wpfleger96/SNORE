@@ -1,14 +1,15 @@
-"""Every numeric/boolean metric field in MCP and REST responses declares a tier.
+"""Every metric field in MCP and REST responses declares a tier.
 
 Walks the JSON schema of every MCP response model (``SCHEMA_MODEL_MAP``) and
 every OpenAPI schema a REST route can return, and requires an ``x-provenance``
-tag (see ``snore.provenance``) on each numeric or boolean property, so a new
-metric cannot ship without saying whether it is device, derived, or
-experimental data.  See AGENTS.md "Provenance tagging".
+tag (see ``snore.provenance``) on each numeric, boolean, enum or ``Literal``
+property, so a new metric or judgement cannot ship without saying whether it is
+device, derived, or experimental data.  See AGENTS.md "Provenance tagging".
 """
 
+from enum import StrEnum
 from functools import cache
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -151,6 +152,11 @@ _NON_METRIC_MODEL_FIELDS = {
     # Configured parameters echoed back
     ("ReraAggregateMetrics", "match_tolerance_seconds"),
     ("ComplianceFields", "threshold_hours"),
+    # Enum labels of a value's origin, not judgements about it
+    ("DayDetail", "index_source"),
+    ("DayListItem", "index_source"),
+    ("NightlyRow", "index_source"),
+    ("EventComparisonDetail", "source"),
 }
 
 # Operational responses (auth, admin, jobs, imports, DB maintenance) whose
@@ -179,6 +185,7 @@ _OPERATIONAL_MODELS = {
     "TotpStatusResponse",
     "UserInfo",
     "UserItem",
+    "UserPreferences",
     "VacuumResult",
     "ValidationRunDetail",
     "ValidationRunStatus",
@@ -258,22 +265,27 @@ def _openapi() -> dict[str, Any]:
     return create_app().openapi()
 
 
-def _rest_object_schemas() -> list[tuple[str, dict[str, Any]]]:
-    """OpenAPI component schemas reachable from any route's responses."""
-    spec = _openapi()
-    components = spec["components"]["schemas"]
-    pending = {
-        name
-        for path in spec["paths"].values()
-        for op in path.values()
-        for name in _refs(op.get("responses", {}))
-    }
-    seen: set[str] = set()
+def _reachable(node: Any) -> set[str]:
+    """Component schemas that ``node``'s ``$ref``s lead to, transitively."""
+    components = _openapi()["components"]["schemas"]
+    pending, seen = _refs(node), set()
     while pending:
         name = pending.pop()
         seen.add(name)
         pending |= _refs(components[name]) - seen
-    return [(name, components[name]) for name in seen]
+    return seen
+
+
+def _rest_object_schemas() -> list[tuple[str, dict[str, Any]]]:
+    """OpenAPI component schemas reachable from any route's responses."""
+    spec = _openapi()
+    components = spec["components"]["schemas"]
+    responses = [
+        op.get("responses", {})
+        for path in spec["paths"].values()
+        for op in path.values()
+    ]
+    return [(name, components[name]) for name in _reachable(responses)]
 
 
 def _mcp_object_schemas() -> list[tuple[str, dict[str, Any]]]:
@@ -330,6 +342,15 @@ def _is_scalar_metric(prop: dict[str, Any]) -> bool:
     )
 
 
+def _is_enum_valued(prop: dict[str, Any], schemas: dict[str, dict[str, Any]]) -> bool:
+    """``Literal`` or enum values, inline or by ``$ref``, alone or as list items."""
+    variants = prop.get("anyOf", [prop])
+    inline = (v for variant in variants for v in (variant, variant.get("items", {})))
+    return any("enum" in v or "const" in v for v in inline) or any(
+        "enum" in schemas.get(name, {}) for name in _refs(prop)
+    )
+
+
 def _is_exempt(model: str, field: str) -> bool:
     return (
         model in _OPERATIONAL_MODELS
@@ -348,17 +369,6 @@ def _operations(*, experimental: bool) -> dict[str, dict[str, Any]]:
     }
 
 
-def _reachable(op: dict[str, Any]) -> set[str]:
-    """Component schemas an operation's responses can return, transitively."""
-    components = _openapi()["components"]["schemas"]
-    pending, seen = _refs(op.get("responses", {})), set()
-    while pending:
-        name = pending.pop()
-        seen.add(name)
-        pending |= _refs(components[name]) - seen
-    return seen
-
-
 def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
     offenders = sorted(
         {
@@ -374,6 +384,59 @@ def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
         + "\n".join(offenders)
         + f"\n{_FIX_HINT}"
     )
+
+
+def test_enum_and_literal_fields_have_provenance_tag() -> None:
+    # A plain ``str`` cannot be told from a label, so a SNORE judgement is typed
+    # as a Literal or enum, which puts it under this check.
+    offenders: set[str] = set()
+    for surface, objects in _surfaces():
+        schemas = dict(objects)
+        offenders |= {
+            f"{surface} {model}.{field}"
+            for model, schema in objects
+            for field, prop in schema.get("properties", {}).items()
+            if _is_enum_valued(prop, schemas)
+            and not _is_exempt(model, field)
+            and prop.get("x-provenance") not in _TIERS
+        }
+    assert not offenders, (
+        "Enum or Literal fields missing a valid x-provenance tag:\n"
+        + "\n".join(sorted(offenders))
+        + f"\n{_FIX_HINT}"
+    )
+
+
+class _Band(StrEnum):
+    HIGH = "high"
+
+
+class _Judged(BaseModel):
+    literal: Literal["a", "b"]
+    optional_literal: Literal["a", "b"] | None = None
+    single_literal: Literal["a"]
+    enum: _Band
+    enum_list: list[_Band]
+    plain: str
+    number: int
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("literal", True),
+        ("optional_literal", True),
+        ("single_literal", True),
+        ("enum", True),
+        ("enum_list", True),
+        ("plain", False),
+        ("number", False),
+    ],
+)
+def test_enum_check_sees_literals_and_enums_only(field: str, expected: bool) -> None:
+    schema = _Judged.model_json_schema()
+
+    assert _is_enum_valued(schema["properties"][field], schema["$defs"]) is expected
 
 
 def test_model_fields_with_context_dependent_tier_are_tagged() -> None:
@@ -412,7 +475,7 @@ def test_default_rest_operations_return_no_experimental_field() -> None:
         {
             f"{route} -> {model}.{field}"
             for route, op in _operations(experimental=False).items()
-            for model in _reachable(op)
+            for model in _reachable(op.get("responses", {}))
             for field, prop in components[model].get("properties", {}).items()
             if prop.get("x-provenance") == Provenance.EXPERIMENTAL
         }
@@ -509,3 +572,5 @@ def test_rest_waveform_values_are_tagged_device() -> None:
 @pytest.mark.parametrize("field", ["effectiveness", "ahi_trend_direction"])
 def test_snore_judgements_are_tagged_experimental(field: str) -> None:
     assert field_provenance(ExperimentalStats, field) == Provenance.EXPERIMENTAL
+    prop = ExperimentalStats.model_json_schema()["properties"][field]
+    assert _is_enum_valued(prop, {})

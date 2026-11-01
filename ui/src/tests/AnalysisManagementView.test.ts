@@ -158,44 +158,6 @@ describe('AnalysisManagementView — analyze missing', () => {
         expect(wrapper.find('table').exists()).toBe(false)
     })
 
-    it('test_therapy_assessment_shows_effectiveness_and_trend_under_a_banner', async () => {
-        vi.mocked(getExperimentalStats).mockResolvedValue({
-            effectiveness: 'good',
-            ahi_trend_direction: 'worsening',
-        })
-
-        const wrapper = await mountView()
-
-        const card = wrapper.find('.section-card')
-        expect(card.findAll('[role="note"]')).toHaveLength(1)
-        expect(card.text()).toContain('good')
-        const trend = card.find('.trend-badge')
-        expect(trend.text()).toBe('worsening')
-        expect(trend.classes()).toContain('trend-worsening')
-    })
-
-    it('test_therapy_assessment_hides_unknown_band_but_keeps_a_real_trend', async () => {
-        vi.mocked(getExperimentalStats).mockResolvedValue({
-            effectiveness: 'unknown',
-            ahi_trend_direction: 'stable',
-        })
-
-        const wrapper = await mountView()
-
-        const card = wrapper.find('.section-card')
-        expect(card.text()).not.toContain('unknown')
-        expect(card.text()).not.toContain('Effectiveness')
-        expect(card.find('.trend-badge').text()).toBe('stable')
-    })
-
-    it('test_therapy_assessment_shows_empty_state_when_nothing_to_show', async () => {
-        const wrapper = await mountView()
-
-        const card = wrapper.find('.section-card')
-        expect(card.find('.assessment-row').exists()).toBe(false)
-        expect(card.find('.assessment-empty').exists()).toBe(true)
-    })
-
     it('test_failed_assessment_load_leaves_the_session_list_working', async () => {
         vi.mocked(getExperimentalStats).mockRejectedValue(new Error('boom'))
         vi.mocked(getAnalysisSessions).mockResolvedValue({

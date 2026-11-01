@@ -18,6 +18,9 @@ router = APIRouter()
 
 StatsServiceDep = Annotated[StatsService, Depends(service_dep(StatsService))]
 
+# About a century: past that, "today minus N days" leaves the range of a date.
+MAX_DAYS_LIMIT = 36500
+
 
 @router.get(
     "/summary",
@@ -29,7 +32,7 @@ StatsServiceDep = Annotated[StatsService, Depends(service_dep(StatsService))]
 )
 async def get_summary(
     service: StatsServiceDep,
-    days_limit: int | None = Query(default=None),
+    days_limit: int | None = Query(default=None, ge=0, le=MAX_DAYS_LIMIT),
 ) -> TherapySummary | Response:
     result = await service.get_summary(days_limit)
     if result is None:
@@ -38,18 +41,15 @@ async def get_summary(
 
 
 @router.get("/experimental", response_model=ExperimentalStats, tags=["experimental"])
-async def get_experimental_stats(
-    service: StatsServiceDep,
-    days_limit: int | None = Query(default=None),
-) -> ExperimentalStats:
-    return await service.get_experimental_stats(days_limit)
+async def get_experimental_stats(service: StatsServiceDep) -> ExperimentalStats:
+    return await service.get_experimental_stats()
 
 
 @router.get("/periods", response_model=list[PeriodStatistics])
 async def get_periods(
     service: StatsServiceDep,
     period_type: PeriodType = Query(default="month"),
-    days_limit: int | None = Query(default=None),
+    days_limit: int | None = Query(default=None, ge=0, le=MAX_DAYS_LIMIT),
 ) -> list[PeriodStatistics]:
     return await service.get_period_statistics(period_type, days_limit)
 
@@ -60,6 +60,8 @@ async def get_trends(
     period_type: PeriodType = Query(default="month"),
     days_limit: int | None = Query(
         default=None,
+        ge=0,
+        le=MAX_DAYS_LIMIT,
         description=(
             "Limit to last N days. For period_type=day, defaults to 180 when omitted "
             "to keep the response size reasonable."
@@ -82,7 +84,7 @@ async def get_data_range(service: StatsServiceDep) -> DataRange:
 )
 async def get_records(
     service: StatsServiceDep,
-    days_limit: int | None = Query(default=None),
+    days_limit: int | None = Query(default=None, ge=0, le=MAX_DAYS_LIMIT),
     top_n: int = Query(default=5),
 ) -> RecordsResponse:
     # exclude_unset keeps metrics with no qualifying day omitted rather than null.

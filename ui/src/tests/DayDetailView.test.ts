@@ -14,6 +14,7 @@ vi.mock('@/components/InfoHint.vue', () => ({
 }))
 
 vi.mock('@lucide/vue', () => ({
+    AlertTriangle: { template: '<svg class="alert-stub" />' },
     Loader2: { template: '<svg class="loader-stub" />' },
     ArrowLeft: { template: '<svg class="arrow-stub" />' },
     FlaskConical: { template: '<svg class="flask-stub" />' },
@@ -31,12 +32,16 @@ function makeDay(overrides: Record<string, unknown> = {}): DayDetail {
     } as unknown as DayDetail
 }
 
-async function mountDay(day: DayDetail): Promise<VueWrapper> {
-    vi.mocked(getDay).mockResolvedValue(day)
-    const wrapper = mount(DayDetailView, {
+function mountView(): VueWrapper {
+    return mount(DayDetailView, {
         props: { dayDate: '2026-05-03' },
         global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
+}
+
+async function mountDay(day: DayDetail): Promise<VueWrapper> {
+    vi.mocked(getDay).mockResolvedValue(day)
+    const wrapper = mountView()
     await flushPromises()
     return wrapper
 }
@@ -95,5 +100,64 @@ describe('DayDetailView AHI source note', () => {
     it('test_unknown_source_or_missing_ahi_shows_no_note', async () => {
         expect(ahiNote(await mountDay(makeDay({ ahi: 2.1, index_source: null })))).toBeNull()
         expect(ahiNote(await mountDay(makeDay({ ahi: null, index_source: 'device' })))).toBeNull()
+    })
+})
+
+describe('DayDetailView date changes', () => {
+    const NEXT_DATE = '2026-05-04'
+    const notFound = Object.assign(new Error('Not Found'), {
+        isAxiosError: true,
+        response: { status: 404 },
+    })
+
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('test_date_change_refetches_and_replaces_the_shown_day', async () => {
+        const wrapper = await mountDay(makeDay({ total_therapy_hours: 7 }))
+        vi.mocked(getDay).mockResolvedValue(makeDay({ date: NEXT_DATE, total_therapy_hours: 3 }))
+
+        await wrapper.setProps({ dayDate: NEXT_DATE })
+        await flushPromises()
+
+        expect(getDay).toHaveBeenLastCalledWith(NEXT_DATE)
+        expect(findCard(wrapper, 'Total Hours')?.text()).toContain('3.0')
+    })
+
+    it('test_slow_response_for_the_old_date_never_replaces_the_new_one', async () => {
+        let resolveOld: (day: DayDetail) => void = () => {}
+        vi.mocked(getDay)
+            .mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)))
+            .mockResolvedValueOnce(makeDay({ date: NEXT_DATE, total_therapy_hours: 3 }))
+        const wrapper = mountView()
+
+        await wrapper.setProps({ dayDate: NEXT_DATE })
+        await flushPromises()
+        resolveOld(makeDay({ total_therapy_hours: 7 }))
+        await flushPromises()
+
+        expect(findCard(wrapper, 'Total Hours')?.text()).toContain('3.0')
+    })
+
+    it('test_date_with_no_data_replaces_the_shown_day_with_the_empty_state', async () => {
+        const wrapper = await mountDay(makeDay({ total_therapy_hours: 7 }))
+        vi.mocked(getDay).mockRejectedValue(notFound)
+
+        await wrapper.setProps({ dayDate: NEXT_DATE })
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('No CPAP data recorded for this date.')
+        expect(findCard(wrapper, 'Total Hours')).toBeUndefined()
+        expect(wrapper.find('.error-state').exists()).toBe(false)
+    })
+
+    it('test_other_failures_show_the_error_state', async () => {
+        vi.mocked(getDay).mockRejectedValue(new Error('boom'))
+        const wrapper = mountView()
+        await flushPromises()
+
+        expect(wrapper.find('.error-state').text()).toContain('boom')
+        expect(wrapper.text()).not.toContain('No CPAP data recorded')
     })
 })

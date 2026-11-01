@@ -350,6 +350,10 @@ EVENT_TYPE_UNCLASSIFIED_APNEA = "UA"
 # Type alias for valid apnea event types (used by ApneaEvent model)
 type ApneaEventType = Literal["OA", "CA", "MA", "UA"]
 
+# SNORE's own judgements about a therapy range (see ExperimentalStats)
+TherapyEffectiveness = Literal["excellent", "good", "fair", "poor", "unknown"]
+AhiTrendDirection = Literal["improving", "worsening", "stable"]
+
 # Mapping from storage event types to ApneaEventType
 APNEA_TYPE_MAP: dict[str, ApneaEventType] = {
     EVENT_TYPE_OBSTRUCTIVE_APNEA: "OA",

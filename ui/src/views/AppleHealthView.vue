@@ -220,12 +220,6 @@ const avgRem = computed(() => {
     max-width: 1000px;
 }
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.75rem;
-}
-
 .mb-6 {
     margin-bottom: 1.5rem;
 }
@@ -264,10 +258,6 @@ const avgRem = computed(() => {
     font-size: 0.75rem;
     color: var(--color-muted-foreground);
     margin-bottom: 1.5rem;
-}
-
-.empty-message {
-    color: var(--color-muted-foreground);
 }
 
 .cta-link {

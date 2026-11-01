@@ -86,20 +86,45 @@ class TestStatsExperimental:
             "ahi_trend_direction": None,
         }
 
-    def test_days_limit_excludes_older_data(self, api_client, db_session, test_device):
+    def test_days_limit_is_not_a_parameter(self, api_client):
+        """Always all-time, so even a limit no date arithmetic can hold is ignored."""
+        response = api_client.get("/api/v1/stats/experimental?days_limit=1000000")
+
+        assert response.status_code == 200
+
+
+@pytest.mark.parametrize("route", ["summary", "periods", "records", "trends"])
+class TestDaysLimitBounds:
+    @pytest.mark.parametrize("days_limit", [-1, 36501, 1000000])
+    def test_out_of_range_limit_returns_422(self, api_client, route, days_limit):
+        response = api_client.get(f"/api/v1/stats/{route}?days_limit={days_limit}")
+
+        assert response.status_code == 422
+
+    def test_largest_limit_is_accepted(self, api_client, route):
+        response = api_client.get(f"/api/v1/stats/{route}?days_limit=36500")
+
+        assert response.is_success
+
+    def test_zero_limit_means_all_time(
+        self, api_client, db_session, test_device, route
+    ):
         db_session.add(
             Day(
                 device_id=test_device.id,
-                date=date.today() - timedelta(days=200),
+                date=date.today() - timedelta(days=4000),
                 total_therapy_hours=7.0,
-                ahi=20.0,
+                ahi=2.0,
             )
         )
         db_session.flush()
 
-        data = api_client.get("/api/v1/stats/experimental?days_limit=90").json()
+        all_time = api_client.get(f"/api/v1/stats/{route}").json()
+        response = api_client.get(f"/api/v1/stats/{route}?days_limit=0")
 
-        assert data["effectiveness"] == "unknown"
+        assert response.status_code == 200
+        assert response.json() == all_time
+        assert all_time
 
 
 class TestStatsPeriods:

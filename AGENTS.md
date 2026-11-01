@@ -354,9 +354,11 @@ or column label backed by a tagged field must read its tier this way (or via `ma
 hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field.
 MCP responses get a top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
 `tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
-response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that are never metrics
-(ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts keyed by
-`(model, field)`; it also requires a tag on fields holding a model whose tier depends on the parent.
+and enum or `Literal` response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that
+are never metrics (ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts and
+origin labels keyed by `(model, field)`; it also requires a tag on fields holding a model whose tier
+depends on the parent. A plain `str` field is not checked, so type a string judgement as a `Literal`
+or enum (as `ExperimentalStats` does) to bring it under the rule.
 
 **MCP gating rule:** no Experimental-tagged field may appear in any default MCP response.
 Experimental data lives in `experimental_*` tools, and calling one is the opt-in. Default paths must
@@ -373,7 +375,9 @@ analysis and validation routers, per operation elsewhere (`GET /days/{date}/expe
 `GET /stats/experimental`, `/sessions/{id}/events/match`, `/sessions/{id}/waveforms/compare`).
 `GET /days/{date}` does not touch analysis tables. `tests/unit/test_provenance_tags.py` enforces the
 rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there pins
-the tagged list, so tagging a route to escape the check fails until that list is edited too.
+the tagged list, so tagging a route to escape the check fails until that list is edited too. HTML
+reports have no response schema: `tests/unit/test_report_service.py` checks that the models a report
+fetches carry no Experimental field.
 
 CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
 field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;

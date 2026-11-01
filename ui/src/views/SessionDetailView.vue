@@ -1469,12 +1469,6 @@ watch(
     margin-bottom: 0.75rem;
 }
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.75rem;
-}
-
 .stats-collapsible {
     margin-bottom: 0.5rem;
 }

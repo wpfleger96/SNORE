@@ -9,6 +9,12 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.analysis.calculations import (
+    assess_therapy_effectiveness,
+    calculate_ahi_trend_direction,
+    calculate_average_ahi,
+    calculate_period_statistics,
+)
 from snore.database.models import Day, Device, Event, Profile, Session, Statistics, User
 from snore.services.stats_service import StatsService
 
@@ -474,23 +480,75 @@ class TestExperimentalStats:
         assert result.effectiveness == "good"
         assert result.ahi_trend_direction == "improving"
 
-    async def test_days_limit_restricts_range(
+    async def test_weekly_trend_matches_period_statistics(
         self, async_db_session, async_test_device
     ):
-        """days_limit filters as it does for get_summary."""
+        """Gaps, short nights and null AHIs bucket as period statistics do.
+
+        Sunday and Monday fall in different weeks, a day without an AHI or
+        without therapy hours adds nothing, and a week of only those is skipped.
+        """
+        seeds = [
+            (date(2024, 1, 7), 8.0, 2.0),  # Sunday: last day of its week
+            (date(2024, 1, 8), 4.0, 8.0),  # Monday: first day of the next
+            (date(2024, 1, 10), 12.0, 2.0),
+            (date(2024, 1, 12), None, 8.0),
+            (date(2024, 1, 13), 40.0, 0.0),
+            (date(2024, 1, 16), None, 8.0),  # A week with no usable AHI
+            (date(2024, 1, 30), 6.0, 8.0),  # Then a gap of weeks
+        ]
+        days = [
+            (
+                await _create_day_with_session(
+                    async_db_session,
+                    async_test_device,
+                    day_date,
+                    duration_hours=hours,
+                    ahi=ahi,
+                )
+            )[0]
+            for day_date, ahi, hours in seeds
+        ]
+        weekly = calculate_period_statistics(days, "week")
+
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == assess_therapy_effectiveness(
+            calculate_average_ahi(days)
+        )
+        assert result.ahi_trend_direction == calculate_ahi_trend_direction(
+            [ps.avg_ahi for ps in weekly if ps.avg_ahi is not None]
+        )
+        assert result.ahi_trend_direction is not None
+
+    async def test_covers_all_recorded_days(self, async_db_session, async_test_device):
         await _create_day_with_session(
             async_db_session,
             async_test_device,
-            date.today() - timedelta(days=200),
+            date.today() - timedelta(days=4000),
             ahi=20.0,
         )
 
-        service = StatsService(async_db_session, profile_id=1)
+        result = await StatsService(
+            async_db_session, profile_id=1
+        ).get_experimental_stats()
 
-        assert (await service.get_experimental_stats()).effectiveness == "poor"
-        assert (
-            await service.get_experimental_stats(days_limit=90)
-        ).effectiveness == "unknown"
+        assert result.effectiveness == "poor"
+
+    async def test_other_profile_days_are_excluded(
+        self, async_db_session, async_test_device
+    ):
+        await _create_day_with_session(
+            async_db_session, async_test_device, date.today(), ahi=20.0
+        )
+
+        result = await StatsService(
+            async_db_session, profile_id=async_test_device.profile_id + 1
+        ).get_experimental_stats()
+
+        assert result.effectiveness == "unknown"
 
 
 class TestChunkedIdBinds:

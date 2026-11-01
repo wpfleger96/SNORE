@@ -2413,7 +2413,7 @@ export interface components {
              * @description Event end timestamp (seconds)
              */
             end_time: number
-            /** @description Apnea type */
+            /** @description [EXPERIMENTAL] Apnea type, classified from flow alone */
             event_type: components['schemas']['ApneaEventType']
             /**
              * Flow Reduction
@@ -3519,14 +3519,15 @@ export interface components {
         ExperimentalStats: {
             /**
              * Ahi Trend Direction
-             * @description [EXPERIMENTAL] SNORE's AHI trend call: the latest week's AHI against the earlier weeks in the range (improving, worsening, stable; null with too little data).
+             * @description [EXPERIMENTAL] SNORE's AHI trend call: the latest week's AHI against the earlier weeks in the range (improving, worsening, stable; null with too little data or when the earlier weeks average 0).
              */
-            ahi_trend_direction?: string | null
+            ahi_trend_direction?: ('improving' | 'worsening' | 'stable') | null
             /**
              * Effectiveness
              * @description [EXPERIMENTAL] SNORE's therapy effectiveness band from average AHI (excellent, good, fair, poor; unknown without an average AHI).
+             * @enum {string}
              */
-            effectiveness: string
+            effectiveness: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown'
         }
         /**
          * FlAggregateMetrics
@@ -9150,9 +9151,7 @@ export interface operations {
     }
     get_experimental_stats_api_v1_stats_experimental_get: {
         parameters: {
-            query?: {
-                days_limit?: number | null
-            }
+            query?: never
             header?: never
             path?: never
             cookie?: never
@@ -9166,15 +9165,6 @@ export interface operations {
                 }
                 content: {
                     'application/json': components['schemas']['ExperimentalStats']
-                }
-            }
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown
-                }
-                content: {
-                    'application/json': components['schemas']['HTTPValidationError']
                 }
             }
         }
