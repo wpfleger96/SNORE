@@ -70,7 +70,7 @@ async def get_waveform(
         end_seconds=end_seconds,
     )
 
-    total_samples = metadata.get("sample_count", len(timestamps))
+    total_samples = metadata["sample_count"]
     returned = len(timestamps)
 
     return WaveformDataResponse(

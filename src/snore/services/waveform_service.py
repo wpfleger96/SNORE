@@ -1,14 +1,19 @@
 """Waveform service for listing and loading waveform data."""
 
+import logging
+
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
 import numpy as np
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
+from snore.analysis.data.waveform_loader import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
+    deserialize_waveform_blob,
+)
 from snore.analysis.modes.postprocess import match_events_by_start_time
 from snore.analysis.queries import latest_analysis_row
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
@@ -28,6 +33,8 @@ from snore.services.schemas import (
 )
 
 __all__ = ["WaveformService", "clear_waveform_array_cache"]
+
+logger = logging.getLogger(__name__)
 
 # Byte cap for the deserialized-array cache below.  A full night of 25 Hz flow
 # is ~5.8 MB (float32 timestamps + values); 64 MB holds ~11 such channels.
@@ -156,6 +163,10 @@ class WaveformService(ProfileScopedService):
 
         Returns empty list if no waveforms found.
 
+        ``sample_count`` is derived from the blob's byte length, not the stored
+        column, so a listed channel whose stored count is NULL or wrong can still
+        fail to load.
+
         Args:
             session_id: Database session ID
 
@@ -163,30 +174,43 @@ class WaveformService(ProfileScopedService):
             List of WaveformInfo objects with metadata
         """
         await self._assert_session_owned(session_id)
-        waveforms = (
-            (
-                await self.db_session.execute(
-                    select(models.Waveform)
-                    .where(models.Waveform.session_id == session_id)
-                    .order_by(models.Waveform.waveform_type)
+        # Bare length() is answered from the record header, while sample_count is
+        # stored after the blob and would walk its overflow chain.
+        rows = (
+            await self.db_session.execute(
+                select(
+                    models.Waveform.waveform_type,
+                    models.Waveform.sample_rate,
+                    models.Waveform.unit,
+                    func.length(models.Waveform.data_blob).label("blob_bytes"),
                 )
+                .where(models.Waveform.session_id == session_id)
+                .order_by(models.Waveform.waveform_type)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
 
         result = []
-        for wf in waveforms:
-            sample_count = wf.sample_count or 0
+        for row in rows:
+            sample_count, stray_bytes = divmod(
+                row.blob_bytes, WAVEFORM_BLOB_BYTES_PER_SAMPLE
+            )
+            if stray_bytes:
+                logger.warning(
+                    "Waveform blob is not a whole number of samples: "
+                    "session_id=%s, type=%s, stray_bytes=%s",
+                    session_id,
+                    row.waveform_type,
+                    stray_bytes,
+                )
             duration_seconds = (
-                sample_count / wf.sample_rate if wf.sample_rate > 0 else 0
+                sample_count / row.sample_rate if row.sample_rate > 0 else 0
             )
             result.append(
                 WaveformInfo(
-                    waveform_type=wf.waveform_type,
-                    sample_rate=wf.sample_rate,
+                    waveform_type=row.waveform_type,
+                    sample_rate=row.sample_rate,
                     sample_count=sample_count,
-                    unit=wf.unit,
+                    unit=row.unit,
                     duration_hours=duration_seconds / 3600,
                 )
             )
@@ -197,13 +221,10 @@ class WaveformService(ProfileScopedService):
     ) -> tuple[dict[str, Any], _WaveformCacheKey]:
         """Light query for a Waveform row's scalar metadata, WITHOUT the blob.
 
-        Selects only scalar columns, so the ~MB ``data_blob`` never reaches Python
-        here.  SQLite still walks its overflow pages, because ``sample_count`` is
-        stored after ``data_blob`` in the row.  The returned dict mirrors
-        ``fetch_waveform_blob``'s ``metadata_scalars`` key-for-key (including
-        ``waveform_id`` and ``sample_count``), keeping
-        :meth:`get_waveform_data`'s return contract identical whether arrays come
-        from the cache or a fresh deserialize.
+        Selects only ``waveforms`` columns stored before ``data_blob`` (see the
+        note on :class:`models.Waveform`), so SQLite doesn't walk its overflow
+        chain.  ``sample_count`` is stored after the blob, so this dict omits it
+        and :meth:`get_waveform_data` adds it from the array length.
 
         Scoped to this profile through Session → Device, so a row the profile
         does not own reads as not found.
@@ -228,7 +249,6 @@ class WaveformService(ProfileScopedService):
                         models.Waveform.min_value,
                         models.Waveform.max_value,
                         models.Waveform.mean_value,
-                        models.Waveform.sample_count,
                         models.Session.import_date,
                     ).join(models.Waveform.session)
                 ).where(
@@ -253,7 +273,6 @@ class WaveformService(ProfileScopedService):
             min_value,
             max_value,
             mean_value,
-            sample_count,
             import_date,
         ) = row
         metadata = {
@@ -265,7 +284,6 @@ class WaveformService(ProfileScopedService):
             "min_value": min_value,
             "max_value": max_value,
             "mean_value": mean_value,
-            "sample_count": sample_count,
         }
         return metadata, (waveform_id, import_date)
 
@@ -284,19 +302,21 @@ class WaveformService(ProfileScopedService):
 
         1. **I/O phase**: ``_assert_session_owned`` (ownership check, always
            first — the cache never bypasses it) then a light metadata-only query.
-           On a cache miss this phase also reads the ``data_blob`` by row id (the
-           metadata query already resolved it).  The injected session is used
-           only here.
+           On a cache miss this phase also reads ``data_blob`` and the stored
+           ``sample_count`` by row id (the metadata query already resolved it).
+           The injected session is used only here.
         2. **Compute phase** (``deserialize_waveform_blob``): converts raw bytes to
            numpy arrays.  No DB session access occurs here.
 
         Deserialized arrays are cached module-level by row id and session import
-        date (see :class:`_WaveformArrayCache`), so a warm request skips both the
-        ~MB blob fetch and the deserialize.  Metadata always comes from the fresh
-        light query, so unit/sample_rate/etc. stay current.  Cached arrays are marked
-        read-only; the windowing slice below is a read-only view of them, and the
-        no-window/no-downsample path returns the read-only arrays directly (the
-        router only reads them via ``.tolist()``; LTTB allocates its own output).
+        date (see :class:`_WaveformArrayCache`), so a warm request needs neither
+        the blob read nor the deserialize.  Metadata other than ``sample_count``
+        comes from the fresh light query, so unit/sample_rate/etc. stay current;
+        ``sample_count`` is the length of the full channel array.  Cached arrays
+        are marked read-only; the windowing slice below is a read-only view of
+        them, and the no-window/no-downsample path returns the read-only arrays
+        directly (the router only reads them via ``.tolist()``; LTTB allocates
+        its own output).
 
         Args:
             session_id: Database session ID
@@ -327,14 +347,19 @@ class WaveformService(ProfileScopedService):
         # subsequent queries (e.g. loading analysis overlays in waveform show).
         cached = _waveform_array_cache.get(cache_key)
         if cached is None:
-            # Fetch only the blob, keyed by the id the metadata query already
-            # resolved — no second scalar-column round trip.  A request reads one
-            # snapshot on SQLite WAL, so this always finds that row there; the
-            # session filter and the None check are defensive, and fail as the
-            # same 404 as a metadata miss above.
+            # Fetch the blob and its stored count, keyed by the id the metadata
+            # query already resolved.  The stored count validates the blob's size
+            # independently of the blob's own length, and the overflow chain is
+            # being walked anyway; a count derived from the blob here would make
+            # that validation a tautology.  A request reads one snapshot on SQLite
+            # WAL, so this always finds that row there; the session filter and the
+            # None check are defensive, and fail as the same 404 as a metadata
+            # miss above.
             blob_row = (
                 await self.db_session.execute(
-                    select(models.Waveform.data_blob).where(
+                    select(
+                        models.Waveform.data_blob, models.Waveform.sample_count
+                    ).where(
                         models.Waveform.id == metadata["waveform_id"],
                         models.Waveform.session_id == session_id,
                     )
@@ -344,8 +369,9 @@ class WaveformService(ProfileScopedService):
                 raise NotFoundError(
                     f"Waveform not found: session_id={session_id}, type={waveform_type}"
                 )
+            blob, stored_sample_count = blob_row
             timestamps, values = deserialize_waveform_blob(
-                blob_row[0], metadata["sample_count"] or 0
+                blob, stored_sample_count or 0
             )
             # Freeze so a caller (or a windowing view, which shares this buffer)
             # can never mutate the shared cached arrays.
@@ -354,6 +380,9 @@ class WaveformService(ProfileScopedService):
             _waveform_array_cache.put(cache_key, timestamps, values)
         else:
             timestamps, values = cached
+
+        # Full-channel count, taken here before windowing rebinds the arrays.
+        metadata["sample_count"] = len(timestamps)
 
         if start_seconds is not None or end_seconds is not None:
             # Timestamps are ascending, so bound the window with binary search
