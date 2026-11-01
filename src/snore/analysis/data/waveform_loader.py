@@ -20,6 +20,9 @@ from snore.database.models import Waveform
 
 logger = logging.getLogger(__name__)
 
+# Blob layout: float32 (timestamp, value) pairs; see deserialize_waveform_blob.
+WAVEFORM_BLOB_BYTES_PER_SAMPLE = 2 * np.dtype(np.float32).itemsize
+
 
 class WaveformLoader:
     """

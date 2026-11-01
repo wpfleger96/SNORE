@@ -811,6 +811,10 @@ class Waveform(Base):
     min_value: Mapped[float | None] = mapped_column(Float)
     max_value: Mapped[float | None] = mapped_column(Float)
     mean_value: Mapped[float | None] = mapped_column(Float)
+    # Large blob stored on SQLite overflow pages. Reading any column stored after
+    # it walks the whole chain, even if the blob isn't returned. New columns land
+    # after it on existing databases (ADD COLUMN appends), so don't select them on
+    # hot metadata paths. length(data_blob) is cheap.
     data_blob: Mapped[bytes] = mapped_column(LargeBinary)
     sample_count: Mapped[int | None] = mapped_column(Integer)
 

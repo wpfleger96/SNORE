@@ -1,10 +1,12 @@
 from datetime import datetime
 
 import numpy as np
+import pytest
 
 from sqlalchemy.orm import Session
 
 from snore.database.models import Waveform
+from snore.services import waveform_service as waveform_service_module
 
 
 def _seed_waveform(
@@ -45,6 +47,22 @@ class TestListWaveforms:
     def test_list_waveforms_not_found_session(self, api_client):
         response = api_client.get("/api/v1/sessions/99999/waveforms")
         assert response.status_code == 404
+
+    def test_list_waveforms_reports_sample_count_and_duration(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2024, 1, 1, 22, 0)
+        )
+        _seed_waveform(db_session, session.id)
+
+        response = api_client.get(f"/api/v1/sessions/{session.id}/waveforms")
+
+        assert response.status_code == 200
+        [info] = response.json()
+        assert info["waveform_type"] == "flow"
+        assert info["sample_count"] == 2500
+        assert info["duration_hours"] == pytest.approx(2500 / 25.0 / 3600)
 
 
 class TestGetWaveform:
@@ -174,6 +192,27 @@ class TestGetWaveform:
         assert response.status_code == 200
         data = response.json()
         assert data["returned_samples"] > 0
+
+    def test_get_waveform_windowed_miss_then_hit_reports_full_total(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2024, 1, 1, 22, 0)
+        )
+        _seed_waveform(db_session, session.id)
+        url = f"/api/v1/sessions/{session.id}/waveforms/flow"
+        params = {"start_seconds": 5, "end_seconds": 20}
+        assert not waveform_service_module._waveform_array_cache._entries
+
+        miss = api_client.get(url, params=params)
+        hit = api_client.get(url, params=params)
+
+        assert miss.status_code == 200
+        data = miss.json()
+        assert data["total_samples"] == 2500
+        assert data["downsampled"] is True
+        assert data["returned_samples"] < data["total_samples"]
+        assert hit.json() == data
 
 
 class TestWaveformCompare:
