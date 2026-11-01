@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.modes.postprocess import match_events_by_start_time
+from snore.analysis.queries import latest_analysis_row
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
 from snore.constants import EVENT_TYPE_HYPOPNEA
 from snore.database import models
@@ -376,23 +377,9 @@ class WaveformService(ProfileScopedService):
 
     async def _load_analysis_result(self, session_id: int) -> Any:
         """Load the latest AnalysisResult row for a session, returning a validated result object."""
-        from sqlalchemy import select as _select
-
         from snore.analysis.types import AnalysisResult as _AnalysisResult
-        from snore.database import models as _models
 
-        analysis_row = (
-            (
-                await self.db_session.execute(
-                    _select(_models.AnalysisResult)
-                    .filter_by(session_id=session_id)
-                    .order_by(_models.AnalysisResult.created_at.desc())
-                )
-            )
-            .scalars()
-            .first()
-        )
-
+        analysis_row = await latest_analysis_row(self.db_session, session_id)
         if analysis_row is None:
             return None
         return _AnalysisResult.from_stored_json(analysis_row.programmatic_result_json)
@@ -454,7 +441,7 @@ class WaveformService(ProfileScopedService):
             mode=mode,
             machine_event_count=len(all_machine),
             programmatic_event_count=len(all_prog),
-            matched=len(matches.matched),
+            matched_events=len(matches.matched),
             false_negatives=[
                 EventComparisonDetail(
                     event_type=_comparison_event_type(event),

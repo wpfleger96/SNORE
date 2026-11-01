@@ -229,4 +229,4 @@ class TestWaveformCompare:
         assert response.status_code == 200
         data = response.json()
         assert data["machine_event_count"] == 1
-        assert data["matched"] == 1
+        assert data["matched_events"] == 1

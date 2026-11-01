@@ -7,8 +7,11 @@ property, so a new metric or judgement cannot ship without saying whether it is
 device, derived, or experimental data.  See AGENTS.md "Provenance tagging".
 """
 
+import json
+
 from enum import StrEnum
 from functools import cache
+from pathlib import Path
 from typing import Any, Literal
 
 import pytest
@@ -217,29 +220,15 @@ _UNTYPED_METRIC_ROUTES = {
 
 # Every REST operation carrying the ``experimental`` tag.  Pinned so that tagging
 # a route cannot quietly exempt it from
-# test_default_rest_operations_return_no_experimental_field.
-EXPERIMENTAL_OPERATIONS = {
-    "DELETE /api/v1/analysis",
-    "DELETE /api/v1/analysis/jobs/{job_id}",
-    "DELETE /api/v1/validate/runs/{run_id}",
-    "GET /api/v1/analysis/delete-preview",
-    "GET /api/v1/analysis/jobs",
-    "GET /api/v1/analysis/sessions",
-    "GET /api/v1/days/{day_date}/experimental",
-    "GET /api/v1/sessions/{session_id}/analysis",
-    "GET /api/v1/sessions/{session_id}/waveforms/compare",
-    "GET /api/v1/stats/experimental",
-    "GET /api/v1/validate/runs",
-    "GET /api/v1/validate/runs/{run_id}",
-    "POST /api/v1/analysis/batch",
-    "POST /api/v1/sessions/{session_id}/analysis",
-    "POST /api/v1/validate/",
-    "POST /api/v1/validate/apple",
-    "POST /api/v1/validate/breaths",
-    "POST /api/v1/validate/fl",
-    "POST /api/v1/validate/rera",
-    "POST /api/v1/validate/runs",
-}
+# test_default_rest_operations_return_no_experimental_field.  The UI's boundary
+# test reads the same file, so a tagged route also needs a wrapper the UI gates.
+EXPERIMENTAL_OPERATIONS = set(
+    json.loads(
+        (
+            Path(__file__).parents[2] / "ui/src/tests/experimentalOperations.json"
+        ).read_text()
+    )
+)
 
 _FIX_HINT = (
     "Wrap each metric in provenance_field(Provenance.X, ...); if a field is "

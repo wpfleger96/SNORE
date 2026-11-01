@@ -1,6 +1,6 @@
 """Unit tests for WaveformService."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -11,8 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.modes.postprocess import EVENT_MATCH_TOLERANCE_SECONDS
+from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
-from snore.analysis.types import AnalysisEvent
+from snore.analysis.types import AnalysisEvent, AnalysisResult
+from snore.database.models import AnalysisResult as AnalysisResultRow
 from snore.database.models import Device, Profile, Session, User, Waveform
 from snore.exceptions import NotFoundError
 from snore.services import waveform_service as waveform_service_module
@@ -387,6 +389,31 @@ def _make_analysis_result(
     )
 
 
+def _stored_analysis_row(
+    session: Session, apneas: list[ApneaEvent]
+) -> AnalysisResultRow:
+    """An analysis row of ``session`` scoring one machine apnea at 100s."""
+    result = AnalysisResult(
+        session_id=session.id,
+        session_duration_hours=8.0,
+        total_breaths=1000,
+        machine_events=[_machine_event(100.0)],
+        mode_results={
+            "aasm": ModeResult(
+                mode_name="aasm", apneas=apneas, hypopneas=[], ahi=0.0, rdi=0.0
+            )
+        },
+    )
+    return AnalysisResultRow(
+        session_id=session.id,
+        timestamp_start=session.start_time,
+        timestamp_end=session.end_time,
+        programmatic_result_json=result.model_dump(mode="json"),
+        processing_time_ms=0,
+        created_at=datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC),
+    )
+
+
 @pytest.fixture
 def compare(async_db_session, async_test_device, monkeypatch):
     """Run ``compare_events`` on a fresh session against the given analysis."""
@@ -467,12 +494,45 @@ class TestCompareEvents:
         with pytest.raises(NotFoundError, match="Mode.*not found"):
             await service.compare_events(session.id, mode="resmed")
 
+    async def test_foreign_session_raises_not_found(
+        self, async_db_session, async_test_device
+    ):
+        session = await _seed_session(async_db_session, async_test_device, "foreign")
+        async_db_session.add(_stored_analysis_row(session, [_apnea(100.0)]))
+        other_user = User(canonical_email="other@example.com", role="admin")
+        async_db_session.add(other_user)
+        await async_db_session.flush()
+        other_profile = Profile(user_id=other_user.id, name="Other Profile")
+        async_db_session.add(other_profile)
+        await async_db_session.flush()
+
+        owner = WaveformService(async_db_session, async_test_device.profile_id)
+        assert (await owner.compare_events(session.id)).matched_events == 1
+
+        stranger = WaveformService(async_db_session, other_profile.id)
+        with pytest.raises(NotFoundError, match=f"^Session {session.id} not found$"):
+            await stranger.compare_events(session.id)
+
+    async def test_same_timestamp_analyses_use_the_highest_id(
+        self, async_db_session, async_test_device
+    ):
+        session = await _seed_session(async_db_session, async_test_device, "tied")
+        async_db_session.add(_stored_analysis_row(session, [_apnea(100.0)]))
+        await async_db_session.flush()
+        async_db_session.add(_stored_analysis_row(session, []))
+        await async_db_session.flush()
+
+        service = WaveformService(async_db_session, async_test_device.profile_id)
+        result = await service.compare_events(session.id)
+
+        assert result.programmatic_event_count == 0
+
     async def test_no_events_returns_empty(self, compare):
         result = await compare()
 
         assert result.machine_event_count == 0
         assert result.programmatic_event_count == 0
-        assert result.matched == 0
+        assert result.matched_events == 0
         assert result.false_negatives == []
         assert result.false_positives_apnea == []
         assert result.false_positives_hypopnea == []
@@ -509,7 +569,7 @@ class TestCompareEvents:
             hypopneas=[_hypopnea(200.0)],
         )
 
-        assert result.matched == 2
+        assert result.matched_events == 2
         assert result.false_negatives == []
         assert result.false_positives_apnea == []
         assert result.false_positives_hypopnea == []
@@ -520,7 +580,7 @@ class TestCompareEvents:
             machine_events=[_machine_event(100.0)], hypopneas=[_hypopnea(101.0)]
         )
 
-        assert result.matched == 1
+        assert result.matched_events == 1
         assert result.false_negatives == []
         assert result.false_positives_hypopnea == []
 
@@ -532,7 +592,7 @@ class TestCompareEvents:
         )
 
         assert result.machine_event_count == 1
-        assert result.matched == 1
+        assert result.matched_events == 1
         assert result.false_negatives == []
 
     async def test_second_programmatic_event_near_one_machine_event_is_false_positive(
@@ -543,7 +603,7 @@ class TestCompareEvents:
             apneas=[_apnea(99.0), _apnea(101.0)],
         )
 
-        assert result.matched == 1
+        assert result.matched_events == 1
         assert [e.start_time for e in result.false_positives_apnea] == [101.0]
         assert result.false_negatives == []
 
@@ -555,7 +615,7 @@ class TestCompareEvents:
             apneas=[_apnea(100.0)],
         )
 
-        assert result.matched == 1
+        assert result.matched_events == 1
         assert [e.start_time for e in result.false_negatives] == [101.0]
         assert result.false_positives_apnea == []
 
@@ -573,7 +633,7 @@ class TestCompareEvents:
             machine_events=[_machine_event(100.0)], apneas=[_apnea(100.0 + offset)]
         )
 
-        assert result.matched == expected_matched
+        assert result.matched_events == expected_matched
 
     async def test_zero_machine_events_makes_every_detection_a_false_positive(
         self, compare
@@ -582,7 +642,7 @@ class TestCompareEvents:
 
         assert result.machine_event_count == 0
         assert result.programmatic_event_count == 2
-        assert result.matched == 0
+        assert result.matched_events == 0
         assert len(result.false_positives_apnea) == 1
         assert len(result.false_positives_hypopnea) == 1
 

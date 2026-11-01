@@ -3405,10 +3405,10 @@ export interface components {
              */
             machine_event_count: number
             /**
-             * Matched
+             * Matched Events
              * @description [EXPERIMENTAL] Programmatic/machine event pairs matched one-to-one within tolerance (each event in at most one pair)
              */
-            matched: number
+            matched_events: number
             /**
              * Mode
              * @description Detection mode used (e.g., 'aasm')

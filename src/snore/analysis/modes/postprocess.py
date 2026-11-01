@@ -7,7 +7,7 @@ import logging
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -25,13 +25,6 @@ EVENT_MATCH_TOLERANCE_SECONDS = 5.0
 # Events comparable by start-time tolerance matching. Apneas, hypopneas and
 # RERAs all expose ``start_time``; matching never inspects type-specific fields.
 MatchableEvent = ApneaEvent | HypopneaEvent | RERAEvent
-
-
-class HasStartTime(Protocol):
-    """Anything one-to-one matching can pair: only ``start_time`` is read."""
-
-    @property
-    def start_time(self) -> float: ...
 
 
 def _calculate_event_overlap(event1: ApneaEvent, event2: ApneaEvent) -> float:
@@ -240,7 +233,7 @@ def _merge_two_events(
 
 
 @dataclass(frozen=True)
-class MatchedEvents[E: HasStartTime]:
+class MatchedEvents[E: MatchableEvent]:
     """
     Outcome of greedy one-to-one matching of programmatic vs machine events.
 
@@ -255,7 +248,7 @@ class MatchedEvents[E: HasStartTime]:
     false_negatives: list[E]
 
 
-def match_events_by_start_time[E: HasStartTime](
+def match_events_by_start_time[E: MatchableEvent](
     programmatic: Sequence[E],
     machine: Sequence[E],
     tolerance_seconds: float = EVENT_MATCH_TOLERANCE_SECONDS,
@@ -315,41 +308,6 @@ def match_events_by_start_time[E: HasStartTime](
         false_positives=false_positives,
         false_negatives=false_negatives,
     )
-
-
-def split_by_tolerance_match(
-    events: Sequence[MatchableEvent],
-    references: Sequence[MatchableEvent],
-    tolerance_seconds: float = EVENT_MATCH_TOLERANCE_SECONDS,
-) -> tuple[list[MatchableEvent], list[MatchableEvent]]:
-    """
-    Split events into (matched, unmatched) by start-time proximity.
-
-    An event is matched if ANY reference event starts within tolerance
-    (references may match multiple events).
-
-    Args:
-        events: Events to classify
-        references: Reference events to match against
-        tolerance_seconds: Max start-time difference for a match
-
-    Returns:
-        Tuple of (matched events, unmatched events), preserving input order
-    """
-    matched: list[MatchableEvent] = []
-    unmatched: list[MatchableEvent] = []
-
-    for event in events:
-        is_matched = any(
-            abs(event.start_time - ref.start_time) <= tolerance_seconds
-            for ref in references
-        )
-        if is_matched:
-            matched.append(event)
-        else:
-            unmatched.append(event)
-
-    return matched, unmatched
 
 
 def validate_event_type(

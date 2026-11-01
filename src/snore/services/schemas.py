@@ -1314,7 +1314,7 @@ class EventComparisonResult(BaseModel):
     programmatic_event_count: int = provenance_field(
         Provenance.EXPERIMENTAL, "Total programmatically-detected events"
     )
-    matched: int = provenance_field(
+    matched_events: int = provenance_field(
         Provenance.EXPERIMENTAL,
         "Programmatic/machine event pairs matched one-to-one within tolerance "
         "(each event in at most one pair)",

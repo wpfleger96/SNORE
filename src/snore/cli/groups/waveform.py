@@ -373,10 +373,10 @@ async def compare_events(
     programmatic = mark_field(
         "Programmatic", EventComparisonResult, "programmatic_event_count"
     )
-    matched = mark_field("Matched", EventComparisonResult, "matched")
+    matched = mark_field("Matched", EventComparisonResult, "matched_events")
     console.print(f"Session {resolved_id} - Event Comparison ({mode} mode)")
     console.print(
-        f"Machine: {comparison.machine_event_count} events | {programmatic}: {comparison.programmatic_event_count} events | {matched}: {comparison.matched}"
+        f"Machine: {comparison.machine_event_count} events (apneas and hypopneas only) | {programmatic}: {comparison.programmatic_event_count} events | {matched}: {comparison.matched_events}"
     )
     console.print("")
 

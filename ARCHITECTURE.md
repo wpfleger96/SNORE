@@ -329,7 +329,7 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | profiles | `/profiles` | Profile CRUD |
 | sessions | `/sessions` | List, detail, enable/disable, delete, bulk delete-preview |
 | waveforms | `/sessions` | List types, get data (LTTB downsampling), compare events |
-| events | `/sessions` | List, match machine vs programmatic |
+| events | `/sessions` | List |
 | analysis | (v1 prefix) | List status, get result, run, delete, batch analysis |
 | stats | `/stats` | Summary, periods, trends, records, data range; experimental effectiveness band and AHI trend direction (`GET /stats/experimental`) |
 | devices | `/devices` | List, detail |
@@ -342,7 +342,7 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | db | `/db` | Stats, vacuum; reset (local mode only) |
 | validation | `/validate` | Batch validation report |
 
-**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list in `EXPERIMENTAL_OPERATIONS`.
+**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list against `ui/src/tests/experimentalOperations.json`, which `ui/src/tests/experimentalBoundary.test.ts` uses to keep default pages off those operations.
 
 **Key patterns:**
 - Dependency injection: `db: Session = Depends(get_db)` for database sessions

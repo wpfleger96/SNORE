@@ -1,0 +1,22 @@
+[
+  "DELETE /api/v1/analysis",
+  "DELETE /api/v1/analysis/jobs/{job_id}",
+  "DELETE /api/v1/validate/runs/{run_id}",
+  "GET /api/v1/analysis/delete-preview",
+  "GET /api/v1/analysis/jobs",
+  "GET /api/v1/analysis/sessions",
+  "GET /api/v1/days/{day_date}/experimental",
+  "GET /api/v1/sessions/{session_id}/analysis",
+  "GET /api/v1/sessions/{session_id}/waveforms/compare",
+  "GET /api/v1/stats/experimental",
+  "GET /api/v1/validate/runs",
+  "GET /api/v1/validate/runs/{run_id}",
+  "POST /api/v1/analysis/batch",
+  "POST /api/v1/sessions/{session_id}/analysis",
+  "POST /api/v1/validate/",
+  "POST /api/v1/validate/apple",
+  "POST /api/v1/validate/breaths",
+  "POST /api/v1/validate/fl",
+  "POST /api/v1/validate/rera",
+  "POST /api/v1/validate/runs"
+]

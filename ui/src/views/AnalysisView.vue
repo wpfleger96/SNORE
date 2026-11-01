@@ -226,29 +226,7 @@
                     </TableBody>
                 </Table>
 
-                <div v-if="totalEventPages > 1" class="flex items-center justify-between px-2 py-4">
-                    <span class="text-sm text-muted-foreground">
-                        Page {{ eventsPage + 1 }} of {{ totalEventPages }}
-                    </span>
-                    <div class="flex gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            :disabled="eventsPage === 0"
-                            @click="eventsPage--"
-                        >
-                            Previous
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            :disabled="eventsPage >= totalEventPages - 1"
-                            @click="eventsPage++"
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </div>
+                <TablePager v-model:page="eventsPage" :total-pages="totalEventPages" />
             </div>
         </div>
 
@@ -385,6 +363,7 @@
         <!-- Event Comparison -->
         <div v-if="comparison" class="section-card">
             <h2>Event Comparison</h2>
+            <p class="mb-3 text-sm text-muted-foreground">Detection mode: {{ comparison.mode }}</p>
             <div class="summary-row" style="margin-bottom: 1rem">
                 <StatCard
                     label="Device-scored Events"
@@ -399,7 +378,7 @@
                     :decimals="0"
                     glossary-key="programmatic_events"
                 />
-                <StatCard label="Matched" :value="comparison.matched" :decimals="0" />
+                <StatCard label="Matched" :value="comparison.matched_events" :decimals="0" />
                 <StatCard
                     label="Sensitivity"
                     :value="sensitivity"
@@ -427,11 +406,7 @@
             <div v-if="comparison.false_negatives?.length" class="compare-table-section">
                 <h3>False Negatives: Device-scored Events SNORE Missed</h3>
                 <div v-if="isMobile" class="card-list">
-                    <div
-                        v-for="(e, i) in comparison.false_negatives"
-                        :key="'fn-' + i"
-                        class="data-card"
-                    >
+                    <div v-for="(e, i) in pagedFalseNegatives" :key="'fn-' + i" class="data-card">
                         <div class="data-card-header">
                             <span
                                 class="event-badge"
@@ -465,7 +440,7 @@
                     </TableHeader>
                     <TableBody>
                         <TableRow
-                            v-for="(e, i) in comparison.false_negatives"
+                            v-for="(e, i) in pagedFalseNegatives"
                             :key="'fn-' + i"
                             class="odd:bg-muted/50"
                         >
@@ -492,6 +467,10 @@
                         </TableRow>
                     </TableBody>
                 </Table>
+                <TablePager
+                    v-model:page="falseNegativesPage"
+                    :total-pages="totalFalseNegativePages"
+                />
             </div>
 
             <div
@@ -503,7 +482,7 @@
             >
                 <h3>False Positives: SNORE-detected Events the Device Did Not Score</h3>
                 <div v-if="isMobile" class="card-list">
-                    <div v-for="(e, i) in allFalsePositives" :key="'fp-' + i" class="data-card">
+                    <div v-for="(e, i) in pagedFalsePositives" :key="'fp-' + i" class="data-card">
                         <div class="data-card-header">
                             <span
                                 class="event-badge"
@@ -553,7 +532,7 @@
                     </TableHeader>
                     <TableBody>
                         <TableRow
-                            v-for="(e, i) in allFalsePositives"
+                            v-for="(e, i) in pagedFalsePositives"
                             :key="'fp-' + i"
                             class="odd:bg-muted/50"
                         >
@@ -588,13 +567,17 @@
                         </TableRow>
                     </TableBody>
                 </Table>
+                <TablePager
+                    v-model:page="falsePositivesPage"
+                    :total-pages="totalFalsePositivePages"
+                />
             </div>
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, type ComputedRef } from 'vue'
 import {
     Table,
     TableBody,
@@ -613,6 +596,7 @@ import ExperimentalBanner from '@/components/ExperimentalBanner.vue'
 import FlowClassGlyph from '@/components/FlowClassGlyph.vue'
 import FlowClassPopover from '@/components/FlowClassPopover.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
+import TablePager from '@/components/TablePager.vue'
 import { getAnalysis, runAnalysis } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { useAuth } from '@/composables/useAuth'
@@ -641,16 +625,29 @@ const running = ref(false)
 const analysis = ref<AnalysisResult | null>(null)
 const comparison = ref<EventComparisonResult | null>(null)
 const selectedMode = ref('')
-const eventsPage = ref(0)
-const eventsPageSize = 25
 const flLegendOpen = ref(false)
 
 const modeOptions = computed(() => Object.keys(analysis.value?.mode_results ?? {}))
 
 const sensitivity = computed(() => {
     if (!comparison.value?.machine_event_count) return null
-    return (comparison.value.matched / comparison.value.machine_event_count) * 100
+    return (comparison.value.matched_events / comparison.value.machine_event_count) * 100
 })
+
+const PAGE_SIZE = 25
+
+/** One page of `rows`, returning to the first page whenever `rows` changes. */
+function usePagedRows<T>(rows: ComputedRef<T[]>) {
+    const page = ref(0)
+    const pageRows = computed(() =>
+        rows.value.slice(page.value * PAGE_SIZE, (page.value + 1) * PAGE_SIZE),
+    )
+    const totalPages = computed(() => Math.ceil(rows.value.length / PAGE_SIZE))
+    watch(rows, () => {
+        page.value = 0
+    })
+    return { page, pageRows, totalPages }
+}
 
 const selectedModeResult = computed(() => {
     if (!analysis.value || !selectedMode.value) return null
@@ -721,12 +718,11 @@ const modeEvents = computed<EventRow[]>(() => {
     return events
 })
 
-const paginatedEvents = computed(() => {
-    const start = eventsPage.value * eventsPageSize
-    return modeEvents.value.slice(start, start + eventsPageSize)
-})
-
-const totalEventPages = computed(() => Math.ceil(modeEvents.value.length / eventsPageSize))
+const {
+    page: eventsPage,
+    pageRows: paginatedEvents,
+    totalPages: totalEventPages,
+} = usePagedRows(modeEvents)
 
 interface FlDistRow {
     classNum: number
@@ -771,9 +767,35 @@ const allFalsePositives = computed(() =>
     ].sort((a, b) => a.start_time - b.start_time),
 )
 
-watch(selectedMode, () => {
-    eventsPage.value = 0
-})
+const {
+    page: falsePositivesPage,
+    pageRows: pagedFalsePositives,
+    totalPages: totalFalsePositivePages,
+} = usePagedRows(allFalsePositives)
+
+const {
+    page: falseNegativesPage,
+    pageRows: pagedFalseNegatives,
+    totalPages: totalFalseNegativePages,
+} = usePagedRows(computed(() => comparison.value?.false_negatives ?? []))
+
+// Bumped per fetch, so a slow response for an earlier mode cannot replace a newer one.
+let comparisonRequest = 0
+
+async function loadComparison(): Promise<void> {
+    const request = ++comparisonRequest
+    comparison.value = null
+    if (!selectedMode.value) return
+    try {
+        const result = await getWaveformCompare(props.sessionId, { mode: selectedMode.value })
+        if (request === comparisonRequest) comparison.value = result
+    } catch {
+        // Comparison data not available for this mode — section won't render
+    }
+}
+
+// Mount, running an analysis and the mode toggle all land here.
+watch([analysis, selectedMode], loadComparison)
 
 async function handleRunAnalysis(): Promise<void> {
     running.value = true
@@ -806,12 +828,6 @@ onMounted(async () => {
         }
     } finally {
         loading.value = false
-    }
-
-    try {
-        comparison.value = await getWaveformCompare(props.sessionId)
-    } catch {
-        // Comparison data not available — section won't render
     }
 })
 </script>

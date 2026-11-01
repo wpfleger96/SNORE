@@ -11,14 +11,20 @@ from collections.abc import Sequence
 
 import pytest
 
-from pydantic import BaseModel
-
 from snore.analysis.modes.postprocess import match_events_by_start_time
+from snore.analysis.shared.types import RERAEvent
 
 
-class _Ev(BaseModel, frozen=True):
-    start_time: float
+class _Ev(RERAEvent):
+    """A matchable event told apart by ``tag``; the matcher reads only start time."""
+
     tag: int
+    end_time: float = 0.0
+    duration: float = 0.0
+    obstructed_breath_count: int = 2
+    recovery_amplitude_increase_pct: float = 0.0
+    confidence: float = 0.0
+    baseline_flow: float = 0.0
 
 
 def _reference_match(
