@@ -6,13 +6,18 @@ on:
       - main
     tags:
       - 'v*'
+  # Build-only check so Dockerfile regressions fail before merge, not on main.
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 # Queue publish runs per ref so an older build can never overwrite a newer
-# `latest` tag.  cancel-in-progress: false means we wait, not skip.
+# `latest` tag.  cancel-in-progress: false means we wait, not skip.  PR builds
+# push nothing, so a newer commit on the same PR cancels the older build.
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
@@ -32,6 +37,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -55,18 +61,20 @@ jobs:
           echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push image
+      - name: Build image (push except on pull requests)
         uses: docker/build-push-action@v7
         with:
           context: .
           # linux/amd64 only — deployment target is amd64 Proxmox LXC;
           # QEMU-emulated arm64 adds CI time for zero consumers.
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # PRs read main's layer cache but don't write their own; PR-scoped
+          # entries can't be reused by main and would evict its cache.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
           build-args: |
             GIT_SHA=${{ steps.build_meta.outputs.sha_short }}
             BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
