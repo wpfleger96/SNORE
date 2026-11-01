@@ -3,7 +3,9 @@ FROM node:26-slim AS ui-builder
 
 WORKDIR /app/ui
 
-RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
+# Node >= 25 no longer bundles corepack; install it from npm. pnpm's version
+# comes from "packageManager" in ui/package.json.
+RUN npm install -g corepack@0.36.0 && corepack enable
 
 COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
