@@ -1,5 +1,7 @@
 """Waveform service for listing and loading waveform data."""
 
+import logging
+
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
 from datetime import datetime
@@ -28,6 +30,8 @@ from snore.services.schemas import (
 )
 
 __all__ = ["WaveformService", "clear_waveform_array_cache"]
+
+logger = logging.getLogger(__name__)
 
 # Byte cap for the deserialized-array cache below.  A full night of 25 Hz flow
 # is ~5.8 MB (float32 timestamps + values); 64 MB holds ~11 such channels.
@@ -133,6 +137,10 @@ class WaveformService(ProfileScopedService):
 
         Returns empty list if no waveforms found.
 
+        ``sample_count`` is derived from the blob's byte length, not the stored
+        column, so a listed channel whose stored count is NULL or wrong can still
+        fail to load.
+
         Args:
             session_id: Database session ID
 
@@ -140,7 +148,7 @@ class WaveformService(ProfileScopedService):
             List of WaveformInfo objects with metadata
         """
         await self._assert_session_owned(session_id)
-        # length() is answered from the record header, while sample_count is
+        # Bare length() is answered from the record header, while sample_count is
         # stored after the blob and would walk its overflow chain.
         rows = (
             await self.db_session.execute(
@@ -157,7 +165,17 @@ class WaveformService(ProfileScopedService):
 
         result = []
         for row in rows:
-            sample_count = row.blob_bytes // WAVEFORM_BLOB_BYTES_PER_SAMPLE
+            sample_count, stray_bytes = divmod(
+                row.blob_bytes, WAVEFORM_BLOB_BYTES_PER_SAMPLE
+            )
+            if stray_bytes:
+                logger.warning(
+                    "Waveform blob is not a whole number of samples: "
+                    "session_id=%s, type=%s, stray_bytes=%s",
+                    session_id,
+                    row.waveform_type,
+                    stray_bytes,
+                )
             duration_seconds = (
                 sample_count / row.sample_rate if row.sample_rate > 0 else 0
             )
@@ -177,12 +195,10 @@ class WaveformService(ProfileScopedService):
     ) -> tuple[dict[str, Any], _WaveformCacheKey]:
         """Light query for a Waveform row's scalar metadata, WITHOUT the blob.
 
-        Selects only columns stored before ``data_blob``, so SQLite never walks
-        its overflow chain.  ``sample_count`` is stored after the blob and is
-        deliberately absent: :meth:`get_waveform_data` adds it, after which the
-        dict mirrors ``fetch_waveform_blob``'s ``metadata_scalars`` key-for-key
-        (including ``waveform_id``), keeping that method's return contract
-        identical whether arrays come from the cache or a fresh deserialize.
+        Selects only ``waveforms`` columns stored before ``data_blob`` (see the
+        note on :class:`models.Waveform`), so SQLite doesn't walk its overflow
+        chain.  ``sample_count`` is stored after the blob, so this dict omits it
+        and :meth:`get_waveform_data` adds it from the array length.
 
         Scoped to this profile through Session → Device, so a row the profile
         does not own reads as not found.
@@ -268,13 +284,13 @@ class WaveformService(ProfileScopedService):
 
         Deserialized arrays are cached module-level by row id and session import
         date (see :class:`_WaveformArrayCache`), so a warm request needs neither
-        the blob read nor the deserialize, and SQLite does not touch the overflow
-        chain.  Metadata other than ``sample_count`` comes from the fresh light
-        query, so unit/sample_rate/etc. stay current; ``sample_count`` is the length
-        of the full channel array.  Cached arrays are marked read-only; the
-        windowing slice below is a read-only view of them, and the
-        no-window/no-downsample path returns the read-only arrays directly (the
-        router only reads them via ``.tolist()``; LTTB allocates its own output).
+        the blob read nor the deserialize.  Metadata other than ``sample_count``
+        comes from the fresh light query, so unit/sample_rate/etc. stay current;
+        ``sample_count`` is the length of the full channel array.  Cached arrays
+        are marked read-only; the windowing slice below is a read-only view of
+        them, and the no-window/no-downsample path returns the read-only arrays
+        directly (the router only reads them via ``.tolist()``; LTTB allocates
+        its own output).
 
         Args:
             session_id: Database session ID
@@ -306,11 +322,13 @@ class WaveformService(ProfileScopedService):
         cached = _waveform_array_cache.get(cache_key)
         if cached is None:
             # Fetch the blob and its stored count, keyed by the id the metadata
-            # query already resolved.  sample_count costs nothing extra here
-            # because the overflow chain is being read anyway.  A request reads
-            # one snapshot on SQLite WAL, so this always finds that row there;
-            # the session filter and the None check are defensive, and fail as
-            # the same 404 as a metadata miss above.
+            # query already resolved.  The stored count validates the blob's size
+            # independently of the blob's own length, and the overflow chain is
+            # being walked anyway; a count derived from the blob here would make
+            # that validation a tautology.  A request reads one snapshot on SQLite
+            # WAL, so this always finds that row there; the session filter and the
+            # None check are defensive, and fail as the same 404 as a metadata
+            # miss above.
             blob_row = (
                 await self.db_session.execute(
                     select(

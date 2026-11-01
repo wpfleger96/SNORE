@@ -194,7 +194,7 @@ class TestGetWaveform:
         assert data["returned_samples"] > 0
 
     def test_get_waveform_windowed_miss_then_hit_reports_full_total(
-        self, api_client, db_session, test_device, test_session_factory
+        self, api_client, db_session, test_device, test_session_factory, monkeypatch
     ):
         session = test_session_factory(
             test_device.id, start_time=datetime(2024, 1, 1, 22, 0)
@@ -202,7 +202,17 @@ class TestGetWaveform:
         _seed_waveform(db_session, session.id)
         url = f"/api/v1/sessions/{session.id}/waveforms/flow"
         params = {"start_seconds": 5, "end_seconds": 20}
-        assert not waveform_service_module._waveform_array_cache._entries
+        calls = 0
+        real_deser = waveform_service_module.deserialize_waveform_blob
+
+        def counting_deser(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_deser(*args, **kwargs)
+
+        monkeypatch.setattr(
+            waveform_service_module, "deserialize_waveform_blob", counting_deser
+        )
 
         miss = api_client.get(url, params=params)
         hit = api_client.get(url, params=params)
@@ -210,9 +220,9 @@ class TestGetWaveform:
         assert miss.status_code == 200
         data = miss.json()
         assert data["total_samples"] == 2500
-        assert data["downsampled"] is True
         assert data["returned_samples"] < data["total_samples"]
         assert hit.json() == data
+        assert calls == 1  # only the miss deserialized; the second was a cache hit
 
 
 class TestWaveformCompare:

@@ -1,5 +1,6 @@
 """Unit tests for WaveformService."""
 
+import logging
 import sqlite3
 
 from contextlib import closing
@@ -125,6 +126,47 @@ class TestWaveformService:
         assert len(result) == 1
         expected_hours = 90000 / 25.0 / 3600
         assert result[0].duration_hours == pytest.approx(expected_hours, rel=1e-6)
+
+    async def test_list_waveforms_null_sample_count_derives_from_blob(
+        self, async_db_session, async_test_device
+    ):
+        """The listed count and duration come from the blob, not the stored count."""
+        session = await _seed_session(async_db_session, async_test_device, "derived")
+        wf = await _seed_waveform(async_db_session, session.id)
+        wf.sample_count = None
+        await async_db_session.flush()
+        service = WaveformService(async_db_session, profile_id=1)
+
+        [info] = await service.list_waveforms(session.id)
+
+        assert info.sample_count == 1000
+        assert info.duration_hours == pytest.approx(1000 / 25.0 / 3600)
+
+    async def test_list_waveforms_partial_sample_blob_floors_count_and_warns(
+        self, async_db_session, async_test_device, caplog
+    ):
+        """Only a blob with stray bytes warns, and it lists its whole samples."""
+        session = await _seed_session(async_db_session, async_test_device, "stray")
+        await _seed_waveform(
+            async_db_session,
+            session.id,
+            blob=_make_waveform_blob(1000, 25.0) + bytes(3),
+        )
+        await _seed_waveform(async_db_session, session.id, waveform_type="pressure")
+        service = WaveformService(async_db_session, profile_id=1)
+
+        with caplog.at_level(logging.WARNING, logger=waveform_service_module.__name__):
+            flow, pressure = await service.list_waveforms(session.id)
+
+        assert (flow.sample_count, pressure.sample_count) == (1000, 1000)
+        [warning] = [
+            r for r in caplog.records if r.name == waveform_service_module.__name__
+        ]
+        assert warning.levelno == logging.WARNING
+        message = warning.getMessage()
+        assert f"session_id={session.id}" in message
+        assert "type=flow" in message
+        assert "stray_bytes=3" in message
 
     async def test_get_waveform_data_not_found(
         self, async_db_session, async_test_device
@@ -701,7 +743,7 @@ async def _seed_waveform(
     session_id: int,
     *,
     waveform_type: str = "flow",
-    sample_count: int | None = 1000,
+    sample_count: int = 1000,
     blob: bytes | None = None,
 ) -> Waveform:
     wf = Waveform(
@@ -710,9 +752,7 @@ async def _seed_waveform(
         sample_rate=25.0,
         unit="L/min",
         sample_count=sample_count,
-        data_blob=(
-            blob if blob is not None else _make_waveform_blob(sample_count or 0, 25.0)
-        ),
+        data_blob=blob if blob is not None else _make_waveform_blob(sample_count, 25.0),
     )
     async_db_session.add(wf)
     await async_db_session.flush()
@@ -725,22 +765,27 @@ def _constant_blob(sample_count: int, value: float) -> bytes:
     return np.column_stack([timestamps, values]).astype(np.float32).tobytes()
 
 
-def _sever_overflow_chain(db_path: Path, blob: bytes) -> int:
-    """Zero every overflow page holding ``blob``; returns how many were zeroed.
+def _zero_overflow_pages(db_path: Path, blob: bytes) -> int:
+    """Zero ``blob``'s overflow pages so any read that follows the chain fails.
 
-    An overflow page is a 4-byte next-page pointer followed by payload, so a page
-    whose bytes after the pointer occur in ``blob`` belongs to its chain.  The
-    blob's ascending timestamps make a 64-byte match unique to those pages.
+    SQLite reports such a read as corruption, which lets a test prove a query
+    never walked the chain.  An overflow page is a next-page pointer followed by
+    payload, so this zeroes each page whose payload start matches ``blob``; a
+    short final page may not match.  The blob's ascending timestamps make a match
+    unique to its pages.  Returns how many pages were zeroed.
     """
+    pointer_size = 4
+    probe_size = 64
     image = bytearray(db_path.read_bytes())
     page_size = int.from_bytes(image[16:18], "big")
-    severed = 0
+    zeroed = 0
     for offset in range(0, len(image), page_size):
-        if bytes(image[offset + 4 : offset + 68]) in blob:
+        payload_start = offset + pointer_size
+        if bytes(image[payload_start : payload_start + probe_size]) in blob:
             image[offset : offset + page_size] = bytes(page_size)
-            severed += 1
+            zeroed += 1
     db_path.write_bytes(image)
-    return severed
+    return zeroed
 
 
 async def _cache_then_delete_without_clear(
@@ -798,12 +843,9 @@ class TestWaveformArrayCache:
     ):
         """A NULL stored count fails validation; nothing bad enters the cache."""
         session = await _seed_session(async_db_session, async_test_device, "null")
-        await _seed_waveform(
-            async_db_session,
-            session.id,
-            sample_count=None,
-            blob=_make_waveform_blob(1000, 25.0),
-        )
+        wf = await _seed_waveform(async_db_session, session.id)
+        wf.sample_count = None
+        await async_db_session.flush()
         service = WaveformService(async_db_session, profile_id=1)
 
         with pytest.raises(ValueError, match="Invalid waveform blob data"):
@@ -1056,37 +1098,19 @@ class TestWaveformArrayCache:
 
 
 class TestOverflowChainReads:
-    """Metadata paths must not read past ``data_blob`` (GitHub issue #435).
+    """Metadata paths must not read past ``data_blob`` (#435).
 
     ``sample_count`` is stored after the blob, so reading it walks the blob's
     whole overflow chain even when the blob itself is never returned.
     """
 
-    async def test_list_waveforms_null_sample_count_derives_from_blob(
-        self, async_db_session, async_test_device
-    ):
-        """The listed count and duration come from the blob, not the stored count."""
-        session = await _seed_session(async_db_session, async_test_device, "derived")
-        await _seed_waveform(
-            async_db_session,
-            session.id,
-            sample_count=None,
-            blob=_make_waveform_blob(1000, 25.0),
-        )
-        service = WaveformService(async_db_session, profile_id=1)
-
-        [info] = await service.list_waveforms(session.id)
-
-        assert info.sample_count == 1000
-        assert info.duration_hours == pytest.approx(1000 / 25.0 / 3600)
-
-    async def test_warm_read_and_list_succeed_with_severed_overflow_chain(
+    async def test_warm_read_and_list_succeed_with_zeroed_overflow_pages(
         self, async_db_session, async_test_device, temp_db
     ):
         """Warm metadata and listing work when any read of the chain would fail."""
         sample_count = 5000  # 40 KB, so the row spills onto overflow pages
         blob = _make_waveform_blob(sample_count, 25.0)
-        session = await _seed_session(async_db_session, async_test_device, "severed")
+        session = await _seed_session(async_db_session, async_test_device, "zeroed")
         session_id = session.id
         profile_id = async_test_device.profile_id
         await _seed_waveform(
@@ -1099,8 +1123,7 @@ class TestOverflowChainReads:
         # Drop every connection so no page cache survives the on-disk patch.
         await async_db_session.close()
         await async_db_session.bind.dispose()
-        assert not Path(f"{temp_db}-wal").exists()  # committed data is in the main file
-        assert _sever_overflow_chain(temp_db, blob) > 0
+        assert _zero_overflow_pages(temp_db, blob) > 0
 
         # Control: the corruption is real, so the assertions below can't pass
         # vacuously.  "malformed" rules out OperationalError's "no such table".

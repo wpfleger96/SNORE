@@ -143,16 +143,15 @@ def deserialize_waveform_blob(
         ... )
     """
     try:
-        data = np.frombuffer(blob_data, dtype=np.float32)
-
-        expected_size = sample_count * 2  # 2 columns: timestamp, value
-        if len(data) != expected_size:
+        expected_bytes = sample_count * WAVEFORM_BLOB_BYTES_PER_SAMPLE
+        if len(blob_data) != expected_bytes:
             raise ValueError(
-                f"Blob size mismatch: expected {expected_size} values "
-                f"({sample_count} samples × 2 columns), got {len(data)}"
+                f"Blob size mismatch: expected {expected_bytes} bytes "
+                f"({sample_count} samples × {WAVEFORM_BLOB_BYTES_PER_SAMPLE} bytes), "
+                f"got {len(blob_data)}"
             )
 
-        data = data.reshape((sample_count, 2))
+        data = np.frombuffer(blob_data, dtype=np.float32).reshape((sample_count, 2))
 
         timestamps = data[:, 0]  # Seconds from session start
         values = data[:, 1]  # Signal values

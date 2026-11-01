@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from snore.analysis.data.waveform_loader import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
     apply_noise_filter,
     deserialize_waveform_blob,
     detect_and_mark_artifacts,
@@ -20,6 +21,8 @@ from snore.analysis.data.waveform_loader import (
     handle_sample_rate_conversion,
     load_waveform_from_db,
 )
+from snore.database.importers import serialize_waveform
+from snore.parsers.unified import WaveformData, WaveformType
 
 
 class TestWaveformDeserialization:
@@ -50,6 +53,13 @@ class TestWaveformDeserialization:
         with pytest.raises(ValueError, match="Blob size mismatch"):
             deserialize_waveform_blob(blob, sample_count=5)
 
+    def test_deserialize_partial_sample_blob_raises(self):
+        """Blob that isn't a whole number of samples should raise ValueError."""
+        blob = np.zeros((1000, 2), dtype=np.float32).tobytes() + bytes(3)
+
+        with pytest.raises(ValueError, match="Invalid waveform blob data: Blob size"):
+            deserialize_waveform_blob(blob, sample_count=1000)
+
     def test_deserialize_corrupted_blob(self):
         """Corrupted blob should raise ValueError."""
         corrupted_blob = b"invalid_data_here"
@@ -68,6 +78,20 @@ class TestWaveformDeserialization:
 
         np.testing.assert_array_equal(result_t, timestamps)
         np.testing.assert_array_equal(result_v, values)
+
+    def test_serialized_waveform_size_matches_bytes_per_sample(self):
+        """The size constant should describe what the real writer stores."""
+        waveform = WaveformData(
+            waveform_type=WaveformType.FLOW_RATE,
+            sample_rate=25.0,
+            unit="L/min",
+            timestamps=[0.0, 0.04, 0.08],
+            values=[10.0, 20.0, 15.0],
+        )
+
+        blob = serialize_waveform(waveform)
+
+        assert len(blob) == len(waveform.values) * WAVEFORM_BLOB_BYTES_PER_SAMPLE
 
 
 class TestWaveformLoading:
