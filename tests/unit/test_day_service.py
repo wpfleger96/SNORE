@@ -488,7 +488,7 @@ class TestDayServiceFlReraProxy:
             )
 
         monkeypatch.setattr(
-            "snore.services.breath_service.BreathService.get_nightly_summary",
+            "snore.services.breath_service.BreathService.get_experimental_nightly_summary",
             _fake_summary,
         )
 

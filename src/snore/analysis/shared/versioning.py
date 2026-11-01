@@ -117,7 +117,7 @@ class AlgorithmIdentity(BaseModel):
 
 
 # Fields whose mismatch triggers different behavior per call site: find_windows
-# hard-refuses for all criteria except ca_centered; compare_epochs emits
+# hard-refuses for all criteria except ca_centered; experimental_compare_epochs emits
 # non-blocking version_warnings (distributions are still computed).
 # trigger_cycle, validity_flags and pattern_detector are intentionally excluded:
 # none feeds a cross-epoch distribution (trigger/cycle labels are per-breath
@@ -225,6 +225,7 @@ class NullReason(StrEnum):
     ALGO_VERSION_MISMATCH = "algo_version_mismatch"
     PRIMARY_MODE_MISMATCH = "primary_mode_mismatch"
     CHANNEL_ABSENT = "channel_absent"
+    CHANNEL_CORRUPT = "channel_corrupt"
     CHANNEL_UNALIGNED = "channel_unaligned"
     NOT_AVAILABLE = "not_available"
     SMART_RAMP_INDETERMINATE = "smart_ramp_indeterminate"

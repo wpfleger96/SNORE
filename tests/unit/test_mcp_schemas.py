@@ -57,10 +57,10 @@ class TestSchemaModelMap:
             "epoch_distribution",
             "epoch_stats",
             "epoch_rx_violation",
-            "compare_epochs_response",
+            "experimental_compare_epochs_response",
             "device_epoch_distribution",
             "device_epoch_stats",
-            "device_compare_epochs_response",
+            "compare_epochs_response",
         }
         assert stage2_keys <= set(SCHEMA_MODEL_MAP.keys())
 

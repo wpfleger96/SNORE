@@ -350,16 +350,19 @@ class _BreathServiceCore:
         db: AsyncSession,
         session_ids: list[int],
         channels: Sequence[str],
-    ) -> dict[str, dict[int, list[float]]]:
-        """Deserialized samples of ``channels``: channel → session_id → values.
+    ) -> tuple[dict[str, dict[int, list[float]]], dict[str, set[int]]]:
+        """``(vals, corrupt)`` for ``channels``.
 
-        Every requested channel is a key of the result; sessions without a
-        usable row for a channel are absent from its map.  Values are raw,
-        negative sentinels included, so callers apply their own filter.  This is
-        pure I/O + light compute (numpy deserialization); no analysis state is
+        ``vals`` is channel → session_id → deserialized samples; ``corrupt`` is
+        channel → ids of sessions whose blob could not be decoded.  Every
+        requested channel is a key of both; sessions without a usable row for a
+        channel are absent from its ``vals`` map.  Values are raw, negative
+        sentinels included, so callers apply their own filter.  This is pure
+        I/O + light compute (numpy deserialization); no analysis state is
         consulted.
         """
         vals_by_channel: dict[str, dict[int, list[float]]] = {c: {} for c in channels}
+        corrupt_by_channel: dict[str, set[int]] = {c: set() for c in channels}
 
         # Chunk the unbounded session_id list (SQLite bound-param cap); the
         # waveform_type IN-list is a constant kept in every chunk.  Each session
@@ -384,12 +387,13 @@ class _BreathServiceCore:
                 try:
                     _ts, vals = deserialize_waveform_blob(wf.data_blob, wf.sample_count)
                 except ValueError:
+                    corrupt_by_channel[wf.waveform_type].add(int(wf.session_id))
                     continue
                 vals_by_channel[wf.waveform_type][int(wf.session_id)] = [
                     float(v) for v in vals
                 ]
 
-        return vals_by_channel
+        return vals_by_channel, corrupt_by_channel
 
     @staticmethod
     def _current_algorithm_identity() -> AlgorithmIdentity:

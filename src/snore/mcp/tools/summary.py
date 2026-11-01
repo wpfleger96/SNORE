@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.shared.versioning import NullReason
+from snore.constants import OSCAR_BINARY_PARSER_ID
 from snore.database import models
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ from snore.mcp.schemas import (
     DeviceCapabilities,
     ExperimentalNightlyResponse,
     ExperimentalNightlyRow,
+    NightlyChannelFields,
     NightlyRow,
     NightlySummaryResponse,
 )
@@ -155,7 +157,9 @@ async def get_nightly_summary(
     # already profile-scoped by the Day query above.
     session_rows = (
         await db_session.execute(
-            select(models.Session.id, models.Session.day_id)
+            select(
+                models.Session.id, models.Session.day_id, models.Session.import_source
+            )
             .join(models.Device, models.Session.device_id == models.Device.id)
             .where(
                 models.Session.day_id.in_(day_ids),
@@ -167,10 +171,12 @@ async def get_nightly_summary(
     ).all()
 
     day_to_session: dict[int, int] = {}
-    for row_session_id, s_day_id in session_rows:
+    import_source_by_session: dict[int, str | None] = {}
+    for row_session_id, s_day_id, import_source in session_rows:
         if s_day_id is None:  # excluded by the day_id IN filter
             continue
         day_to_session.setdefault(int(s_day_id), int(row_session_id))
+        import_source_by_session[int(row_session_id)] = import_source
 
     session_ids = list(day_to_session.values())
 
@@ -228,8 +234,11 @@ async def get_nightly_summary(
                 leak_95th_lpm=day.leak_95th,
                 rr_mean_bpm=stats.respiratory_rate_mean if stats else None,
                 tv_mean_ml=(
-                    round(stats.tidal_volume_mean * 1000, 1)
-                    if stats and stats.tidal_volume_mean is not None
+                    _tidal_volume_ml(
+                        stats.tidal_volume_mean,
+                        import_source_by_session.get(int(stats.session_id)),
+                    )
+                    if stats
                     else None
                 ),
                 mv_mean_lpm=stats.minute_ventilation_mean if stats else None,
@@ -239,7 +248,9 @@ async def get_nightly_summary(
                 ie_ratio_median=ie_ratio_median,
                 ie_ratio_reason=_absent_reason(ie_ratio_median, session_id),
                 device_id=day.device_id,
-                **_device_stat_fields(bs_by_night.get((day.device_id, day.date))),
+                **_device_stat_fields(
+                    bs_by_night.get((day.device_id, day.date))
+                ).model_dump(),
             )
         )
 
@@ -310,6 +321,17 @@ def _rounded(value: float | None, ndigits: int) -> float | None:
     return None if value is None else round(value, ndigits)
 
 
+def _tidal_volume_ml(value: float | None, import_source: str | None) -> float | None:
+    """``Statistics.tidal_volume_mean`` in mL.
+
+    OSCAR stores tidal volume in mL (OSCAR schema.cpp:244).  ResMed STR ``TidVol``
+    is stored as read, in litres (OSCAR scales it, resmed_loader.cpp :1990-1998).
+    """
+    if value is None:
+        return None
+    return round(value if import_source == OSCAR_BINARY_PARSER_ID else value * 1000, 1)
+
+
 def _absent_reason(value: float | None, session_id: int | None) -> str | None:
     """Why a device summary value is null; ``session_id`` is the night's first enabled session."""
     if value is not None:
@@ -347,27 +369,27 @@ async def _range_capabilities(
     )
 
 
-def _device_stat_fields(night: NightlyDeviceStats | None) -> dict[str, Any]:
+def _device_stat_fields(night: NightlyDeviceStats | None) -> NightlyChannelFields:
     """NightlyRow channel fields; ``night`` is None for a Day with no enabled sessions."""
     if night is None:
         no_sessions = NullReason.NO_SESSIONS.value
-        return {
-            "leak_above_24_pct_reason": no_sessions,
-            "device_flg_reason": no_sessions,
-            "snore_reason": no_sessions,
-        }
-    return {
-        "leak_above_24_pct": night.leak_above_24_pct,
-        "leak_above_24_pct_reason": str_or_none(night.leak_above_24_pct_reason),
-        "device_flg_median": _rounded(night.device_flg_median, 4),
-        "device_flg_95th": _rounded(night.device_flg_95th, 4),
-        "device_flg_max": _rounded(night.device_flg_max, 4),
-        "device_flg_reason": str_or_none(night.device_flg_reason),
-        "snore_median": _rounded(night.snore_median, 4),
-        "snore_95th": _rounded(night.snore_95th, 4),
-        "snore_pct_time": _rounded(night.snore_pct_time, 4),
-        "snore_reason": str_or_none(night.snore_reason),
-    }
+        return NightlyChannelFields(
+            leak_above_24_pct_reason=no_sessions,
+            device_flg_reason=no_sessions,
+            snore_reason=no_sessions,
+        )
+    return NightlyChannelFields(
+        leak_above_24_pct=night.leak_above_24_pct,
+        leak_above_24_pct_reason=str_or_none(night.leak_above_24_pct_reason),
+        device_flg_median=_rounded(night.device_flg_median, 4),
+        device_flg_95th=_rounded(night.device_flg_95th, 4),
+        device_flg_max=_rounded(night.device_flg_max, 4),
+        device_flg_reason=str_or_none(night.device_flg_reason),
+        snore_median=_rounded(night.snore_median, 4),
+        snore_95th=_rounded(night.snore_95th, 4),
+        snore_pct_time=_rounded(night.snore_pct_time, 4),
+        snore_reason=str_or_none(night.snore_reason),
+    )
 
 
 def _experimental_row(night: NightlyAnalysisSummary) -> ExperimentalNightlyRow:
@@ -452,6 +474,9 @@ def register(mcp: FastMCP) -> None:
         When one of these channels is null, its reason is
         ``"channel_absent"`` (the channel was not recorded) or
         ``"no_sessions"`` (the night has no enabled sessions).
+        ``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``: a
+        session's stored leak data could not be decoded, so the night reports
+        no partial value.
 
         ``rr_mean_bpm``, ``tv_mean_ml``, ``mv_mean_lpm``, ``ti_median_s`` and
         ``ie_ratio_median`` are device summary values of the night's first

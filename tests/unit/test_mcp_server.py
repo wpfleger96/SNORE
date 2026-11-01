@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -343,6 +345,19 @@ class TestValidatePageArgs:
         with pytest.raises(ValidationError, match="page_size must be between 1 and 90"):
             validate_page_args(1, 91)
 
+    def test_page_beyond_cap_raises(self) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_page_args
+
+        with pytest.raises(ValidationError, match="page must be <= 1000000"):
+            validate_page_args(2**70, 30)
+
+    def test_page_at_cap_keeps_offset_in_sqlite_range(self) -> None:
+        from snore.mcp.validation import _MAX_PAGE, validate_page_args
+
+        assert validate_page_args(_MAX_PAGE, 90) == 90
+        assert (_MAX_PAGE - 1) * 90 < 2**63
+
     def test_page_size_200_raises(self) -> None:
         from snore.mcp.errors import ValidationError
         from snore.mcp.validation import validate_page_args
@@ -401,6 +416,16 @@ class TestValidateComplianceThreshold:
         ):
             validate_compliance_threshold(-1.0)
 
+    @pytest.mark.parametrize("hours", [math.nan, math.inf, -math.inf])
+    def test_non_finite_raises(self, hours: float) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_compliance_threshold
+
+        with pytest.raises(
+            ValidationError, match="compliance_threshold_hours must be a finite number"
+        ):
+            validate_compliance_threshold(hours)
+
 
 class TestValidateMinDuration:
     """validate_min_duration rejects negative durations."""
@@ -426,6 +451,16 @@ class TestValidateMinDuration:
 
         with pytest.raises(ValidationError, match="min_duration must be >= 0"):
             validate_min_duration(-0.1)
+
+    @pytest.mark.parametrize("min_duration", [math.nan, math.inf, -math.inf])
+    def test_non_finite_raises(self, min_duration: float) -> None:
+        from snore.mcp.errors import ValidationError
+        from snore.mcp.validation import validate_min_duration
+
+        with pytest.raises(
+            ValidationError, match="min_duration must be a finite number"
+        ):
+            validate_min_duration(min_duration)
 
 
 class TestStage2ToolsRegistered:

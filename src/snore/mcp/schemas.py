@@ -163,7 +163,59 @@ class SettingsChangesResponse(BaseModel):
     total_changes: int
 
 
-class NightlyRow(BaseModel):
+class NightlyChannelFields(BaseModel):
+    """Per-night statistics of the device leak, flow-limitation and snore channels."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    leak_above_24_pct: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Percent of leak samples at or above 24 L/min, OSCAR's time over the "
+        "default redline.",
+        default=None,
+    )
+    leak_above_24_pct_reason: str | None = None
+
+    # Device flow-limitation ("fl") and snore channels.  Negative sentinel
+    # values filtered before aggregation; zeros retained.  Reason tokens:
+    # "channel_absent" (session(s) had no such channel), "no_sessions" (the
+    # day had no enabled sessions at all).  leak_above_24_pct_reason is also
+    # "channel_corrupt" (a session's leak blob could not be decoded).
+    device_flg_median: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Median of the device flow-limitation channel (0–1 unitless).",
+        default=None,
+    )
+    device_flg_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "95th percentile of the device flow-limitation channel (0–1 unitless).",
+        default=None,
+    )
+    device_flg_max: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Maximum of the device flow-limitation channel (0–1 unitless).",
+        default=None,
+    )
+    device_flg_reason: str | None = None
+    snore_median: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Median of the device snore channel (0–5 unitless).",
+        default=None,
+    )
+    snore_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        "95th percentile of the device snore channel (0–5 unitless).",
+        default=None,
+    )
+    snore_pct_time: float | None = provenance_field(
+        Provenance.DERIVED,
+        "Fraction of snore-channel samples (0–1) above 0.5.",
+        default=None,
+    )
+    snore_reason: str | None = None
+
+
+class NightlyRow(NightlyChannelFields):
     """Per-night summary row returned by get_nightly_summary."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -258,14 +310,6 @@ class NightlyRow(BaseModel):
     leak_95th_lpm: float | None = provenance_field(
         Provenance.DERIVED, "95th-percentile leak (L/min).", default=None
     )
-    leak_above_24_pct: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Percent of leak samples at or above 24 L/min, OSCAR's time over the "
-        "default redline.",
-        default=None,
-    )
-    leak_above_24_pct_reason: str | None = None
-
     rr_mean_bpm: float | None = provenance_field(
         Provenance.DEVICE,
         "Respiratory rate (breaths/min), device session summary of the night's "
@@ -306,43 +350,6 @@ class NightlyRow(BaseModel):
         default=None,
     )
     ie_ratio_reason: str | None = None
-
-    # Device flow-limitation ("fl") and snore channels.  Negative sentinel
-    # values filtered before aggregation; zeros retained.  Reason tokens:
-    # "channel_absent" (session(s) had no such channel), "no_sessions" (the
-    # day had no enabled sessions at all).
-    device_flg_median: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Median of the device flow-limitation channel (0–1 unitless).",
-        default=None,
-    )
-    device_flg_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        "95th percentile of the device flow-limitation channel (0–1 unitless).",
-        default=None,
-    )
-    device_flg_max: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Maximum of the device flow-limitation channel (0–1 unitless).",
-        default=None,
-    )
-    device_flg_reason: str | None = None
-    snore_median: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Median of the device snore channel (0–5 unitless).",
-        default=None,
-    )
-    snore_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        "95th percentile of the device snore channel (0–5 unitless).",
-        default=None,
-    )
-    snore_pct_time: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Fraction of snore-channel samples (0–1) above 0.5.",
-        default=None,
-    )
-    snore_reason: str | None = None
 
     device_id: int | None = None
 
@@ -513,8 +520,8 @@ class EventContext(BaseModel):
     )
 
 
-class EventRow(BaseModel):
-    """A single respiratory event with inline context.
+class EventRowBase(BaseModel):
+    """The anchors and position that identify one device-scored event.
 
     Timestamp contract (A6):
     - ``start_time_wall_clock``: device wall-clock; offset-qualified when
@@ -535,6 +542,11 @@ class EventRow(BaseModel):
     timezone_status: str = "unknown"  # "unknown" | "user_declared"
     timezone_name: str | None = None  # IANA name when user_declared
     offset_seconds: float  # seconds from this event's Session.start_time (tier 3)
+
+
+class EventRow(EventRowBase):
+    """A single respiratory event with inline context."""
+
     duration_seconds: float | None = provenance_field(
         Provenance.DEVICE, "Device-scored event duration (s).", default=None
     )
@@ -557,13 +569,14 @@ class EventRow(BaseModel):
     context: EventContext | None = None
 
 
-class EventsResponse(BaseModel):
-    """Response from get_events.
+class EventsResponseBase(BaseModel):
+    """Fields shared by the responses that list one date's events.
 
     ``session_id`` and ``session_start_wall_clock`` are the response-level anchors.
     They are null when no events were returned or when events span multiple sessions.
-    Per-event anchors (``EventRow.session_id`` and ``EventRow.session_start_wall_clock``)
-    are always populated on individual events.
+    Per-event anchors (``EventRowBase.session_id`` and
+    ``EventRowBase.session_start_wall_clock``) are always populated on individual
+    events.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -573,28 +586,23 @@ class EventsResponse(BaseModel):
     session_start_wall_clock: str | None = None  # null when empty or multi-session
     timezone_status: str = "unknown"
     timezone_name: str | None = None  # IANA name when user_declared
-    events: list[EventRow]
     total_events: int
     truncated: bool = False
     device_capabilities: DeviceCapabilities | None = None
 
 
-class ExperimentalEventContextRow(BaseModel):
+class EventsResponse(EventsResponseBase):
+    """Response from get_events."""
+
+    events: list[EventRow]
+
+
+class ExperimentalEventContextRow(EventRowBase):
     """Experimental ventilatory context for one device-scored event.
 
-    Identifies its event with the same anchors and timestamp contract as
-    ``EventRow``.  Null values carry the companion ``*_reason`` field.
+    Null values carry the companion ``*_reason`` field.
     """
 
-    model_config = ConfigDict(populate_by_name=True)
-
-    session_id: int  # session that produced this event (per-event anchor)
-    session_start_wall_clock: str  # same contract as EventRow
-    event_type: str
-    start_time_wall_clock: str  # same contract as EventRow
-    timezone_status: str = "unknown"  # "unknown" | "user_declared"
-    timezone_name: str | None = None  # IANA name when user_declared
-    offset_seconds: float  # seconds from this event's Session.start_time (tier 3)
     mv_prior_120s_lpm: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Mean minute ventilation over the 120 s before the event (L/min); may "
@@ -618,27 +626,13 @@ class ExperimentalEventContextRow(BaseModel):
     mv_source: str | None = None
 
 
-class ExperimentalEventContextResponse(BaseModel):
-    """Response from experimental_get_event_context.
+class ExperimentalEventContextResponse(EventsResponseBase):
+    """Response from experimental_get_event_context."""
 
-    ``session_id`` and ``session_start_wall_clock`` are the response-level anchors.
-    They are null when no events were returned or when events span multiple sessions.
-    """
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    date: str
-    session_id: int | None = None  # null when empty or multi-session
-    session_start_wall_clock: str | None = None  # null when empty or multi-session
-    timezone_status: str = "unknown"
-    timezone_name: str | None = None  # IANA name when user_declared
     events: list[ExperimentalEventContextRow]
-    total_events: int
-    truncated: bool = False
     # Version of the query-time flow-derived MV fallback (MV_FALLBACK_ALGO_VERSION);
     # non-null only when at least one returned event has mv_source "flow_derived".
     mv_fallback_version: str | None = None
-    device_capabilities: DeviceCapabilities | None = None
 
 
 class CapabilityEntry(BaseModel):
@@ -1027,7 +1021,7 @@ class DeviceEpochStats(BaseModel):
     )
 
 
-class DeviceCompareEpochsResponse(BaseModel):
+class CompareEpochsResponse(BaseModel):
     """Response from compare_epochs."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -1037,7 +1031,7 @@ class DeviceCompareEpochsResponse(BaseModel):
     rx_violations: list[EpochRxViolationRow] = []
 
 
-class CompareEpochsResponse(BaseModel):
+class ExperimentalCompareEpochsResponse(BaseModel):
     """Response from experimental_compare_epochs."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -1126,10 +1120,10 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "epoch_distribution": EpochDistribution,
     "epoch_stats": EpochStats,
     "epoch_rx_violation": EpochRxViolationRow,
-    "compare_epochs_response": CompareEpochsResponse,
+    "experimental_compare_epochs_response": ExperimentalCompareEpochsResponse,
     "device_epoch_distribution": DeviceEpochDistribution,
     "device_epoch_stats": DeviceEpochStats,
-    "device_compare_epochs_response": DeviceCompareEpochsResponse,
+    "compare_epochs_response": CompareEpochsResponse,
     # Stage 3
     "waveform_channel": WaveformChannelSchema,
     "waveform_window": WaveformWindowResponse,

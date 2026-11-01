@@ -8,7 +8,10 @@ docs://capabilities.
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import json
+import pkgutil
 import re
 
 from collections.abc import AsyncIterator
@@ -23,16 +26,19 @@ import pytest
 
 from pydantic import BaseModel
 
+import snore.mcp.tools
+
 from snore.mcp.profiles import get_profile
 from snore.mcp.schemas import (
     SCHEMA_MODEL_MAP,
     BreathTableRow,
+    CompareEpochsResponse,
     DataOverviewResponse,
-    DeviceCompareEpochsResponse,
     EpochStats,
     EventContext,
     EventRow,
     EventsResponse,
+    ExperimentalCompareEpochsResponse,
     ExperimentalEventContextResponse,
     ExperimentalEventContextRow,
     ExperimentalNightlyResponse,
@@ -49,6 +55,7 @@ from snore.provenance import (
     PROVENANCE_NOTES,
     IndexSource,
     Provenance,
+    provenance_field,
     response_provenance,
 )
 
@@ -60,14 +67,15 @@ EXPERIMENTAL_TOOLS = [
     "experimental_get_breath_table",
     "experimental_find_windows",
 ]
-# Tool closures return dict[str, Any], so nothing else links a tool to its model.
+# Tool closures return dict[str, Any]; test_default_tool_model_matches_impl_return
+# links this map to the impls.
 DEFAULT_TOOLS: dict[str, type[BaseModel] | None] = {
     "get_data_overview": DataOverviewResponse,
     "get_settings_timeline": SettingsTimelineResponse,
     "get_settings_changes": SettingsChangesResponse,
     "get_nightly_summary": NightlySummaryResponse,
     "get_events": EventsResponse,
-    "compare_epochs": DeviceCompareEpochsResponse,
+    "compare_epochs": CompareEpochsResponse,
     "get_waveform": WaveformWindowResponse,
     "render_window": None,  # PNG of device samples
 }
@@ -95,6 +103,27 @@ def _field_description(model: type[BaseModel], field_name: str) -> str:
     return str(model.model_json_schema()["properties"][field_name]["description"])
 
 
+def _tool_impl(tool_name: str) -> Any:
+    """The module-level function behind a default tool's closure."""
+    name = {"get_waveform": "waveform_response_from_raw"}.get(tool_name, tool_name)
+    for module_info in pkgutil.iter_modules(snore.mcp.tools.__path__):
+        module = importlib.import_module(f"snore.mcp.tools.{module_info.name}")
+        if inspect.isfunction(impl := getattr(module, name, None)):
+            return impl
+    raise LookupError(tool_name)
+
+
+def _has_experimental_tag(schema: object) -> bool:
+    """Whether any node of a JSON schema, ``$defs`` included, is tagged experimental."""
+    if isinstance(schema, dict):
+        return schema.get("x-provenance") == Provenance.EXPERIMENTAL or any(
+            _has_experimental_tag(value) for value in schema.values()
+        )
+    if isinstance(schema, list):
+        return any(_has_experimental_tag(value) for value in schema)
+    return False
+
+
 class TestToolDescriptions:
     @pytest.mark.parametrize("tool_name", EXPERIMENTAL_TOOLS)
     async def test_experimental_tool_description_carries_note(
@@ -110,6 +139,22 @@ class TestToolDescriptions:
         assert "RDI here adds the experimental RERA-proxy index" in description
         assert "rule-matched classified breaths" in description
         assert "confidence gate excludes fallback guesses" in description
+
+    async def test_nightly_description_explains_corrupt_leak_reason(self) -> None:
+        description = (await _tool_descriptions())["get_nightly_summary"]
+
+        assert '``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``' in (
+            description
+        )
+
+    async def test_experimental_epochs_description_names_every_null_reason(
+        self,
+    ) -> None:
+        description = (await _tool_descriptions())["experimental_compare_epochs"]
+
+        assert "no_data_in_range" in description
+        assert "analysis_not_run" in description
+        assert "not_available" in description
 
     @pytest.mark.parametrize("tool_name", DEFAULT_TOOLS)
     async def test_default_tool_description_omits_note(self, tool_name: str) -> None:
@@ -133,9 +178,46 @@ class TestDefaultToolGate:
         block = response_provenance(model)
 
         assert not block.get("experimental")
+        assert not _has_experimental_tag(model.model_json_schema())
         assert set(block.get("source_dependent", {}).values()) <= {
             "nights[].index_source"
         }
+
+    def test_schema_scan_catches_experimental_parent_of_untagged_leaf(self) -> None:
+        """``response_provenance`` lists leaves, so this model's block is empty."""
+
+        class Leaf(BaseModel):
+            note: str | None = None
+
+        class Response(BaseModel):
+            leaf: Leaf = provenance_field(
+                Provenance.EXPERIMENTAL, "A heuristic.", default_factory=Leaf
+            )
+
+        assert response_provenance(Response) == {}
+        assert _has_experimental_tag(Response.model_json_schema())
+
+    @pytest.mark.parametrize(
+        ("tool_name", "model"), [(t, m) for t, m in DEFAULT_TOOLS.items() if m]
+    )
+    def test_default_tool_model_matches_impl_return(
+        self, tool_name: str, model: type[BaseModel]
+    ) -> None:
+        assert inspect.signature(_tool_impl(tool_name)).return_annotation == (
+            model.__name__
+        )
+
+    @pytest.mark.parametrize(
+        ("schema_type", "model"),
+        [
+            ("compare_epochs_response", CompareEpochsResponse),
+            ("experimental_compare_epochs_response", ExperimentalCompareEpochsResponse),
+        ],
+    )
+    def test_epoch_schema_key_names_its_tool(
+        self, schema_type: str, model: type[BaseModel]
+    ) -> None:
+        assert SCHEMA_MODEL_MAP[schema_type] is model
 
 
 class TestSchemaFieldLabels:
@@ -348,9 +430,7 @@ class TestResponseProvenanceBlock:
         assert payload["nights"][0]["index_source"] == "device"
 
     async def test_epoch_distribution_inherits_experimental_parent(self) -> None:
-        from snore.mcp.schemas import CompareEpochsResponse  # noqa: PLC0415
-
-        payload = await self._run(CompareEpochsResponse())
+        payload = await self._run(ExperimentalCompareEpochsResponse())
 
         assert (
             "epochs[].mid_insp_flattening.median"
@@ -362,9 +442,7 @@ class TestResponseProvenanceBlock:
         )
 
     async def test_device_epoch_response_is_derived_only(self) -> None:
-        from snore.mcp.schemas import DeviceCompareEpochsResponse  # noqa: PLC0415
-
-        block = (await self._run(DeviceCompareEpochsResponse()))["provenance"]
+        block = (await self._run(CompareEpochsResponse()))["provenance"]
 
         assert "epochs[].device_flg.median" in block["derived"]
         assert "epochs[].snore_dist.n_samples" in block["derived"]

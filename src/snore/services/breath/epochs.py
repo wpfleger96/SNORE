@@ -1,7 +1,7 @@
 """Cross-epoch distributions.
 
 ``compare_device_epochs`` reports device-channel samples over every enabled
-session and needs no analysis.  ``compare_epochs`` reports experimental
+session and needs no analysis.  ``compare_experimental_epochs`` reports experimental
 breath-feature distributions over analyzed sessions.  The two share helpers,
 not a code path, because they gate sessions differently.
 """
@@ -29,6 +29,7 @@ from snore.analysis.shared.versioning import (
 )
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import percentile_nearest_rank
 
 from ._core import _BreathServiceCore
@@ -191,22 +192,31 @@ class EpochsMixin(_BreathServiceCore):
             return NullReason.NO_DATA_IN_RANGE
         return device_id if sessions_by_date else NullReason.NO_DATA_IN_RANGE
 
-    async def _session_rx_snapshot(self, session_id: int) -> dict[str, str]:
-        """The session's own prescription settings (not merged per day)."""
-        setting_rows = (
-            (
-                await self._db.execute(
-                    select(models.Setting).where(
-                        models.Setting.session_id == session_id,
-                        models.Setting.key.in_(RX_KEYS),
-                        models.Setting.value.is_not(None),
-                    )
+    async def _dated_rx_snapshots(
+        self, night_by_session: dict[int, date]
+    ) -> list[tuple[date, dict[str, str]]]:
+        """``(night, rx)`` per session, in ``night_by_session`` order.
+
+        Each rx holds that session's own prescription settings (not merged per
+        day).
+        """
+        rx_by_session: dict[int, dict[str, str]] = {sid: {} for sid in night_by_session}
+        # Chunk only the unbounded session_id list; the RX_KEYS filter is a small
+        # constant IN-list kept in every chunk.
+        for chunk in iter_id_chunks(list(night_by_session)):
+            setting_rows = await self._db.execute(
+                select(
+                    models.Setting.session_id, models.Setting.key, models.Setting.value
+                ).where(
+                    models.Setting.session_id.in_(chunk),
+                    models.Setting.key.in_(RX_KEYS),
+                    models.Setting.value.is_not(None),
                 )
             )
-            .scalars()
-            .all()
-        )
-        return {s.key: s.value for s in setting_rows if s.value}
+            for row in setting_rows:
+                if row.value:
+                    rx_by_session[row.session_id][row.key] = row.value
+        return [(night, rx_by_session[sid]) for sid, night in night_by_session.items()]
 
     async def compare_device_epochs(
         self, epochs: list[EpochRequest]
@@ -245,10 +255,7 @@ class EpochsMixin(_BreathServiceCore):
                 for night, sessions in sessions_by_date.items()
                 for sess in sessions
             }
-            dated_rx = [
-                (night, await self._session_rx_snapshot(session_id))
-                for session_id, night in night_by_session.items()
-            ]
+            dated_rx = await self._dated_rx_snapshots(night_by_session)
             stats = DeviceEpochStats(
                 label=epoch.label,
                 date_start=epoch.date_start,
@@ -264,7 +271,7 @@ class EpochsMixin(_BreathServiceCore):
             elif not night_by_session:
                 stats.null_reason = NullReason.NO_DATA_IN_RANGE
             else:
-                channel_vals = await self._fetch_channel_vals(
+                channel_vals, _ = await self._fetch_channel_vals(
                     self._db, list(night_by_session), ["fl", "snore"]
                 )
                 # FLG uses negative sentinels; a snore value of 0 is real data.
@@ -287,7 +294,7 @@ class EpochsMixin(_BreathServiceCore):
             rx_violations=rx_violations,
         )
 
-    async def compare_epochs(
+    async def compare_experimental_epochs(
         self,
         epochs: list[EpochRequest],
         metrics: list[DistributionMetric] | None = None,
@@ -330,7 +337,7 @@ class EpochsMixin(_BreathServiceCore):
                         date_start=e.date_start,
                         date_end=e.date_end,
                         null_reason=union_resolved_device_id,
-                        rera_reason=NullReason.NOT_AVAILABLE,
+                        rera_reason=union_resolved_device_id,
                     )
                     for e in epochs
                 ],
@@ -342,36 +349,13 @@ class EpochsMixin(_BreathServiceCore):
         rx_violations: list[EpochRxViolation] = []
 
         for epoch in epochs:
-            try:
-                resolved_device_id, sessions_by_date = await self._resolve_range(
-                    epoch.date_start, epoch.date_end, union_resolved_device_id
-                )
-            except ValueError:
-                # Foreign/unknown device_id → NOT_AVAILABLE; no sessions → NO_DATA_IN_RANGE
-                no_data_reason = (
-                    NullReason.NO_DATA_IN_RANGE
-                    if epoch.device_id is None
-                    else NullReason.NOT_AVAILABLE
-                )
-                epoch_resolved.append(
-                    {
-                        "epoch": epoch,
-                        "null_reason": no_data_reason,
-                        "contributing_sessions": [],
-                        "all_rx": [],
-                        "nights_with_data": 0,
-                        "nights_missing_analysis": 0,
-                        "rx_violation": None,
-                        "ar_ids": {},
-                    }
-                )
-                continue
-            # DeviceAmbiguityError propagates to caller
+            _, sessions_by_date = await self._resolve_range(
+                epoch.date_start, epoch.date_end, union_resolved_device_id
+            )
 
-            # Collect per-session RX snapshots and contributing sessions (OK only)
+            # Collect contributing sessions (OK only) and their therapy dates
             contributing_sessions: list[tuple[int, AlgoVersions]] = []
-            # Each entry: (therapy_date, rx_dict) for change-date tracking
-            session_rx_dated: list[tuple[date, dict[str, str]]] = []
+            night_by_ok_session: dict[int, date] = {}
             nights_with_data = 0
             nights_missing_analysis = 0
             ar_ids_for_epoch: dict[int, int | None] = {}
@@ -385,9 +369,7 @@ class EpochsMixin(_BreathServiceCore):
                     if status == AnalysisStatus.OK and algo is not None:
                         ok_on_date.append((sess.id, algo))
                         ar_ids_for_epoch[sess.id] = ar_id
-                        session_rx_dated.append(
-                            (therapy_date, await self._session_rx_snapshot(sess.id))
-                        )
+                        night_by_ok_session[sess.id] = therapy_date
 
                 if ok_on_date:
                     nights_with_data += 1
@@ -395,7 +377,9 @@ class EpochsMixin(_BreathServiceCore):
                 else:
                     nights_missing_analysis += 1
 
-            # Within-epoch RX homogeneity check (per-session, not per-day merged)
+            # Within-epoch RX homogeneity check (per-session, not per-day merged);
+            # the dates are for change-date tracking.
+            session_rx_dated = await self._dated_rx_snapshots(night_by_ok_session)
             rx_violation = _epoch_rx_violation(epoch.label, session_rx_dated)
             if rx_violation is not None:
                 rx_violations.append(rx_violation)
@@ -480,13 +464,13 @@ class EpochsMixin(_BreathServiceCore):
 
             if null_reason_ed is not None or not contributing_sessions:
                 resolved_null_reason = null_reason_ed or NullReason.NO_DATA_IN_RANGE
-                # rera_reason must mirror the actual per-epoch null cause: an epoch
-                # nulled for a mid-epoch RX change carries that reason, not the
-                # generic ANALYSIS_NOT_RUN used for the no-data path.
+                # rera_reason mirrors the epoch's null cause, except that an
+                # epoch whose sessions all lack a current analysis says so.
                 epoch_rera_reason = (
-                    NullReason.RX_CHANGED_WITHIN_EPOCH
-                    if resolved_null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH
-                    else NullReason.ANALYSIS_NOT_RUN
+                    NullReason.ANALYSIS_NOT_RUN
+                    if resolved_null_reason == NullReason.NO_DATA_IN_RANGE
+                    and nights_missing_analysis
+                    else resolved_null_reason
                 )
                 epoch_stats.append(
                     _null_epoch_stats(

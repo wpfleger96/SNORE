@@ -484,8 +484,9 @@ def _register_resources(mcp: FastMCP) -> None:
         capability_entry, breath_table_query, breath_table_row, breath_table_bin,
         breath_table_response, window_row, session_coverage_entry,
         find_windows_response, epoch_spec, epoch_distribution, epoch_stats,
-        epoch_rx_violation, compare_epochs_response, device_epoch_distribution,
-        device_epoch_stats, device_compare_epochs_response, waveform_channel,
+        epoch_rx_violation, experimental_compare_epochs_response,
+        device_epoch_distribution,
+        device_epoch_stats, compare_epochs_response, waveform_channel,
         waveform_window.
         """
         model = SCHEMA_MODEL_MAP.get(schema_type)

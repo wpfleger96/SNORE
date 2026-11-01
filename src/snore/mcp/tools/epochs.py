@@ -2,7 +2,7 @@
 
 ``compare_epochs`` wraps ``BreathService.compare_device_epochs()`` (device
 channels, no analysis needed); ``experimental_compare_epochs`` wraps
-``BreathService.compare_epochs()`` (SNORE breath features).
+``BreathService.compare_experimental_epochs()`` (SNORE breath features).
 
 No domain computation in this module: validate input → call service → map types.
 Date range parsing and metric-string validation happen here; statistics and
@@ -24,11 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.mcp.errors import ValidationError
 from snore.mcp.schemas import (
     CompareEpochsResponse,
-    DeviceCompareEpochsResponse,
     EpochDistribution,
     EpochRxViolationRow,
     EpochSpec,
     EpochStats,
+    ExperimentalCompareEpochsResponse,
 )
 from snore.mcp.tools._helpers import str_or_none
 from snore.mcp.tools._scaffold import (
@@ -85,7 +85,7 @@ async def compare_epochs(
     db_session: AsyncSession,
     profile_id: int,
     epochs: list[EpochSpec],
-) -> DeviceCompareEpochsResponse:
+) -> CompareEpochsResponse:
     """Compare device flow-limitation and snore distributions across epochs.
 
     Validates per-epoch date ranges, then delegates to
@@ -109,7 +109,7 @@ async def compare_epochs(
     except MAPPED_SERVICE_ERRORS as exc:
         raise_mapped_service_error(exc)
 
-    return DeviceCompareEpochsResponse.model_validate(result.model_dump(mode="json"))
+    return CompareEpochsResponse.model_validate(result.model_dump(mode="json"))
 
 
 async def experimental_compare_epochs(
@@ -117,12 +117,12 @@ async def experimental_compare_epochs(
     profile_id: int,
     epochs: list[EpochSpec],
     metrics: list[str] | None = None,
-) -> CompareEpochsResponse:
+) -> ExperimentalCompareEpochsResponse:
     """Compare breath-feature distributions across therapy settings epochs.
 
     Validates per-epoch date ranges and metric strings, then delegates to
-    ``BreathService.compare_epochs()``.  Maps the typed result DTO to the
-    ``CompareEpochsResponse`` schema: dates to isoformat strings, NullReason/enum
+    ``BreathService.compare_experimental_epochs()``.  Maps the typed result DTO to the
+    ``ExperimentalCompareEpochsResponse`` schema: dates to isoformat strings, NullReason/enum
     values to plain strings, and flow_class_distribution int keys to string keys.
 
     Service ``ValueError`` ("All epochs in a comparison must target the same
@@ -153,13 +153,13 @@ async def experimental_compare_epochs(
     # explicit foreign device is handled INSIDE the service and returned as
     # not_available epochs — no exception reaches here in that case.
     try:
-        result = await BreathService(db_session, profile_id).compare_epochs(
-            epoch_requests, metrics=parsed_metrics
-        )
+        result = await BreathService(
+            db_session, profile_id
+        ).compare_experimental_epochs(epoch_requests, metrics=parsed_metrics)
     except MAPPED_SERVICE_ERRORS as exc:
         raise_mapped_service_error(exc)
 
-    # Map CompareEpochsResult → CompareEpochsResponse.
+    # Map CompareEpochsResult → ExperimentalCompareEpochsResponse.
     # Enum values → str; dates → isoformat; flow_class int keys → str keys.
     epoch_stats: list[EpochStats] = [
         EpochStats(
@@ -191,7 +191,7 @@ async def experimental_compare_epochs(
         for s in result.epochs
     ]
 
-    return CompareEpochsResponse(
+    return ExperimentalCompareEpochsResponse(
         epochs=epoch_stats,
         null_reason=str_or_none(result.null_reason),
         rx_violations=[
@@ -234,7 +234,7 @@ def register(mcp: FastMCP) -> None:
                 ``device_id`` — optional; all epochs must target the same device.
 
         Returns:
-            DeviceCompareEpochsResponse.  Each entry in ``epochs`` carries
+            CompareEpochsResponse.  Each entry in ``epochs`` carries
             ``device_flg`` (device-reported flow limitation, 0–1 unitless, negative
             sentinels excluded) and ``snore_dist`` (device-reported snore level, 0–5
             unitless, zeros included).  In both, ``n_samples`` counts valid samples
@@ -301,6 +301,13 @@ def register(mcp: FastMCP) -> None:
         must be true).  For the device's own flow-limitation and snore channels, use
         ``compare_epochs``, which needs no analysis.
 
+        An epoch with no analyzed sessions has ``null_reason: "no_data_in_range"``; its
+        ``rera_reason`` is ``"no_data_in_range"`` when the epoch has no sessions and
+        ``"analysis_not_run"`` when its sessions have no current analysis.  The
+        top-level ``null_reason`` and every epoch's are ``"no_data_in_range"`` when no
+        session falls anywhere in the combined date range, and ``"not_available"`` for
+        a device the active profile does not own.
+
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
@@ -312,7 +319,7 @@ def register(mcp: FastMCP) -> None:
                 ``"tidal_volume_ml"``, ``"ie_ratio"``.
 
         Returns:
-            CompareEpochsResponse.  Each entry in ``epochs`` contains distributions
+            ExperimentalCompareEpochsResponse.  Each entry in ``epochs`` contains distributions
             and coverage metadata (``nights_with_data``, ``nights_missing_analysis``).
             ``flow_class_distribution`` counts rule-matched FL classifications only
             (breaths whose classifier confidence clears the default gate); its
@@ -346,7 +353,7 @@ def register(mcp: FastMCP) -> None:
                 set to ``null`` with ``rera_reason: "primary_mode_mismatch"``; FL
                 distributions remain populated.
             Device not owned by the active profile: the service catches this internally
-                and returns a success response with every epoch's
+                and returns a success response with the top-level and every epoch's
                 ``null_reason: "not_available"``.
             Algorithm version mismatch (``algo_version_mismatch``) is NOT a hard refusal
                 — distributions are computed and ``version_warnings`` is populated instead.

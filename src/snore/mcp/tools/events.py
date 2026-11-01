@@ -24,7 +24,9 @@ from snore.analysis.shared.versioning import MV_FALLBACK_ALGO_VERSION
 from snore.mcp.schemas import (
     EventContext,
     EventRow,
+    EventRowBase,
     EventsResponse,
+    EventsResponseBase,
     ExperimentalEventContextResponse,
     ExperimentalEventContextRow,
     localize_wall_clock,
@@ -58,12 +60,12 @@ async def _fetch_event_page(
     max_events: int,
     include_context: bool,
     include_ventilatory: bool,
-) -> tuple[list[ContextualEvent], dict[str, Any]]:
+) -> tuple[list[ContextualEvent], EventsResponseBase]:
     """Fetch a date's events and cut them to ``max_events``.
 
-    Returns the kept events plus the response fields both tools share, ready
-    to splat into a response constructor.  ``total_events`` and the
-    response-level session anchor describe the events before truncation.
+    Returns the kept events plus the response fields both tools share.
+    ``total_events`` and the response-level session anchor describe the events
+    before truncation.
     """
     from snore.services.breath_service import BreathService  # noqa: PLC0415
 
@@ -103,10 +105,10 @@ async def _fetch_event_page(
 
     # Response-level session anchor: populated only when all events share one session.
     anchor = first if len({ev.session_id for ev in events}) == 1 else None
-    return events[:max_events], {
-        "date": event_date.isoformat(),
-        "session_id": anchor.session_id if anchor else None,
-        "session_start_wall_clock": (
+    return events[:max_events], EventsResponseBase(
+        date=event_date.isoformat(),
+        session_id=anchor.session_id if anchor else None,
+        session_start_wall_clock=(
             localize_wall_clock(
                 anchor.session_start_wall_clock,
                 anchor.timezone_status,
@@ -116,26 +118,26 @@ async def _fetch_event_page(
             else None
         ),
         **tz_fields(first if first is not None else await bs.resolve_timezone()),
-        "total_events": len(events),
-        "truncated": len(events) > max_events,
-        "device_capabilities": caps,
-    }
+        total_events=len(events),
+        truncated=len(events) > max_events,
+        device_capabilities=caps,
+    )
 
 
-def _row_fields(ev: ContextualEvent) -> dict[str, Any]:
+def _row_base(ev: ContextualEvent) -> EventRowBase:
     """The per-event anchors and positions both tools' rows carry."""
-    return {
-        "session_id": ev.session_id,
-        "session_start_wall_clock": localize_wall_clock(
+    return EventRowBase(
+        session_id=ev.session_id,
+        session_start_wall_clock=localize_wall_clock(
             ev.session_start_wall_clock, ev.timezone_status, ev.timezone_name
         ),
-        "event_type": ev.event_type,
-        "start_time_wall_clock": localize_wall_clock(
+        event_type=ev.event_type,
+        start_time_wall_clock=localize_wall_clock(
             ev.event_start_wall_clock, ev.timezone_status, ev.timezone_name
         ),
         **tz_fields(ev),
-        "offset_seconds": ev.offset_seconds,
-    }
+        offset_seconds=ev.offset_seconds,
+    )
 
 
 async def get_events(
@@ -167,7 +169,7 @@ async def get_events(
         max_events: Maximum events to return (≥1, pre-validated by server wrapper).
             total_events reflects the untruncated count; truncated=True when cut.
     """
-    events, shared_fields = await _fetch_event_page(
+    events, page = await _fetch_event_page(
         db_session,
         event_date,
         profile_id,
@@ -193,10 +195,10 @@ async def get_events(
 
         rows.append(
             EventRow(
-                **_row_fields(ev),
+                **_row_base(ev).model_dump(),
                 duration_seconds=ev.duration_seconds,
-                spo2_drop_pct=None,
-                peak_flow_limitation=None,
+                spo2_drop_pct=ev.spo2_drop,
+                peak_flow_limitation=ev.peak_flow_limitation,
                 pressure_reason=str_or_none(ev.pressure_reason),
                 leak_reason=str_or_none(ev.leak_reason),
                 mv_reason=str_or_none(ev.mv_reason),
@@ -205,7 +207,7 @@ async def get_events(
             )
         )
 
-    return EventsResponse(**shared_fields, events=rows)
+    return EventsResponse(**page.model_dump(), events=rows)
 
 
 async def experimental_get_event_context(
@@ -233,7 +235,7 @@ async def experimental_get_event_context(
         max_events: Maximum events to return (≥1, pre-validated by server wrapper).
             total_events reflects the untruncated count; truncated=True when cut.
     """
-    events, shared_fields = await _fetch_event_page(
+    events, page = await _fetch_event_page(
         db_session,
         event_date,
         profile_id,
@@ -246,10 +248,10 @@ async def experimental_get_event_context(
     )
 
     return ExperimentalEventContextResponse(
-        **shared_fields,
+        **page.model_dump(),
         events=[
             ExperimentalEventContextRow(
-                **_row_fields(ev),
+                **_row_base(ev).model_dump(),
                 mv_prior_120s_lpm=ev.mv_prior_120s_lpm,
                 mv_reason=str_or_none(ev.mv_reason),
                 preceding_mv_slope_lpm_per_min=ev.preceding_mv_slope_lpm_per_min,
@@ -297,8 +299,8 @@ def register(mcp: FastMCP) -> None:
 
         Null values carry a ``*_reason`` on the event row (``pressure_reason``,
         ``leak_reason``, ``mv_reason``, ``ps_reason``), including when a device
-        channel is absent or an auxiliary channel (therapy pressure, EPAP) is
-        corrupt, which nulls only the fields that depend on it.
+        channel is absent or corrupt, which nulls only the fields that depend
+        on it.
         ``include_context=false`` skips the waveform work entirely: ``context``
         and those reasons are null.
 
@@ -370,7 +372,7 @@ def register(mcp: FastMCP) -> None:
 
         Null values carry a ``*_reason`` on the row (``mv_reason``,
         ``preceding_mv_slope_reason``, ``stability_reason``), including when
-        the flow channel is corrupt, which nulls only the MV fields.
+        the MV or flow channel is corrupt, which nulls only the MV fields.
 
         Args:
             date: Session date in YYYY-MM-DD format.

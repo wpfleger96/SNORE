@@ -142,9 +142,6 @@ def _night(
         ti_median_reason=None,
         ie_ratio_median=None,
         ie_ratio_reason=None,
-        total_therapy_hours=7.0,
-        compliance_threshold_hours=4.0,
-        is_compliant=True,
         rera_index=rera_index,
         rera_index_reason=rera_index_reason,
     )
@@ -165,11 +162,7 @@ def _stub_nights(
             date_start=date_start,
             date_end=date_end,
             device_id=1,
-            compliance_threshold_hours=4.0,
-            n_calendar_nights=(date_end - date_start).days + 1,
             n_nights=len(in_range),
-            days_compliant=len(in_range),
-            compliance_pct=100.0,
             nights=in_range,
         )
 
@@ -203,11 +196,7 @@ def _stub_multi_device(
             date_start=date_start,
             date_end=date_end,
             device_id=device_id or 1,
-            compliance_threshold_hours=4.0,
-            n_calendar_nights=(date_end - date_start).days + 1,
             n_nights=len(in_range),
-            days_compliant=len(in_range),
-            compliance_pct=100.0,
             nights=in_range,
         )
 

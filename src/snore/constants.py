@@ -38,6 +38,9 @@ CPAP_EPR_LEVEL = 0x1403  # Expiratory pressure relief
 OXI_SPO2 = 0x2000
 OXI_PULSE = 0x2001
 
+# OSCAR profile parser; also its sessions' ``import_source``.
+OSCAR_BINARY_PARSER_ID = "oscar_binary"
+
 
 # ============================================================================
 # Measurement Units

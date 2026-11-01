@@ -182,7 +182,7 @@ class DayService(ProfileScopedService):
     ) -> dict[str, Any]:
         """Read-time flow-limitation / RERA-proxy metrics for one night.
 
-        Sourced from BreathService.get_nightly_summary — the same latest-run
+        Sourced from BreathService.get_experimental_nightly_summary — the same latest-run
         aggregation the experimental MCP nightly tool uses — so day detail
         never recomputes breath logic.
 
@@ -216,7 +216,7 @@ class DayService(ProfileScopedService):
         try:
             night = await BreathService(
                 self.db_session, self.profile_id
-            ).get_nightly_summary(day_date, device_id=device_id)
+            ).get_experimental_nightly_summary(day_date, device_id=device_id)
         except (DeviceAmbiguityError, DeviceNotOwnedError):
             # Device resolution declined — degrade quietly (expected edge case).
             return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)

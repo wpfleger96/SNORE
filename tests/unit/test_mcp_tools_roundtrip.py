@@ -27,9 +27,9 @@ import pytest
 from snore.services.breath_service import NightlyDeviceRange, NightlyRangeSummary
 
 
-def _empty_range[T: (NightlyDeviceRange, NightlyRangeSummary)](model: type[T]) -> T:
-    """A nightly range for January 2024 with no resolved device or nights."""
-    return model(
+def _empty_device_range() -> NightlyDeviceRange:
+    """A device range for January 2024 with no resolved device or nights."""
+    return NightlyDeviceRange(
         date_start=date(2024, 1, 1),
         date_end=date(2024, 1, 31),
         device_id=0,
@@ -38,6 +38,17 @@ def _empty_range[T: (NightlyDeviceRange, NightlyRangeSummary)](model: type[T]) -
         n_nights=0,
         days_compliant=0,
         compliance_pct=0.0,
+        nights=[],
+    )
+
+
+def _empty_analysis_range() -> NightlyRangeSummary:
+    """An analysis range for January 2024 with no resolved device or nights."""
+    return NightlyRangeSummary(
+        date_start=date(2024, 1, 1),
+        date_end=date(2024, 1, 31),
+        device_id=0,
+        n_nights=0,
         nights=[],
     )
 
@@ -316,7 +327,7 @@ class TestGetNightlySummaryRoundtrip:
         with patch(
             "snore.services.breath_service.BreathService.get_nightly_device_summary",
             new_callable=AsyncMock,
-            return_value=_empty_range(NightlyDeviceRange),
+            return_value=_empty_device_range(),
         ):
             async with mcp_client_factory(mock_db_session) as client:
                 result = await client.call_tool(
@@ -381,7 +392,7 @@ class TestExperimentalGetNightlyMetricsRoundtrip:
         with patch(
             "snore.services.breath_service.BreathService.get_nightly_range_summary",
             new_callable=AsyncMock,
-            return_value=_empty_range(NightlyRangeSummary),
+            return_value=_empty_analysis_range(),
         ):
             async with mcp_client_factory(mock_db_session) as client:
                 result = await client.call_tool(

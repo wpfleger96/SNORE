@@ -11,6 +11,9 @@ Tests seed waveform rows and verify:
 - compare_epochs device_flg and snore_dist distributions, with no analysis
 - unknown settings are not an RX change in compare_epochs
 - default tools execute no SQL against the breaths table
+- corrupt leak blob reports channel_corrupt and no partial value
+- compare_epochs reads settings once per epoch
+- event table columns and the tidal-volume unit per import source
 """
 
 from __future__ import annotations
@@ -18,17 +21,21 @@ from __future__ import annotations
 import re
 import uuid
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
+import fastmcp
 import numpy as np
 import pytest
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Breath
+from snore.database.models import Breath, Setting, Statistics, Waveform
+from snore.mcp.server import StaticRuntime, make_server
 from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
@@ -36,6 +43,7 @@ from tests.integration.conftest import (
     _make_event,
     _make_profile,
 )
+from tests.unit.test_mcp_provenance import DEFAULT_TOOLS
 
 
 def _make_waveform_blob(values: list[float]) -> tuple[bytes, int]:
@@ -346,6 +354,35 @@ class TestNightlySummaryLeakAbove24Pct:
 
         assert result.nights[0].leak_above_24_pct is None
         assert result.nights[0].leak_above_24_pct_reason == "channel_absent"
+
+    async def test_corrupt_session_blob_reports_reason_not_partial_value(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import get_nightly_summary  # noqa: PLC0415
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        d = date(2025, 6, 9)
+        day, first = await _make_day_session(async_db_session, device, d)
+        second = await _add_second_session(async_db_session, day, 23)
+        await _add_waveform(async_db_session, first.id, "leak", [30.0] * 4)
+        async_db_session.add(
+            Waveform(
+                session_id=second.id,
+                waveform_type="leak",
+                sample_rate=1.0,
+                unit="L/min",
+                sample_count=4,
+                data_blob=b"\x00" * 3,
+            )
+        )
+        await async_db_session.flush()
+
+        result = await get_nightly_summary(
+            async_db_session, start=d, end=d, profile_id=async_test_profile.id
+        )
+
+        assert result.nights[0].leak_above_24_pct is None
+        assert result.nights[0].leak_above_24_pct_reason == "channel_corrupt"
 
 
 @pytest.mark.integration
@@ -881,16 +918,32 @@ class TestCompareEpochsDeviceWaveforms:
 
 @pytest.mark.integration
 class TestDefaultToolsReadNoBreaths:
-    async def test_default_tools_execute_no_sql_against_breaths_table(
-        self, async_db_session: AsyncSession, async_test_profile: Any
+    @pytest.mark.parametrize("tool_name", DEFAULT_TOOLS)
+    async def test_default_tool_executes_no_sql_against_breaths_table(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        tool_name: str,
     ) -> None:
         """Default tools answer from device data even when breath rows exist."""
-        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
-        from snore.mcp.tools.events import get_events  # noqa: PLC0415
-        from snore.mcp.tools.summary import get_nightly_summary  # noqa: PLC0415
-
         device = await _make_device(async_db_session, async_test_profile.id)
         d = date(2025, 11, 1)
+        day_range = {"start": d.isoformat(), "end": d.isoformat()}
+        waveform_window = {
+            "date": d.isoformat(),
+            "offset_start": 0.0,
+            "offset_end": 60.0,
+        }
+        tool_args: dict[str, dict[str, Any]] = {
+            "get_data_overview": {},
+            "get_settings_timeline": day_range,
+            "get_settings_changes": day_range,
+            "get_nightly_summary": day_range,
+            "get_events": {"date": d.isoformat()},
+            "compare_epochs": {"epochs": [_epoch("A", d, d).model_dump()]},
+            "get_waveform": waveform_window,
+            "render_window": waveform_window,
+        }
         _, sess = await _make_day_session(async_db_session, device, d, ahi=4.2)
         for channel in ("flow", "pressure", "mv", "leak", "fl", "snore"):
             await _add_waveform(async_db_session, sess.id, channel, [0.5] * 600)
@@ -915,26 +968,109 @@ class TestDefaultToolsReadNoBreaths:
         ) -> None:
             statements.append(statement)
 
+        @asynccontextmanager
+        async def _scope() -> AsyncIterator[AsyncSession]:
+            yield async_db_session
+
+        @asynccontextmanager
+        async def _lifespan(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+            yield StaticRuntime(
+                base_scope_provider=_scope, profile_id=async_test_profile.id
+            )
+
         engine = async_db_session.get_bind()
         event.listen(engine, "before_cursor_execute", capture_statement)
         try:
-            nightly = await get_nightly_summary(
-                async_db_session, start=d, end=d, profile_id=async_test_profile.id
-            )
-            events = await get_events(
-                async_db_session, d, profile_id=async_test_profile.id
-            )
-            epochs = await compare_epochs(
+            with patch("snore.mcp.server._lifespan", _lifespan):
+                async with fastmcp.Client(make_server()) as client:
+                    await client.call_tool(tool_name, tool_args[tool_name])
+        finally:
+            event.remove(engine, "before_cursor_execute", capture_statement)
+
+        assert statements
+        breaths_table = re.compile(rf"\b{Breath.__tablename__}\b", re.IGNORECASE)
+        assert [s for s in statements if breaths_table.search(s)] == []
+
+
+@pytest.mark.integration
+class TestDeviceEpochSettingsQueries:
+    async def test_settings_are_read_once_per_epoch(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        days = [date(2025, 12, n) for n in range(1, 6)]
+        for day_date in days:
+            _, sess = await _make_day_session(async_db_session, device, day_date)
+            await _add_rx(async_db_session, sess.id, "8.0")
+
+        statements: list[str] = []
+
+        def capture_statement(
+            _conn: Any, _cursor: Any, statement: str, *_args: Any
+        ) -> None:
+            statements.append(statement)
+
+        engine = async_db_session.get_bind()
+        event.listen(engine, "before_cursor_execute", capture_statement)
+        try:
+            result = await compare_epochs(
                 db_session=async_db_session,
                 profile_id=async_test_profile.id,
-                epochs=[_epoch("A", d, d)],
+                epochs=[_epoch("A", days[0], days[-1])],
             )
         finally:
             event.remove(engine, "before_cursor_execute", capture_statement)
 
-        assert nightly.nights[0].device_flg_median == pytest.approx(0.5)
-        assert len(events.events) == 1
-        assert epochs.epochs[0].device_flg.n_samples == 600
-        assert statements
-        breaths_table = re.compile(rf"\b{Breath.__tablename__}\b", re.IGNORECASE)
-        assert [s for s in statements if breaths_table.search(s)] == []
+        assert result.epochs[0].rx_settings == {"pressure_min": "8.0"}
+        settings_table = re.compile(rf"\bFROM {Setting.__tablename__}\b", re.IGNORECASE)
+        assert len([s for s in statements if settings_table.search(s)]) == 1
+
+
+@pytest.mark.integration
+class TestDefaultToolDeviceColumns:
+    async def test_events_carry_event_table_columns(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.events import get_events  # noqa: PLC0415
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        d = date(2025, 12, 10)
+        _, sess = await _make_day_session(async_db_session, device, d)
+        stored = await _make_event(async_db_session, sess)
+        stored.spo2_drop = 4.5
+        stored.peak_flow_limitation = 0.6
+        await async_db_session.flush()
+
+        result = await get_events(async_db_session, d, profile_id=async_test_profile.id)
+
+        assert result.events[0].spo2_drop_pct == 4.5
+        assert result.events[0].peak_flow_limitation == 0.6
+
+    @pytest.mark.parametrize(
+        ("import_source", "stored", "expected_ml"),
+        [("resmed_edf", 0.45, 450.0), ("oscar_binary", 450.0, 450.0)],
+    )
+    async def test_tidal_volume_is_ml_for_each_import_source(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        import_source: str,
+        stored: float,
+        expected_ml: float,
+    ) -> None:
+        from snore.mcp.tools.summary import get_nightly_summary  # noqa: PLC0415
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        d = date(2025, 12, 11)
+        _, sess = await _make_day_session(async_db_session, device, d)
+        sess.import_source = import_source
+        async_db_session.add(Statistics(session_id=sess.id, tidal_volume_mean=stored))
+        await async_db_session.flush()
+
+        result = await get_nightly_summary(
+            async_db_session, start=d, end=d, profile_id=async_test_profile.id
+        )
+
+        assert result.nights[0].tv_mean_ml == pytest.approx(expected_ml)

@@ -207,7 +207,7 @@ Complete project overview showing implemented features and future development pl
 - [x] Async flip: `create_async_engine`/`AsyncSession`/`aiosqlite` across services, routers, and CLI (`asyncio.run` bridge); Alembic stays sync via `run_sync`; completion gate enforced by `tests/unit/test_async_migration_gate.py`
 
 ### Phase 2.3+: MCP Server ✅
-- [x] All tools shipped: `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_events`, `get_breath_table`, `find_windows`, `compare_epochs`, `render_window`, `get_waveform` (`get_ca_analysis` later folded into `get_events` per-event context + `get_nightly_summary` `periodic_breathing_pct`)
+- [x] All tools shipped: `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_events`, `compare_epochs`, `render_window`, `get_waveform`, plus `experimental_get_nightly_metrics`, `experimental_get_event_context`, `experimental_compare_epochs`, `experimental_get_breath_table`, `experimental_find_windows` (`get_ca_analysis` later folded into `get_events` per-event context + `experimental_get_event_context` + `experimental_get_nightly_metrics` `periodic_breathing_pct`)
 - [x] `breaths` table with per-breath features, algorithm-identity versioning + staleness detection, null+reason field contract, user-declared profile timezone labeling
 
 ### Phase 2: Web UI

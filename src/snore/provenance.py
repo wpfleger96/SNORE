@@ -15,13 +15,12 @@ a validation run) stays device, since it adds no SNORE judgement.  Rates,
 means, percentiles and recounts of those events are derived.
 
 A field with a preferred source and a fallback is tagged with the preferred
-source's tier, and its description names the fallback.  Session-level
-pressure/EPAP/leak max, median and 95th percentile prefer the device STR value
-(Device) and fall back to the waveform; their mean and min are always waveform
-values (Derived).  ``respiratory_rate_mean/max`` and tidal volume / minute
-ventilation mean/max prefer the device STR value (Device) and fall back to the
-OSCAR session summary.  In the other direction, ``spo2_max`` prefers the
-waveform (Derived) and falls back to the device STR value.
+source's tier, and its description names the fallback.  This runs in both
+directions: pressure/EPAP/leak percentiles recomputed from the waveform when
+present, and ``spo2_max`` from the oximeter waveform, are Derived and fall back
+to the device's summary value; ``respiratory_rate_mean/max`` and tidal volume /
+minute ventilation mean/max prefer the device STR value (Device) and fall back
+to the OSCAR session summary.
 
 Response fields declare their tier with :func:`provenance_field`, which both
 prefixes the description (visible to LLMs and in generated TS JSDoc) and adds a

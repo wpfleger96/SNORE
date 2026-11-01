@@ -26,6 +26,7 @@ from snore.provenance import (
     provenance_field,
     response_provenance,
 )
+from snore.services.schemas import SessionStatistics
 
 pytestmark = pytest.mark.unit
 
@@ -418,6 +419,19 @@ def test_field_description_strips_tier_prefix() -> None:
         f"{description_prefix(Provenance.DERIVED)}Value."
     )
     assert field_description(_Leaf, "value") == "Value."
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        f"{channel}_{stat}"
+        for channel in ("pressure", "epap", "leak")
+        for stat in ("max", "median", "95th")
+    ],
+)
+def test_waveform_recomputed_statistic_is_derived(field: str) -> None:
+    assert field_provenance(SessionStatistics, field) is Provenance.DERIVED
+    assert "recomputed from the waveform" in field_description(SessionStatistics, field)
 
 
 def test_rest_waveform_values_are_tagged_device() -> None:

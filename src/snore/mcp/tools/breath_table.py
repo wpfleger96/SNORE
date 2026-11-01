@@ -320,7 +320,7 @@ def register(mcp: FastMCP) -> None:
             - Multiple devices on date and no ``device_id`` → tool error listing device IDs.
             - Multiple sessions on date and no ``session_id`` → tool error listing session IDs.
             - Raw window > 15 min without ``bin_minutes`` → tool error; set ``bin_minutes``.
-            - Breath-level tables missing → tool error; run ``snore analysis run``.
+            - Required tables missing → tool error; run ``snore db init``.
         """
         from snore.mcp.tools.breath_table import (
             get_breath_table as _impl,  # noqa: PLC0415

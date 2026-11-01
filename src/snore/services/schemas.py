@@ -382,18 +382,18 @@ class SessionStatistics(BaseModel):
         Provenance.DERIVED, "Min pressure (cmH2O)", default=None
     )
     pressure_max: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Max pressure (cmH2O); device STR mask pressure on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the therapy-pressure waveform",
+        Provenance.DERIVED,
+        "Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     pressure_median: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Median pressure (cmH2O); device STR mask pressure on ResMed, otherwise computed from the therapy-pressure waveform",
+        Provenance.DERIVED,
+        "Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     pressure_95th: float | None = provenance_field(
-        Provenance.DEVICE,
-        "95th percentile pressure (cmH2O); device STR mask pressure on ResMed, otherwise computed from the therapy-pressure waveform",
+        Provenance.DERIVED,
+        "95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     epap_mean: float | None = provenance_field(
@@ -403,18 +403,18 @@ class SessionStatistics(BaseModel):
         Provenance.DERIVED, "Min EPAP (cmH2O)", default=None
     )
     epap_max: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Max EPAP (cmH2O); device STR value on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     epap_median: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Median EPAP (cmH2O); device STR value on ResMed, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     epap_95th: float | None = provenance_field(
-        Provenance.DEVICE,
-        "95th percentile EPAP (cmH2O); device STR value on ResMed, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     ipap_median: float | None = provenance_field(
@@ -433,21 +433,21 @@ class SessionStatistics(BaseModel):
         Provenance.DERIVED, "Min leak (L/min)", default=None
     )
     leak_max: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Max leak (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "Max leak (L/min); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     leak_median: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Median leak (L/min); device STR value on ResMed, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "Median leak (L/min); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     leak_percentile_70: float | None = provenance_field(
         Provenance.DEVICE, "70th percentile leak (L/min)", default=None
     )
     leak_95th: float | None = provenance_field(
-        Provenance.DEVICE,
-        "95th percentile leak (L/min); device STR value on ResMed, otherwise computed from the waveform",
+        Provenance.DERIVED,
+        "95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value",
         default=None,
     )
     spo2_mean: float | None = provenance_field(
@@ -501,7 +501,7 @@ class SessionStatistics(BaseModel):
     )
     tidal_volume_mean: float | None = provenance_field(
         Provenance.DEVICE,
-        "Tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports",
+        "Tidal volume; device STR median in litres on ResMed, OSCAR session average in mL on OSCAR imports",
         default=None,
     )
     tidal_volume_min: float | None = provenance_field(
@@ -511,11 +511,11 @@ class SessionStatistics(BaseModel):
     )
     tidal_volume_max: float | None = provenance_field(
         Provenance.DEVICE,
-        "Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports",
+        "Max tidal volume; device STR value in litres on ResMed, OSCAR session summary in mL on OSCAR imports",
         default=None,
     )
     tidal_volume_95th: float | None = provenance_field(
-        Provenance.DEVICE, "95th percentile tidal volume (mL)", default=None
+        Provenance.DEVICE, "95th percentile tidal volume (L)", default=None
     )
     minute_ventilation_mean: float | None = provenance_field(
         Provenance.DEVICE,

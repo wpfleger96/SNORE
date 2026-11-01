@@ -10,6 +10,8 @@ from datetime import date
 
 import pytest
 
+from sqlalchemy.exc import OperationalError
+
 from snore.mcp.errors import ValidationError
 from snore.mcp.tools._service_errors import raise_mapped_service_error
 from snore.services.breath_service import NoSessionsInRangeError
@@ -42,3 +44,24 @@ class TestRaiseMappedServiceError:
         msg = str(exc_info.value)
         # The raw service message is "No sessions found in range …"
         assert "No sessions found" not in msg
+
+
+class TestOperationalErrors:
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("no such table: days", "table_missing"),
+            ("disk I/O error at /data/.snore/snore.db", "A database error occurred"),
+        ],
+    )
+    def test_message_suits_tools_that_need_no_analysis(
+        self, message: str, expected: str
+    ) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            raise_mapped_service_error(OperationalError(message, None, None))
+
+        msg = str(exc_info.value)
+        assert expected in msg
+        assert "breath" not in msg.lower()
+        assert "analysis" not in msg.lower()
+        assert "/data" not in msg

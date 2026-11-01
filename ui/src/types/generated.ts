@@ -5397,12 +5397,12 @@ export interface components {
             csr_pct?: number | null
             /**
              * Epap 95Th
-             * @description [DEVICE] 95th percentile EPAP (cmH2O); device STR value on ResMed, otherwise computed from the waveform
+             * @description [DERIVED] 95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_95th?: number | null
             /**
              * Epap Max
-             * @description [DEVICE] Max EPAP (cmH2O); device STR value on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the waveform
+             * @description [DERIVED] Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_max?: number | null
             /**
@@ -5412,7 +5412,7 @@ export interface components {
             epap_mean?: number | null
             /**
              * Epap Median
-             * @description [DEVICE] Median EPAP (cmH2O); device STR value on ResMed, otherwise computed from the waveform
+             * @description [DERIVED] Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_median?: number | null
             /**
@@ -5502,12 +5502,12 @@ export interface components {
             ipap_median?: number | null
             /**
              * Leak 95Th
-             * @description [DEVICE] 95th percentile leak (L/min); device STR value on ResMed, otherwise computed from the waveform
+             * @description [DERIVED] 95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_95th?: number | null
             /**
              * Leak Max
-             * @description [DEVICE] Max leak (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the waveform
+             * @description [DERIVED] Max leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_max?: number | null
             /**
@@ -5517,7 +5517,7 @@ export interface components {
             leak_mean?: number | null
             /**
              * Leak Median
-             * @description [DEVICE] Median leak (L/min); device STR value on ResMed, otherwise computed from the waveform
+             * @description [DERIVED] Median leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_median?: number | null
             /**
@@ -5577,12 +5577,12 @@ export interface components {
             obstructive_apneas?: number | null
             /**
              * Pressure 95Th
-             * @description [DEVICE] 95th percentile pressure (cmH2O); device STR mask pressure on ResMed, otherwise computed from the therapy-pressure waveform
+             * @description [DERIVED] 95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_95th?: number | null
             /**
              * Pressure Max
-             * @description [DEVICE] Max pressure (cmH2O); device STR mask pressure on ResMed, OSCAR session summary on OSCAR imports, otherwise computed from the therapy-pressure waveform
+             * @description [DERIVED] Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_max?: number | null
             /**
@@ -5592,7 +5592,7 @@ export interface components {
             pressure_mean?: number | null
             /**
              * Pressure Median
-             * @description [DEVICE] Median pressure (cmH2O); device STR mask pressure on ResMed, otherwise computed from the therapy-pressure waveform
+             * @description [DERIVED] Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_median?: number | null
             /**
@@ -5702,17 +5702,17 @@ export interface components {
             ti_median?: number | null
             /**
              * Tidal Volume 95Th
-             * @description [DEVICE] 95th percentile tidal volume (mL)
+             * @description [DEVICE] 95th percentile tidal volume (L)
              */
             tidal_volume_95th?: number | null
             /**
              * Tidal Volume Max
-             * @description [DEVICE] Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             * @description [DEVICE] Max tidal volume; device STR value in litres on ResMed, OSCAR session summary in mL on OSCAR imports
              */
             tidal_volume_max?: number | null
             /**
              * Tidal Volume Mean
-             * @description [DEVICE] Tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports
+             * @description [DEVICE] Tidal volume; device STR median in litres on ResMed, OSCAR session average in mL on OSCAR imports
              */
             tidal_volume_mean?: number | null
             /**

@@ -47,16 +47,9 @@ _CONTEXT_CHANNELS = [
     WaveformChannelName.EPAP,
 ]
 
-# Auxiliary channels whose corrupt blobs degrade to "absent" (affected fields
-# null + NOT_AVAILABLE) instead of failing the whole call.  PRESSURE, LEAK and
-# MV corruption still raises.
-_TOLERATED_CORRUPT = frozenset(
-    {
-        WaveformChannelName.THERAPY_PRESSURE,
-        WaveformChannelName.EPAP,
-        WaveformChannelName.FLOW,
-    }
-)
+# Corrupt blobs degrade to "absent" (affected fields null + NOT_AVAILABLE)
+# instead of failing the whole night.
+_TOLERATED_CORRUPT = frozenset({*_CONTEXT_CHANNELS, WaveformChannelName.FLOW})
 
 
 class CapabilitiesMixin(_BreathServiceCore):
@@ -281,9 +274,7 @@ class CapabilitiesMixin(_BreathServiceCore):
         (±5 s window).  MV is the device MV channel's mean over the 120 s
         preceding the event.
         Values are ``null`` + ``NOT_AVAILABLE`` when the relevant channel is
-        absent or unusable.  Corrupt PRESSURE/LEAK/MV blobs raise
-        ``ValueError``; corrupt THERAPY_PRESSURE/EPAP/FLOW blobs degrade to an
-        absent channel.
+        absent or unusable; a corrupt blob degrades to an absent channel.
 
         ``include_ventilatory=True`` adds the experimental metrics: the MV
         slope and stability index over the preceding 60 s (see
@@ -382,6 +373,8 @@ class CapabilitiesMixin(_BreathServiceCore):
                             event_type=ev.event_type,
                             start_wall_clock=ev.start_time,
                             duration_seconds=ev.duration_seconds,
+                            spo2_drop=ev.spo2_drop,
+                            peak_flow_limitation=ev.peak_flow_limitation,
                         )
                         for ev in events
                     ],
@@ -403,6 +396,8 @@ class _RawEvent(BaseModel):
     event_type: str
     start_wall_clock: datetime
     duration_seconds: float | None
+    spo2_drop: float | None
+    peak_flow_limitation: float | None
 
 
 class _SessionEventsRaw(BaseModel):
@@ -498,6 +493,8 @@ def _compute_contextual_events(
                     timezone_name=tz_name,
                     offset_seconds=offset_s,
                     duration_seconds=ev.duration_seconds,
+                    spo2_drop=ev.spo2_drop,
+                    peak_flow_limitation=ev.peak_flow_limitation,
                     pressure_at_event_cmh2o=pressure_at,
                     pressure_reason=_reason_if_null(pressure_at) if requested else None,
                     leak_at_event_lpm=leak_at,

@@ -474,6 +474,8 @@ class ContextualEvent(VentilatoryContext):
     timezone_name: str | None = None  # IANA name when USER_DECLARED
     offset_seconds: float
     duration_seconds: float | None
+    spo2_drop: float | None = None
+    peak_flow_limitation: float | None = None
 
     pressure_at_event_cmh2o: float | None
     pressure_reason: NullReason | None
@@ -645,10 +647,6 @@ class NightlyAnalysisSummary(BaseModel):
     ie_ratio_median: float | None
     ie_ratio_reason: NullReason | None
 
-    total_therapy_hours: float
-    compliance_threshold_hours: float
-    is_compliant: bool
-
     # rera_index = rera_count (FL-run proxy v2) per mask-on hour of analyzed
     # sessions (DURATION_ZERO when those hours are 0); rdi = day AHI + rera_index. RERAs come from the query-time FL-run proxy, NOT the
     # analysis-time amplitude-crescendo detector behind ModeResult.rdi, so this
@@ -697,26 +695,22 @@ class NightlyDeviceStats(BaseModel):
 
     # Percent of leak-channel samples at or above LEAK_REDLINE_LPM, OSCAR's time
     # over the default redline.  Negative sentinels are filtered; None + reason
-    # when the channel was not recorded.
+    # when the channel was not recorded or any session's blob could not be decoded.
     leak_above_24_pct: float | None = None
     leak_above_24_pct_reason: NullReason | None = None
 
 
 class _NightlyRangeBase(BaseModel):
-    """Compliance totals over a date range."""
+    """A date range and how many of its nights have sessions."""
 
     date_start: date
     date_end: date
     device_id: int
-    compliance_threshold_hours: float
-    n_calendar_nights: int
     n_nights: int
-    days_compliant: int
-    compliance_pct: float
 
 
 class NightlyRangeSummary(_NightlyRangeBase):
-    """Compliance + analysis summary over a date range."""
+    """Analysis summary over a date range."""
 
     nights: list[NightlyAnalysisSummary]
 
@@ -724,6 +718,10 @@ class NightlyRangeSummary(_NightlyRangeBase):
 class NightlyDeviceRange(_NightlyRangeBase):
     """Compliance + device-channel summary over a date range."""
 
+    compliance_threshold_hours: float
+    n_calendar_nights: int
+    days_compliant: int
+    compliance_pct: float
     nights: list[NightlyDeviceStats]
 
 

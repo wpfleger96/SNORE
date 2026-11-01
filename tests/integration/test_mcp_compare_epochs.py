@@ -578,7 +578,7 @@ class TestCompareEpochsNoData:
 
         assert result.null_reason == "no_data_in_range"
         assert result.epochs[0].null_reason == "no_data_in_range"
-        assert result.epochs[0].rera_reason == "not_available"
+        assert result.epochs[0].rera_reason == "no_data_in_range"
 
 
 class TestCompareEpochsLeakValid:

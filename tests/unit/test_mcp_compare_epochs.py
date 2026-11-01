@@ -6,7 +6,7 @@ before the service is called), adapter validation (date parsing, metric validati
 and response mapping (isoformat dates, string flow_class keys, enum → str).
 
 Patching: ``BreathService.compare_device_epochs`` (``compare_epochs`` tool) and
-``BreathService.compare_epochs`` (``experimental_compare_epochs`` tool) are patched
+``BreathService.compare_experimental_epochs`` (``experimental_compare_epochs`` tool) are patched
 via ``extra_patches`` passed to ``mcp_client_factory`` from conftest.
 """
 
@@ -282,7 +282,8 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock = AsyncMock(return_value=mock_result)
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -363,7 +364,8 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock = AsyncMock(return_value=mock_result)
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -401,10 +403,11 @@ class TestExperimentalCompareEpochsRoundtrip:
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
         """epochs list with 7 entries raises ToolError from validate_epoch_count;
-        BreathService.compare_epochs must not be called."""
+        BreathService.compare_experimental_epochs must not be called."""
         service_mock = AsyncMock()
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -434,7 +437,8 @@ class TestExperimentalCompareEpochsRoundtrip:
         date_start parameter by index."""
         service_mock = AsyncMock()
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -465,7 +469,8 @@ class TestExperimentalCompareEpochsRoundtrip:
         """Non-ISO date string raises ToolError mentioning the expected YYYY-MM-DD format."""
         service_mock = AsyncMock()
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -495,7 +500,8 @@ class TestExperimentalCompareEpochsRoundtrip:
         listing all four valid metric names; service must not be called."""
         service_mock = AsyncMock()
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -533,7 +539,8 @@ class TestExperimentalCompareEpochsRoundtrip:
         """Device channels moved to compare_epochs, so they are unknown metrics here."""
         service_mock = AsyncMock()
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -571,7 +578,8 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock = AsyncMock(return_value=mock_result)
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -618,7 +626,8 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock = AsyncMock(return_value=mock_result)
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(
@@ -646,7 +655,7 @@ class TestExperimentalCompareEpochsRoundtrip:
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
         """metrics=['ie_ratio'] in the tool call is converted to
-        [DistributionMetric.IE_RATIO] and passed to BreathService.compare_epochs."""
+        [DistributionMetric.IE_RATIO] and passed to BreathService.compare_experimental_epochs."""
         from snore.services.breath_service import (  # noqa: PLC0415
             CompareEpochsResult,
             DistributionMetric,
@@ -667,7 +676,8 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock = AsyncMock(return_value=mock_result)
         patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            service_mock,
         )
 
         async with mcp_client_factory(

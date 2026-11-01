@@ -250,7 +250,7 @@ class TestReraIndexAnalyzedHours:
 
         night = await BreathService(
             async_db_session, profile_id=async_test_profile.id
-        ).get_nightly_summary(target_date)
+        ).get_experimental_nightly_summary(target_date)
 
         assert night.rera_count == 12
         assert night.rera_index == pytest.approx(4.0)
@@ -285,7 +285,7 @@ class TestReraIndexAnalyzedHours:
 
         night = await BreathService(
             async_db_session, profile_id=async_test_profile.id
-        ).get_nightly_summary(
+        ).get_experimental_nightly_summary(
             target_date, device_id=device.id if explicit_device else None
         )
 
@@ -306,7 +306,7 @@ class TestReraIndexAnalyzedHours:
         with pytest.raises(NoSessionsInRangeError):
             await BreathService(
                 async_db_session, profile_id=async_test_profile.id
-            ).get_nightly_summary(target_date)
+            ).get_experimental_nightly_summary(target_date)
 
 
 # ---------------------------------------------------------------------------

@@ -330,14 +330,13 @@ Aggregates inherit the weakest input: anything built on an experimental input st
 aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
 (across sessions, days, or a validation run) stays Device; rates, means, percentiles and recounts
 are Derived. A field with a preferred source and a fallback is tagged with the preferred source's
-tier and its description names the fallback, in both directions. In `SessionStatistics`,
-pressure/EPAP/leak max, median and 95th prefer the device STR value and are Device (the OSCAR session
-summary on OSCAR imports, otherwise falling back to the waveform), because the STR values overwrite
-the computed ones; their mean and min are always waveform values and are Derived. `spo2_max` prefers the oximeter waveform and stays Derived (falling
-back to the device's STR value). `respiratory_rate_mean/max` and tidal volume / minute ventilation
-mean/max prefer the device STR value and are Device (falling back to the OSCAR session summary); on
-ResMed the `*_mean` columns hold the STR median. Day-level and MCP `NightlyRow` pressure/EPAP/leak
-values are aggregates and stay Derived.
+tier and its description names the fallback, in both directions: pressure/EPAP/leak percentiles
+recomputed from the waveform when present are Derived (falling back to the device's summary value),
+because `finalize_statistics()` overwrites the STR values with the waveform's; `spo2_max` prefers the
+oximeter waveform and stays Derived (falling back to the device's STR value);
+`respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR value
+and are Device (falling back to the OSCAR session summary); on ResMed the `*_mean` columns hold the
+STR median. Day-level and MCP `NightlyRow` pressure/EPAP/leak values are aggregates and stay Derived.
 Day-level `ahi/oai/cai/hi` (`Day` rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are
 source-dependent headlines: the device-reported daily value when trusted, otherwise SNORE's recount;
 `index_source` (`IndexSource.DEVICE`/`DERIVED`) says which. They are tagged Device with
@@ -363,8 +362,10 @@ response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that
 Experimental data lives in `experimental_*` tools, and calling one is the opt-in. Default paths must
 not read breath rows, so their device data does not depend on analysis having run (the
 `analysis_run` and `has_analysis` bookkeeping flags read `analysis_results`, not breaths).
-`tests/unit/test_mcp_provenance.py` enforces the rule through `DEFAULT_TOOLS`, which maps each default
-tool to its response model: a new tool must be added to that map or take the `experimental_` prefix.
+`tests/unit/test_mcp_provenance.py` enforces the field rule through `DEFAULT_TOOLS`, which maps each
+default tool to its response model: a new tool must be added to that map or take the `experimental_`
+prefix. `tests/integration/test_mcp_device_waveform_aggregates.py` enforces the no-breath-rows rule by
+running every `DEFAULT_TOOLS` entry with SQL capture.
 
 CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
 field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;
@@ -530,7 +531,8 @@ There is deliberately no per-event-type tool: device-channel context (e.g. deliv
 - `DeviceAmbiguityError` → "Multiple devices have sessions on DATE: ... Devices: device_id=X (serial=Y), ..."
 - `MultiSessionAmbiguityError` → "Multiple sessions on DATE for device_id=X: ..."
 - `NoSessionsInRangeError` → "No therapy data found for date/range ..."
-- `OperationalError("no such table")` → "Breath-level data tables are missing ..."
+- `OperationalError("no such table")` → "A required table is missing from this database ..."
+- Any other `OperationalError` → "A database error occurred. ..."
 
 Any tool that calls `BreathService` should use `except MAPPED_SERVICE_ERRORS as exc: raise_mapped_service_error(exc)`. Do not write per-tool except branches for these exceptions.
 

@@ -36,6 +36,7 @@ def _call_build(
     fl_by_session: dict[int, list[float]] | None = None,
     snore_by_session: dict[int, list[float]] | None = None,
     leak_by_session: dict[int, list[float]] | None = None,
+    corrupt_leak_sessions: frozenset[int] = frozenset(),
     day_row: Any | None = None,
 ) -> Any:
     """Call _device_night_stats with the given per-session channel samples."""
@@ -52,6 +53,7 @@ def _call_build(
             "snore": snore_by_session or {},
             "leak": leak_by_session or {},
         },
+        corrupt_leak_sessions=corrupt_leak_sessions,
     )
 
 
@@ -278,6 +280,19 @@ class TestLeakAbove24Pct:
         )
         assert result.leak_above_24_pct is None
         assert result.leak_above_24_pct_reason == NullReason.CHANNEL_ABSENT
+
+    def test_corrupt_session_nulls_partial_value_with_corrupt_reason(self) -> None:
+        """A night never reports a share computed from its surviving sessions."""
+        from snore.analysis.shared.versioning import NullReason  # noqa: PLC0415
+
+        result = _call_build(
+            day_sessions=[_make_mock_session(1), _make_mock_session(2)],
+            leak_by_session={1: [30.0, 0.0]},
+            corrupt_leak_sessions=frozenset({2}),
+        )
+
+        assert result.leak_above_24_pct is None
+        assert result.leak_above_24_pct_reason == NullReason.CHANNEL_CORRUPT
 
 
 @pytest.mark.unit
