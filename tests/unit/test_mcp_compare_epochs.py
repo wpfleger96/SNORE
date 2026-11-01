@@ -1,11 +1,12 @@
-"""FastMCP in-memory roundtrip tests for compare_epochs tool.
+"""FastMCP in-memory roundtrip tests for the epoch-comparison tools.
 
 Each test calls through a connected fastmcp.Client backed by a mock DB session and a
 patched BreathService.  The suite verifies: server wiring (validate_epoch_count fires
 before the service is called), adapter validation (date parsing, metric validation),
 and response mapping (isoformat dates, string flow_class keys, enum → str).
 
-Patching: ``snore.services.breath_service.BreathService.compare_epochs`` is patched
+Patching: ``BreathService.compare_device_epochs`` (``compare_epochs`` tool) and
+``BreathService.compare_epochs`` (``experimental_compare_epochs`` tool) are patched
 via ``extra_patches`` passed to ``mcp_client_factory`` from conftest.
 """
 
@@ -93,7 +94,176 @@ def _make_epoch_stats(
 # ---------------------------------------------------------------------------
 
 
+_DEVICE_SERVICE = "snore.services.breath_service.BreathService.compare_device_epochs"
+_ONE_EPOCH = {
+    "epochs": [
+        {"label": "Before", "date_start": "2025-01-01", "date_end": "2025-01-31"}
+    ]
+}
+
+
 class TestCompareEpochsRoundtrip:
+    async def test_device_distributions_map_to_the_wire(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        """Wire JSON has isoformat dates, the device stats, and no breath, version
+        or experimental content."""
+        from snore.services.breath_service import (  # noqa: PLC0415
+            DeviceCompareEpochsResult,
+            DeviceDistributionStats,
+            DeviceEpochStats,
+        )
+
+        mock_result = DeviceCompareEpochsResult(
+            epochs=[
+                DeviceEpochStats(
+                    label="Before",
+                    date_start=date(2025, 1, 1),
+                    date_end=date(2025, 1, 31),
+                    nights_with_data=2,
+                    rx_settings={"pressure_min": "4.0"},
+                    device_flg=DeviceDistributionStats(
+                        median=0.1, iqr=0.2, p95=0.3, n_samples=900, n_nights=2
+                    ),
+                )
+            ],
+            null_reason=None,
+        )
+        patch_cm = patch(_DEVICE_SERVICE, AsyncMock(return_value=mock_result))
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch_cm]
+        ) as client:
+            result = await client.call_tool("compare_epochs", _ONE_EPOCH)
+
+        assert not result.is_error
+        payload = json.loads(result.content[0].text)
+
+        assert payload["null_reason"] is None
+        assert "version_warnings" not in payload
+        assert "experimental" not in payload["provenance"]
+        epoch = payload["epochs"][0]
+        assert epoch["date_start"] == "2025-01-01"
+        assert epoch["nights_with_data"] == 2
+        assert epoch["rx_settings"] == {"pressure_min": "4.0"}
+        assert epoch["device_flg"] == {
+            "median": 0.1,
+            "iqr": 0.2,
+            "p95": 0.3,
+            "n_samples": 900,
+            "n_nights": 2,
+        }
+        assert epoch["snore_dist"]["median"] is None
+        assert epoch["snore_dist"]["n_samples"] == 0
+        assert "mid_insp_flattening" not in epoch
+        assert "nights_missing_analysis" not in epoch
+
+    async def test_rx_refusal_passes_through_as_success(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        from snore.services.breath_service import (  # noqa: PLC0415
+            DeviceCompareEpochsResult,
+            DeviceEpochStats,
+            EpochRxViolation,
+            NullReason,
+        )
+
+        mock_result = DeviceCompareEpochsResult(
+            epochs=[
+                DeviceEpochStats(
+                    label="Before",
+                    date_start=date(2025, 1, 1),
+                    date_end=date(2025, 1, 31),
+                    null_reason=NullReason.RX_CHANGED_WITHIN_EPOCH,
+                )
+            ],
+            null_reason=NullReason.RX_CHANGED_WITHIN_EPOCH,
+            rx_violations=[
+                EpochRxViolation(
+                    epoch_label="Before",
+                    changed_keys=["pressure_min"],
+                    change_dates=[date(2025, 1, 15)],
+                )
+            ],
+        )
+        patch_cm = patch(_DEVICE_SERVICE, AsyncMock(return_value=mock_result))
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch_cm]
+        ) as client:
+            result = await client.call_tool("compare_epochs", _ONE_EPOCH)
+
+        assert not result.is_error
+        payload = json.loads(result.content[0].text)
+        assert payload["null_reason"] == "rx_changed_within_epoch"
+        assert payload["epochs"][0]["null_reason"] == "rx_changed_within_epoch"
+        assert payload["rx_violations"] == [
+            {
+                "epoch_label": "Before",
+                "changed_keys": ["pressure_min"],
+                "change_dates": ["2025-01-15"],
+            }
+        ]
+
+    async def test_seven_epochs_raises_tool_error_before_service_called(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        service_mock = AsyncMock()
+        patch_cm = patch(_DEVICE_SERVICE, service_mock)
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch_cm]
+        ) as client:
+            with pytest.raises(ToolError, match="7"):
+                await client.call_tool(
+                    "compare_epochs", {"epochs": _ONE_EPOCH["epochs"] * 7}
+                )
+
+        service_mock.assert_not_called()
+
+    async def test_malformed_date_raises_tool_error_naming_the_epoch(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        service_mock = AsyncMock()
+        patch_cm = patch(_DEVICE_SERVICE, service_mock)
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch_cm]
+        ) as client:
+            with pytest.raises(ToolError, match=r"epochs\[0\]\.date_start"):
+                await client.call_tool(
+                    "compare_epochs",
+                    {
+                        "epochs": [
+                            {
+                                "label": "E0",
+                                "date_start": "2025-01-31",
+                                "date_end": "2025-01-01",
+                            }
+                        ]
+                    },
+                )
+
+        service_mock.assert_not_called()
+
+    async def test_only_the_experimental_tool_takes_metrics_and_disclaimer(
+        self, mock_db_session: Any, mcp_client_factory: Any
+    ) -> None:
+        from snore.provenance import PROVENANCE_NOTES, Provenance  # noqa: PLC0415
+
+        note = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
+        async with mcp_client_factory(mock_db_session) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+        default_tool = tools["compare_epochs"]
+        experimental_tool = tools["experimental_compare_epochs"]
+
+        assert set(default_tool.input_schema["properties"]) == {"epochs"}
+        assert note not in default_tool.description
+        assert "metrics" in experimental_tool.input_schema["properties"]
+        assert note in experimental_tool.description
+
+
+class TestExperimentalCompareEpochsRoundtrip:
     async def test_happy_path_two_epochs_returns_populated_distributions(
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
@@ -119,7 +289,7 @@ class TestCompareEpochsRoundtrip:
             mock_db_session, extra_patches=[patch_cm]
         ) as client:
             result = await client.call_tool(
-                "compare_epochs",
+                "experimental_compare_epochs",
                 {
                     "epochs": [
                         {
@@ -200,7 +370,7 @@ class TestCompareEpochsRoundtrip:
             mock_db_session, extra_patches=[patch_cm]
         ) as client:
             result = await client.call_tool(
-                "compare_epochs",
+                "experimental_compare_epochs",
                 {
                     "epochs": [
                         {
@@ -242,7 +412,7 @@ class TestCompareEpochsRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="7"):
                 await client.call_tool(
-                    "compare_epochs",
+                    "experimental_compare_epochs",
                     {
                         "epochs": [
                             {
@@ -272,7 +442,7 @@ class TestCompareEpochsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "compare_epochs",
+                    "experimental_compare_epochs",
                     {
                         "epochs": [
                             {
@@ -303,7 +473,7 @@ class TestCompareEpochsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "compare_epochs",
+                    "experimental_compare_epochs",
                     {
                         "epochs": [
                             {
@@ -333,7 +503,7 @@ class TestCompareEpochsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "compare_epochs",
+                    "experimental_compare_epochs",
                     {
                         "epochs": [
                             {
@@ -352,6 +522,28 @@ class TestCompareEpochsRoundtrip:
         assert "flatness_index" in error_text
         assert "tidal_volume_ml" in error_text
         assert "ie_ratio" in error_text
+        assert "device_flg" not in error_text
+
+        service_mock.assert_not_called()
+
+    @pytest.mark.parametrize("metric", ["device_flg", "snore"])
+    async def test_device_metric_names_are_rejected(
+        self, mock_db_session: Any, mcp_client_factory: Any, metric: str
+    ) -> None:
+        """Device channels moved to compare_epochs, so they are unknown metrics here."""
+        service_mock = AsyncMock()
+        patch_cm = patch(
+            "snore.services.breath_service.BreathService.compare_epochs", service_mock
+        )
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch_cm]
+        ) as client:
+            with pytest.raises(ToolError, match=metric):
+                await client.call_tool(
+                    "experimental_compare_epochs",
+                    {"epochs": _ONE_EPOCH["epochs"], "metrics": [metric]},
+                )
 
         service_mock.assert_not_called()
 
@@ -386,7 +578,7 @@ class TestCompareEpochsRoundtrip:
             mock_db_session, extra_patches=[patch_cm]
         ) as client:
             result = await client.call_tool(
-                "compare_epochs",
+                "experimental_compare_epochs",
                 {
                     "epochs": [
                         {
@@ -433,7 +625,7 @@ class TestCompareEpochsRoundtrip:
             mock_db_session, extra_patches=[patch_cm]
         ) as client:
             result = await client.call_tool(
-                "compare_epochs",
+                "experimental_compare_epochs",
                 {
                     "epochs": [
                         {
@@ -482,7 +674,7 @@ class TestCompareEpochsRoundtrip:
             mock_db_session, extra_patches=[patch_cm]
         ) as client:
             result = await client.call_tool(
-                "compare_epochs",
+                "experimental_compare_epochs",
                 {
                     "epochs": [
                         {

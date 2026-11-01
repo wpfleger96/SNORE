@@ -4,7 +4,8 @@ Third presentation layer over the async service layer — a peer of the CLI and
 FastAPI, never a place where analysis logic lives.
 
 Design doctrine:
-  - Tiered data access: overview → summary → events → breath table → raw waveform
+  - Device data first: overview → summary → events → waveforms; SNORE's own
+    heuristics live only in separately named ``experimental_*`` tools
   - Compute server-side, return compact JSON; units on every field
   - Data-quality flags / null + reason everywhere (G2)
   - Stateless: no module-global state; DB access injected via SNORERuntime (G3)
@@ -201,39 +202,45 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-WORKFLOW:
+WORKFLOW (device data first; none of these tools needs analysis):
 1. get_data_overview  → discover devices, date ranges, channels
-2. get_nightly_summary → identify nights of interest (30 nights/page; incl. periodic-breathing %)
+2. get_nightly_summary → identify nights of interest: indices, event counts, pressure, leak, device flow limitation (30 nights/page)
 3. get_settings_timeline → understand settings epochs
 4. get_settings_changes → full audit log of device settings changes + user-logged mask equipment changes
-5. get_events (date) → event-level detail for a night (incl. MV slope/stability, delivered PS)
-6. get_breath_table, find_windows, compare_epochs for breath morphology tuning
-7. render_window → PNG chart for visual inspection (≤15 min window)
-8. get_waveform → raw per-sample arrays for deep inspection (≤2 min window)
+5. get_events (date) → device-scored events for a night, with device-channel context (pressure, leak, MV, delivered PS)
+6. compare_epochs → device flow-limitation and snore channels across settings epochs
+7. render_window → PNG chart of device waveforms for visual inspection (≤15 min window)
+8. get_waveform → raw per-sample arrays for deep inspection (≤2 min window / ≤1000 pts)
 
-DATA TIERS (progressive disclosure):
-  Tier 1 (primary):  computed metrics — indices, percentiles, aggregates
-  Tier 2 (secondary): PNG charts — render_window (≤15 min window)
-  Tier 3 (escape hatch): raw arrays — get_waveform ≤2 min / ≤1000 pts
+OPTIONAL EXPERIMENTAL STEP (separate from the workflow above; call these only
+when SNORE's own heuristics are wanted as trend evidence alongside device data):
+- experimental_get_nightly_metrics → RERA proxy, RDI, FL classes, segmented breath timing, periodic-breathing %
+- experimental_get_event_context → MV slope, MV stability, flow-derived MV around device-scored events
+- experimental_compare_epochs → breath-feature distributions across settings epochs
+- experimental_get_breath_table → per-breath features for a window
+- experimental_find_windows → locate breath windows by flow-limitation criterion
+
+PRIMARY EVIDENCE: device-scored events, device summaries, and raw waveforms carry
+equal weight. Read the flow, pressure, and leak traces with render_window and
+get_waveform as evidence in their own right, not as a last resort after the
+nightly numbers.
 
 NULL FIELDS: When data is absent, fields are null + a companion *_reason field
-explains why (e.g. rera_index_reason: "analysis_not_run"). Never infer from null.
+explains why (e.g. leak_above_24_pct_reason: "channel_absent"). Never infer from null.
 
 PROVENANCE: every metric has one provenance class:
 {_provenance_legend()}
 Field descriptions in docs://schemas start with [DEVICE] / [DERIVED] /
-[EXPERIMENTAL]. Responses with derived or experimental fields carry a top-level
-`provenance` block listing those field paths; metric fields it does not list
-are device data, identifiers and bookkeeping fields (ids, offsets, pagination,
-coverage counts) are not classified, and responses with only device data carry
-no block. The block's `source_dependent` map takes a field path to the sibling
-field whose value decides that value's tier (e.g. MV fields ->
-`events[].context.mv_source`, where `flow_derived` means experimental; nightly
-ahi/oai/cai/hi -> `nights[].index_source`: `device` is the device-reported daily
-value, `derived` is SNORE's recount; the recount, when computable, is in
-`*_computed`). Device-scored events are the reference
-standard; never present experimental metrics as device-scored or clinically
-validated.
+[EXPERIMENTAL]. Experimental fields appear only in experimental_* tools.
+A top-level `provenance` block lists a response's non-device field paths; metric
+fields it does not list are device data, identifiers and bookkeeping fields
+(ids, offsets, pagination, coverage counts) are not classified, and responses
+with only device data carry no block. The block's `source_dependent` map takes a
+field path to the sibling field whose value decides that value's tier: nightly
+ahi/oai/cai/hi -> `nights[].index_source`, where `device` is the device-reported
+daily value and `derived` is SNORE's recount; the recount, when computable, is
+in `*_computed`. Device-scored events are the reference standard; never present
+experimental metrics as device-scored or clinically validated.
 
 See docs://capabilities for dataset-specific channel availability.
 """
@@ -455,6 +462,13 @@ async def _fetch_waveform_for_tool(
 # Resources
 # ---------------------------------------------------------------------------
 
+_ANALYSIS_NOTE = (
+    "Device data needs no analysis: tools without the experimental_ prefix work "
+    "whether or not analysis has run. The experimental_* tools need analysis "
+    "results, except experimental_get_event_context, which computes from "
+    "waveforms on demand."
+)
+
 
 def _register_resources(mcp: FastMCP) -> None:
 
@@ -464,12 +478,15 @@ def _register_resources(mcp: FastMCP) -> None:
 
         Available schema_types: device_capabilities, device_info, data_overview,
         settings_epoch, settings_timeline, settings_change_entry, settings_changes,
-        nightly_row, compliance_fields,
-        nightly_summary, event_context, event_row, events_response, capability_entry,
-        breath_table_query, breath_table_row, breath_table_bin, breath_table_response,
-        window_row, session_coverage_entry, find_windows_response, epoch_spec,
-        epoch_distribution, epoch_stats, epoch_rx_violation, compare_epochs_response,
-        waveform_channel, waveform_window.
+        nightly_row, compliance_fields, nightly_summary, experimental_nightly_row,
+        experimental_nightly_metrics, event_context, event_row, events_response,
+        experimental_event_context_row, experimental_event_context_response,
+        capability_entry, breath_table_query, breath_table_row, breath_table_bin,
+        breath_table_response, window_row, session_coverage_entry,
+        find_windows_response, epoch_spec, epoch_distribution, epoch_stats,
+        epoch_rx_violation, compare_epochs_response, device_epoch_distribution,
+        device_epoch_stats, device_compare_epochs_response, waveform_channel,
+        waveform_window.
         """
         model = SCHEMA_MODEL_MAP.get(schema_type)
         if model is None:
@@ -534,14 +551,7 @@ def _register_resources(mcp: FastMCP) -> None:
             "analysis": {
                 "run": overview.analysis_run,
                 "session_count": overview.analysis_session_count,
-                "note": (
-                    "Run 'snore analysis run' or re-import with analysis enabled "
-                    "to populate analysis-derived fields (RERA index, RDI, breath table)."
-                    if not overview.analysis_run
-                    else "Analysis results are available. RERA index and RDI fields "
-                    "are populated; both are experimental (RERA proxy from SNORE's "
-                    "flow-limitation classifier), not device-scored."
-                ),
+                "note": _ANALYSIS_NOTE,
             },
             "provenance": {str(tier): note for tier, note in PROVENANCE_NOTES.items()},
             "supported_parsers": supported_parsers,

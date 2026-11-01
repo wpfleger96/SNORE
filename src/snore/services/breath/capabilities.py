@@ -37,7 +37,8 @@ from .dtos import (
 )
 
 # Channels pre-loaded once per session for per-event context.  FLOW is fetched
-# separately, only when MV is absent (flow-derived MV fallback).
+# separately, only for ventilatory context when MV is absent (flow-derived MV
+# fallback).
 _CONTEXT_CHANNELS = [
     WaveformChannelName.PRESSURE,
     WaveformChannelName.LEAK,
@@ -271,20 +272,25 @@ class CapabilitiesMixin(_BreathServiceCore):
         device_id: int | None = None,
         *,
         include_context: bool = True,
+        include_ventilatory: bool = False,
     ) -> list[ContextualEvent]:
         """Machine events enriched with waveform context.
 
         Returns events from ALL sessions on the resolved device.
-        Pressure and leak values are sampled at the event start (±5 s window).
-        MV is the mean over the 120 s preceding the event; the MV slope and
-        stability index use the 60 s preceding it, and delivered PS the ±5 s
-        window (see ``compute_ventilatory_context``).  MV comes from the device
-        MV channel, or is derived from the flow waveform when that channel is
-        absent (``mv_source`` records which).
+        Pressure, leak and delivered PS are sampled around the event start
+        (±5 s window).  MV is the device MV channel's mean over the 120 s
+        preceding the event.
         Values are ``null`` + ``NOT_AVAILABLE`` when the relevant channel is
         absent or unusable.  Corrupt PRESSURE/LEAK/MV blobs raise
         ``ValueError``; corrupt THERAPY_PRESSURE/EPAP/FLOW blobs degrade to an
         absent channel.
+
+        ``include_ventilatory=True`` adds the experimental metrics: the MV
+        slope and stability index over the preceding 60 s (see
+        ``compute_ventilatory_context``), a flow-derived MV series when the
+        device MV channel is absent, and ``mv_source`` recording which series
+        was used.  Without it no flow is fetched, slope and stability are
+        ``null`` + ``NOT_AVAILABLE``, and ``mv_source`` is null.
 
         ``include_context=False`` fetches no waveforms: every context value,
         its reason, and ``mv_source`` are null.
@@ -355,7 +361,9 @@ class CapabilitiesMixin(_BreathServiceCore):
                 )
                 # MV fallback: no device MV samples → derive MV from the flow
                 # waveform.  FLOW is fetched only here — full-session flow is large.
-                if not _has_samples(context_raw, WaveformChannelName.MV):
+                if include_ventilatory and not _has_samples(
+                    context_raw, WaveformChannelName.MV
+                ):
                     flow_raw = await _fetch_waveform_blobs(
                         self._db,
                         pre_request.model_copy(
@@ -383,7 +391,11 @@ class CapabilitiesMixin(_BreathServiceCore):
             )
 
         return await asyncio.to_thread(
-            _compute_contextual_events, fetched, tz_status, tz_name
+            _compute_contextual_events,
+            fetched,
+            tz_status,
+            tz_name,
+            include_ventilatory=include_ventilatory,
         )
 
 
@@ -401,7 +413,8 @@ class _SessionEventsRaw(BaseModel):
     events: list[_RawEvent]
     # None when context was not requested.
     context_raw: RawWaveformWindow | None
-    # Fetched only when the context blobs carry no MV samples.
+    # Fetched only for ventilatory context when the context blobs carry no MV
+    # samples.
     flow_raw: RawWaveformWindow | None
 
 
@@ -417,6 +430,8 @@ def _compute_contextual_events(
     sessions: list[_SessionEventsRaw],
     tz_status: TimezoneStatus,
     tz_name: str | None,
+    *,
+    include_ventilatory: bool,
 ) -> list[ContextualEvent]:
     """Pure, CPU-bound — deserialize pre-fetched blobs and build every event's
     context.  Runs off the event loop."""
@@ -428,7 +443,9 @@ def _compute_contextual_events(
                 sess.context_raw, tolerate_corrupt=_TOLERATED_CORRUPT
             )
         mv_series = series.get(WaveformChannelName.MV)
-        mv_source: MvSource | None = MvSource.DEVICE if mv_series is not None else None
+        mv_source: MvSource | None = (
+            MvSource.DEVICE if include_ventilatory and mv_series is not None else None
+        )
         if mv_series is None and sess.flow_raw is not None:
             flow = raw_window_series(
                 sess.flow_raw, tolerate_corrupt=_TOLERATED_CORRUPT
@@ -465,7 +482,7 @@ def _compute_contextual_events(
                     )
                 ventilatory = compute_ventilatory_context(
                     offset_s,
-                    mv=mv_series,
+                    mv=mv_series if include_ventilatory else None,
                     therapy_pressure=series.get(WaveformChannelName.THERAPY_PRESSURE),
                     epap=series.get(WaveformChannelName.EPAP),
                 )

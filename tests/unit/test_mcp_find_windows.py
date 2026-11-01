@@ -187,7 +187,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -248,7 +248,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -275,7 +275,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {"date": "2025-07-14", "criterion": "bad_criterion"},
                 )
 
@@ -301,7 +301,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="1 and 50"):
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {
                         "date": "2025-07-14",
                         "criterion": "worst_flattening_leak_valid",
@@ -326,7 +326,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError, match="1 and 50"):
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {
                         "date": "2025-07-14",
                         "criterion": "worst_flattening_leak_valid",
@@ -350,7 +350,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 
@@ -395,7 +395,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "fl_run_ending_in_recovery"},
             )
 
@@ -427,7 +427,7 @@ class TestFindWindowsRoundtrip:
         ) as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool(
-                    "find_windows",
+                    "experimental_find_windows",
                     {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
                 )
 
@@ -475,7 +475,7 @@ class TestFindWindowsRoundtrip:
             mock_db_session, extra_patches=[patch_fw, patch_caps]
         ) as client:
             result = await client.call_tool(
-                "find_windows",
+                "experimental_find_windows",
                 {"date": "2025-07-14", "criterion": "worst_flattening_leak_valid"},
             )
 

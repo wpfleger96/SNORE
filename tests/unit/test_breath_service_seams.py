@@ -9,10 +9,13 @@ Coverage:
                   populated → nights_with_data > 0
 - get_nightly_summary: ValueError no sessions, OK day with analyzed_session_count
 - get_nightly_range_summary: empty range returns n_nights=0
+- get_nightly_device_summary: empty range, calendar compliance, range validation
 - get_device_capabilities: no sessions → null_reason; with sessions → date range
 - get_contextual_events: no events → empty; with events → ContextualEvent list
-- get_contextual_events ventilatory context: MV slope/stability, delivered PS,
-  flow-derived MV fallback
+- get_contextual_events default context: delivered PS and device MV only, no
+  flow fetch
+- get_contextual_events include_ventilatory: MV slope/stability, flow-derived
+  MV fallback
 - get_nightly_summary periodic_breathing_pct from persisted PB episodes
 - get_waveform_window: no waveform data → empty channels
 - fetch_waveform_window_raw (module-level): missing session raises ValueError
@@ -892,56 +895,62 @@ class TestGetNightlySummary:
         assert summary.analyzed_session_count == 0
         assert summary.fl_reason == NullReason.NOT_AVAILABLE
 
-    async def test_waveform_opt_out_preserves_fl_rera_fields(self, async_db_session):
-        """``include_waveform_stats=False`` leaves the breath-derived FL/RERA
-        fields byte-identical; only the waveform ``device_flg_*`` fields differ.
 
-        Pins the day-detail hot-path optimization: skipping the waveform blobs
-        must not perturb the metrics day detail actually consumes.
-        """
+# ---------------------------------------------------------------------------
+# get_nightly_device_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetNightlyDeviceSummary:
+    async def test_no_sessions_returns_empty_range(self, async_db_session):
+        """No sessions to auto-select from → empty range, device_id 0, no error."""
+        _, profile_id = await _make_profile(async_db_session)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        summary = await svc.get_nightly_device_summary(
+            date(2025, 3, 1), date(2025, 3, 10)
+        )
+
+        assert summary.device_id == 0
+        assert summary.nights == []
+        assert summary.n_calendar_nights == 10
+        assert summary.compliance_pct == 0.0
+
+    async def test_compliance_is_over_calendar_nights(self, async_db_session):
+        """One compliant night in a four-night range is 25 %."""
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 3, 12)
-        _, session = await _make_day_and_session(async_db_session, dev.id, therapy_date)
-        # Rule-matched high-confidence class-5 breaths → non-zero
-        # fl_class_ge4_pct, so the equality check compares a real value.
-        await _store_analysis_with_breaths(
-            async_db_session, session, profile_id, n_breaths=8, flow_class=5
-        )
-        # A real fl waveform blob so the with-stats path aggregates device_flg.
-        samples = np.array([[float(i), 0.4] for i in range(10)], dtype=np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="fl",
-                sample_rate=1.0,
-                sample_count=10,
-                data_blob=samples.tobytes(),
-            )
-        )
+        therapy_date = date(2025, 3, 2)
+        day, _ = await _make_day_and_session(async_db_session, dev.id, therapy_date)
+        day.total_therapy_hours = 7.0
         await async_db_session.flush()
-
         svc = BreathService(async_db_session, profile_id=profile_id)
-        with_stats = await svc.get_nightly_summary(
-            therapy_date, device_id=dev.id, include_waveform_stats=True
-        )
-        without_stats = await svc.get_nightly_summary(
-            therapy_date, device_id=dev.id, include_waveform_stats=False
+
+        summary = await svc.get_nightly_device_summary(
+            date(2025, 3, 1), date(2025, 3, 4), device_id=dev.id
         )
 
-        assert with_stats.fl_class_ge4_pct is not None
-        assert with_stats.fl_class_ge4_pct == without_stats.fl_class_ge4_pct
-        assert (
-            with_stats.fl_class_ge4_pct_reason == without_stats.fl_class_ge4_pct_reason
-        )
-        assert with_stats.rera_index == without_stats.rera_index
-        assert with_stats.rera_index_reason == without_stats.rera_index_reason
-        assert with_stats.rera_count == without_stats.rera_count
-        assert with_stats.rera_reason == without_stats.rera_reason
+        assert [n.therapy_date for n in summary.nights] == [therapy_date]
+        assert summary.n_nights == 1
+        assert summary.days_compliant == 1
+        assert summary.compliance_pct == pytest.approx(25.0)
 
-        # The opt-out actually skipped waveform aggregation.
-        assert with_stats.device_flg_median is not None
-        assert without_stats.device_flg_median is None
+    @pytest.mark.parametrize(
+        ("date_start", "date_end", "match"),
+        [
+            (date(2025, 3, 2), date(2025, 3, 1), "must be >= date_start"),
+            (date(2025, 1, 1), date(2025, 4, 30), "maximum per call is 90"),
+        ],
+    )
+    async def test_invalid_range_raises(
+        self, async_db_session, date_start, date_end, match
+    ):
+        _, profile_id = await _make_profile(async_db_session)
+        svc = BreathService(async_db_session, profile_id=profile_id)
+
+        with pytest.raises(ValueError, match=match):
+            await svc.get_nightly_device_summary(date_start, date_end)
 
 
 # ---------------------------------------------------------------------------
@@ -2818,7 +2827,11 @@ class TestCorruptBlobThroughPublicSeams:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source is None
@@ -2863,7 +2876,11 @@ class TestCorruptBlobThroughPublicSeams:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.ps_delivered_cmh2o is None
@@ -2875,7 +2892,7 @@ class TestCorruptBlobThroughPublicSeams:
 
 
 # ---------------------------------------------------------------------------
-# Per-event ventilatory context (get_contextual_events)
+# Per-event context (get_contextual_events)
 # ---------------------------------------------------------------------------
 
 
@@ -2917,18 +2934,111 @@ async def _add_event(
 
 
 async def _single_contextual_event(
-    db: AsyncSession, profile_id: int, therapy_date: date, device_id: int
+    db: AsyncSession,
+    profile_id: int,
+    therapy_date: date,
+    device_id: int,
+    *,
+    include_ventilatory: bool = False,
 ) -> Any:
     events = await BreathService(db, profile_id=profile_id).get_contextual_events(
-        therapy_date=therapy_date, device_id=device_id
+        therapy_date=therapy_date,
+        device_id=device_id,
+        include_ventilatory=include_ventilatory,
     )
     assert len(events) == 1
     return events[0]
 
 
 @pytest.mark.unit
+class TestDefaultEventContext:
+    """Without include_ventilatory: device channels only, no flow I/O."""
+
+    async def test_no_device_mv_never_fetches_flow_and_nulls_mv(self, async_db_session):
+        """No device MV, flow seeded → FLOW is never requested and there is no
+        flow-derived fallback: mv_prior_120s is null + NOT_AVAILABLE."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        import snore.services.breath_service as bs_mod  # noqa: PLC0415
+
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 8)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "flow", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        requested: list[WaveformChannelName] = []
+        original_fetch = bs_mod._fetch_waveform_blobs  # noqa: SLF001
+
+        async def recording_fetch(db, request, *args, **kwargs):
+            requested.extend(request.channels)
+            return await original_fetch(db, request, *args, **kwargs)
+
+        with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
+            ev = await _single_contextual_event(
+                async_db_session, profile_id, therapy_date, dev.id
+            )
+
+        assert requested
+        assert WaveformChannelName.FLOW not in requested
+        assert ev.mv_prior_120s_lpm is None
+        assert ev.mv_reason == NullReason.NOT_AVAILABLE
+        assert ev.mv_source is None
+
+    async def test_delivered_ps_computes_without_mv(self, async_db_session):
+        """Delivered PS needs no MV series: THERAPY_PRESSURE 20.0 − EPAP 8.0
+        → 12.0 with no MV channel seeded."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 9)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(
+            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
+        )
+        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, rel=1e-9)
+        assert ev.ps_reason is None
+
+    async def test_device_mv_keeps_prior_120s_but_no_ventilatory_metrics(
+        self, async_db_session
+    ):
+        """Device MV present → mv_prior_120s is computed, while slope, stability
+        and mv_source stay null."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        therapy_date = date(2026, 7, 10)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, therapy_date, duration_hours=1.0
+        )
+        await _add_waveform(async_db_session, session, "mv", np.full(3600, 8.0))
+        await _add_event(async_db_session, session, 300.0)
+
+        ev = await _single_contextual_event(
+            async_db_session, profile_id, therapy_date, dev.id
+        )
+
+        assert ev.mv_prior_120s_lpm == pytest.approx(8.0)
+        assert ev.mv_reason is None
+        assert ev.preceding_mv_slope_lpm_per_min is None
+        assert ev.stability_index is None
+        assert ev.mv_source is None
+
+
+@pytest.mark.unit
 class TestEventVentilatoryContext:
-    """Per-event MV slope / stability / delivered PS, numerically checked."""
+    """include_ventilatory: MV slope / stability / flow-derived MV, numerically
+    checked."""
 
     async def test_mv_slope_from_linear_ramp_is_60_lpm_per_min(self, async_db_session):
         """MV = t (unit ramp), event at 300 s → per-second slope 1.0 over the
@@ -2943,7 +3053,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(60.0, rel=1e-9)
@@ -2966,34 +3080,17 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 90.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         window = vals[30:91]  # offsets 30..90 inclusive
         expected = float(np.std(window, ddof=1)) / float(window.mean())
         assert ev.stability_index == pytest.approx(expected, rel=1e-9)
         assert ev.stability_reason is None
-
-    async def test_ps_delivered_is_therapy_pressure_minus_epap(self, async_db_session):
-        """THERAPY_PRESSURE 20.0, EPAP 8.0 → PS 12.0 over ±5 s."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        therapy_date = date(2025, 7, 12)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, therapy_date, duration_hours=1.0
-        )
-        await _add_waveform(
-            async_db_session, session, "therapy_pressure", np.full(3600, 20.0)
-        )
-        await _add_waveform(async_db_session, session, "epap", np.full(3600, 8.0))
-        await _add_event(async_db_session, session, 300.0, event_type="OA")
-
-        ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
-        )
-
-        assert ev.ps_delivered_cmh2o == pytest.approx(12.0, rel=1e-9)
-        assert ev.ps_reason is None
 
     async def test_absent_channels_yield_null_with_not_available(
         self, async_db_session
@@ -3009,7 +3106,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0, event_type="H")
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_lpm_per_min is None
@@ -3039,7 +3140,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, -10.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.preceding_mv_slope_reason == NullReason.NOT_AVAILABLE
@@ -3064,7 +3169,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source == "flow_derived"
@@ -3101,7 +3210,11 @@ class TestEventVentilatoryContext:
 
         with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=recording_fetch):
             ev = await _single_contextual_event(
-                async_db_session, profile_id, therapy_date, dev.id
+                async_db_session,
+                profile_id,
+                therapy_date,
+                dev.id,
+                include_ventilatory=True,
             )
 
         assert ev.mv_source == "device"
@@ -3139,7 +3252,9 @@ class TestEventVentilatoryContext:
 
         events = await BreathService(
             async_db_session, profile_id=profile_id
-        ).get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+        ).get_contextual_events(
+            therapy_date=therapy_date, device_id=dev.id, include_ventilatory=True
+        )
 
         source_by_session = {ev.session_id: ev.mv_source for ev in events}
         assert source_by_session == {
@@ -3176,7 +3291,10 @@ class TestEventVentilatoryContext:
             events = await BreathService(
                 async_db_session, profile_id=profile_id
             ).get_contextual_events(
-                therapy_date=therapy_date, device_id=dev.id, include_context=False
+                therapy_date=therapy_date,
+                device_id=dev.id,
+                include_context=False,
+                include_ventilatory=True,
             )
 
         assert call_count == 0
@@ -3212,7 +3330,11 @@ class TestEventVentilatoryContext:
         await _add_event(async_db_session, session, 300.0)
 
         ev = await _single_contextual_event(
-            async_db_session, profile_id, therapy_date, dev.id
+            async_db_session,
+            profile_id,
+            therapy_date,
+            dev.id,
+            include_ventilatory=True,
         )
 
         assert ev.mv_source == "device"
@@ -3946,7 +4068,7 @@ class TestCompareEpochsRefusal:
         assert result.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH
 
     async def test_one_violating_epoch_among_three_nulls_only_itself(
-        self, async_db_session, monkeypatch
+        self, async_db_session
     ):
         """A mid-epoch RX change nulls only its own epoch; the two clean epochs
         still compute, and the top-level null_reason stays None."""
@@ -3983,20 +4105,6 @@ class TestCompareEpochsRefusal:
             async_db_session, s4, profile_id, n_breaths=3
         )
 
-        waveform_session_ids: list[int] = []
-
-        async def _record_waveform_session_ids(
-            _db: AsyncSession, session_ids: list[int]
-        ) -> tuple[dict[int, list[float]], dict[int, list[float]]]:
-            waveform_session_ids.extend(session_ids)
-            return {}, {}
-
-        monkeypatch.setattr(
-            BreathService,
-            "_fetch_waveform_channel_vals",
-            staticmethod(_record_waveform_session_ids),
-        )
-
         svc = BreathService(async_db_session, profile_id=profile_id)
         result = await svc.compare_epochs(
             epochs=[
@@ -4026,8 +4134,6 @@ class TestCompareEpochsRefusal:
         assert result.null_reason is None
         assert len(result.rx_violations) == 1
         assert result.rx_violations[0].epoch_label == "violating"
-        # Nulled epochs must not load and deserialize full-night waveform blobs.
-        assert set(waveform_session_ids) == {s1.id, s4.id}
 
     async def test_all_epochs_violating_sets_top_level_refusal(self, async_db_session):
         """When every epoch has a mid-epoch RX change, the top-level null_reason is
@@ -4321,6 +4427,88 @@ class TestCompareEpochsRefusal:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("method", "median_of"),
+    [
+        pytest.param(
+            "compare_epochs", lambda e: e.mid_insp_flattening.median, id="experimental"
+        ),
+        pytest.param(
+            "compare_device_epochs", lambda e: e.device_flg.median, id="device"
+        ),
+    ],
+)
+class TestEpochUnknownSettings:
+    """A session with no Setting rows has unknown settings, which is not an RX change."""
+
+    async def _compare(
+        self, db: AsyncSession, method: str, rx_values: list[str | None]
+    ) -> Any:
+        """Compare one epoch of analyzed nights from 2025-02-01; None seeds no settings."""
+        _, profile_id = await _make_profile(db)
+        dev = await _make_device(db, profile_id)
+        for offset, value in enumerate(rx_values, start=1):
+            _, sess = await _make_day_and_session(db, dev.id, date(2025, 2, offset))
+            await _store_analysis_with_breaths(db, sess, profile_id, n_breaths=2)
+            await _add_waveform(db, sess, "fl", np.full(4, 0.2))
+            if value is not None:
+                db.add(
+                    models.Setting(session_id=sess.id, key="pressure_min", value=value)
+                )
+        await db.flush()
+
+        compare = getattr(BreathService(db, profile_id=profile_id), method)
+        return await compare(
+            [
+                EpochRequest(
+                    label="A",
+                    date_start=date(2025, 2, 1),
+                    date_end=date(2025, 2, 28),
+                    device_id=dev.id,
+                )
+            ]
+        )
+
+    @pytest.mark.parametrize(
+        ("rx_values", "expected_rx"),
+        [
+            pytest.param([None, "8.0"], {"pressure_min": "8.0"}, id="unknown_first"),
+            pytest.param(["8.0", None], {"pressure_min": "8.0"}, id="unknown_last"),
+            pytest.param([None, None], {}, id="all_unknown"),
+        ],
+    )
+    async def test_unknown_settings_are_not_an_rx_change(
+        self,
+        async_db_session: AsyncSession,
+        method: str,
+        median_of: Any,
+        rx_values: list[str | None],
+        expected_rx: dict[str, str],
+    ) -> None:
+        result = await self._compare(async_db_session, method, rx_values)
+
+        epoch = result.epochs[0]
+        assert result.null_reason is None
+        assert result.rx_violations == []
+        assert epoch.null_reason is None
+        assert epoch.rx_settings == expected_rx
+        assert median_of(epoch) is not None
+
+    async def test_change_across_unknown_session_reports_later_known_date(
+        self, async_db_session: AsyncSession, method: str, median_of: Any
+    ) -> None:
+        result = await self._compare(async_db_session, method, ["8.0", None, "12.0"])
+
+        epoch = result.epochs[0]
+        assert epoch.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH
+        assert epoch.rx_settings == {"pressure_min": "8.0"}
+        assert median_of(epoch) is None
+        violation = result.rx_violations[0]
+        assert violation.changed_keys == ["pressure_min"]
+        assert violation.change_dates == [date(2025, 2, 3)]
+
+
+@pytest.mark.unit
 class TestContextualEventsInputValidationExtended:
     """event_types cap tests (plan §13: 50-item limit)."""
 
@@ -4475,8 +4663,9 @@ class TestCodeReviewFixes:
 
         Before the fix, the function called _fetch_waveform_blobs twice per event
         (pressure/leak + MV), so N events = 2N blob reads.  The fix pre-loads
-        once before the loop and slices in Python; a session without a device
-        MV channel adds exactly one FLOW fetch for the flow-derived MV fallback.
+        once before the loop and slices in Python; with include_ventilatory, a
+        session without a device MV channel adds exactly one FLOW fetch for the
+        flow-derived MV fallback.
         """
         from unittest.mock import patch  # noqa: PLC0415
 
@@ -4525,7 +4714,9 @@ class TestCodeReviewFixes:
 
         svc = BreathService(async_db_session, profile_id=profile_id)
         with patch.object(bs_mod, "_fetch_waveform_blobs", side_effect=counting_fetch):
-            await svc.get_contextual_events(therapy_date=therapy_date, device_id=dev.id)
+            await svc.get_contextual_events(
+                therapy_date=therapy_date, device_id=dev.id, include_ventilatory=True
+            )
 
         # Pre-load (+ FLOW fallback) per session, not 2 × N_events
         assert call_count == expected_calls
@@ -4926,95 +5117,6 @@ class TestNightlySummaryFlClassGe4Pct:
         night = summary.nights[0]
         assert night.fl_class_ge4_pct == pytest.approx(50.0)
         assert night.fl_class_ge4_pct_reason is None
-
-
-# ---------------------------------------------------------------------------
-# leak_above_24_pct on NightlyAnalysisSummary
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestNightlySummaryLeakAbove24Pct:
-    """leak_above_24_pct on per-night NightlyAnalysisSummary.
-
-    Denominator = breaths with determinate leak_valid (True or False).
-    Numerator   = breaths with leak_valid is False (leak > 24 L/min).
-    None breaths are excluded from both.
-    Result is rounded to 1 decimal.
-    """
-
-    async def test_mixed_leak_valid_values_pct_excludes_none(self, async_db_session):
-        """3 True, 1 False, 2 None → denominator=4, numerator=1, pct=25.0."""
-        therapy_date = date(2025, 7, 20)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": False},
-                {"leak_valid": None},
-                {"leak_valid": None},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct == 25.0
-        assert night.leak_above_24_pct_reason is None
-
-    async def test_all_leak_valid_true_pct_is_zero(self, async_db_session):
-        """All breaths leak_valid=True → 0 numerator → leak_above_24_pct == 0.0."""
-        therapy_date = date(2025, 7, 21)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": True},
-                {"leak_valid": True},
-                {"leak_valid": True},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct == 0.0
-        assert night.leak_above_24_pct_reason is None
-
-    async def test_all_leak_valid_none_pct_is_null_with_not_available_reason(
-        self, async_db_session
-    ):
-        """All breaths leak_valid=None → denominator=0 → leak_above_24_pct is None with NOT_AVAILABLE."""
-        therapy_date = date(2025, 7, 22)
-        profile_id, device_id = await _store_night_with_breath_specs(
-            async_db_session,
-            therapy_date,
-            breath_specs=[
-                {"leak_valid": None},
-                {"leak_valid": None},
-            ],
-        )
-        svc = BreathService(async_db_session, profile_id=profile_id)
-        summary = await svc.get_nightly_range_summary(
-            date_start=therapy_date,
-            date_end=therapy_date,
-            device_id=device_id,
-        )
-
-        night = summary.nights[0]
-        assert night.leak_above_24_pct is None
-        assert night.leak_above_24_pct_reason == NullReason.NOT_AVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -5747,16 +5849,14 @@ class TestDeriveMvFromFlow:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_waveform_channel_vals — chunked ID binding (#280)
+# _fetch_channel_vals — chunked ID binding (#280)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestFetchWaveformChannelValsChunked:
-    async def test_fetch_waveform_channel_vals_chunked(
-        self, async_db_session, monkeypatch
-    ):
-        """fl/snore values survive the ID-chunk boundary in _fetch_waveform_channel_vals.
+class TestFetchChannelValsChunked:
+    async def test_fetch_channel_vals_chunked(self, async_db_session, monkeypatch):
+        """fl/snore values survive the ID-chunk boundary in _fetch_channel_vals.
 
         With ID_CHUNK_SIZE=2 and three sessions each carrying an fl AND a snore
         waveform, the session_ids span two chunks.  Both per-session dicts must
@@ -5801,15 +5901,17 @@ class TestFetchWaveformChannelValsChunked:
             expected_snore[session.id] = [float(v) for v in snore_vals]
         await async_db_session.flush()
 
-        fl_by_sess, snore_by_sess = await BreathService._fetch_waveform_channel_vals(
-            async_db_session, session_ids
+        channel_vals = await BreathService._fetch_channel_vals(
+            async_db_session, session_ids, ["fl", "snore", "leak"]
         )
 
-        assert set(fl_by_sess) == set(session_ids)
-        assert set(snore_by_sess) == set(session_ids)
+        assert set(channel_vals["fl"]) == set(session_ids)
+        assert set(channel_vals["snore"]) == set(session_ids)
+        # A requested channel with no rows is still a key.
+        assert channel_vals["leak"] == {}
         for sid in session_ids:
-            assert fl_by_sess[sid] == pytest.approx(expected_fl[sid])
-            assert snore_by_sess[sid] == pytest.approx(expected_snore[sid])
+            assert channel_vals["fl"][sid] == pytest.approx(expected_fl[sid])
+            assert channel_vals["snore"][sid] == pytest.approx(expected_snore[sid])
 
 
 # ---------------------------------------------------------------------------

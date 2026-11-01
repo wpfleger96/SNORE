@@ -15,12 +15,13 @@ a validation run) stays device, since it adds no SNORE judgement.  Rates,
 means, percentiles and recounts of those events are derived.
 
 A field with a preferred source and a fallback is tagged with the preferred
-source's tier, and its description names the fallback.  This runs in both
-directions: pressure/EPAP/leak percentiles are recomputed from the waveform
-when present (Derived) and fall back to the device's summary value;
-``respiratory_rate_mean/max`` and tidal volume / minute ventilation mean/max
-prefer the device STR value (Device) and fall back to the OSCAR session
-summary.
+source's tier, and its description names the fallback.  Session-level
+pressure/EPAP/leak max, median and 95th percentile prefer the device STR value
+(Device) and fall back to the waveform; their mean and min are always waveform
+values (Derived).  ``respiratory_rate_mean/max`` and tidal volume / minute
+ventilation mean/max prefer the device STR value (Device) and fall back to the
+OSCAR session summary.  In the other direction, ``spo2_max`` prefers the
+waveform (Derived) and falls back to the device STR value.
 
 Response fields declare their tier with :func:`provenance_field`, which both
 prefixes the description (visible to LLMs and in generated TS JSDoc) and adds a
@@ -128,7 +129,8 @@ def response_provenance(model: type[BaseModel]) -> ProvenanceBlock:
     {path: sibling_path}}``; ``[]`` marks list items (``nights[].rdi``), ``{}``
     marks dict values, and empty keys are omitted.  A field nested in a tagged
     parent takes the weaker of the two tiers.  ``source_dependent`` lists
-    fields whose tier is set per value by a sibling field (e.g. ``mv_source``).
+    fields whose tier is set per value by a sibling field (e.g.
+    ``index_source``).
     A model that references itself is walked only once per path: tagged fields
     below the recursion point are not listed (no MCP response model is
     recursive today).  Returns a fresh dict on every call; the schema walk

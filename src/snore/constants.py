@@ -54,6 +54,10 @@ UNIT_BPM = "bpm"
 UNIT_ML = "mL"
 UNIT_SECONDS = "seconds"
 
+# OSCAR's default large-leak redline (L/min), the threshold for time over leak.
+# Deliberately separate from LEAK_VALID_THRESHOLD_LPM, which is versioned analysis state.
+LEAK_REDLINE_LPM = 24.0
+
 
 # ============================================================================
 # Analysis Algorithm Constants

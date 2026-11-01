@@ -429,10 +429,10 @@ class TestValidateMinDuration:
 
 
 class TestStage2ToolsRegistered:
-    """The three Stage-2 tools appear in make_server() tool listing."""
+    """The breath-level tools appear in make_server() tool listing."""
 
-    async def test_make_server_registers_exactly_ten_tools(self) -> None:
-        """make_server() registers exactly ten tools (five Stage-1 + three Stage-2 + two Stage-3)."""
+    async def test_make_server_registers_exactly_thirteen_tools(self) -> None:
+        """make_server() registers exactly thirteen tools (eight default + five experimental)."""
         from unittest.mock import patch
 
         import fastmcp
@@ -445,9 +445,14 @@ class TestStage2ToolsRegistered:
                 tools = await client.list_tools()
 
         tool_names = {t.name for t in tools}
-        assert "get_breath_table" in tool_names
-        assert "find_windows" in tool_names
+        assert "experimental_get_breath_table" in tool_names
+        assert "experimental_find_windows" in tool_names
+        assert "experimental_compare_epochs" in tool_names
+        assert "experimental_get_nightly_metrics" in tool_names
+        assert "experimental_get_event_context" in tool_names
         assert "compare_epochs" in tool_names
+        assert "get_breath_table" not in tool_names
+        assert "find_windows" not in tool_names
         # Stage-1 tools still present
         assert "get_data_overview" in tool_names
         assert "get_events" in tool_names
@@ -456,7 +461,7 @@ class TestStage2ToolsRegistered:
         assert "get_waveform" in tool_names
         assert "render_window" in tool_names
         assert "get_ca_analysis" not in tool_names
-        assert len(tool_names) == 10
+        assert len(tool_names) == 13
 
     async def test_compare_epochs_schema_has_epochs_parameter(self) -> None:
         """compare_epochs tool schema includes an 'epochs' parameter."""

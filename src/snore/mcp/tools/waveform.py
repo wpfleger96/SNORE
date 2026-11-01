@@ -65,9 +65,9 @@ Channel vocabulary (12 channels):
                            as ``pressure``.
     ``epap``             — expiratory positive airway pressure (cmH2O)
     ``leak``             — estimated unintentional leak (L/min)
-    ``mv``               — minute ventilation derived from flow (L/min)
+    ``mv``               — device-reported minute ventilation (L/min) from PLD.edf
     ``rr``               — respiratory rate (breaths/min)
-    ``tv``               — tidal volume derived from flow (mL)
+    ``tv``               — device-reported tidal volume (mL) from PLD.edf
     ``spo2``             — pulse-oximetry oxygen saturation (%)
     ``pulse``            — pulse rate (bpm)
     ``fl``               — flow-limitation index (dimensionless)
@@ -246,7 +246,7 @@ def register(mcp: FastMCP) -> None:
     get_waveform.__doc__ = (
         "Raw per-sample waveform arrays for a single therapy-night window (≤2 min).\n\n"
         "Use this tool for deep numerical inspection of a specific waveform window\n"
-        "when ``render_window`` or ``get_breath_table`` is insufficient.  Window cap\n"
+        "when ``render_window`` is insufficient.  Window cap\n"
         "is 120 s — requesting a wider window is an error.\n\n"
         + _CHANNEL_VOCAB_DOC
         + "\n\n"

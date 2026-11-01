@@ -96,6 +96,8 @@ _NON_METRIC_SUFFIXES = ("_id", "_ids")  # identifiers
 _NON_METRIC_MODEL_FIELDS = {
     # Pagination / page-size totals
     ("EventsResponse", "total_events"),
+    ("ExperimentalEventContextResponse", "total_events"),
+    ("ExperimentalNightlyResponse", "total_nights"),
     ("NightlySummaryResponse", "total_nights"),
     ("SettingsChangesResponse", "total_changes"),
     ("SettingsTimelineResponse", "total_epochs"),
@@ -116,6 +118,8 @@ _NON_METRIC_MODEL_FIELDS = {
     ("EpochDistribution", "n_nights"),
     ("EpochStats", "nights_with_data"),
     ("EpochStats", "nights_missing_analysis"),
+    ("DeviceEpochDistribution", "n_nights"),
+    ("DeviceEpochStats", "nights_with_data"),
     # Validation-run session/night/sample coverage
     ("AggregateMetrics", "total_sessions"),
     ("AggregateMetrics", "low_sensitivity_sessions"),  # session ids
@@ -325,8 +329,8 @@ def test_numeric_and_boolean_fields_have_provenance_tag() -> None:
 
 
 def test_model_fields_with_context_dependent_tier_are_tagged() -> None:
-    # A model whose tier depends on where it is used (EpochDistribution is
-    # experimental under mid_insp_flattening, derived under device_flg) relies
+    # A model whose tier depends on where it is used (EpochDistribution's fields
+    # are tagged derived but it is experimental under mid_insp_flattening) relies
     # on every referencing field carrying the tier for it.
     offenders: set[str] = set()
     for surface, objects in _surfaces():

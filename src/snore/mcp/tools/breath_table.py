@@ -1,4 +1,4 @@
-"""get_breath_table tool — BreathService.get_breath_table() adapter.
+"""experimental_get_breath_table tool — BreathService.get_breath_table() adapter.
 
 Timestamp contract (A6):
 - Session wall-clock anchor (session_start_wall_clock) uses tier-2
@@ -262,7 +262,7 @@ async def get_breath_table(
 def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import parse_date  # noqa: PLC0415
 
-    @mcp.tool()
+    @mcp.tool(name="experimental_get_breath_table")
     @_with_experimental_disclaimer
     @tool_error_boundary
     async def get_breath_table(
@@ -330,7 +330,7 @@ def register(mcp: FastMCP) -> None:
         return await _scope_and_run(
             ctx,
             _impl,
-            tool_name="get_breath_table",
+            tool_name="experimental_get_breath_table",
             therapy_date=therapy_date,
             device_id=device_id,
             session_id=session_id,

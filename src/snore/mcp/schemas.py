@@ -16,7 +16,7 @@ Timestamp contract (three tiers, A6):
     ``Session.start_time``.
 
 Absent data is ``null`` with a companion ``*_reason`` field
-(e.g. ``rera_index: null, rera_index_reason: "analysis_not_run"``).
+(e.g. ``leak_above_24_pct: null, leak_above_24_pct_reason: "channel_absent"``).
 All measurement fields carry their unit in the field name or tool docstring.
 
 Metric fields declare a provenance tier via ``provenance_field``: the
@@ -221,26 +221,26 @@ class NightlyRow(BaseModel):
         Provenance.DERIVED, "SNORE recount HI (see ahi_computed).", default=None
     )
 
-    # Null when analysis has not been run.  rera_index/rdi use the query-time
-    # FL-run proxy over stored breath rows — a DIFFERENT RERA definition from
-    # the per-session analysis-time amplitude-crescendo detector
-    # (ModeResult.rdi); the two disagree by construction.
-    rera_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "RERA-proxy events per mask-on hour of analyzed sessions, from "
-        "flow-limitation runs (FL-run proxy, not device-reported); "
-        "rera_index_reason='duration_zero' when those sessions have zero "
-        "mask-on hours.",
+    obstructive_apneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored obstructive apneas, summed across the night's sessions.",
         default=None,
     )
-    rera_index_reason: str | None = None
-    rdi: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
-        "RERA-proxy index.",
+    central_apneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored central apneas, summed across the night's sessions.",
         default=None,
     )
-    rdi_reason: str | None = None
+    hypopneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored hypopneas, summed across the night's sessions.",
+        default=None,
+    )
+    reras: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored RERAs, summed across the night's sessions.",
+        default=None,
+    )
 
     pressure_median_cmh2o: float | None = provenance_field(
         Provenance.DERIVED, "Median pressure (cmH₂O).", default=None
@@ -259,8 +259,9 @@ class NightlyRow(BaseModel):
         Provenance.DERIVED, "95th-percentile leak (L/min).", default=None
     )
     leak_above_24_pct: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Percent of segmented breaths flagged as leak above 24 L/min.",
+        Provenance.DERIVED,
+        "Percent of leak samples at or above 24 L/min, OSCAR's time over the "
+        "default redline.",
         default=None,
     )
     leak_above_24_pct_reason: str | None = None
@@ -287,59 +288,21 @@ class NightlyRow(BaseModel):
         Provenance.DERIVED, "Mean SpO₂ (%).", default=None
     )
 
-    # Breath-level FL/RERA fields (from BreathService.get_nightly_summary)
-    fl_median: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Median per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
-        "flow-limited; lower = more flow-limited).",
-        default=None,
-    )
-    fl_median_reason: str | None = None
-    fl_5th: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Nearest-rank 5th-percentile per-breath mid-inspiratory flattening "
-        "(~1.0 unimpeded, <0.7 flow-limited; lower = more flow-limited); "
-        "equals fl_min when the night has fewer than 20 leak-valid breaths.",
-        default=None,
-    )
-    fl_5th_reason: str | None = None
-    fl_min: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Minimum per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
-        "flow-limited; lower = more flow-limited).",
-        default=None,
-    )
-    fl_min_reason: str | None = None
-    fl_class_ge4_pct: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Percent of leak-valid, rule-matched classified breaths with "
-        "flow_class >= 4; the confidence gate excludes fallback guesses "
-        "(flow-limitation proxy).",
-        default=None,
-    )
-    fl_class_ge4_pct_reason: str | None = None
-    rera_proxy_count: int | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
-        "ending in a recovery breath, over stored breath rows.",
-        default=None,
-    )
-    rera_proxy_reason: str | None = None
-    # Version of the query-time RERA-proxy criterion (independent of the
-    # persisted AlgorithmIdentity); stamped only when the RERA scan ran
-    # (rera_proxy_count non-null), null otherwise.
-    rera_proxy_version: str | None = None
-
-    # Null + reason when breath-level analysis hasn't run
     ti_median_s: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Median inspiratory time (s) over SNORE-segmented breaths.",
+        Provenance.DEVICE,
+        "Median inspiratory time (s), device session summary of the night's "
+        "first session; ti_median_reason='channel_absent' when the device did "
+        "not report it, 'no_sessions' when the night has no enabled sessions.",
         default=None,
     )
     ti_median_reason: str | None = None
-    ie_ratio: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Median I:E ratio over SNORE-segmented breaths.",
+    ie_ratio_median: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Median I:E ratio, device session summary of the night's first session; "
+        "ie_ratio_reason='channel_absent' when the device did not report it, "
+        "'no_sessions' when the night has no enabled sessions. "
+        "The device I:E scale is unconfirmed: do not compare this value to "
+        "segmented_ie_ratio.",
         default=None,
     )
     ie_ratio_reason: str | None = None
@@ -381,6 +344,95 @@ class NightlyRow(BaseModel):
     )
     snore_reason: str | None = None
 
+    device_id: int | None = None
+
+
+class ExperimentalNightlyRow(BaseModel):
+    """Per-night row returned by experimental_get_nightly_metrics."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    date: date
+    device_id: int | None = None
+
+    # rera_index/rdi use the query-time FL-run proxy over stored breath rows — a
+    # DIFFERENT RERA definition from the per-session analysis-time
+    # amplitude-crescendo detector (ModeResult.rdi); the two disagree by
+    # construction.
+    rera_index: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "RERA-proxy events per mask-on hour of analyzed sessions, from "
+        "flow-limitation runs (FL-run proxy, not device-reported); "
+        "rera_index_reason='duration_zero' when those sessions have zero "
+        "mask-on hours.",
+        default=None,
+    )
+    rera_index_reason: str | None = None
+    rdi: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
+        "RERA-proxy index; compare to ahi_computed, not ahi.",
+        default=None,
+    )
+    rdi_reason: str | None = None
+
+    fl_median: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Median per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
+        "flow-limited; lower = more flow-limited, the opposite direction of "
+        "device_flg_*).",
+        default=None,
+    )
+    fl_median_reason: str | None = None
+    fl_5th: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Nearest-rank 5th-percentile per-breath mid-inspiratory flattening "
+        "(~1.0 unimpeded, <0.7 flow-limited; lower = more flow-limited); "
+        "equals fl_min when the night has fewer than 20 leak-valid breaths.",
+        default=None,
+    )
+    fl_5th_reason: str | None = None
+    fl_min: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Minimum per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
+        "flow-limited; lower = more flow-limited).",
+        default=None,
+    )
+    fl_min_reason: str | None = None
+    fl_class_ge4_pct: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Percent of leak-valid, rule-matched classified breaths with "
+        "flow_class >= 4; the confidence gate excludes fallback guesses "
+        "(flow-limitation proxy).",
+        default=None,
+    )
+    fl_class_ge4_pct_reason: str | None = None
+    rera_proxy_count: int | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
+        "ending in a recovery breath, over stored breath rows.",
+        default=None,
+    )
+    rera_proxy_reason: str | None = None
+    # Version of the query-time RERA-proxy criterion (independent of the
+    # persisted AlgorithmIdentity); stamped only when the RERA scan ran
+    # (rera_proxy_count non-null), null otherwise.
+    rera_proxy_version: str | None = None
+
+    segmented_ti_median_s: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Median inspiratory time (s) over SNORE-segmented breaths.",
+        default=None,
+    )
+    segmented_ti_median_reason: str | None = None
+    segmented_ie_ratio: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Median I:E ratio over SNORE-segmented breaths (unitless Ti/Te); not "
+        "comparable to the device ie_ratio_median.",
+        default=None,
+    )
+    segmented_ie_ratio_reason: str | None = None
+
     periodic_breathing_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of analyzed (OK-session) time in periodic-breathing episodes "
@@ -388,8 +440,6 @@ class NightlyRow(BaseModel):
         default=None,
     )
     pb_reason: str | None = None
-
-    device_id: int | None = None
 
 
 class ComplianceFields(BaseModel):
@@ -423,14 +473,24 @@ class NightlySummaryResponse(BaseModel):
     device_capabilities: DeviceCapabilities | None = None
 
 
+class ExperimentalNightlyResponse(BaseModel):
+    """Response from experimental_get_nightly_metrics."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    nights: list[ExperimentalNightlyRow]
+    total_nights: int
+    page: int
+    page_size: int
+    device_capabilities: DeviceCapabilities | None = None
+
+
 class EventContext(BaseModel):
     """Per-event contextual snapshot."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    # Null companions' reasons live on EventRow.  The MV-based fields are
-    # derived from the device MV channel, or experimental when mv_source is
-    # "flow_derived".
+    # Null companions' reasons live on EventRow.
     pressure_at_event_cmh2o: float | None = provenance_field(
         Provenance.DERIVED, "Mean pressure at the event (cmH₂O).", default=None
     )
@@ -439,35 +499,18 @@ class EventContext(BaseModel):
     )
     mv_prior_120s_lpm: float | None = provenance_field(
         Provenance.DERIVED,
-        "Mean minute ventilation over the 120 s before the event (L/min); "
-        "experimental when mv_source is flow_derived.",
-        source_field="mv_source",
+        "Mean of the device minute-ventilation channel over the 120 s before "
+        "the event (L/min).",
         default=None,
     )
     minutes_since_session_start: float | None = provenance_field(
         Provenance.DEVICE, "Event start relative to session start (min).", default=None
-    )
-    preceding_mv_slope_lpm_per_min: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Least-squares MV slope over the 60 s before the event (L/min per min); "
-        "experimental when mv_source is flow_derived.",
-        source_field="mv_source",
-        default=None,
-    )
-    stability_index: float | None = provenance_field(
-        Provenance.DERIVED,
-        "MV stdev / mean (CV) over the 60 s before the event; experimental "
-        "when mv_source is flow_derived.",
-        source_field="mv_source",
-        default=None,
     )
     ps_delivered_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
         "Delivered pressure support: mean(therapy pressure − EPAP) over ±5 s (cmH₂O).",
         default=None,
     )
-    # MV provenance: "device" | "flow_derived" | null (no MV or flow channel)
-    mv_source: str | None = None
 
 
 class EventRow(BaseModel):
@@ -510,8 +553,6 @@ class EventRow(BaseModel):
     pressure_reason: str | None = None
     leak_reason: str | None = None
     mv_reason: str | None = None
-    preceding_mv_slope_reason: str | None = None
-    stability_reason: str | None = None
     ps_reason: str | None = None
     context: EventContext | None = None
 
@@ -535,6 +576,65 @@ class EventsResponse(BaseModel):
     events: list[EventRow]
     total_events: int
     truncated: bool = False
+    device_capabilities: DeviceCapabilities | None = None
+
+
+class ExperimentalEventContextRow(BaseModel):
+    """Experimental ventilatory context for one device-scored event.
+
+    Identifies its event with the same anchors and timestamp contract as
+    ``EventRow``.  Null values carry the companion ``*_reason`` field.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    session_id: int  # session that produced this event (per-event anchor)
+    session_start_wall_clock: str  # same contract as EventRow
+    event_type: str
+    start_time_wall_clock: str  # same contract as EventRow
+    timezone_status: str = "unknown"  # "unknown" | "user_declared"
+    timezone_name: str | None = None  # IANA name when user_declared
+    offset_seconds: float  # seconds from this event's Session.start_time (tier 3)
+    mv_prior_120s_lpm: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Mean minute ventilation over the 120 s before the event (L/min); may "
+        "be flow-derived, see mv_source.",
+        default=None,
+    )
+    mv_reason: str | None = None
+    preceding_mv_slope_lpm_per_min: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "Least-squares MV slope over the 60 s before the event (L/min per min).",
+        default=None,
+    )
+    preceding_mv_slope_reason: str | None = None
+    stability_index: float | None = provenance_field(
+        Provenance.EXPERIMENTAL,
+        "MV stdev / mean (CV) over the 60 s before the event.",
+        default=None,
+    )
+    stability_reason: str | None = None
+    # MV provenance: "device" | "flow_derived" | null (no MV or flow channel)
+    mv_source: str | None = None
+
+
+class ExperimentalEventContextResponse(BaseModel):
+    """Response from experimental_get_event_context.
+
+    ``session_id`` and ``session_start_wall_clock`` are the response-level anchors.
+    They are null when no events were returned or when events span multiple sessions.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    date: str
+    session_id: int | None = None  # null when empty or multi-session
+    session_start_wall_clock: str | None = None  # null when empty or multi-session
+    timezone_status: str = "unknown"
+    timezone_name: str | None = None  # IANA name when user_declared
+    events: list[ExperimentalEventContextRow]
+    total_events: int
+    truncated: bool = False
     # Version of the query-time flow-derived MV fallback (MV_FALLBACK_ALGO_VERSION);
     # non-null only when at least one returned event has mv_source "flow_derived".
     mv_fallback_version: str | None = None
@@ -556,7 +656,8 @@ class CapabilityEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Stage-2 schemas: get_breath_table, find_windows, compare_epochs
+# Stage-2 schemas: experimental_get_breath_table, experimental_find_windows,
+# compare_epochs, experimental_compare_epochs
 # ---------------------------------------------------------------------------
 
 
@@ -703,7 +804,7 @@ class BreathTableBin(BaseModel):
 
 
 class BreathTableResponse(BaseModel):
-    """Response from get_breath_table. Exactly one of rows/bins is populated."""
+    """Response from experimental_get_breath_table. Exactly one of rows/bins is populated."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -737,7 +838,7 @@ class SessionCoverageEntry(BaseModel):
 
 
 class WindowRow(BaseModel):
-    """One found window (ordering per criterion; see find_windows)."""
+    """One found window (ordering per criterion; see experimental_find_windows)."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -767,7 +868,7 @@ class WindowRow(BaseModel):
 
 
 class FindWindowsResponse(BaseModel):
-    """Response from find_windows."""
+    """Response from experimental_find_windows."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -784,7 +885,7 @@ class FindWindowsResponse(BaseModel):
 
 
 class EpochSpec(BaseModel):
-    """Input epoch for compare_epochs (dates are YYYY-MM-DD strings)."""
+    """Input epoch for an epoch comparison (dates are YYYY-MM-DD strings)."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -811,11 +912,29 @@ class EpochDistribution(BaseModel):
         Provenance.DERIVED, "95th percentile.", default=None
     )
     n_breaths: int = provenance_field(
-        Provenance.DERIVED,
-        "Count of values in the distribution (breaths, or device-channel "
-        "samples for device_flg / snore_dist).",
+        Provenance.DERIVED, "Count of leak-valid breaths in the epoch."
     )
     n_nights: int
+
+
+class DeviceEpochDistribution(BaseModel):
+    """Descriptive stats for one device channel's samples over one epoch."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    median: float | None = provenance_field(Provenance.DERIVED, "Median.", default=None)
+    iqr: float | None = provenance_field(
+        Provenance.DERIVED, "Interquartile range.", default=None
+    )
+    p95: float | None = provenance_field(
+        Provenance.DERIVED, "95th percentile.", default=None
+    )
+    n_samples: int = provenance_field(
+        Provenance.DERIVED, "Count of valid device-channel samples.", default=0
+    )
+    # Calendar therapy dates with at least one valid sample; a two-session night
+    # counts once.
+    n_nights: int = 0
 
 
 class EpochRxViolationRow(BaseModel):
@@ -880,22 +999,46 @@ class EpochStats(BaseModel):
     # (rera_proxy_count non-null), null otherwise.
     rera_proxy_version: str | None = None
     rx_settings: dict[str, str] = {}
-    # n_breaths carries the sample count; null stats when the channel was not
-    # recorded in the epoch's sessions.
-    device_flg: EpochDistribution = provenance_field(
+
+
+class DeviceEpochStats(BaseModel):
+    """Device flow-limitation and snore distributions for one epoch."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    label: str
+    date_start: str
+    date_end: str
+    # Nights with at least one enabled session in the epoch.
+    nights_with_data: int = 0
+    null_reason: str | None = None
+    rx_settings: dict[str, str] = {}
+    # Null stats when the channel has no valid samples in the epoch's sessions.
+    device_flg: DeviceEpochDistribution = provenance_field(
         Provenance.DERIVED,
-        "Device flow-limitation channel samples (0–1 unitless).",
-        default_factory=lambda: EpochDistribution(n_breaths=0, n_nights=0),
+        "Device flow-limitation channel samples (0–1 unitless), excluding "
+        "negative sentinels.",
+        default_factory=DeviceEpochDistribution,
     )
-    snore_dist: EpochDistribution = provenance_field(
+    snore_dist: DeviceEpochDistribution = provenance_field(
         Provenance.DERIVED,
-        "Device snore channel samples (0–5 unitless).",
-        default_factory=lambda: EpochDistribution(n_breaths=0, n_nights=0),
+        "Device snore channel samples (0–5 unitless), zeros included.",
+        default_factory=DeviceEpochDistribution,
     )
+
+
+class DeviceCompareEpochsResponse(BaseModel):
+    """Response from compare_epochs."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    epochs: list[DeviceEpochStats] = []
+    null_reason: str | None = None
+    rx_violations: list[EpochRxViolationRow] = []
 
 
 class CompareEpochsResponse(BaseModel):
-    """Response from compare_epochs."""
+    """Response from experimental_compare_epochs."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -963,9 +1106,13 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "nightly_row": NightlyRow,
     "compliance_fields": ComplianceFields,
     "nightly_summary": NightlySummaryResponse,
+    "experimental_nightly_row": ExperimentalNightlyRow,
+    "experimental_nightly_metrics": ExperimentalNightlyResponse,
     "event_context": EventContext,
     "event_row": EventRow,
     "events_response": EventsResponse,
+    "experimental_event_context_row": ExperimentalEventContextRow,
+    "experimental_event_context_response": ExperimentalEventContextResponse,
     "capability_entry": CapabilityEntry,
     # Stage 2
     "breath_table_query": BreathTableQuery,
@@ -980,6 +1127,9 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "epoch_stats": EpochStats,
     "epoch_rx_violation": EpochRxViolationRow,
     "compare_epochs_response": CompareEpochsResponse,
+    "device_epoch_distribution": DeviceEpochDistribution,
+    "device_epoch_stats": DeviceEpochStats,
+    "device_compare_epochs_response": DeviceCompareEpochsResponse,
     # Stage 3
     "waveform_channel": WaveformChannelSchema,
     "waveform_window": WaveformWindowResponse,

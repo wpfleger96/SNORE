@@ -1,11 +1,19 @@
-"""compare_epochs — cross-epoch breath-feature distributions."""
+"""Cross-epoch distributions.
+
+``compare_device_epochs`` reports device-channel samples over every enabled
+session and needs no analysis.  ``compare_epochs`` reports experimental
+breath-feature distributions over analyzed sessions.  The two share helpers,
+not a code path, because they gate sessions differently.
+"""
 
 from __future__ import annotations
 
 import math
 import statistics
 
+from collections.abc import Callable, Iterable
 from datetime import date
+from itertools import pairwise
 from typing import Any
 
 from sqlalchemy import select
@@ -27,14 +35,88 @@ from ._core import _BreathServiceCore
 from .algorithms import _count_fl_run_reras
 from .dtos import (
     CompareEpochsResult,
-    DeviceAmbiguityError,
+    DeviceCompareEpochsResult,
+    DeviceDistributionStats,
+    DeviceEpochStats,
     DeviceNotOwnedError,
     DistributionMetric,
     DistributionStats,
     EpochBreathStats,
     EpochRequest,
     EpochRxViolation,
+    NoSessionsInRangeError,
 )
+
+
+def _distrib(vals: list[float]) -> dict[str, float | None]:
+    """Median, IQR and P95 of ``vals`` as distribution-stats fields (all None when empty)."""
+    if not vals:
+        return {"median": None, "iqr": None, "p95": None}
+    sorted_v = sorted(vals)
+    p25 = sorted_v[len(sorted_v) // 4]
+    p75 = sorted_v[min(len(sorted_v) * 3 // 4, len(sorted_v) - 1)]
+    return {
+        "median": statistics.median(vals),
+        "iqr": p75 - p25,
+        "p95": percentile_nearest_rank(sorted_v, 0.95),
+    }
+
+
+def _breath_distrib(
+    vals: list[float], n_breaths: int, n_nights: int
+) -> DistributionStats:
+    return DistributionStats(**_distrib(vals), n_breaths=n_breaths, n_nights=n_nights)
+
+
+def _device_distrib(
+    vals_by_session: dict[int, list[float]],
+    night_by_session: dict[int, date],
+    is_valid: Callable[[float], bool],
+) -> DeviceDistributionStats:
+    """Stats over the valid samples of ``night_by_session``'s sessions.
+
+    Two sessions on one therapy date count as one night.
+    """
+    samples: list[float] = []
+    nights: set[date] = set()
+    for session_id, night in night_by_session.items():
+        valid = [v for v in vals_by_session.get(session_id, []) if is_valid(v)]
+        samples.extend(valid)
+        if valid:
+            nights.add(night)
+    return DeviceDistributionStats(
+        **_distrib(samples), n_samples=len(samples), n_nights=len(nights)
+    )
+
+
+def _epoch_rx_violation(
+    label: str, dated_snapshots: list[tuple[date, dict[str, str]]]
+) -> EpochRxViolation | None:
+    """The RX changes between consecutive per-session snapshots, or None if homogeneous.
+
+    An empty snapshot means the settings are unknown, which is not a change: it is
+    skipped, so a change is only reported between sessions that both have settings.
+    """
+    known_snapshots = [(night, rx) for night, rx in dated_snapshots if rx]
+    changed_keys: set[str] = set()
+    change_dates: list[date] = []
+    for (_, prev_rx), (snap_date, snap_rx) in pairwise(known_snapshots):
+        diffs = changed_setting_keys(prev_rx, snap_rx)
+        if diffs:
+            changed_keys |= diffs
+            change_dates.append(snap_date)
+    if not changed_keys:
+        return None
+    return EpochRxViolation(
+        epoch_label=label,
+        changed_keys=sorted(changed_keys),
+        change_dates=change_dates,
+    )
+
+
+def _first_known_rx(snapshots: Iterable[dict[str, str]]) -> dict[str, str]:
+    """The epoch's reported settings: its first snapshot with any settings known."""
+    return next((rx for rx in snapshots if rx), {})
 
 
 def _null_epoch_stats(
@@ -76,12 +158,141 @@ def _null_epoch_stats(
 class EpochsMixin(_BreathServiceCore):
     """Epoch-comparison methods."""
 
+    async def _union_device(self, epochs: list[EpochRequest]) -> int | NullReason:
+        """Validate the epochs and resolve the one device they all target.
+
+        Returns the device id, or the reason the whole comparison has nothing to
+        report: NOT_AVAILABLE for an explicit device this profile does not own,
+        NO_DATA_IN_RANGE when no session falls in the union of the epoch ranges.
+        Raises ValueError for a reversed epoch or conflicting device_ids;
+        DeviceAmbiguityError (several owned devices, no device_id) propagates.
+        """
+        for epoch in epochs:
+            if epoch.date_start > epoch.date_end:
+                raise ValueError(
+                    f"Epoch '{epoch.label}': date_start ({epoch.date_start})"
+                    f" must be <= date_end ({epoch.date_end})"
+                )
+
+        explicit_device_ids = {e.device_id for e in epochs if e.device_id is not None}
+        if len(explicit_device_ids) > 1:
+            raise ValueError(
+                "All epochs in a comparison must target the same device_id"
+            )
+        try:
+            device_id, sessions_by_date = await self._resolve_range(
+                min(e.date_start for e in epochs),
+                max(e.date_end for e in epochs),
+                explicit_device_ids.pop() if explicit_device_ids else None,
+            )
+        except DeviceNotOwnedError:
+            return NullReason.NOT_AVAILABLE
+        except NoSessionsInRangeError:
+            return NullReason.NO_DATA_IN_RANGE
+        return device_id if sessions_by_date else NullReason.NO_DATA_IN_RANGE
+
+    async def _session_rx_snapshot(self, session_id: int) -> dict[str, str]:
+        """The session's own prescription settings (not merged per day)."""
+        setting_rows = (
+            (
+                await self._db.execute(
+                    select(models.Setting).where(
+                        models.Setting.session_id == session_id,
+                        models.Setting.key.in_(RX_KEYS),
+                        models.Setting.value.is_not(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {s.key: s.value for s in setting_rows if s.value}
+
+    async def compare_device_epochs(
+        self, epochs: list[EpochRequest]
+    ) -> DeviceCompareEpochsResult:
+        """Device flow-limitation and snore distributions across epochs.
+
+        Covers every enabled session and reads no analysis state.  A mid-epoch RX
+        change nulls only that epoch (RX_CHANGED_WITHIN_EPOCH), before its waveforms
+        are loaded; the top-level null_reason carries it only when EVERY epoch was
+        nulled for it.  An epoch without sessions is NO_DATA_IN_RANGE.  A channel
+        absent from an epoch is not an epoch failure: that channel's stats are null.
+        """
+        union_device = await self._union_device(epochs)
+        if isinstance(union_device, NullReason):
+            return DeviceCompareEpochsResult(
+                epochs=[
+                    DeviceEpochStats(
+                        label=e.label,
+                        date_start=e.date_start,
+                        date_end=e.date_end,
+                        null_reason=union_device,
+                    )
+                    for e in epochs
+                ],
+                null_reason=union_device,
+            )
+
+        epoch_stats: list[DeviceEpochStats] = []
+        rx_violations: list[EpochRxViolation] = []
+        for epoch in epochs:
+            _, sessions_by_date = await self._resolve_range(
+                epoch.date_start, epoch.date_end, union_device
+            )
+            night_by_session = {
+                sess.id: night
+                for night, sessions in sessions_by_date.items()
+                for sess in sessions
+            }
+            dated_rx = [
+                (night, await self._session_rx_snapshot(session_id))
+                for session_id, night in night_by_session.items()
+            ]
+            stats = DeviceEpochStats(
+                label=epoch.label,
+                date_start=epoch.date_start,
+                date_end=epoch.date_end,
+                nights_with_data=len(sessions_by_date),
+                rx_settings=_first_known_rx(rx for _, rx in dated_rx),
+            )
+
+            rx_violation = _epoch_rx_violation(epoch.label, dated_rx)
+            if rx_violation is not None:
+                rx_violations.append(rx_violation)
+                stats.null_reason = NullReason.RX_CHANGED_WITHIN_EPOCH
+            elif not night_by_session:
+                stats.null_reason = NullReason.NO_DATA_IN_RANGE
+            else:
+                channel_vals = await self._fetch_channel_vals(
+                    self._db, list(night_by_session), ["fl", "snore"]
+                )
+                # FLG uses negative sentinels; a snore value of 0 is real data.
+                stats.device_flg = _device_distrib(
+                    channel_vals["fl"],
+                    night_by_session,
+                    lambda v: v >= 0 and math.isfinite(v),
+                )
+                stats.snore_dist = _device_distrib(
+                    channel_vals["snore"], night_by_session, math.isfinite
+                )
+            epoch_stats.append(stats)
+
+        all_rx_changed = all(
+            e.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH for e in epoch_stats
+        )
+        return DeviceCompareEpochsResult(
+            epochs=epoch_stats,
+            null_reason=NullReason.RX_CHANGED_WITHIN_EPOCH if all_rx_changed else None,
+            rx_violations=rx_violations,
+        )
+
     async def compare_epochs(
         self,
         epochs: list[EpochRequest],
         metrics: list[DistributionMetric] | None = None,
     ) -> CompareEpochsResult:
-        """Distributions across RxTracker epochs.
+        """Experimental breath-feature distributions across RxTracker epochs.
 
         Two-phase design: metadata checks (RX + identity) run across ALL epochs
         BEFORE any breath queries.
@@ -101,78 +312,28 @@ class EpochsMixin(_BreathServiceCore):
         flow_class_distribution_fallback.  Rows with missing or below-default
         confidence values are excluded from both distributions.
         """
-        from snore.services.breath_service import BreathService  # noqa: PLC0415
-
-        # Validate date order for each epoch before anything else
-        for epoch in epochs:
-            if epoch.date_start > epoch.date_end:
-                raise ValueError(
-                    f"Epoch '{epoch.label}': date_start ({epoch.date_start})"
-                    f" must be <= date_end ({epoch.date_end})"
-                )
-
         _null_dist = DistributionStats(
             median=None, iqr=None, p95=None, n_breaths=0, n_nights=0
         )
 
         # -----------------------------------------------------------------------
         # Phase 1: Resolve ONE device for the whole comparison, then per-epoch sessions.
-        # All epochs must target the same device.  Union-resolve fires DeviceAmbiguityError
-        # if multiple owned devices span the combined date range and no device_id is given.
         # -----------------------------------------------------------------------
 
-        explicit_device_ids = {e.device_id for e in epochs if e.device_id is not None}
-        if len(explicit_device_ids) > 1:
-            raise ValueError(
-                "All epochs in a comparison must target the same device_id"
-            )
-        union_device_id = explicit_device_ids.pop() if explicit_device_ids else None
-        union_start = min(e.date_start for e in epochs)
-        union_end = max(e.date_end for e in epochs)
-        # Union-resolve to guarantee one device across all epochs.
-        # DeviceAmbiguityError (multi-device profile, no device_id) propagates.
-        # ValueError for a foreign/unknown explicit device_id: return NOT_AVAILABLE for all epochs.
-        try:
-            union_resolved_device_id, _ = await self._resolve_range(
-                union_start, union_end, union_device_id
-            )
-        except DeviceAmbiguityError:
-            raise
-        except DeviceNotOwnedError:
-            # Explicit foreign device → NOT_AVAILABLE for all epochs
-            not_avail_epochs = [
-                _null_epoch_stats(
-                    label=e.label,
-                    date_start=e.date_start,
-                    date_end=e.date_end,
-                    null_reason=NullReason.NOT_AVAILABLE,
-                    rera_reason=NullReason.NOT_AVAILABLE,
-                )
-                for e in epochs
-            ]
+        union_resolved_device_id = await self._union_device(epochs)
+        if isinstance(union_resolved_device_id, NullReason):
             return CompareEpochsResult(
-                null_reason=NullReason.NOT_AVAILABLE,
-                epochs=not_avail_epochs,
-                version_warnings=[],
-            )
-        except ValueError:
-            # ValueError here means auto-select found no sessions in range — always
-            # NO_DATA_IN_RANGE (the NOT_AVAILABLE arm required union_device_id is not None,
-            # but _resolve_range raises DeviceNotOwnedError for foreign explicit devices).
-            no_data_reason = NullReason.NO_DATA_IN_RANGE
-            null_epochs = [
-                _null_epoch_stats(
-                    label=e.label,
-                    date_start=e.date_start,
-                    date_end=e.date_end,
-                    null_reason=no_data_reason,
-                    rera_reason=NullReason.NOT_AVAILABLE,
-                )
-                for e in epochs
-            ]
-            return CompareEpochsResult(
-                null_reason=no_data_reason,
-                epochs=null_epochs,
+                null_reason=union_resolved_device_id,
+                epochs=[
+                    _null_epoch_stats(
+                        label=e.label,
+                        date_start=e.date_start,
+                        date_end=e.date_end,
+                        null_reason=union_resolved_device_id,
+                        rera_reason=NullReason.NOT_AVAILABLE,
+                    )
+                    for e in epochs
+                ],
                 version_warnings=[],
             )
 
@@ -224,22 +385,9 @@ class EpochsMixin(_BreathServiceCore):
                     if status == AnalysisStatus.OK and algo is not None:
                         ok_on_date.append((sess.id, algo))
                         ar_ids_for_epoch[sess.id] = ar_id
-                        # Per-session RX snapshot (not merged per-day)
-                        setting_rows = (
-                            (
-                                await self._db.execute(
-                                    select(models.Setting).where(
-                                        models.Setting.session_id == sess.id,
-                                        models.Setting.key.in_(RX_KEYS),
-                                        models.Setting.value.is_not(None),
-                                    )
-                                )
-                            )
-                            .scalars()
-                            .all()
+                        session_rx_dated.append(
+                            (therapy_date, await self._session_rx_snapshot(sess.id))
                         )
-                        rx_snap = {s.key: s.value for s in setting_rows if s.value}
-                        session_rx_dated.append((therapy_date, rx_snap))
 
                 if ok_on_date:
                     nights_with_data += 1
@@ -248,25 +396,9 @@ class EpochsMixin(_BreathServiceCore):
                     nights_missing_analysis += 1
 
             # Within-epoch RX homogeneity check (per-session, not per-day merged)
-            rx_violation: EpochRxViolation | None = None
-            if len(session_rx_dated) > 1:
-                first_rx_snap = session_rx_dated[0][1]
-                if any(rx != first_rx_snap for _, rx in session_rx_dated[1:]):
-                    change_dates: list[date] = []
-                    changed_keys: set[str] = set()
-                    prev_rx = session_rx_dated[0][1]
-                    for snap_date, snap_rx in session_rx_dated[1:]:
-                        diffs = changed_setting_keys(prev_rx, snap_rx)
-                        if diffs:
-                            changed_keys |= diffs
-                            change_dates.append(snap_date)
-                        prev_rx = snap_rx
-                    rx_violation = EpochRxViolation(
-                        epoch_label=epoch.label,
-                        changed_keys=sorted(changed_keys),
-                        change_dates=change_dates,
-                    )
-                    rx_violations.append(rx_violation)
+            rx_violation = _epoch_rx_violation(epoch.label, session_rx_dated)
+            if rx_violation is not None:
+                rx_violations.append(rx_violation)
 
             # An epoch's own mid-epoch RX change nulls only that epoch; clean
             # epochs in the same comparison still compute normally (per-epoch
@@ -335,46 +467,8 @@ class EpochsMixin(_BreathServiceCore):
         # Phase 3: Compute distributions (only if all checks passed)
         # -----------------------------------------------------------------------
 
-        def _distrib(
-            vals: list[float], n_breaths: int, n_nights: int
-        ) -> DistributionStats:
-            if not vals:
-                return DistributionStats(
-                    median=None,
-                    iqr=None,
-                    p95=None,
-                    n_breaths=n_breaths,
-                    n_nights=n_nights,
-                )
-            sorted_v = sorted(vals)
-            p25 = sorted_v[len(sorted_v) // 4]
-            p75 = sorted_v[min(len(sorted_v) * 3 // 4, len(sorted_v) - 1)]
-            p95 = percentile_nearest_rank(sorted_v, 0.95)
-            return DistributionStats(
-                median=statistics.median(vals),
-                iqr=p75 - p25,
-                p95=p95,
-                n_breaths=n_breaths,
-                n_nights=n_nights,
-            )
-
         requested = set(metrics) if metrics is not None else set(DistributionMetric)
         epoch_stats: list[EpochBreathStats] = []
-
-        # Bulk-fetch waveform channel values for all contributing sessions across
-        # all epochs in one query, then slice per epoch below.
-        all_contrib_session_ids: list[int] = [
-            sid
-            for ed in epoch_resolved
-            if ed["null_reason"] is None
-            for sid, _ in ed["contributing_sessions"]
-        ]
-        (
-            all_fl_by_sess,
-            all_snore_by_sess,
-        ) = await BreathService._fetch_waveform_channel_vals(
-            self._db, all_contrib_session_ids
-        )
 
         for ed in epoch_resolved:
             epoch = ed["epoch"]
@@ -403,7 +497,7 @@ class EpochsMixin(_BreathServiceCore):
                         nights_missing_analysis=nights_missing_analysis,
                         null_reason=resolved_null_reason,
                         rera_reason=epoch_rera_reason,
-                        rx_settings=all_rx[0] if all_rx else {},
+                        rx_settings=_first_known_rx(all_rx),
                     )
                 )
                 continue
@@ -500,41 +594,6 @@ class EpochsMixin(_BreathServiceCore):
                     )
                     rera_count += _count_fl_run_reras(brows_all)
 
-            # Device waveform channel distributions for this epoch.
-            # Contributing session IDs (OK analysis only; same sessions used for
-            # breath-level distributions, ensuring apples-to-apples comparison).
-            # Waveform data was bulk-fetched before the loop; slice to this epoch's sessions.
-            epoch_fl_by_sess = all_fl_by_sess
-            epoch_snore_by_sess = all_snore_by_sess
-
-            epoch_fl_all: list[float] = []
-            epoch_snore_all: list[float] = []
-            epoch_fl_nights = 0
-            epoch_snore_nights = 0
-            # Group by session for per-night counting — each unique date with at
-            # least one sample counts as one night.
-            fl_nights_set: set[int] = set()
-            snore_nights_set: set[int] = set()
-            for sid, _ in contributing_sessions:
-                if sid in epoch_fl_by_sess:
-                    # Filter negative sentinel values and non-finite values.
-                    valid_fl = [
-                        v for v in epoch_fl_by_sess[sid] if v >= 0 and math.isfinite(v)
-                    ]
-                    epoch_fl_all.extend(valid_fl)
-                    if valid_fl:
-                        fl_nights_set.add(sid)
-                if sid in epoch_snore_by_sess:
-                    valid_sn = [v for v in epoch_snore_by_sess[sid] if math.isfinite(v)]
-                    epoch_snore_all.extend(valid_sn)
-                    if valid_sn:
-                        snore_nights_set.add(sid)
-            # Use unique session count as night proxy (good enough for cross-epoch compare).
-            # Note: this is a session-proxy count, not a deduplicated calendar-date count —
-            # a multi-session night contributes once per contributing session.
-            epoch_fl_nights = len(fl_nights_set)
-            epoch_snore_nights = len(snore_nights_set)
-
             epoch_stats.append(
                 EpochBreathStats(
                     label=epoch.label,
@@ -545,18 +604,20 @@ class EpochsMixin(_BreathServiceCore):
                     algorithm_identity=all_identities[0],
                     null_reason=None,
                     primary_mode=uniform_primary_mode,
-                    mid_insp_flattening=_distrib(mif_vals, n_lv, n_nights_contrib)
+                    mid_insp_flattening=_breath_distrib(
+                        mif_vals, n_lv, n_nights_contrib
+                    )
                     if DistributionMetric.MID_INSP_FLATTENING in requested
                     else _null_dist,
-                    flatness_index=_distrib(fi_vals, n_lv, n_nights_contrib)
+                    flatness_index=_breath_distrib(fi_vals, n_lv, n_nights_contrib)
                     if DistributionMetric.FLATNESS_INDEX in requested
                     else _null_dist,
                     flow_class_distribution=fc_dist,
                     flow_class_distribution_fallback=fc_dist_fallback,
-                    tidal_volume_ml=_distrib(tv_vals, n_lv, n_nights_contrib)
+                    tidal_volume_ml=_breath_distrib(tv_vals, n_lv, n_nights_contrib)
                     if DistributionMetric.TIDAL_VOLUME_ML in requested
                     else _null_dist,
-                    ie_ratio=_distrib(ie_vals, n_lv, n_nights_contrib)
+                    ie_ratio=_breath_distrib(ie_vals, n_lv, n_nights_contrib)
                     if DistributionMetric.IE_RATIO in requested
                     else _null_dist,
                     rera_proxy_count=rera_count,
@@ -564,17 +625,7 @@ class EpochsMixin(_BreathServiceCore):
                     rera_proxy_version=(
                         RERA_PROXY_ALGO_VERSION if rera_count is not None else None
                     ),
-                    rx_settings=all_rx[0] if all_rx else {},
-                    device_flg=_distrib(
-                        epoch_fl_all, len(epoch_fl_all), epoch_fl_nights
-                    )
-                    if DistributionMetric.DEVICE_FLG in requested
-                    else _null_dist,
-                    snore_dist=_distrib(
-                        epoch_snore_all, len(epoch_snore_all), epoch_snore_nights
-                    )
-                    if DistributionMetric.SNORE in requested
-                    else _null_dist,
+                    rx_settings=_first_known_rx(all_rx),
                 )
             )
 

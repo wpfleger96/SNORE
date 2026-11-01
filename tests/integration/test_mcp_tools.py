@@ -15,7 +15,7 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Breath, Event
+from snore.database.models import Breath, Event, Session, Statistics
 from snore.provenance import IndexSource
 from tests.integration.conftest import (
     _make_analysis_result,
@@ -423,13 +423,21 @@ class TestGetNightlySummary:
         assert result.nights == []
         assert result.total_nights == 0
 
-    async def test_rera_fields_null_with_reason_when_analysis_absent(
+    async def test_device_counts_populated_from_day_row(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         from snore.mcp.tools.summary import get_nightly_summary
 
         device = await _make_device(async_db_session, async_test_profile.id)
-        await _make_day_session(async_db_session, device, date(2024, 8, 1), ahi=2.5)
+        await _make_day_session(
+            async_db_session,
+            device,
+            date(2024, 8, 1),
+            obstructive_apneas=3,
+            central_apneas=2,
+            hypopneas=7,
+            reras=5,
+        )
 
         result = await get_nightly_summary(
             async_db_session,
@@ -437,45 +445,39 @@ class TestGetNightlySummary:
             date(2024, 8, 1),
             profile_id=async_test_profile.id,
         )
-        assert len(result.nights) == 1
         night = result.nights[0]
-        assert night.rera_index is None
-        assert night.rera_index_reason == "not_available"
-        assert night.rdi is None
-        assert night.fl_class_ge4_pct is None
-        assert night.fl_class_ge4_pct_reason == "not_available"
-        assert night.leak_above_24_pct is None
-        assert night.leak_above_24_pct_reason == "not_available"
-        assert night.periodic_breathing_pct is None
-        assert night.pb_reason == "not_available"
+        assert night.obstructive_apneas == 3
+        assert night.central_apneas == 2
+        assert night.hypopneas == 7
+        assert night.reras == 5
 
-    async def test_flattening_low_tail_from_leak_valid_breaths(
+    async def test_ti_and_ie_come_from_first_session_statistics(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """fl_median/fl_5th/fl_min summarise the low (most flow-limited) tail
-        of leak-valid per-breath mid_insp_flattening; leak-invalid breaths
-        are excluded even when they are the lowest values."""
+        """Device Ti and I:E are the first enabled session's STR values; a later
+        session's differing values do not leak in."""
         from snore.mcp.tools.summary import get_nightly_summary
 
-        target_date = date(2024, 8, 4)
         device = await _make_device(async_db_session, async_test_profile.id)
-        _, sess = await _make_day_session(async_db_session, device, target_date)
-        ar = await _make_analysis_result(async_db_session, sess)
-        # 40 distinct leak-valid values 0.20..0.98, unsorted on purpose.
-        flattening = [round(0.2 + 0.02 * ((i * 7) % 40), 2) for i in range(40)]
-        specs = [(f, True) for f in flattening] + [(0.01, False)]
-        for n, (value, leak_valid) in enumerate(specs):
-            async_db_session.add(
-                Breath(
-                    analysis_result_id=ar.id,
-                    session_id=sess.id,
-                    breath_number=n,
-                    start_offset_s=float(n) * 5.0,
-                    end_offset_s=float(n) * 5.0 + 4.0,
-                    mid_insp_flattening=value,
-                    leak_valid=leak_valid,
-                )
-            )
+        target_date = date(2024, 8, 1)
+        day, first = await _make_day_session(async_db_session, device, target_date)
+        second = Session(
+            device_id=device.id,
+            day_id=day.id,
+            device_session_id="second-session",
+            start_time=first.start_time + timedelta(hours=9),
+            end_time=first.start_time + timedelta(hours=10),
+            duration_seconds=3600.0,
+            enabled=True,
+        )
+        async_db_session.add(second)
+        await async_db_session.flush()
+        async_db_session.add_all(
+            [
+                Statistics(session_id=first.id, ti_median=1.1, ie_ratio_median=0.6),
+                Statistics(session_id=second.id, ti_median=9.9, ie_ratio_median=9.9),
+            ]
+        )
         await async_db_session.flush()
 
         result = await get_nightly_summary(
@@ -484,81 +486,31 @@ class TestGetNightlySummary:
             target_date,
             profile_id=async_test_profile.id,
         )
-
         night = result.nights[0]
-        ordered = sorted(flattening)
-        assert night.fl_min == pytest.approx(0.2)
-        # Nearest rank: sorted[int(40 * 0.05)] = sorted[2].
-        assert night.fl_5th == pytest.approx(ordered[2])
-        assert night.fl_5th == pytest.approx(0.24)
-        assert night.fl_median == pytest.approx((ordered[19] + ordered[20]) / 2)
-        assert night.fl_median_reason is None
-        assert night.fl_5th_reason is None
-        assert night.fl_min_reason is None
+        assert night.ti_median_s == pytest.approx(1.1)
+        assert night.ti_median_reason is None
+        assert night.ie_ratio_median == pytest.approx(0.6)
+        assert night.ie_ratio_reason is None
 
-    async def test_periodic_breathing_pct_from_persisted_episodes(
+    async def test_ti_and_ie_null_with_channel_absent_reason(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """8 h analyzed night with 2880 s of persisted PB episodes → 10.0 %."""
-        from snore.analysis.types import AnalysisResult as AnalysisResultDTO
         from snore.mcp.tools.summary import get_nightly_summary
 
         device = await _make_device(async_db_session, async_test_profile.id)
-        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 2))
-        ar = await _make_analysis_result(async_db_session, sess)
-        ar.programmatic_result_json = AnalysisResultDTO(
-            session_id=sess.id,
-            session_duration_hours=8.0,
-            total_breaths=0,
-            machine_events=[],
-            mode_results={},
-            periodic_breathing_episodes=[
-                {"start_time": 600.0, "end_time": 2040.0},
-                {"start_time": 5000.0, "end_time": 6440.0},
-            ],
-        ).model_dump()
-        await async_db_session.flush()
+        await _make_day_session(async_db_session, device, date(2024, 8, 1))
 
         result = await get_nightly_summary(
             async_db_session,
-            date(2024, 8, 2),
-            date(2024, 8, 2),
+            date(2024, 8, 1),
+            date(2024, 8, 1),
             profile_id=async_test_profile.id,
         )
-
         night = result.nights[0]
-        assert night.periodic_breathing_pct == pytest.approx(10.0)
-        assert night.pb_reason is None
-
-    async def test_periodic_breathing_pct_read_without_parsing_result_payload(
-        self, async_db_session: AsyncSession, async_test_profile: Any
-    ) -> None:
-        """PB % comes straight from the persisted episode list via SQLite
-        ``json_extract``: a large ``flow_analysis`` payload and fields that are
-        not a valid AnalysisResult (so a full-JSON parse would fail) do not
-        affect it.  8 h night, 1440 s of PB → 5.0 %."""
-        from snore.mcp.tools.summary import get_nightly_summary
-
-        device = await _make_device(async_db_session, async_test_profile.id)
-        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 3))
-        ar = await _make_analysis_result(async_db_session, sess)
-        ar.programmatic_result_json = {
-            "mode_results": "not-a-mapping",
-            "flow_analysis": {"breaths": [[float(i)] * 8 for i in range(20_000)]},
-            "periodic_breathing_episodes": [{"start_time": 600.0, "end_time": 2040.0}],
-        }
-        await async_db_session.flush()
-
-        result = await get_nightly_summary(
-            async_db_session,
-            date(2024, 8, 3),
-            date(2024, 8, 3),
-            profile_id=async_test_profile.id,
-        )
-
-        night = result.nights[0]
-        assert night.periodic_breathing_pct == pytest.approx(5.0)
-        assert night.pb_reason is None
+        assert night.ti_median_s is None
+        assert night.ti_median_reason == "channel_absent"
+        assert night.ie_ratio_median is None
+        assert night.ie_ratio_reason == "channel_absent"
 
     async def test_ahi_populated_from_day_row(
         self, async_db_session: AsyncSession, async_test_profile: Any
@@ -712,6 +664,248 @@ class TestGetNightlySummary:
 
 
 # ---------------------------------------------------------------------------
+# experimental_get_nightly_metrics
+# ---------------------------------------------------------------------------
+
+
+class TestExperimentalGetNightlyMetrics:
+    async def test_empty_database_returns_empty_nights(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            date(2024, 1, 1),
+            date(2024, 1, 31),
+            profile_id=async_test_profile.id,
+        )
+        assert result.nights == []
+        assert result.total_nights == 0
+        assert result.device_capabilities is None
+
+    async def test_fields_null_with_reason_when_analysis_absent(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        await _make_day_session(async_db_session, device, date(2024, 8, 1), ahi=2.5)
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            date(2024, 8, 1),
+            date(2024, 8, 1),
+            profile_id=async_test_profile.id,
+        )
+        assert len(result.nights) == 1
+        night = result.nights[0]
+        assert night.date == date(2024, 8, 1)
+        assert night.device_id == device.id
+        assert night.rera_index is None
+        assert night.rera_index_reason == "not_available"
+        assert night.rdi is None
+        assert night.rdi_reason == "not_available"
+        assert night.fl_class_ge4_pct is None
+        assert night.fl_class_ge4_pct_reason == "not_available"
+        assert night.rera_proxy_count is None
+        assert night.rera_proxy_reason == "not_available"
+        assert night.rera_proxy_version is None
+        assert night.periodic_breathing_pct is None
+        assert night.pb_reason == "not_available"
+
+    async def test_flattening_low_tail_from_leak_valid_breaths(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """fl_median/fl_5th/fl_min summarise the low (most flow-limited) tail
+        of leak-valid per-breath mid_insp_flattening; leak-invalid breaths
+        are excluded even when they are the lowest values."""
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        target_date = date(2024, 8, 4)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        ar = await _make_analysis_result(async_db_session, sess)
+        # 40 distinct leak-valid values 0.20..0.98, unsorted on purpose.
+        flattening = [round(0.2 + 0.02 * ((i * 7) % 40), 2) for i in range(40)]
+        specs = [(f, True) for f in flattening] + [(0.01, False)]
+        for n, (value, leak_valid) in enumerate(specs):
+            async_db_session.add(
+                Breath(
+                    analysis_result_id=ar.id,
+                    session_id=sess.id,
+                    breath_number=n,
+                    start_offset_s=float(n) * 5.0,
+                    end_offset_s=float(n) * 5.0 + 4.0,
+                    mid_insp_flattening=value,
+                    leak_valid=leak_valid,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            target_date,
+            target_date,
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        ordered = sorted(flattening)
+        assert night.fl_min == pytest.approx(0.2)
+        # Nearest rank: sorted[int(40 * 0.05)] = sorted[2].
+        assert night.fl_5th == pytest.approx(ordered[2])
+        assert night.fl_5th == pytest.approx(0.24)
+        assert night.fl_median == pytest.approx((ordered[19] + ordered[20]) / 2)
+        assert night.fl_median_reason is None
+        assert night.fl_5th_reason is None
+        assert night.fl_min_reason is None
+
+    async def test_periodic_breathing_pct_from_persisted_episodes(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """8 h analyzed night with 2880 s of persisted PB episodes → 10.0 %."""
+        from snore.analysis.types import AnalysisResult as AnalysisResultDTO
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 2))
+        ar = await _make_analysis_result(async_db_session, sess)
+        ar.programmatic_result_json = AnalysisResultDTO(
+            session_id=sess.id,
+            session_duration_hours=8.0,
+            total_breaths=0,
+            machine_events=[],
+            mode_results={},
+            periodic_breathing_episodes=[
+                {"start_time": 600.0, "end_time": 2040.0},
+                {"start_time": 5000.0, "end_time": 6440.0},
+            ],
+        ).model_dump()
+        await async_db_session.flush()
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            date(2024, 8, 2),
+            date(2024, 8, 2),
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        assert night.periodic_breathing_pct == pytest.approx(10.0)
+        assert night.pb_reason is None
+
+    async def test_periodic_breathing_pct_read_without_parsing_result_payload(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """PB % comes straight from the persisted episode list via SQLite
+        ``json_extract``: a large ``flow_analysis`` payload and fields that are
+        not a valid AnalysisResult (so a full-JSON parse would fail) do not
+        affect it.  8 h night, 1440 s of PB → 5.0 %."""
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 3))
+        ar = await _make_analysis_result(async_db_session, sess)
+        ar.programmatic_result_json = {
+            "mode_results": "not-a-mapping",
+            "flow_analysis": {"breaths": [[float(i)] * 8 for i in range(20_000)]},
+            "periodic_breathing_episodes": [{"start_time": 600.0, "end_time": 2040.0}],
+        }
+        await async_db_session.flush()
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            date(2024, 8, 3),
+            date(2024, 8, 3),
+            profile_id=async_test_profile.id,
+        )
+
+        night = result.nights[0]
+        assert night.periodic_breathing_pct == pytest.approx(5.0)
+        assert night.pb_reason is None
+
+    async def test_pages_run_newest_first_over_nights_with_sessions(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """Five nights at page_size 2: pages walk newest to oldest, the last page
+        is short, and a page past the end is empty with the total intact."""
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        nights = [date(2024, 8, 1) + timedelta(days=i) for i in range(5)]
+        for night in nights:
+            await _make_day_session(async_db_session, device, night)
+
+        pages = [
+            await experimental_get_nightly_metrics(
+                async_db_session,
+                date(2024, 7, 25),
+                date(2024, 8, 10),
+                profile_id=async_test_profile.id,
+                page=page,
+                page_size=2,
+            )
+            for page in (1, 2, 3, 4)
+        ]
+
+        assert [[n.date for n in p.nights] for p in pages] == [
+            [nights[4], nights[3]],
+            [nights[2], nights[1]],
+            [nights[0]],
+            [],
+        ]
+        assert {p.total_nights for p in pages} == {5}
+        assert pages[3].page == 4
+        assert pages[3].page_size == 2
+
+    async def test_order_matches_default_tool(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import (
+            experimental_get_nightly_metrics,
+            get_nightly_summary,
+        )
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        for day_offset in (2, 0, 1):
+            await _make_day_session(
+                async_db_session, device, date(2024, 8, 1) + timedelta(days=day_offset)
+            )
+
+        window = (date(2024, 8, 1), date(2024, 8, 3))
+        device_rows = await get_nightly_summary(
+            async_db_session, *window, profile_id=async_test_profile.id
+        )
+        experimental_rows = await experimental_get_nightly_metrics(
+            async_db_session, *window, profile_id=async_test_profile.id
+        )
+
+        assert [n.date for n in experimental_rows.nights] == [
+            n.date for n in device_rows.nights
+        ]
+
+    async def test_device_capabilities_reports_analysis_run(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.summary import experimental_get_nightly_metrics
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, date(2024, 8, 1))
+        await _make_analysis_result(async_db_session, sess)
+
+        result = await experimental_get_nightly_metrics(
+            async_db_session,
+            date(2024, 8, 1),
+            date(2024, 8, 1),
+            profile_id=async_test_profile.id,
+        )
+
+        assert result.device_capabilities is not None
+        assert result.device_capabilities.has_analysis is True
+
+
+# ---------------------------------------------------------------------------
 # get_events
 # ---------------------------------------------------------------------------
 
@@ -855,11 +1049,11 @@ class TestGetEvents:
         assert ctx is not None
         assert ctx.minutes_since_session_start == pytest.approx(45.0, abs=0.1)
 
-    async def test_event_context_includes_ventilatory_metrics(
+    async def test_event_context_includes_device_channel_means(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         """Device MV + therapy pressure + EPAP seeded → an OA event carries
-        MV slope/stability (constant MV → 0.0) and PS = 15 − 10 = 5 cmH2O."""
+        device-channel MV and PS = 15 − 10 = 5 cmH2O."""
         from snore.mcp.tools.events import get_events
 
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -887,30 +1081,50 @@ class TestGetEvents:
 
         ev = result.events[0]
         assert ev.context is not None
-        assert ev.context.preceding_mv_slope_lpm_per_min == pytest.approx(0.0)
-        assert ev.context.stability_index == pytest.approx(0.0)
         assert ev.context.ps_delivered_cmh2o == pytest.approx(5.0)
         assert ev.context.mv_prior_120s_lpm == pytest.approx(6.0)
-        assert ev.context.mv_source == "device"
-        assert ev.preceding_mv_slope_reason is None
-        assert ev.stability_reason is None
+        assert ev.mv_reason is None
         assert ev.ps_reason is None
+
+    async def test_absent_device_mv_is_null_with_reason_despite_flow(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """Flow seeded but no device MV → ``mv_prior_120s_lpm`` is null with a
+        reason: the default tool never derives MV from flow."""
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 23)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        await _make_waveform(
+            async_db_session, sess, "flow", 1.0, "L/min", 900, constant_value=6.0
+        )
+        await _make_event(async_db_session, sess, event_type="CA", offset_seconds=600.0)
+
+        result = await get_events(
+            async_db_session, target_date, profile_id=async_test_profile.id
+        )
+
+        ev = result.events[0]
+        assert ev.context is not None
+        assert ev.context.mv_prior_120s_lpm is None
+        assert ev.mv_reason == "not_available"
 
     @pytest.mark.parametrize(
         ("mv_channel", "expected_version"),
         [("mv", None), ("flow", "v1")],
         ids=["device_mv", "flow_derived"],
     )
-    async def test_mv_fallback_version_only_with_flow_derived_events(
+    async def test_experimental_context_labels_mv_series(
         self,
         async_db_session: AsyncSession,
         async_test_profile: Any,
         mv_channel: str,
         expected_version: str | None,
     ) -> None:
-        """``mv_fallback_version`` labels the response only when a returned
-        event's MV was derived from flow."""
-        from snore.mcp.tools.events import get_events
+        """MV metrics come from the device channel, or from flow when it is
+        absent; ``mv_fallback_version`` labels the response only in that case."""
+        from snore.mcp.tools.events import experimental_get_event_context
 
         device = await _make_device(async_db_session, async_test_profile.id)
         target_date = date(2024, 8, 21)
@@ -920,21 +1134,48 @@ class TestGetEvents:
         )
         await _make_event(async_db_session, sess, event_type="CA", offset_seconds=600.0)
 
-        result = await get_events(
+        result = await experimental_get_event_context(
             async_db_session, target_date, profile_id=async_test_profile.id
         )
 
         assert result.mv_fallback_version == expected_version
-        assert result.events[0].context is not None
-        assert result.events[0].context.mv_source == (
-            "device" if mv_channel == "mv" else "flow_derived"
+        assert result.session_id == sess.id
+        ev = result.events[0]
+        assert ev.event_type == "CA"
+        assert ev.mv_source == ("device" if mv_channel == "mv" else "flow_derived")
+        assert ev.mv_prior_120s_lpm == pytest.approx(6.0)
+        assert ev.preceding_mv_slope_lpm_per_min == pytest.approx(0.0, abs=1e-6)
+        assert ev.stability_index == pytest.approx(0.0, abs=1e-6)
+        assert ev.mv_reason is None
+        assert ev.preceding_mv_slope_reason is None
+        assert ev.stability_reason is None
+
+    async def test_experimental_context_without_events_has_null_anchors(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """A night with a session but no matching events → empty list, null
+        anchors, and no flow-derived label."""
+        from snore.mcp.tools.events import experimental_get_event_context
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 24)
+        await _make_day_session(async_db_session, device, target_date)
+
+        result = await experimental_get_event_context(
+            async_db_session, target_date, profile_id=async_test_profile.id
         )
+
+        assert result.events == []
+        assert result.total_events == 0
+        assert result.truncated is False
+        assert result.session_id is None
+        assert result.session_start_wall_clock is None
+        assert result.mv_fallback_version is None
 
     async def test_include_context_false_omits_context_and_reasons(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        """include_context=False → events listed, context and its reasons null,
-        no flow-derived label."""
+        """include_context=False → events listed, context and its reasons null."""
         from snore.mcp.tools.events import get_events
 
         device = await _make_device(async_db_session, async_test_profile.id)
@@ -959,7 +1200,6 @@ class TestGetEvents:
         assert row.pressure_reason is None
         assert row.mv_reason is None
         assert row.ps_reason is None
-        assert result.mv_fallback_version is None
 
     async def test_event_row_a6_timestamp_contract(
         self, async_db_session: AsyncSession, async_test_profile: Any

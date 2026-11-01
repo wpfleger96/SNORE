@@ -260,7 +260,7 @@ class SessionStatistics(BaseModel):
         default=None, ge=0, description="RIN (APAP-only, from STR)"
     )
     csr_pct: float | None = Field(
-        default=None, ge=0, description="Cheyne-Stokes % time (APAP-only, from STR)"
+        default=None, ge=0, description="STR CSR value, unit unverified (APAP-only)"
     )
     spont_cyc_pct: float | None = Field(
         default=None, ge=0, description="Spontaneous cycle % (VAuto-only, from STR)"

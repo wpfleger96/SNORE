@@ -183,11 +183,8 @@ class DayService(ProfileScopedService):
         """Read-time flow-limitation / RERA-proxy metrics for one night.
 
         Sourced from BreathService.get_nightly_summary — the same latest-run
-        aggregation the MCP nightly summary uses — so day detail never
-        recomputes breath logic.  Waveform stats are skipped
-        (``include_waveform_stats=False``): the FL/RERA fields come from the
-        breath table alone, and loading the full-night waveform blobs on every
-        ``GET /days/{date}`` is pure overhead here.
+        aggregation the experimental MCP nightly tool uses — so day detail
+        never recomputes breath logic.
 
         Two distinct null-with-reason outcomes are possible:
 
@@ -219,9 +216,7 @@ class DayService(ProfileScopedService):
         try:
             night = await BreathService(
                 self.db_session, self.profile_id
-            ).get_nightly_summary(
-                day_date, device_id=device_id, include_waveform_stats=False
-            )
+            ).get_nightly_summary(day_date, device_id=device_id)
         except (DeviceAmbiguityError, DeviceNotOwnedError):
             # Device resolution declined — degrade quietly (expected edge case).
             return _null_fl_rera(NullReason.ANALYSIS_NOT_RUN.value)
