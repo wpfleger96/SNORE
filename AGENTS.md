@@ -149,7 +149,7 @@ src/snore/
 │   ├── backup_service.py    # Raw file backup
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_service.py       # Day aggregation
-│   ├── event_service.py     # Event queries + matching
+│   ├── event_service.py     # Event queries
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
@@ -372,11 +372,13 @@ running every `DEFAULT_TOOLS` entry with SQL capture.
 **REST gating rule:** no default REST operation may return an Experimental-tagged field. Experimental
 operations keep their URLs and carry the FastAPI `experimental` tag: at `include_router` for the
 analysis and validation routers, per operation elsewhere (`GET /days/{date}/experimental`,
-`GET /stats/experimental`, `/sessions/{id}/events/match`, `/sessions/{id}/waveforms/compare`).
+`GET /stats/experimental`, `/sessions/{id}/waveforms/compare`).
 `GET /days/{date}` does not touch analysis tables. `tests/unit/test_provenance_tags.py` enforces the
-rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there pins
-the tagged list, so tagging a route to escape the check fails until that list is edited too. HTML
-reports have no response schema: `tests/unit/test_report_service.py` checks that the models a report
+rule by walking every untagged operation's response schemas, and `EXPERIMENTAL_OPERATIONS` there, read
+from `ui/src/tests/experimentalOperations.json`, pins the tagged list, so tagging a route to escape the
+check fails until that list is edited too. `ui/src/tests/experimentalBoundary.test.ts` reads the same
+file: every listed operation needs a wrapper in `ui/src/api/`, and default pages may not reference those
+wrappers, `useValidationRuns` or `components/validation/*`. HTML reports have no response schema: `tests/unit/test_report_service.py` checks that the models a report
 fetches carry no Experimental field.
 
 CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
@@ -590,7 +592,7 @@ Integration test seed helpers (`_make_profile`, `_make_device`, `_make_day_sessi
 | Tune detection thresholds | `src/snore/analysis/modes/config.py` (DetectionModeConfig fields), validate with `validate_against_machine_events()` |
 | Modify data models | `src/snore/parsers/unified.py` (data), `database/models.py` (ORM), use Pydantic; keep `test_schema_alignment.py` passing |
 | Add waveform visualization | `src/snore/waveform/renderer.py` (ASCII/plotext), `inspector.py` (data loading) |
-| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; `EXPERIMENTAL_OPERATIONS` in `tests/unit/test_provenance_tags.py` if it carries the `experimental` tag; then `just ui-generate-types` |
+| Add API endpoint | `src/snore/api/routers/`, `api/schemas.py`, `api/deps.py`; `ui/src/tests/experimentalOperations.json` if it carries the `experimental` tag; then `just ui-generate-types` |
 | Add/modify service | `src/snore/services/`, `services/schemas.py` |
 | Frontend development | `ui/src/views/`, `ui/src/components/`, `ui/src/api/`, `ui/src/composables/`, `ui/src/utils/` |
 | Regenerate UI API types | `just ui-generate-types` (`scripts/export_openapi.py` → `ui/src/types/generated.ts`) |

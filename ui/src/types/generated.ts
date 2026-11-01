@@ -1723,23 +1723,6 @@ export interface paths {
         patch?: never
         trace?: never
     }
-    '/api/v1/sessions/{session_id}/events/match': {
-        parameters: {
-            query?: never
-            header?: never
-            path?: never
-            cookie?: never
-        }
-        /** Match Events */
-        get: operations['match_events_api_v1_sessions__session_id__events_match_get']
-        put?: never
-        post?: never
-        delete?: never
-        options?: never
-        head?: never
-        patch?: never
-        trace?: never
-    }
     '/api/v1/sessions/{session_id}/waveforms': {
         parameters: {
             query?: never
@@ -3418,9 +3401,14 @@ export interface components {
             false_positives_hypopnea?: components['schemas']['EventComparisonDetail'][]
             /**
              * Machine Event Count
-             * @description [DEVICE] Total machine-detected events
+             * @description [DEVICE] Machine-scored apneas and hypopneas
              */
             machine_event_count: number
+            /**
+             * Matched Events
+             * @description [EXPERIMENTAL] Programmatic/machine event pairs matched one-to-one within tolerance (each event in at most one pair)
+             */
+            matched_events: number
             /**
              * Mode
              * @description Detection mode used (e.g., 'aasm')
@@ -3462,37 +3450,6 @@ export interface components {
             spo2_drop?: number | null
             /** Start Time */
             start_time: number
-        }
-        /**
-         * EventMatchResult
-         * @description Result of matching machine vs programmatic events.
-         */
-        EventMatchResult: {
-            /**
-             * False Negatives
-             * @description [EXPERIMENTAL] Machine events unmatched
-             */
-            false_negatives: number
-            /**
-             * False Positives
-             * @description [EXPERIMENTAL] Programmatic events unmatched
-             */
-            false_positives: number
-            /**
-             * Machine Count
-             * @description [DEVICE] Machine-scored apneas and hypopneas
-             */
-            machine_count: number
-            /**
-             * Matched
-             * @description [EXPERIMENTAL] Programmatic/machine event pairs matched one-to-one within tolerance (each event in at most one pair)
-             */
-            matched: number
-            /**
-             * Programmatic Count
-             * @description [EXPERIMENTAL] Programmatically detected apneas and hypopneas
-             */
-            programmatic_count: number
         }
         /**
          * EventTypeCount
@@ -8967,39 +8924,6 @@ export interface operations {
                 }
                 content: {
                     'application/json': components['schemas']['EventItem'][]
-                }
-            }
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown
-                }
-                content: {
-                    'application/json': components['schemas']['HTTPValidationError']
-                }
-            }
-        }
-    }
-    match_events_api_v1_sessions__session_id__events_match_get: {
-        parameters: {
-            query?: {
-                mode?: string
-            }
-            header?: never
-            path: {
-                session_id: number
-            }
-            cookie?: never
-        }
-        requestBody?: never
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown
-                }
-                content: {
-                    'application/json': components['schemas']['EventMatchResult']
                 }
             }
             /** @description Validation Error */

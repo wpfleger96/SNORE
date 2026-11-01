@@ -1,6 +1,5 @@
 """Waveform service for listing and loading waveform data."""
 
-from bisect import bisect_left, bisect_right
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
@@ -10,6 +9,10 @@ import numpy as np
 from sqlalchemy import select
 
 from snore.analysis.data.waveform_loader import deserialize_waveform_blob
+from snore.analysis.modes.postprocess import match_events_by_start_time
+from snore.analysis.queries import latest_analysis_row
+from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
+from snore.constants import EVENT_TYPE_HYPOPNEA
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import (
@@ -34,6 +37,25 @@ WAVEFORM_ARRAY_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
 # ``(Waveform.id, Session.import_date)``; see :class:`_WaveformArrayCache`.
 type _WaveformCacheKey = tuple[int, datetime]
+
+
+def _comparison_event_type(event: ApneaEvent | HypopneaEvent) -> str:
+    """Return the event's type code; ``HypopneaEvent`` carries no ``event_type``."""
+    if isinstance(event, HypopneaEvent):
+        return EVENT_TYPE_HYPOPNEA
+    return event.event_type
+
+
+def _programmatic_detail(event: ApneaEvent | HypopneaEvent) -> EventComparisonDetail:
+    """Build the comparison detail for an unmatched programmatic event."""
+    return EventComparisonDetail(
+        event_type=_comparison_event_type(event),
+        start_time=event.start_time,
+        duration=event.duration,
+        source="programmatic",
+        confidence=event.confidence,
+        flow_reduction=event.flow_reduction,
+    )
 
 
 class _WaveformArrayCache:
@@ -355,23 +377,9 @@ class WaveformService(ProfileScopedService):
 
     async def _load_analysis_result(self, session_id: int) -> Any:
         """Load the latest AnalysisResult row for a session, returning a validated result object."""
-        from sqlalchemy import select as _select
-
         from snore.analysis.types import AnalysisResult as _AnalysisResult
-        from snore.database import models as _models
 
-        analysis_row = (
-            (
-                await self.db_session.execute(
-                    _select(_models.AnalysisResult)
-                    .filter_by(session_id=session_id)
-                    .order_by(_models.AnalysisResult.created_at.desc())
-                )
-            )
-            .scalars()
-            .first()
-        )
-
+        analysis_row = await latest_analysis_row(self.db_session, session_id)
         if analysis_row is None:
             return None
         return _AnalysisResult.from_stored_json(analysis_row.programmatic_result_json)
@@ -380,18 +388,20 @@ class WaveformService(ProfileScopedService):
         self,
         session_id: int,
         mode: str = "aasm",
-        tolerance_seconds: float = 5.0,
     ) -> EventComparisonResult:
         """
-        Compare machine vs programmatic events for a session.
+        Compare machine vs programmatic apneas + hypopneas for a session.
+
+        Both sides are pooled and matched one-to-one by start time with the
+        batch-validation matcher, so each event is in at most one pair.
 
         Args:
             session_id: Database session ID
             mode: Detection mode to compare
-            tolerance_seconds: Time tolerance in seconds for matching events
 
         Returns:
-            EventComparisonResult with false negatives and false positives
+            EventComparisonResult with matched count, false negatives and
+            false positives
 
         Raises:
             NotFoundError: If no analysis result found or mode not available
@@ -409,77 +419,48 @@ class WaveformService(ProfileScopedService):
 
         mode_result = result.mode_results[mode]
 
-        machine_events_raw = result.machine_events or []
-        machine_apneas, machine_hypopneas = convert_machine_events(machine_events_raw)
-        all_machine = machine_apneas + machine_hypopneas
+        machine_apneas, machine_hypopneas = convert_machine_events(
+            result.machine_events or []
+        )
+        all_machine: list[ApneaEvent | HypopneaEvent] = [
+            *machine_apneas,
+            *machine_hypopneas,
+        ]
+        all_prog: list[ApneaEvent | HypopneaEvent] = [
+            *mode_result.apneas,
+            *mode_result.hypopneas,
+        ]
 
-        prog_apneas = list(mode_result.apneas)
-        prog_hypopneas = list(mode_result.hypopneas)
-        all_prog = prog_apneas + prog_hypopneas
-
-        false_negatives: list[EventComparisonDetail] = []
-        false_positives_apnea: list[EventComparisonDetail] = []
-        false_positives_hypopnea: list[EventComparisonDetail] = []
-
-        all_machine_sorted = sorted(all_machine, key=lambda e: e.start_time)
-        prog_times = sorted(e.start_time for e in all_prog)
-        machine_times = [e.start_time for e in all_machine_sorted]
-
-        for m_event in all_machine_sorted:
-            lo = bisect_left(prog_times, m_event.start_time - tolerance_seconds)
-            hi = bisect_right(prog_times, m_event.start_time + tolerance_seconds)
-            if lo >= hi:
-                false_negatives.append(
-                    EventComparisonDetail(
-                        event_type=getattr(m_event, "event_type", "unknown"),
-                        start_time=m_event.start_time,
-                        duration=getattr(m_event, "duration", 0.0),
-                        source="machine",
-                        confidence=None,
-                        flow_reduction=None,
-                    )
-                )
-
-        for apnea_event in prog_apneas:
-            lo = bisect_left(machine_times, apnea_event.start_time - tolerance_seconds)
-            hi = bisect_right(machine_times, apnea_event.start_time + tolerance_seconds)
-            if lo >= hi:
-                false_positives_apnea.append(
-                    EventComparisonDetail(
-                        event_type=apnea_event.event_type,
-                        start_time=apnea_event.start_time,
-                        duration=apnea_event.duration,
-                        source="programmatic",
-                        confidence=getattr(apnea_event, "confidence", None),
-                        flow_reduction=getattr(apnea_event, "flow_reduction", None),
-                    )
-                )
-
-        for hypopnea_event in prog_hypopneas:
-            lo = bisect_left(
-                machine_times, hypopnea_event.start_time - tolerance_seconds
-            )
-            hi = bisect_right(
-                machine_times, hypopnea_event.start_time + tolerance_seconds
-            )
-            if lo >= hi:
-                false_positives_hypopnea.append(
-                    EventComparisonDetail(
-                        event_type="H",
-                        start_time=hypopnea_event.start_time,
-                        duration=hypopnea_event.duration,
-                        source="programmatic",
-                        confidence=hypopnea_event.confidence,
-                        flow_reduction=hypopnea_event.flow_reduction,
-                    )
-                )
+        matches = match_events_by_start_time(
+            sorted(all_prog, key=lambda e: e.start_time),
+            sorted(all_machine, key=lambda e: e.start_time),
+        )
 
         return EventComparisonResult(
             session_id=session_id,
             mode=mode,
-            machine_event_count=len(machine_events_raw),
-            programmatic_event_count=len(prog_apneas) + len(prog_hypopneas),
-            false_negatives=false_negatives,
-            false_positives_apnea=false_positives_apnea,
-            false_positives_hypopnea=false_positives_hypopnea,
+            machine_event_count=len(all_machine),
+            programmatic_event_count=len(all_prog),
+            matched_events=len(matches.matched),
+            false_negatives=[
+                EventComparisonDetail(
+                    event_type=_comparison_event_type(event),
+                    start_time=event.start_time,
+                    duration=event.duration,
+                    source="machine",
+                    confidence=None,
+                    flow_reduction=None,
+                )
+                for event in matches.false_negatives
+            ],
+            false_positives_apnea=[
+                _programmatic_detail(event)
+                for event in matches.false_positives
+                if isinstance(event, ApneaEvent)
+            ],
+            false_positives_hypopnea=[
+                _programmatic_detail(event)
+                for event in matches.false_positives
+                if isinstance(event, HypopneaEvent)
+            ],
         )

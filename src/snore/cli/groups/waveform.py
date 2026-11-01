@@ -366,18 +366,17 @@ async def compare_events(
 
     service = WaveformService(ctx.db, ctx.profile_id)
     try:
-        comparison = await service.compare_events(
-            resolved_id, mode, tolerance_seconds=5.0
-        )
+        comparison = await service.compare_events(resolved_id, mode)
     except NotFoundError as e:
         raise click.ClickException(str(e)) from e
 
     programmatic = mark_field(
         "Programmatic", EventComparisonResult, "programmatic_event_count"
     )
+    matched = mark_field("Matched", EventComparisonResult, "matched_events")
     console.print(f"Session {resolved_id} - Event Comparison ({mode} mode)")
     console.print(
-        f"Machine: {comparison.machine_event_count} events | {programmatic}: {comparison.programmatic_event_count} events"
+        f"Machine: {comparison.machine_event_count} events (apneas and hypopneas only) | {programmatic}: {comparison.programmatic_event_count} events | {matched}: {comparison.matched_events}"
     )
     console.print("")
 

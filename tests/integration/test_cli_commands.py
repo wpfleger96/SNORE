@@ -9,6 +9,7 @@ These tests verify the command-line interface functionality including:
 """
 
 import asyncio
+import re
 import sys
 
 from datetime import UTC, datetime, timedelta
@@ -21,6 +22,9 @@ from click.testing import CliRunner
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.analysis.modes.types import ModeResult
+from snore.analysis.shared.types import ApneaEvent, HypopneaEvent
+from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli import cli
 from snore.database import models
 from snore.database.day_manager import DayManager
@@ -913,6 +917,146 @@ class TestAnalysisDeleteCommand:
         db_session.expire_all()
         total_analysis = db_session.query(models.AnalysisResult).count()
         assert total_analysis == 4
+
+
+@pytest.fixture
+async def db_with_comparison(temp_db):
+    """One analyzed session: machine OA/H/FL, programmatic apnea + hypopnea."""
+    await init_database(str(temp_db))
+
+    async with session_scope() as session:
+        profile = await _create_test_user_and_profile(session)
+        device = models.Device(
+            profile_id=profile.id,
+            manufacturer="ResMed",
+            model="AirSense 10",
+            serial_number="TEST12345",
+        )
+        session.add(device)
+        await session.flush()
+
+        start_time = datetime(2025, 10, 1, 22, 0, 0)
+        end_time = start_time + timedelta(hours=8)
+        sess = models.Session(
+            device_id=device.id,
+            device_session_id="test_compare",
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=8 * 3600,
+        )
+        session.add(sess)
+        await session.flush()
+
+        result = AnalysisResult(
+            session_id=sess.id,
+            session_duration_hours=8.0,
+            total_breaths=1000,
+            machine_events=[
+                AnalysisEvent(
+                    event_type=event_type,
+                    start_time=event_start,
+                    duration=10.0,
+                    source="machine",
+                )
+                for event_type, event_start in (
+                    ("OA", 100.0),
+                    ("H", 200.0),
+                    ("FL", 300.0),
+                )
+            ],
+            mode_results={
+                "aasm": ModeResult(
+                    mode_name="aasm",
+                    apneas=[
+                        ApneaEvent(
+                            start_time=101.0,
+                            end_time=111.0,
+                            duration=10.0,
+                            event_type="OA",
+                            flow_reduction=0.9,
+                            confidence=0.8,
+                            baseline_flow=30.0,
+                        )
+                    ],
+                    hypopneas=[
+                        HypopneaEvent(
+                            start_time=400.0,
+                            end_time=410.0,
+                            duration=10.0,
+                            flow_reduction=0.4,
+                            confidence=0.7,
+                            baseline_flow=30.0,
+                        )
+                    ],
+                    ahi=0.25,
+                    rdi=0.25,
+                )
+            },
+        )
+        session.add(
+            models.AnalysisResult(
+                session_id=sess.id,
+                timestamp_start=start_time,
+                timestamp_end=end_time,
+                programmatic_result_json=result.model_dump(mode="json"),
+                processing_time_ms=100,
+                engine_versions_json={"version": "1.0.0"},
+            )
+        )
+
+    return temp_db
+
+
+class TestWaveformCompareCommand:
+    """Tests for the ``snore waveform compare`` command."""
+
+    def test_compare_prints_counts_and_unmatched_events(
+        self, cli_runner, db_with_comparison
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "compare",
+                "--db",
+                str(db_with_comparison),
+                "--session-id",
+                "1",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        assert "Session 1 - Event Comparison (aasm mode)" in output
+        assert "Machine: 2 events (apneas and hypopneas only)" in output
+        assert re.search(r"Programmatic\W*: 2 events", output)
+        assert re.search(r"Matched\W*: 1\b", output)
+        assert re.search(
+            r"FALSE NEGATIVES\W* \(machine events missed[^:]*: 1\b", output
+        )
+        assert "H at 00:03:20 (10.0s)" in output
+        assert re.search(r"FALSE POSITIVES\W* \(programmatic events[^:]*: 1\b", output)
+        assert "H at 00:06:40 (conf: 0.70, flow_red: 40%)" in output
+
+    def test_compare_unavailable_mode_fails_with_message(
+        self, cli_runner, db_with_comparison
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "compare",
+                "--db",
+                str(db_with_comparison),
+                "--session-id",
+                "1",
+                "--mode",
+                "resmed",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Mode 'resmed' not found in analysis results" in result.output
 
 
 class TestAnalysisCommand:
