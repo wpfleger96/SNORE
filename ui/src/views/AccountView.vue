@@ -464,6 +464,9 @@
                     </Button>
                 </div>
 
+                <p v-if="deletingData" role="status" class="field-hint">
+                    Deletion is running on the server and can take several minutes.
+                </p>
                 <p v-if="deleteDataSuccess" class="form-success">{{ deleteDataSuccess }}</p>
                 <p v-if="deleteDataError" role="alert" class="form-error">{{ deleteDataError }}</p>
             </div>
@@ -495,6 +498,7 @@ import RecoveryCodesDisplay from '@/components/RecoveryCodesDisplay.vue'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useAuth } from '@/composables/useAuth'
 import { useDateFormat } from '@/composables/useDateFormat'
+import { useResetJob } from '@/composables/useResetJob'
 import {
     getMe,
     updateDisplayName,
@@ -507,7 +511,6 @@ import {
 import { getTotpStatus, disableTotp, regenerateRecoveryCodes } from '@/api/totp'
 import { listProfiles, setProfileTimezone } from '@/api/profiles'
 import type { components } from '@/types/generated'
-import type { AxiosError } from 'axios'
 
 type TotpStatusResponse = components['schemas']['TotpStatusResponse']
 
@@ -869,29 +872,23 @@ onMounted(() => {
 // ── Delete all my data ────────────────────────────────────────────────────────
 
 const deleteDataDialogOpen = ref(false)
-const deletingData = ref(false)
-const deleteDataSuccess = ref<string | null>(null)
-const deleteDataError = ref<string | null>(null)
+const {
+    running: deletingData,
+    status: deleteDataStatus,
+    error: deleteDataError,
+    start: startDeleteDataJob,
+} = useResetJob('delete_data')
+
+const deleteDataSuccess = computed(() => {
+    const result = deleteDataStatus.value?.delete_data_result
+    if (!result) return null
+    return `Deleted: ${result.devices_deleted} device(s), ${result.import_jobs_deleted} import record(s) across ${result.profiles_processed} profile(s).`
+})
 
 async function handleDeleteData(): Promise<void> {
     if (isDemo.value) return
     deleteDataDialogOpen.value = false
-    deletingData.value = true
-    deleteDataSuccess.value = null
-    deleteDataError.value = null
-    try {
-        const result = await deleteMyData()
-        deleteDataSuccess.value = `Deleted: ${result.devices_deleted} device(s), ${result.import_jobs_deleted} import record(s) across ${result.profiles_processed} profile(s).`
-    } catch (e: unknown) {
-        if ((e as AxiosError).response?.status === 409) {
-            deleteDataError.value =
-                'Another reset or data deletion is in progress — wait for it to finish and try again.'
-        } else {
-            deleteDataError.value = e instanceof Error ? e.message : 'Failed to delete data'
-        }
-    } finally {
-        deletingData.value = false
-    }
+    await startDeleteDataJob(deleteMyData)
 }
 </script>
 

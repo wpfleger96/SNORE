@@ -19,11 +19,13 @@ from snore.services.schemas import (
     DayDetail,
     DayExperimentalMetrics,
     DayListItem,
+    DeleteDataResult,
     HealthNightDetailRead,
     HealthNightSummaryRead,
     HealthSampleRead,
     ImportSource,
     MaskLogEntryResponse,
+    ResetResult,
     RxAllResponse,
     RxChangesResponse,
     RxComparisonResponse,
@@ -65,6 +67,8 @@ __all__ = [
     "AnalysisJobStatus",
     "AnalysisJobsListResponse",
     "AnalysisJobEnqueued",
+    "ResetJobEnqueued",
+    "ResetJobStatus",
     "ValidatorType",
     "ValidationRunRequest",
     "ValidationRunStatus",
@@ -339,6 +343,28 @@ class AnalysisJobsListResponse(BaseModel):
 class AnalysisJobEnqueued(BaseModel):
     job_id: str
     session_count: int
+
+
+ResetJobStateName = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+
+
+class ResetJobEnqueued(BaseModel):
+    job_id: str
+    state: ResetJobStateName
+
+
+class ResetJobStatus(BaseModel):
+    """Snapshot of a database reset or data deletion job.
+
+    The job's kind decides which result field can be set; both stay null until
+    the job succeeds.
+    """
+
+    kind: Literal["reset", "delete_data"]
+    state: ResetJobStateName
+    error_message: str | None
+    reset_result: ResetResult | None
+    delete_data_result: DeleteDataResult | None
 
 
 # Accepted validator types. events/fl/breaths run today; rera/apple are accepted

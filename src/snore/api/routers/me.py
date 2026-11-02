@@ -35,24 +35,27 @@ Security controls
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.api import reset_jobs
 from snore.api.client_ip import get_client_ip
 from snore.api.constants import NO_STORE
-from snore.api.deps import ImmediateDbDep, ResetLockDep, get_db
-from snore.api.errors import db_busy_maps_to_409
+from snore.api.deps import get_db
 from snore.api.guards import RequireAuth, RequireWritable
-from snore.api.schemas import DISPLAY_NAME_MAX_LEN, MessageResponse
+from snore.api.schemas import (
+    DISPLAY_NAME_MAX_LEN,
+    MessageResponse,
+    ResetJobEnqueued,
+)
 from snore.auth.lockout import get_lockout_store
 from snore.auth.passwords import (
     hash_password_async,
@@ -60,14 +63,7 @@ from snore.auth.passwords import (
     verify_password_async,
 )
 from snore.auth.session_cookie import clear_session_cookie, set_session_cookie
-from snore.constants import DEFAULT_RAW_BACKUP_DIR, DEFAULT_VACUUM_PENDING_MARKER
 from snore.database import models
-from snore.services.database_service import (
-    DatabaseService,
-    _vacuum_background,
-    file_size_mb,
-)
-from snore.services.schemas import DeleteDataResult
 
 logger = logging.getLogger(__name__)
 
@@ -376,18 +372,12 @@ async def update_preferences(
     )
 
 
-@router.post("/delete-data", response_model=DeleteDataResult)
-async def delete_my_data(
-    actor: RequireWritable,
-    # _lock must precede db — see require_reset_lock docstring.
-    _lock: ResetLockDep,
-    db: ImmediateDbDep,
-    background_tasks: BackgroundTasks,
-) -> JSONResponse:
-    """Delete all sleep data owned by the authenticated user.
+@router.post("/delete-data", status_code=202, response_model=ResetJobEnqueued)
+async def delete_my_data(actor: RequireWritable) -> JSONResponse:
+    """Queue a background job that deletes all sleep data owned by the caller.
 
-    Removes all Device rows for every live profile owned by the caller.  The
-    DB-level cascade (Device → Session/Day/Waveform/Event/Statistics/Setting/
+    The job removes all Device rows for every live profile owned by the caller.
+    The DB-level cascade (Device → Session/Day/Waveform/Event/Statistics/Setting/
     AnalysisResult/Breath/DetectedPattern) wipes all dependent sleep data.
     Import job records for this user are also deleted.  Raw backup directories
     under ``raw/<profile_id>/`` are purged via the quarantine-rename pattern.
@@ -395,78 +385,24 @@ async def delete_my_data(
     Profile rows, the user account, preferences, auth identities, and invites
     are NOT affected.  The caller can re-import data after this operation.
 
-    VACUUM runs as a post-response background task so that reclaiming large
-    waveform blobs never blocks the event loop or exceeds proxy timeouts.
-    ``size_after_mb`` is null and ``vacuum_scheduled`` is true in the response.
-    A persistent marker file is written before the commit so that a container
-    restart between commit and VACUUM causes startup to reschedule the VACUUM.
-
-    Crash-safe cleanup (quarantine-before-commit pattern): raw backup dirs are
-    renamed into ``.quarantine/`` BEFORE the commit so that a container restart
-    between quarantine and commit leaves dirs visible to
-    ``DeletionSaga.recover()`` case 2 on next boot.  DB rows survive so the
-    state is consistent.  New imports proceed normally, but the raw archive
-    is lost and cannot be rebuilt from the database.
+    The work outlasts the proxy's request timeout on a large database, so this
+    returns 202 at once with a ``job_id`` to poll with
+    ``GET /db/reset-jobs/status``.  Returns 409 while another reset or data
+    deletion is queued or running.
 
     NOTE: Concurrent in-flight imports for this user's devices will fail if
     their device rows are deleted mid-import; this is accepted behavior.
 
     Demo accounts are blocked by ``RequireWritable`` (403) before reaching
     this handler — fixture data is never at risk.
-
-    Write-lock design: two layers protect against concurrent writers.  The
-    app-level reset lock (``_lock: ResetLockDep``) serializes concurrent
-    /db/reset and /auth/me/delete-data requests, returning 409 immediately when
-    held.  ``ImmediateDbDep`` (BEGIN IMMEDIATE) guards against non-serialized
-    writers such as imports or analysis jobs; on write-lock contention the
-    endpoint returns 409 "Database is busy…" rather than a generic 500.
     """
     from snore.database.target import DatabaseTarget  # noqa: PLC0415
 
     target = DatabaseTarget.from_env_and_flags(db_flag=None, warn_ignored=False)
-    is_sqlite_file = target.dialect == "sqlite" and target.location not in (
-        "",
-        ":memory:",
-    )
-    db_path = target.sqlite_path if is_sqlite_file else ""
-
-    size_before = await asyncio.to_thread(file_size_mb, db_path)
-
-    # Write vacuum marker before commit so a container restart between commit
-    # and VACUUM causes startup to reschedule the VACUUM.  Best-effort: a
-    # marker-write failure is logged but never aborts the request.
-    if is_sqlite_file:
-        try:
-            DEFAULT_VACUUM_PENDING_MARKER.parent.mkdir(parents=True, exist_ok=True)
-            DEFAULT_VACUUM_PENDING_MARKER.write_text(db_path)
-        except Exception:
-            logger.warning(
-                "Could not write vacuum pending marker; VACUUM may not resume after a crash"
-            )
-
-    async with db_busy_maps_to_409():
-        (
-            devices_deleted,
-            import_jobs_deleted,
-            profiles_processed,
-        ) = await DatabaseService.delete_user_data(
-            db, actor.user_id, DEFAULT_RAW_BACKUP_DIR
+    return reset_jobs.accepted_or_409(
+        reset_jobs.enqueue(
+            kind=reset_jobs.ResetJobKind.DELETE_DATA,
+            user_id=actor.user_id,
+            db_path=reset_jobs.sqlite_file_path(target),
         )
-
-    # Schedule VACUUM as a post-response background task.  FastAPI runs sync
-    # background tasks in a thread pool so the event loop is never blocked.
-    if db_path:
-        background_tasks.add_task(_vacuum_background, db_path)
-
-    return JSONResponse(
-        content=DeleteDataResult(
-            status="success",
-            devices_deleted=devices_deleted,
-            import_jobs_deleted=import_jobs_deleted,
-            profiles_processed=profiles_processed,
-            size_before_mb=size_before,
-            size_after_mb=None,
-            vacuum_scheduled=bool(db_path),
-        ).model_dump(),
-        headers=NO_STORE,
     )

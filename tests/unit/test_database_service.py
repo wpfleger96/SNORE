@@ -1,6 +1,10 @@
 """Unit tests for DatabaseService."""
 
+import logging
+import sqlite3
+
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -14,7 +18,7 @@ from snore.database.models import (
     Waveform,
 )
 from snore.services import waveform_service as waveform_service_module
-from snore.services.database_service import DatabaseService
+from snore.services.database_service import DatabaseService, _truncate_wal
 
 # Import the real _vacuum_background at module level so we bypass the autouse
 # _disable_background_vacuum fixture that replaces it with a no-op per test.
@@ -539,6 +543,140 @@ class TestVacuumBackgroundMarker:
 
         with patch("snore.constants.DEFAULT_VACUUM_PENDING_MARKER", absent_marker):
             _REAL_VACUUM_BG(str(temp_db))  # must not raise
+
+
+def _wal_database_with_deleted_data(path: Path) -> sqlite3.Connection:
+    """Build a WAL-mode file holding ~4 MB of deleted rows; return its open conn."""
+    conn = sqlite3.connect(path, isolation_level=None)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE blobs (data BLOB)")
+    conn.execute("INSERT INTO blobs VALUES (zeroblob(4194304))")
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.execute("DELETE FROM blobs")
+    return conn
+
+
+class TestVacuumBackgroundShrinksWalDatabase:
+    def test_leaves_file_small_and_wal_truncated(self, tmp_path):
+        """VACUUM's pages leave the WAL and the main file shrinks on disk.
+
+        ``other_connection`` stays open across the call, as the server's pool
+        does in production: otherwise closing the VACUUM connection would be the
+        last close, which checkpoints and hides whether the code did.
+        """
+        from unittest.mock import patch
+
+        db_path = tmp_path / "wal.db"
+        other_connection = _wal_database_with_deleted_data(db_path)
+        wal_path = Path(f"{db_path}-wal")
+        size_before = db_path.stat().st_size
+        assert size_before > 4 * 1024 * 1024
+
+        try:
+            with patch(
+                "snore.constants.DEFAULT_VACUUM_PENDING_MARKER",
+                tmp_path / "vacuum.pending",
+            ):
+                _REAL_VACUUM_BG(str(db_path))
+
+            assert db_path.stat().st_size < 64 * 1024
+            assert wal_path.stat().st_size == 0
+        finally:
+            other_connection.close()
+
+    def test_busy_reader_logs_warning_without_raising(self, tmp_path, caplog):
+        """A reader pinning the WAL stops the checkpoint, which is only a warning."""
+        db_path = tmp_path / "wal.db"
+        writer = _wal_database_with_deleted_data(db_path)
+        reader = sqlite3.connect(db_path, isolation_level=None)
+        checkpointer = sqlite3.connect(db_path, timeout=0, isolation_level=None)
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT count(*) FROM blobs").fetchone()
+            writer.execute("INSERT INTO blobs VALUES (x'00')")
+
+            with caplog.at_level(logging.WARNING):
+                _truncate_wal(checkpointer, str(db_path))
+
+            assert "busy" in caplog.text
+        finally:
+            reader.close()
+            checkpointer.close()
+            writer.close()
+
+
+class TestResetAllDataCommitFailure:
+    """reset_all_data must restore quarantined dirs when the commit fails."""
+
+    async def test_commit_failure_restores_dirs(self, async_db_session, tmp_path):
+        """Quarantined dirs are renamed back when db.commit() raises."""
+        import uuid
+
+        from unittest.mock import AsyncMock
+
+        user = User(
+            canonical_email=f"test_{uuid.uuid4().hex[:8]}@example.com",
+            role="admin",
+        )
+        async_db_session.add(user)
+        await async_db_session.flush()
+        profile = Profile(user_id=user.id, name="Test")
+        async_db_session.add(profile)
+        await async_db_session.flush()
+
+        raw_root = tmp_path / "raw"
+        profile_dir = raw_root / str(profile.id)
+        profile_dir.mkdir(parents=True)
+        (profile_dir / "backup.edf").write_text("precious data")
+
+        orig_commit = async_db_session.commit
+        async_db_session.commit = AsyncMock(
+            side_effect=RuntimeError("simulated commit failure")
+        )
+        try:
+            with pytest.raises(RuntimeError, match="simulated commit failure"):
+                await DatabaseService.reset_all_data(
+                    async_db_session,
+                    include_accounts=False,
+                    actor_user_id=user.id,
+                    raw_root=raw_root,
+                    public_base_url="",
+                )
+        finally:
+            async_db_session.commit = orig_commit
+
+        assert (profile_dir / "backup.edf").read_text() == "precious data"
+        assert not (raw_root / ".quarantine" / str(profile.id)).exists()
+
+    async def test_factory_reset_without_caller_email_raises_before_deleting(
+        self, async_db_session, tmp_path
+    ):
+        """The system must not end up with no admin and no invite."""
+        import uuid
+
+        from sqlalchemy import func, select
+
+        async_db_session.add(
+            User(
+                canonical_email=f"test_{uuid.uuid4().hex[:8]}@example.com",
+                role="admin",
+            )
+        )
+        await async_db_session.flush()
+
+        with pytest.raises(RuntimeError, match="caller email"):
+            await DatabaseService.reset_all_data(
+                async_db_session,
+                include_accounts=True,
+                actor_user_id=999_999,
+                raw_root=tmp_path / "raw",
+                public_base_url="",
+            )
+
+        count = (
+            await async_db_session.execute(select(func.count()).select_from(User))
+        ).scalar_one()
+        assert count == 1
 
 
 class TestDeleteUserDataCommitFailure:

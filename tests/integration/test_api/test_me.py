@@ -19,7 +19,6 @@ import http.cookies
 import uuid
 
 from datetime import datetime
-from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -28,6 +27,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from snore.api import reset_jobs
 from snore.api.app import create_app
 from snore.api.config import load_config, set_config
 from snore.auth.actor import ActorContext, AuthMode, Role
@@ -36,6 +36,14 @@ from snore.auth.passwords import hash_password, verify_password
 from snore.auth.session_cookie import encode_session
 from snore.database import models
 from tests.helpers.api_client import make_test_client
+from tests.helpers.reset_jobs import (
+    DELETE_DATA_PATH,
+    RESET_PATH,
+    post_and_run_job,
+    read_status,
+    run_delete_data,
+    run_queued_job,
+)
 from tests.integration.test_api.conftest import _multiuser_env  # noqa: PLC0415
 
 # ---------------------------------------------------------------------------
@@ -906,6 +914,7 @@ def _seed_device_with_session(db_session: Session, profile_id: int) -> models.De
     return device
 
 
+@pytest.mark.usefixtures("reset_job_session")
 class TestDeleteData:
     def test_demo_gets_403(self, async_db_session, db_session):
         """Demo role is explicitly rejected by the endpoint (403)."""
@@ -915,6 +924,41 @@ class TestDeleteData:
         resp = client.post("/api/v1/auth/me/delete-data")
 
         assert resp.status_code == 403
+        assert not reset_jobs.has_active_job()
+
+    def test_post_returns_202_and_deletes_only_in_the_job(
+        self, async_db_session, db_session
+    ):
+        """The request returns a token at once; the data goes when the job runs."""
+        user, profile = _seed_user(db_session, role="member")
+        _seed_device_with_session(db_session, profile.id)
+        db_session.commit()
+
+        client = _make_client(async_db_session, user.id, profile.id, "member")
+        resp = client.post(DELETE_DATA_PATH)
+
+        assert resp.status_code == 202
+        assert resp.json()["state"] == "queued"
+        assert resp.headers["cache-control"] == "no-store"
+        assert _count(db_session, models.Device, profile_id=profile.id) == 1
+
+        run_queued_job()
+
+        assert _count(db_session, models.Device, profile_id=profile.id) == 0
+
+    def test_status_reports_delete_data_result(self, async_db_session, db_session):
+        """Polling delete-data's token yields its result under the matching key."""
+        user, profile = _seed_user(db_session, role="member")
+        client = _make_client(async_db_session, user.id, profile.id, "member")
+
+        status = post_and_run_job(client, DELETE_DATA_PATH)
+
+        assert status["kind"] == "delete_data"
+        assert status["state"] == "succeeded"
+        assert status["error_message"] is None
+        assert status["reset_result"] is None
+        assert isinstance(status["delete_data_result"]["size_after_mb"], float)
+        assert "vacuum_scheduled" not in status["delete_data_result"]
 
     def test_member_can_delete_their_own_data(self, async_db_session, db_session):
         """Member with a device and session sees them deleted; profile and account survive."""
@@ -923,10 +967,8 @@ class TestDeleteData:
         db_session.commit()
 
         client = _make_client(async_db_session, user.id, profile.id, "member")
-        resp = client.post("/api/v1/auth/me/delete-data")
+        data = run_delete_data(client)
 
-        assert resp.status_code == 200
-        data = resp.json()
         assert data["status"] == "success"
         assert data["devices_deleted"] >= 1
         assert data["profiles_processed"] == 1
@@ -950,8 +992,7 @@ class TestDeleteData:
         db_session.commit()
 
         client_a = _make_client(async_db_session, user_a.id, profile_a.id, "member")
-        resp = client_a.post("/api/v1/auth/me/delete-data")
-        assert resp.status_code == 200
+        run_delete_data(client_a)
 
         # user_b's devices must still exist.
         db_session.expire_all()
@@ -989,10 +1030,9 @@ class TestDeleteData:
         db_session.commit()
 
         client_a = _make_client(async_db_session, user_a.id, profile_a.id, "member")
-        resp = client_a.post("/api/v1/auth/me/delete-data")
+        data = run_delete_data(client_a)
 
-        assert resp.status_code == 200
-        assert resp.json()["import_jobs_deleted"] == 1
+        assert data["import_jobs_deleted"] == 1
 
         db_session.expire_all()
         surviving = _count(db_session, models.ImportJobRecord)
@@ -1012,10 +1052,8 @@ class TestDeleteData:
         db_session.commit()
 
         client = _make_client(async_db_session, user.id, profile_a.id, "member")
-        resp = client.post("/api/v1/auth/me/delete-data")
+        data = run_delete_data(client)
 
-        assert resp.status_code == 200
-        data = resp.json()
         assert data["devices_deleted"] == 2
         assert data["profiles_processed"] == 2
 
@@ -1034,45 +1072,79 @@ class TestDeleteData:
         (profile_dir / "data.edf").write_text("fake")
 
         client = _make_client(async_db_session, user.id, profile.id, "member")
-        with patch("snore.api.routers.me.DEFAULT_RAW_BACKUP_DIR", raw_root):
-            resp = client.post("/api/v1/auth/me/delete-data")
+        with patch("snore.api.reset_jobs._raw_root", return_value=raw_root):
+            run_delete_data(client)
 
-        assert resp.status_code == 200
         assert not profile_dir.exists(), "Profile raw dir must be purged"
 
     def test_delete_data_empty_account_succeeds(self, async_db_session, db_session):
-        """User with no devices or sessions gets a 200 with zero counts."""
+        """User with no devices or sessions gets a success with zero counts."""
         user, profile = _seed_user(db_session, role="member")
         client = _make_client(async_db_session, user.id, profile.id, "member")
 
-        resp = client.post("/api/v1/auth/me/delete-data")
+        data = run_delete_data(client)
 
-        assert resp.status_code == 200
-        data = resp.json()
         assert data["status"] == "success"
         assert data["devices_deleted"] == 0
         assert data["import_jobs_deleted"] == 0
 
-    def test_409_when_lock_held(self, async_db_session, db_session, monkeypatch):
-        """delete-data returns 409 immediately when the reset lock is already held.
-
-        Both /db/reset and /auth/me/delete-data share the one lock in
-        snore.api.deps, so a concurrent reset (or delete-data) blocks
-        the other without queueing on the SQLite write lock.
-        """
-        import snore.api.deps as deps  # noqa: PLC0415
-
+    def test_409_while_delete_data_job_active(self, async_db_session, db_session):
+        """A second delete-data returns 409 without queueing another job."""
         user, profile = _seed_user(db_session, role="member")
         client = _make_client(async_db_session, user.id, profile.id, "member")
 
-        mock_lock = MagicMock()
-        mock_lock.locked = lambda: True
-        monkeypatch.setattr(deps, "_reset_lock", mock_lock)
-
-        resp = client.post("/api/v1/auth/me/delete-data")
+        assert client.post(DELETE_DATA_PATH).status_code == 202
+        resp = client.post(DELETE_DATA_PATH)
 
         assert resp.status_code == 409
         assert "already in progress" in resp.json()["detail"]
+        assert len(reset_jobs._queue) == 1
+
+    def test_409_while_reset_job_active(self, async_db_session, db_session):
+        """A queued admin reset also blocks a member's delete-data."""
+        admin, admin_profile = _seed_user(db_session, role="admin")
+        member, member_profile = _seed_user(db_session, role="member")
+        admin_client = _make_client(
+            async_db_session, admin.id, admin_profile.id, "admin"
+        )
+        member_client = _make_client(
+            async_db_session, member.id, member_profile.id, "member"
+        )
+
+        assert admin_client.post(RESET_PATH).status_code == 202
+        resp = member_client.post(DELETE_DATA_PATH)
+
+        assert resp.status_code == 409
+        assert "already in progress" in resp.json()["detail"]
+
+    def test_failed_delete_reports_generic_error_and_keeps_data(
+        self, async_db_session, db_session
+    ):
+        """An unexpected exception fails the job without exposing its text."""
+        from unittest.mock import patch  # noqa: PLC0415
+
+        from snore.services.database_service import (  # noqa: PLC0415
+            DatabaseService,
+        )
+
+        user, profile = _seed_user(db_session, role="member")
+        _seed_device_with_session(db_session, profile.id)
+        db_session.commit()
+        client = _make_client(async_db_session, user.id, profile.id, "member")
+
+        with patch.object(
+            DatabaseService,
+            "delete_user_data",
+            side_effect=RuntimeError("/data/.snore/raw/1: disk full"),
+        ):
+            job_id = client.post(DELETE_DATA_PATH).json()["job_id"]
+            run_queued_job()
+
+        status = read_status(client, job_id).json()
+        assert status["state"] == "failed"
+        assert status["error_message"] == reset_jobs._FAILURE_MESSAGE
+        assert "disk full" not in status["error_message"]
+        assert _count(db_session, models.Device, profile_id=profile.id) == 1
 
     def test_delete_data_writes_vacuum_marker(
         self, async_db_session, db_session, tmp_path
@@ -1080,8 +1152,8 @@ class TestDeleteData:
         """POST /auth/me/delete-data writes a vacuum pending marker before committing.
 
         Patches DatabaseTarget.from_env_and_flags to return a known SQLite file
-        target so is_sqlite_file=True in the handler, ensuring the marker write
-        branch is exercised.
+        target so the job carries a db_path, ensuring the marker write branch is
+        exercised.
         """
         from unittest.mock import patch  # noqa: PLC0415
 
@@ -1090,7 +1162,7 @@ class TestDeleteData:
         user, profile = _seed_user(db_session, role="member")
         client = _make_client(async_db_session, user.id, profile.id, "member")
 
-        # Use a real file target so is_sqlite_file=True.
+        # Use a real file target so the job has a db_path.
         db_file = tmp_path / "test.db"
         db_file.touch()
         marker = tmp_path / "vacuum.pending"
@@ -1098,15 +1170,14 @@ class TestDeleteData:
         fake_target = DatabaseTarget.from_url(str(db_file))
 
         with (
-            patch("snore.api.routers.me.DEFAULT_VACUUM_PENDING_MARKER", marker),
+            patch("snore.api.reset_jobs.DEFAULT_VACUUM_PENDING_MARKER", marker),
             patch(
                 "snore.database.target.DatabaseTarget.from_env_and_flags",
                 return_value=fake_target,
             ),
         ):
-            resp = client.post("/api/v1/auth/me/delete-data")
+            run_delete_data(client)
 
-        assert resp.status_code == 200
         # _vacuum_background is patched to no-op in tests, so marker persists.
         assert marker.exists(), (
             "Vacuum pending marker must be written by delete-data endpoint"

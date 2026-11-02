@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { defineComponent } from 'vue'
 
@@ -23,7 +23,10 @@ vi.mock('@/components/DeleteConfirmDialog.vue', () => ({
 import { makeAuthMock as baseMakeAuthMock } from './helpers/mockUseAuth'
 import DatabaseView from '@/views/DatabaseView.vue'
 import { useAuth } from '@/composables/useAuth'
-import { getDbStats, resetDb } from '@/api/db'
+import { getDbStats, getResetJobStatus, resetDb } from '@/api/db'
+import { POLL_FAILURES_BEFORE_WARNING, POLL_INTERVAL_MS } from '@/composables/useResetJob'
+
+enableAutoUnmount(afterEach)
 
 const DB_STATS = {
     size_mb: 42.5,
@@ -46,13 +49,14 @@ const DB_STATS = {
     last_session: '2025-08-07T22:00:00',
 }
 
+const JOB_ENQUEUED = { job_id: 'job-token', state: 'queued' }
+
 const RESET_RESULT_DATA_ONLY = {
     status: 'success',
     tables_cleared: { sessions: 30, devices: 1 },
     total_rows_deleted: 31,
     size_before_mb: 42.5,
-    size_after_mb: null,
-    vacuum_scheduled: true,
+    size_after_mb: 3.2,
     bootstrap_invite_url: null,
 }
 
@@ -61,9 +65,23 @@ const RESET_RESULT_FULL = {
     tables_cleared: { users: 1, sessions: 30, devices: 1 },
     total_rows_deleted: 32,
     size_before_mb: 42.5,
-    size_after_mb: null,
-    vacuum_scheduled: true,
+    size_after_mb: 3.2,
     bootstrap_invite_url: '/invite#abc123',
+}
+
+function jobStatus(overrides: Record<string, unknown> = {}) {
+    return {
+        kind: 'reset',
+        state: 'running',
+        error_message: null,
+        reset_result: null,
+        delete_data_result: null,
+        ...overrides,
+    } as never
+}
+
+function httpError(status: number) {
+    return Object.assign(new Error(`HTTP ${status}`), { response: { status } })
 }
 
 function makeAuthMock(overrides: Record<string, unknown> = {}) {
@@ -79,16 +97,54 @@ function makeAuthMock(overrides: Record<string, unknown> = {}) {
 
 describe('DatabaseView — danger zone', () => {
     beforeEach(() => {
+        // flushPromises schedules through setImmediate, so that stays real.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
         vi.resetAllMocks()
+        sessionStorage.clear()
         makeAuthMock()
         vi.mocked(getDbStats).mockResolvedValue(DB_STATS as never)
-        vi.mocked(resetDb).mockResolvedValue(RESET_RESULT_DATA_ONLY as never)
+        vi.mocked(resetDb).mockResolvedValue(JOB_ENQUEUED as never)
+        vi.mocked(getResetJobStatus).mockResolvedValue(jobStatus())
+    })
+
+    afterEach(() => {
+        vi.clearAllTimers()
+        vi.useRealTimers()
     })
 
     async function mountAndLoad() {
         const wrapper = mount(DatabaseView)
         await flushPromises()
         return wrapper
+    }
+
+    async function confirmReset(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        await wrapper.find('.danger-card button').trigger('click')
+        await wrapper.vm.$nextTick()
+        await wrapper.find('.stub-confirm').trigger('click')
+        await flushPromises()
+    }
+
+    async function confirmFactoryReset(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        await wrapper.find('.include-accounts-checkbox').setValue(true)
+        await wrapper.vm.$nextTick()
+        await confirmReset(wrapper)
+    }
+
+    async function pollOnce() {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    }
+
+    function jobNotice(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        return wrapper.find('[role="status"]')
+    }
+
+    function buttonNamed(wrapper: Awaited<ReturnType<typeof mountAndLoad>>, name: string) {
+        return wrapper.findAll('button').find((b) => b.text().trim() === name)!
+    }
+
+    function isDisabled(button: ReturnType<typeof buttonNamed>) {
+        return (button.element as HTMLButtonElement).disabled
     }
 
     it('test_danger_zone_visible_for_admin', async () => {
@@ -139,66 +195,215 @@ describe('DatabaseView — danger zone', () => {
         expect(resetDb).toHaveBeenCalledWith({ include_accounts: false })
     })
 
-    it('test_data_only_reset_does_not_show_invite_banner', async () => {
+    it('test_data_only_reset_success_shows_sizes_and_reloads_without_invite_banner', async () => {
         const wrapper = await mountAndLoad()
+        await confirmReset(wrapper)
 
-        await wrapper.find('.danger-card button').trigger('click')
-        await wrapper.vm.$nextTick()
-        await wrapper.find('.stub-confirm').trigger('click')
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', reset_result: RESET_RESULT_DATA_ONLY }),
+        )
+        await pollOnce()
         await flushPromises()
 
         expect(wrapper.find('.invite-banner').exists()).toBe(false)
+        expect(wrapper.find('.danger-card').exists()).toBe(true)
+        expect(wrapper.text()).toContain('31 rows deleted')
+        expect(wrapper.text()).toContain('42.5 MB → 3.2 MB')
+        expect(jobNotice(wrapper).exists()).toBe(false)
+        expect(getDbStats).toHaveBeenCalledTimes(2)
     })
 
-    it('test_full_reset_shows_invite_banner_and_does_not_reload', async () => {
-        vi.mocked(resetDb).mockResolvedValueOnce(RESET_RESULT_FULL as never)
-
+    it('test_running_job_disables_reset_and_shows_refresh_safe_notice', async () => {
         const wrapper = await mountAndLoad()
+        await confirmReset(wrapper)
 
-        // Check the include_accounts checkbox.
-        await wrapper.find('.include-accounts-checkbox').setValue(true)
-        await wrapper.vm.$nextTick()
+        const resetButton = wrapper.find('.danger-card button')
+        expect((resetButton.element as HTMLButtonElement).disabled).toBe(true)
+        expect(resetButton.find('.animate-spin').exists()).toBe(true)
+        expect(jobNotice(wrapper).text()).toContain('several minutes')
+        expect(jobNotice(wrapper).text()).toContain('safe to refresh')
+    })
 
-        await wrapper.find('.danger-card button').trigger('click')
-        await wrapper.vm.$nextTick()
-        await wrapper.find('.stub-confirm').trigger('click')
+    it('test_factory_reset_notice_says_keep_page_open_for_invite', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmFactoryReset(wrapper)
+
+        expect(jobNotice(wrapper).text()).toContain('Keep this page open')
+        expect(jobNotice(wrapper).text()).toContain('admin invite link')
+        expect(jobNotice(wrapper).text()).not.toContain('safe to refresh')
+    })
+
+    it('test_full_reset_shows_invite_banner_and_never_reloads_stats', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmFactoryReset(wrapper)
+        await pollOnce()
+        await pollOnce()
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', reset_result: RESET_RESULT_FULL }),
+        )
+        await pollOnce()
         await flushPromises()
 
-        // Invite banner must be visible with the URL.
         expect(wrapper.find('.invite-banner').exists()).toBe(true)
         expect(wrapper.find('.invite-url-text').text()).toContain('/invite#abc123')
+        expect(wrapper.find('.error-state').exists()).toBe(false)
 
-        // getDbStats must only have been called once (initial load) — no
-        // reload after full reset because the dead session would redirect away.
+        // Only the initial load: a stats call on the dead session would 401, and
+        // the axios interceptor's redirect would destroy the banner.
         expect(getDbStats).toHaveBeenCalledTimes(1)
     })
 
-    it('test_full_reset_does_not_set_error_when_invite_url_present', async () => {
-        vi.mocked(resetDb).mockResolvedValueOnce(RESET_RESULT_FULL as never)
+    it('test_factory_reset_locks_session_dependent_actions_until_and_after_invite', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmFactoryReset(wrapper)
+
+        expect(isDisabled(buttonNamed(wrapper, 'Optimize'))).toBe(true)
+        expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(true)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', reset_result: RESET_RESULT_FULL }),
+        )
+        await pollOnce()
+        await flushPromises()
+
+        expect(isDisabled(buttonNamed(wrapper, 'Optimize'))).toBe(true)
+        expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(true)
+    })
+
+    it('test_resumed_factory_reset_never_loads_stats_and_still_delivers_invite', async () => {
+        const firstVisit = await mountAndLoad()
+        await confirmFactoryReset(firstVisit)
+        firstVisit.unmount()
+        vi.mocked(getDbStats).mockClear()
 
         const wrapper = await mountAndLoad()
 
-        await wrapper.find('.include-accounts-checkbox').setValue(true)
-        await wrapper.vm.$nextTick()
-        await wrapper.find('.danger-card button').trigger('click')
-        await wrapper.vm.$nextTick()
-        await wrapper.find('.stub-confirm').trigger('click')
+        expect(getResetJobStatus).toHaveBeenCalledWith('job-token')
+        expect(wrapper.find('.loading-row').exists()).toBe(false)
+        expect(jobNotice(wrapper).text()).toContain('Keep this page open')
+        expect(wrapper.find('.danger-card').exists()).toBe(true)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', reset_result: RESET_RESULT_FULL }),
+        )
+        await pollOnce()
         await flushPromises()
 
-        // Invite banner visible; no error shown.
-        expect(wrapper.find('.invite-banner').exists()).toBe(true)
+        expect(wrapper.find('.invite-url-text').text()).toContain('/invite#abc123')
+        expect(getDbStats).not.toHaveBeenCalled()
+    })
+
+    it('test_resumed_data_only_reset_loads_stats_and_says_refresh_is_safe', async () => {
+        const firstVisit = await mountAndLoad()
+        await confirmReset(firstVisit)
+        firstVisit.unmount()
+        vi.mocked(getDbStats).mockClear()
+
+        const wrapper = await mountAndLoad()
+
+        expect(getDbStats).toHaveBeenCalledTimes(1)
+        expect(wrapper.find('.overview-card').exists()).toBe(true)
+        expect(jobNotice(wrapper).text()).toContain('safe to refresh')
+    })
+
+    it('test_failed_resumed_factory_reset_loads_stats_and_shows_error', async () => {
+        const firstVisit = await mountAndLoad()
+        await confirmFactoryReset(firstVisit)
+        firstVisit.unmount()
+        vi.mocked(getDbStats).mockClear()
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'failed', error_message: 'The deletion failed.' }),
+        )
+
+        const wrapper = await mountAndLoad()
+
+        // A failed job rolled back, so the session is alive and stats are safe to load.
+        expect(getDbStats).toHaveBeenCalledTimes(1)
+        expect(wrapper.find('.overview-card').exists()).toBe(true)
+        expect(wrapper.find('.error-state').text()).toContain('The deletion failed.')
+    })
+
+    it('test_factory_reset_with_unknown_outcome_does_not_reload_stats', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmFactoryReset(wrapper)
+
+        vi.mocked(getResetJobStatus).mockRejectedValue(httpError(404))
+        await pollOnce()
+        await flushPromises()
+
+        expect(wrapper.find('.error-state').text()).toContain('server restarted')
+        expect(getDbStats).toHaveBeenCalledTimes(1)
+    })
+
+    it('test_data_only_reset_with_unknown_outcome_reloads_stats', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmReset(wrapper)
+
+        vi.mocked(getResetJobStatus).mockRejectedValue(httpError(404))
+        await pollOnce()
+        await flushPromises()
+
+        expect(wrapper.find('.error-state').text()).toContain('server restarted')
+        expect(getDbStats).toHaveBeenCalledTimes(2)
+    })
+
+    it('test_factory_reset_survives_an_outage_and_still_delivers_invite', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmFactoryReset(wrapper)
+
+        vi.mocked(getResetJobStatus).mockRejectedValue(httpError(503))
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * POLL_FAILURES_BEFORE_WARNING)
+        await flushPromises()
+
+        expect(wrapper.find('.error-state').text()).toContain('may still be running')
+        expect(jobNotice(wrapper).text()).toContain('Keep this page open')
+        expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(true)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', reset_result: RESET_RESULT_FULL }),
+        )
+        await pollOnce()
+        await flushPromises()
+
         expect(wrapper.find('.error-state').exists()).toBe(false)
+        expect(wrapper.find('.invite-url-text').text()).toContain('/invite#abc123')
+        expect(getDbStats).toHaveBeenCalledTimes(1)
+    })
+
+    it('test_job_failure_shows_its_error_message', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmReset(wrapper)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'failed', error_message: 'The deletion failed.' }),
+        )
+        await pollOnce()
+        await flushPromises()
+
+        expect(wrapper.find('.error-state').text()).toContain('The deletion failed.')
+        expect(jobNotice(wrapper).exists()).toBe(false)
+    })
+
+    it('test_reset_conflict_shows_in_progress_message_and_does_not_poll', async () => {
+        vi.mocked(resetDb).mockRejectedValueOnce(httpError(409))
+
+        const wrapper = await mountAndLoad()
+        await confirmReset(wrapper)
+        await pollOnce()
+
+        expect(wrapper.find('.error-state').text()).toContain(
+            'Another reset or data deletion is in progress',
+        )
+        expect(getResetJobStatus).not.toHaveBeenCalled()
+        expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(false)
     })
 
     it('test_reset_error_shows_when_no_invite_url', async () => {
         vi.mocked(resetDb).mockRejectedValueOnce(new Error('Server error'))
 
         const wrapper = await mountAndLoad()
-
-        await wrapper.find('.danger-card button').trigger('click')
-        await wrapper.vm.$nextTick()
-        await wrapper.find('.stub-confirm').trigger('click')
-        await flushPromises()
+        await confirmReset(wrapper)
 
         expect(wrapper.find('.error-state').exists()).toBe(true)
         expect(wrapper.find('.error-state').text()).toContain('Server error')

@@ -130,7 +130,7 @@
                     </div>
                     <Button
                         variant="outline"
-                        :disabled="vacuuming"
+                        :disabled="actionsLocked"
                         @click="vacuumDialogOpen = true"
                     >
                         <Loader2 v-if="vacuuming" class="mr-2 h-4 w-4 animate-spin" />
@@ -160,85 +160,85 @@
                     {{ vacuumError }}
                 </div>
             </section>
+        </template>
 
-            <!-- Danger Zone — visible to admins in multiuser mode or in local mode -->
-            <section v-if="showDangerZone" class="section">
-                <h2 class="section-heading">Danger Zone</h2>
+        <!-- Danger Zone — visible to admins in multiuser mode or in local mode -->
+        <section v-if="showResetSection" class="section">
+            <h2 class="section-heading">Danger Zone</h2>
 
-                <!-- Post-full-reset: show the bootstrap invite URL prominently -->
-                <div v-if="bootstrapInviteUrl" class="invite-banner">
-                    <p class="invite-banner-title">
-                        All accounts have been deleted. Use this link to create a new admin account
-                        — save it before leaving this page.
-                    </p>
-                    <div class="invite-url-row">
-                        <code class="invite-url-text">{{ bootstrapInviteUrl }}</code>
-                        <Button variant="outline" size="sm" @click="copyInviteUrl">
-                            {{ inviteCopied ? 'Copied!' : 'Copy' }}
-                        </Button>
-                    </div>
-                </div>
-
-                <div class="danger-card">
-                    <div class="vacuum-description">
-                        <p class="vacuum-title">Reset Database</p>
-                        <p class="vacuum-subtitle">
-                            <template v-if="isLocal">
-                                Delete all sleep data, devices, and the raw file archive. Profiles
-                                and the schema are preserved, so you can re-import data afterward.
-                            </template>
-                            <template v-else>
-                                Delete all sleep data and raw file archives across every user
-                                account. Profiles and accounts are preserved by default.
-                            </template>
-                            {{ RESET_RESTORE_WARNING }}
-                        </p>
-
-                        <!-- Multiuser-only: include_accounts checkbox -->
-                        <label v-if="!isLocal" class="include-accounts-label">
-                            <input
-                                v-model="includeAccounts"
-                                type="checkbox"
-                                class="include-accounts-checkbox"
-                            />
-                            <span>
-                                Also delete all user accounts and invites
-                                <span class="include-accounts-warning"
-                                    >(factory reset — everyone is signed out)</span
-                                >
-                            </span>
-                        </label>
-                    </div>
-                    <Button
-                        variant="destructive"
-                        :disabled="resetting"
-                        @click="resetDialogOpen = true"
-                    >
-                        <Loader2 v-if="resetting" class="mr-2 h-4 w-4 animate-spin" />
-                        Reset
+            <!-- Post-full-reset: show the bootstrap invite URL prominently -->
+            <div v-if="bootstrapInviteUrl" class="invite-banner">
+                <p class="invite-banner-title">
+                    All accounts have been deleted. Use this link to create a new admin account —
+                    save it before leaving this page.
+                </p>
+                <div class="invite-url-row">
+                    <code class="invite-url-text">{{ bootstrapInviteUrl }}</code>
+                    <Button variant="outline" size="sm" @click="copyInviteUrl">
+                        {{ inviteCopied ? 'Copied!' : 'Copy' }}
                     </Button>
                 </div>
+            </div>
 
-                <div v-if="resetResult && !bootstrapInviteUrl" class="vacuum-result">
-                    <span class="vacuum-result-label">Last reset:</span>
-                    <span class="vacuum-result-value">
-                        {{ resetResult.total_rows_deleted.toLocaleString() }} rows deleted,
-                        {{ resetResult.size_before_mb.toFixed(1) }} MB
-                        <template v-if="resetResult.size_after_mb != null">
-                            → {{ resetResult.size_after_mb.toFixed(1) }} MB
+            <div class="danger-card">
+                <div class="vacuum-description">
+                    <p class="vacuum-title">Reset Database</p>
+                    <p class="vacuum-subtitle">
+                        <template v-if="isLocal">
+                            Delete all sleep data, devices, and the raw file archive. Profiles and
+                            the schema are preserved, so you can re-import data afterward.
                         </template>
-                        <template v-else-if="resetResult.vacuum_scheduled">
-                            (vacuum running)
+                        <template v-else>
+                            Delete all sleep data and raw file archives across every user account.
+                            Profiles and accounts are preserved by default.
                         </template>
-                    </span>
-                </div>
+                        {{ RESET_RESTORE_WARNING }}
+                    </p>
 
-                <div v-if="resetError" class="error-state">
-                    <AlertTriangle class="h-4 w-4" />
-                    {{ resetError }}
+                    <!-- Multiuser-only: include_accounts checkbox -->
+                    <label v-if="!isLocal" class="include-accounts-label">
+                        <input
+                            v-model="includeAccounts"
+                            type="checkbox"
+                            class="include-accounts-checkbox"
+                        />
+                        <span>
+                            Also delete all user accounts and invites
+                            <span class="include-accounts-warning"
+                                >(factory reset — everyone is signed out)</span
+                            >
+                        </span>
+                    </label>
                 </div>
-            </section>
-        </template>
+                <Button
+                    variant="destructive"
+                    :disabled="actionsLocked"
+                    @click="resetDialogOpen = true"
+                >
+                    <Loader2 v-if="resetting" class="mr-2 h-4 w-4 animate-spin" />
+                    Reset
+                </Button>
+            </div>
+
+            <div v-if="resetting" class="vacuum-result" role="status">
+                <Loader2 class="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                <span class="vacuum-result-value">{{ resetProgressNotice }}</span>
+            </div>
+
+            <div v-if="resetResult && !bootstrapInviteUrl" class="vacuum-result">
+                <span class="vacuum-result-label">Last reset:</span>
+                <span class="vacuum-result-value">
+                    {{ resetResult.total_rows_deleted.toLocaleString() }} rows deleted,
+                    {{ resetResult.size_before_mb.toFixed(1) }} MB →
+                    {{ resetResult.size_after_mb.toFixed(1) }} MB
+                </span>
+            </div>
+
+            <div v-if="resetError" class="error-state">
+                <AlertTriangle class="h-4 w-4" />
+                {{ resetError }}
+            </div>
+        </section>
 
         <!-- Vacuum confirmation dialog -->
         <AlertDialog :open="vacuumDialogOpen" @update:open="vacuumDialogOpen = $event">
@@ -327,15 +327,38 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Loader2, AlertTriangle, Database, HardDrive } from '@lucide/vue'
 import { useApiLoad } from '@/composables/useApiLoad'
+import { useResetJob } from '@/composables/useResetJob'
 import { getDbStats, vacuumDb, resetDb } from '@/api/db'
 import { formatDateShort } from '@/utils/formatting'
-import type { VacuumResult, ResetResult } from '@/types'
-import type { AxiosError } from 'axios'
+import type { VacuumResult, ResetJobStatus } from '@/types'
 
-const { data, loading, error, reload } = useApiLoad(() => getDbStats())
+const {
+    running: resetting,
+    factoryReset: jobIsFactoryReset,
+    status: resetStatus,
+    error: resetError,
+    start: startResetJob,
+} = useResetJob('reset', onResetFinished)
+
+const factoryResetRunning = computed(() => resetting.value && jobIsFactoryReset.value)
+
+// A factory reset kills this session when it commits, and a 401 from getDbStats
+// triggers the axios interceptor's redirect, which would destroy the invite banner.
+// That applies to a resumed job too, so the view must render without stats.
+const { data, loading, error, reload } = useApiLoad(async () =>
+    factoryResetRunning.value ? null : getDbStats(),
+)
 const { isLocal, role } = useAuth()
 
 const showDangerZone = computed(() => isLocal.value || role.value === 'admin')
+const showResetSection = computed(
+    () =>
+        showDangerZone.value &&
+        (data.value !== null ||
+            resetting.value ||
+            resetStatus.value !== null ||
+            resetError.value !== null),
+)
 
 const vacuumDialogOpen = ref(false)
 const vacuuming = ref(false)
@@ -357,12 +380,16 @@ async function handleVacuum(): Promise<void> {
 }
 
 const resetDialogOpen = ref(false)
-const resetting = ref(false)
-const resetResult = ref<ResetResult | null>(null)
-const resetError = ref<string | null>(null)
+const resetResult = computed(() => resetStatus.value?.reset_result ?? null)
 const includeAccounts = ref(false)
-const bootstrapInviteUrl = ref<string | null>(null)
+const bootstrapInviteUrl = computed(() => resetResult.value?.bootstrap_invite_url ?? null)
 const inviteCopied = ref(false)
+
+// Optimize and Reset exclude each other, and neither works once a factory reset has
+// ended this session: their 401 would redirect away from the invite banner.
+const actionsLocked = computed(
+    () => vacuuming.value || resetting.value || bootstrapInviteUrl.value !== null,
+)
 
 const RESET_RESTORE_WARNING =
     "Re-importing only restores what is still on the SD card. Apple Health data, the mask log, and validation runs are also deleted and won't come back from the card, and disabled sessions come back enabled."
@@ -376,33 +403,25 @@ const resetDialogMessage = computed(() => {
     return `This will permanently delete ALL sleep data and raw file archives. User accounts and profiles are preserved. ${RESET_RESTORE_WARNING} This cannot be undone.`
 })
 
+const resetProgressNotice = computed(() =>
+    factoryResetRunning.value
+        ? 'The factory reset is running on the server and can take several minutes on a large database. Keep this page open: the admin invite link appears here when it finishes, and once your session ends a reload lands on the login page.'
+        : 'The reset is running on the server and can take several minutes on a large database. It is safe to refresh this page.',
+)
+
 async function handleReset(): Promise<void> {
-    resetting.value = true
     resetDialogOpen.value = false
-    resetError.value = null
-    bootstrapInviteUrl.value = null
-    try {
-        const body = !isLocal.value ? { include_accounts: includeAccounts.value } : undefined
-        resetResult.value = await resetDb(body)
-        bootstrapInviteUrl.value = resetResult.value.bootstrap_invite_url ?? null
-        // After a full-accounts reset the calling session is dead — skip reload()
-        // so the axios interceptor's 401 redirect doesn't navigate away and destroy
-        // the one-time bootstrap invite banner before the user can copy the URL.
-        if (!bootstrapInviteUrl.value) {
-            await reload()
-        }
-    } catch (err: unknown) {
-        // Post-reset 401 is expected when include_accounts=true: the session is
-        // intentionally dead.  Don't show an error when the invite URL was set.
-        if ((err as AxiosError).response?.status === 409) {
-            resetError.value =
-                'Another reset or data deletion is in progress — wait for it to finish and try again.'
-        } else if (!bootstrapInviteUrl.value) {
-            resetError.value = err instanceof Error ? err.message : 'Reset failed'
-        }
-    } finally {
-        resetting.value = false
-    }
+    const body = !isLocal.value ? { include_accounts: includeAccounts.value } : undefined
+    await startResetJob(() => resetDb(body), isFactoryReset.value)
+}
+
+function onResetFinished(status: ResetJobStatus | null): void {
+    // Skip reload() when the session is dead, or may be: a factory reset whose
+    // outcome is unknown could have committed.
+    const sessionDead = status
+        ? Boolean(status.reset_result?.bootstrap_invite_url)
+        : jobIsFactoryReset.value
+    if (!sessionDead) void reload()
 }
 
 function copyInviteUrl(): void {

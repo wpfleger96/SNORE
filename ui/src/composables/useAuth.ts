@@ -8,6 +8,7 @@ import {
     submitTotpChallenge,
     switchProfile,
 } from '@/api/auth'
+import { clearStoredResetJobs } from '@/composables/useResetJob'
 
 // Module-level singleton — shared across all callers (same pattern as useDarkMode).
 const status = ref<AuthStatusResponse | null>(null)
@@ -153,6 +154,7 @@ export function useAuth() {
         _fetchPromise = null
         _lastFetched = 0
         _generation++
+        clearStoredResetJobs()
     }
 
     async function logout(): Promise<void> {

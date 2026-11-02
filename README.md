@@ -283,9 +283,9 @@ invite is redeemed.
 
 #### Deploy gating (watchtower)
 
-SNORE ships a pre-update lifecycle hook for `nickfedor/watchtower` that defers container replacement while the app is mid-operation (active import, running analysis, or held reset lock).
+SNORE ships a pre-update lifecycle hook for `nickfedor/watchtower` that defers container replacement while the app is mid-operation (active import, running analysis, or database reset job).
 
-**Endpoint:** `GET /health/busy` — unauthenticated, not in the OpenAPI schema. Returns `{"busy": <bool>}`. Active signals: in-flight import jobs (PENDING_UPLOAD, PENDING, or RUNNING), running analysis jobs, and a held reset lock. Reasons are logged at DEBUG level for operator diagnostics and omitted from the response to avoid leaking activity timing on a tunnel-exposed endpoint.
+**Endpoint:** `GET /health/busy` — unauthenticated, not in the OpenAPI schema. Returns `{"busy": <bool>}`. Active signals: in-flight import jobs (PENDING_UPLOAD, PENDING, or RUNNING), running analysis jobs, and a queued or running database reset or data deletion job (including its VACUUM). Reasons are logged at DEBUG level for operator diagnostics and omitted from the response to avoid leaking activity timing on a tunnel-exposed endpoint.
 
 **Hook script:** `/app/scripts/watchtower-pre-update.sh` (absolute path inside the container). Exits `75` (EX_TEMPFAIL) when the app is busy, `0` otherwise. Fail-open: any error — connection refused, timeout, missing python, malformed response — exits `0` so an unhealthy app never blocks its own replacement.
 
