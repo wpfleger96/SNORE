@@ -713,7 +713,9 @@ class TestResetJobStatus:
         with _patch_target(temp_db, api_client):
             job_id = api_client.post(RESET_PATH).json()["job_id"]
         run_queued_job()
-        reset_jobs.get_job(job_id)._finished_at = 0.0
+        reset_jobs.get_job(job_id)._finished_at = (
+            time.monotonic() - reset_jobs.JOB_TTL_SECONDS - 1
+        )
 
         reset_jobs._reap_terminal()
 
