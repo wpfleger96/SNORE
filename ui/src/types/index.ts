@@ -243,8 +243,6 @@ export interface TrendData {
     cai?: [string, number | null][]
     hi?: [string, number | null][]
     rera?: [string, number | null][]
-    device_flg_95th?: [string, number | null][]
-    snore_95th?: [string, number | null][]
     total_sleep_hours?: [string, number | null][]
     sleep_efficiency?: [string, number | null][]
 }

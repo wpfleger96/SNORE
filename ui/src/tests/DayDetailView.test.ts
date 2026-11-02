@@ -158,6 +158,17 @@ describe('DayDetailView device channel and mask-on sections', () => {
 
         expect(sectionHeadings(wrapper)).toEqual([])
     })
+
+    it('test_null_mask_on_spans_hides_the_section_without_error', async () => {
+        const wrapper = await mountDay(
+            makeDay({
+                channel_stats: CHANNEL_STATS,
+                mask_on_spans: null,
+            }),
+        )
+
+        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore'])
+    })
 })
 
 describe('DayDetailView date changes', () => {

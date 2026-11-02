@@ -286,12 +286,12 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     // ── New device-channel labels ──────────────────────────────────────────
     fl_device: {
         label: 'Flow Limitation (device)',
-        short: "ResMed's proprietary per-breath severity index for flow limitation, 0 (none) to 1 (severe).",
+        short: "ResMed's proprietary flow limitation severity index, 0 (none) to 1 (severe), sampled every 2 seconds.",
         long: "The device's own continuous signal, from its internal algorithm. It is distinct from the Flow Limitations count, which tallies the discrete events the device scored, and from SNORE's computed flow-limitation classes, which are based on inspiratory flow-shape analysis.",
     },
     snore_device: {
         label: 'Snore (device)',
-        short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled once per breath.',
+        short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled every 2 seconds.',
         long: "The device's own signal: a unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.",
     },
     ie_ratio_waveform: {

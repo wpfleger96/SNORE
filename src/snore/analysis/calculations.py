@@ -310,8 +310,6 @@ _TREND_KEYS = [
     "rr",
     "pulse",
     "mv",
-    "device_flg_95th",
-    "snore_95th",
 ]
 
 
@@ -328,9 +326,8 @@ def calculate_trends_extended(
             expected sub-keys: epap, rr, pulse, mv (absent → None)
 
     Returns:
-        Dictionary with 15 metric keys, each mapping to a list of (date, value) tuples:
-        ahi, usage, spo2, leak, pressure, oai, cai, hi, rera, epap, rr, pulse, mv,
-        device_flg_95th, snore_95th
+        Dictionary with 13 metric keys, each mapping to a list of (date, value) tuples:
+        ahi, usage, spo2, leak, pressure, oai, cai, hi, rera, epap, rr, pulse, mv
     """
     trends: dict[str, list[tuple[date, float | None]]] = {k: [] for k in _TREND_KEYS}
 
@@ -349,8 +346,6 @@ def calculate_trends_extended(
         trends["rr"].append((stat.period_start, extras.get("rr")))
         trends["pulse"].append((stat.period_start, extras.get("pulse")))
         trends["mv"].append((stat.period_start, extras.get("mv")))
-        trends["device_flg_95th"].append((stat.period_start, stat.device_flg_95th))
-        trends["snore_95th"].append((stat.period_start, stat.snore_95th))
 
     return trends
 
@@ -362,7 +357,7 @@ def calculate_trends(
     Extract trend data from period statistics.
 
     Delegates to calculate_trends_extended with no session extras.
-    Returns all 15 metric keys; callers that only need the original 4
+    Returns all 13 metric keys; callers that only need the original 4
     (ahi, usage, spo2, leak) can index by key as before.
 
     Args:

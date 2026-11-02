@@ -20,8 +20,6 @@ _TREND_KEYS = {
     "rr",
     "pulse",
     "mv",
-    "device_flg_95th",
-    "snore_95th",
 }
 
 
@@ -217,8 +215,6 @@ class TestStatsTrends:
             "rr",
             "pulse",
             "mv",
-            "device_flg_95th",
-            "snore_95th",
         }
         assert set(data.keys()) == expected_keys
 

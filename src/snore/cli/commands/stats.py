@@ -342,8 +342,8 @@ async def stats(
 
 
 def _channel_cell(value: float | None) -> str:
-    """Format a device-channel percentile cell, a dash when the channel is absent."""
-    return f"{value:.2f}" if value is not None else "-"
+    """Format a device-channel percentile cell, ``N/A`` when the channel is absent."""
+    return f"{value:.2f}" if value is not None else "N/A"
 
 
 def _summary_kv(label: str, field: str, value: str) -> None:

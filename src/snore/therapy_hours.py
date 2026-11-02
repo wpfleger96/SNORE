@@ -129,6 +129,16 @@ def effective_session_hours(
     )
 
 
+def _is_finite_number(value: object) -> bool:
+    """Whether ``value`` is a finite int or float; a bool is neither."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:  # a JSON integer too large for a float
+        return False
+
+
 def parse_mask_on_segments(
     raw: object, session_id: int
 ) -> list[tuple[float, float]] | None:
@@ -140,9 +150,11 @@ def parse_mask_on_segments(
     outside the app), so it is validated instead of consumed blindly:
 
     - the value must be a list whose items are each a 2-element sequence of
-      finite real numbers (bools rejected), and
-    - intervals must have positive measure (start < end) and be ascending and
-      non-overlapping (each start >= the previous end).
+      finite real numbers (bools rejected, and integers too large for a float
+      count as non-finite), and
+    - intervals must have positive measure (start < end), start at or after
+      offset 0, and be ascending and non-overlapping (each start >= the previous
+      end).
 
     On any violation a warning is logged and None is returned, so downstream
     validity flags degrade to ``segments_unknown`` / ``not_available`` instead
@@ -158,17 +170,12 @@ def parse_mask_on_segments(
         return None
 
     parsed: list[tuple[float, float]] = []
-    previous_end = float("-inf")
+    previous_end = 0.0
     for seg in raw:
         if (
             not isinstance(seg, (list, tuple))
             or len(seg) != 2
-            or not all(
-                isinstance(v, (int, float))
-                and not isinstance(v, bool)
-                and math.isfinite(v)
-                for v in seg
-            )
+            or not all(_is_finite_number(v) for v in seg)
         ):
             logger.warning(
                 f"Session {session_id}: malformed mask_on_segments item {seg!r} "
@@ -180,8 +187,8 @@ def parse_mask_on_segments(
         if not start < end or start < previous_end:
             logger.warning(
                 f"Session {session_id}: mask_on_segments interval "
-                f"[{start}, {end}) is empty, out of order, or overlaps the "
-                "previous interval — treating segments as unknown"
+                f"[{start}, {end}) is empty, negative, out of order, or overlaps "
+                "the previous interval; treating segments as unknown"
             )
             return None
         parsed.append((start, end))

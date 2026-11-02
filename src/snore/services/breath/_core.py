@@ -11,7 +11,6 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.queries import latest_analysis_ids, latest_analysis_row
 from snore.analysis.shared.versioning import (
     AlgorithmIdentity,
@@ -21,6 +20,7 @@ from snore.analysis.shared.versioning import (
     TimezoneStatus,
 )
 from snore.database import models
+from snore.services.channel_stats import decode_channel_blobs
 from snore.utils.db_chunk import iter_id_chunks
 
 from .dtos import (
@@ -361,39 +361,9 @@ class _BreathServiceCore:
         I/O + light compute (numpy deserialization); no analysis state is
         consulted.
         """
-        vals_by_channel: dict[str, dict[int, list[float]]] = {c: {} for c in channels}
-        corrupt_by_channel: dict[str, set[int]] = {c: set() for c in channels}
-
-        # Chunk the unbounded session_id list (SQLite bound-param cap); the
-        # waveform_type IN-list is a constant kept in every chunk.  Each session
-        # falls in exactly one chunk, so the per-session dicts never collide.
-        for chunk in iter_id_chunks(session_ids):
-            wf_rows = (
-                (
-                    await db.execute(
-                        select(models.Waveform).where(
-                            models.Waveform.session_id.in_(chunk),
-                            models.Waveform.waveform_type.in_(channels),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
-            for wf in wf_rows:
-                if not wf.data_blob or not wf.sample_count:
-                    continue
-                try:
-                    _ts, vals = deserialize_waveform_blob(wf.data_blob, wf.sample_count)
-                except ValueError:
-                    corrupt_by_channel[wf.waveform_type].add(int(wf.session_id))
-                    continue
-                vals_by_channel[wf.waveform_type][int(wf.session_id)] = [
-                    float(v) for v in vals
-                ]
-
-        return vals_by_channel, corrupt_by_channel
+        return await decode_channel_blobs(
+            db, session_ids, channels, lambda _channel, samples: samples.tolist()
+        )
 
     @staticmethod
     def _current_algorithm_identity() -> AlgorithmIdentity:

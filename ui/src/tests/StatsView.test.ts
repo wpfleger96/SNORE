@@ -37,7 +37,11 @@ vi.mock('@/components/ui/toggle-group', () => ({
 }))
 
 vi.mock('@/components/TrendChart.vue', () => ({
-    default: { template: '<canvas class="trend-chart-stub" />' },
+    default: defineComponent({
+        name: 'TrendChart',
+        props: ['labels', 'datasets', 'height', 'syncKey'],
+        template: '<canvas class="trend-chart-stub" />',
+    }),
 }))
 
 // Expose emptyMessage as a data attribute so tests can assert on it.
@@ -72,6 +76,7 @@ vi.mock('@/components/ErrorState.vue', () => ({
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { useAuth } from '@/composables/useAuth'
 import { getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
+import type { PeriodStatistics } from '@/types'
 import StatsView from '@/views/StatsView.vue'
 
 const EMPTY_TRENDS = { ahi: [], usage: [], spo2: [], leak: [] }
@@ -195,6 +200,14 @@ describe('StatsView', () => {
         const LABELS = { ahi: [['2026-04-01', 1.2]] as [string, number | null][] }
         const series = (value: number | null) =>
             [['2026-04-01', value]] as [string, number | null][]
+        const period = (start: string, flg: number | null, snore: number | null) =>
+            ({
+                period_type: 'month',
+                period_start: start,
+                period_end: start,
+                device_flg_95th: flg,
+                snore_95th: snore,
+            }) as PeriodStatistics
 
         afterEach(() => {
             localStorage.clear()
@@ -203,11 +216,8 @@ describe('StatsView', () => {
         it.each(['device_flg_95th', 'snore_95th'])(
             'test_all_null_%s_offers_no_toggle',
             async (key) => {
-                vi.mocked(getTrends).mockResolvedValue({
-                    ...EMPTY_TRENDS,
-                    ...LABELS,
-                    [key]: series(null),
-                })
+                vi.mocked(getTrends).mockResolvedValue({ ...EMPTY_TRENDS, ...LABELS })
+                vi.mocked(getPeriods).mockResolvedValue([period('2026-04-01', null, null)])
 
                 const wrapper = await mountAndLoad()
 
@@ -219,11 +229,8 @@ describe('StatsView', () => {
             'test_series_of_real_zeros_keeps_%s_toggle_and_chart',
             async (key) => {
                 localStorage.setItem('snore:trend-metrics', JSON.stringify([key]))
-                vi.mocked(getTrends).mockResolvedValue({
-                    ...EMPTY_TRENDS,
-                    ...LABELS,
-                    [key]: series(0),
-                })
+                vi.mocked(getTrends).mockResolvedValue({ ...EMPTY_TRENDS, ...LABELS })
+                vi.mocked(getPeriods).mockResolvedValue([period('2026-04-01', 0, 0)])
 
                 const wrapper = await mountAndLoad()
 
@@ -231,6 +238,28 @@ describe('StatsView', () => {
                 expect(wrapper.find('.trend-chart-stub').exists()).toBe(true)
             },
         )
+
+        it('test_chart_values_align_to_trend_labels_by_period_start', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['device_flg_95th']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: [
+                    ['2026-02-01', 1],
+                    ['2026-03-01', 1],
+                    ['2026-04-01', 1],
+                ],
+            })
+            // Out of order, and 2026-03 is missing.
+            vi.mocked(getPeriods).mockResolvedValue([
+                period('2026-04-01', 0.4, 0.1),
+                period('2026-02-01', 0.2, 0.3),
+            ])
+
+            const wrapper = await mountAndLoad()
+
+            const chart = wrapper.findComponent({ name: 'TrendChart' })
+            expect(chart.props('datasets')[0].values).toEqual([0.2, null, 0.4])
+        })
 
         it('test_always_on_series_keep_their_toggle_when_all_null', async () => {
             vi.mocked(getTrends).mockResolvedValue({

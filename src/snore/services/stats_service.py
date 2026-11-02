@@ -1,7 +1,5 @@
 """Statistics service for therapy data aggregation and analysis."""
 
-import asyncio
-
 from bisect import bisect_right
 from collections.abc import Callable
 from datetime import date, timedelta
@@ -19,7 +17,7 @@ from snore.analysis.calculations import (
 )
 from snore.database import models
 from snore.services._base import ProfileScopedService
-from snore.services.channel_stats import load_channel_samples, pool_channel_stats
+from snore.services.channel_stats import load_channel_histograms, pool_channel_stats
 from snore.services.event_service import device_event_types
 from snore.services.schemas import (
     DataRange,
@@ -370,18 +368,14 @@ class StatsService(ProfileScopedService):
                 if pstart is not None:
                     sessions_by_period[pstart].append(session_id)
 
-        samples = await load_channel_samples(
+        histograms = await load_channel_histograms(
             self.db_session,
             [sid for sids in sessions_by_period.values() for sid in sids],
         )
-
-        def pool_by_period() -> dict[date, DeviceChannelStats]:
-            return {
-                pstart: pool_channel_stats(samples, sids) or DeviceChannelStats()
-                for pstart, sids in sessions_by_period.items()
-            }
-
-        pooled = await asyncio.to_thread(pool_by_period)
+        pooled = {
+            pstart: pool_channel_stats(histograms, sids) or DeviceChannelStats()
+            for pstart, sids in sessions_by_period.items()
+        }
         return [
             ps.model_copy(
                 update=pooled[ps.period_start].model_dump(
@@ -397,14 +391,22 @@ class StatsService(ProfileScopedService):
         days_limit: int | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        *,
+        include_channel_stats: bool = True,
     ) -> list[PeriodStatistics]:
-        """Calculate statistics grouped by time periods."""
+        """Calculate statistics grouped by time periods.
+
+        ``include_channel_stats=False`` skips decoding the FL and snore blobs and
+        leaves those fields null, for callers that do not show them.
+        """
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
-        period_stats = await self._with_channel_percentiles(
-            day_records, await self._period_statistics(day_records, period_type)
-        )
+        period_stats = await self._period_statistics(day_records, period_type)
+        if include_channel_stats:
+            period_stats = await self._with_channel_percentiles(
+                day_records, period_stats
+            )
         if not period_stats:
             return period_stats
         health_nights = await self._query_health_nights(
@@ -480,9 +482,7 @@ class StatsService(ProfileScopedService):
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
-        period_stats = await self._with_channel_percentiles(
-            day_records, await self._period_statistics(day_records, period_type)
-        )
+        period_stats = await self._period_statistics(day_records, period_type)
         session_extras = await self._aggregate_session_stats_per_period(
             day_records, period_stats
         )

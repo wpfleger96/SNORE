@@ -42,11 +42,28 @@ describe('MaskOnSpansTable', () => {
     it('test_wall_clock_times_render_as_the_device_recorded_them', () => {
         const cells = mountSpans(SPANS).findAll('tbody tr')[0].findAll('td')
 
-        expect(cells[0].text()).toContain('11:42')
+        expect(cells[0].text()).toContain('11:42:24')
         expect(cells[0].text()).toContain('PM')
         expect(cells[1].text()).toContain('Apr 7, 2026')
-        expect(cells[1].text()).toContain('03:10')
+        expect(cells[1].text()).toContain('03:10:00')
         expect(cells[1].text()).toContain('AM')
+    })
+
+    it('test_short_span_shows_distinct_start_and_end_seconds', () => {
+        const cells = mountSpans([
+            {
+                session_id: 1,
+                start: '2026-04-07T03:14:00',
+                end: '2026-04-07T03:14:30',
+                duration_seconds: 30,
+            },
+        ])
+            .findAll('tbody tr')[0]
+            .findAll('td')
+
+        expect(cells[0].text()).toContain('03:14:00')
+        expect(cells[1].text()).toContain('03:14:30')
+        expect(cells[2].text()).toBe('0:00:30')
     })
 
     it.each([
@@ -72,7 +89,7 @@ describe('MaskOnSpansTable', () => {
             'End',
             'Duration',
         ])
-        expect(secondCardRows[0].find('.data-card-value').text()).toContain('03:14')
+        expect(secondCardRows[0].find('.data-card-value').text()).toContain('03:14:30')
         expect(secondCardRows[2].find('.data-card-value').text()).toBe('0:30:30')
     })
 })

@@ -256,7 +256,9 @@ async def _toggle_session_async(ctx: CliCtx, session_id: int, enabled: bool) -> 
     service = SessionService(ctx.db, ctx.profile_id)
 
     try:
-        detail = await service.get_session_detail(session_id)
+        detail = await service.get_session_detail(
+            session_id, include_channel_stats=False
+        )
         if detail.enabled == enabled:
             status = "enabled" if enabled else "disabled"
             console.print(f"Session {session_id} is already {status}")

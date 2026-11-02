@@ -3054,9 +3054,9 @@ export interface components {
             leak_min?: number | null
             /**
              * Mask On Spans
-             * @description Mask-on spans of the day's enabled sessions with known segments, ascending by start; empty when none are known
+             * @description Mask-on spans of the day's enabled sessions, ascending by start; null when any of them has unknown segments, empty when the day has no enabled session
              */
-            mask_on_spans?: components['schemas']['MaskOnSpan'][]
+            mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /**
              * Oai
              * @description [DEVICE] Headline OAI: same source rule as ahi
@@ -5329,7 +5329,7 @@ export interface components {
          */
         SessionDetail: {
             active_mask?: components['schemas']['MaskLogEntryResponse'] | null
-            /** @description This session's flow-limitation and snore channel statistics, whether or not it is enabled; null when it has neither channel */
+            /** @description This session's flow-limitation and snore channel statistics, whether or not it is enabled; null when it has neither channel, and always null on PATCH responses, which omit it */
             channel_stats?: components['schemas']['DeviceChannelStats'] | null
             /** Data Quality Notes */
             data_quality_notes?: string[]
@@ -5370,7 +5370,7 @@ export interface components {
             import_source?: string | null
             /**
              * Mask On Spans
-             * @description This session's mask-on spans; null when its mask-on segments are unknown (for example OSCAR imports)
+             * @description This session's mask-on spans; null when its mask-on segments are unknown (sessions imported before segments were stored, or a malformed stored value), empty when it is known to have none
              */
             mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /** Parser Version */
@@ -6168,8 +6168,6 @@ export interface components {
             ahi: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average daily headline CAI per period (can mix device-reported and recounted days) */
             cai: components['schemas']['TrendSeries']
-            /** @description [DERIVED] 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, per period, over the pooled samples of the period's enabled sessions */
-            device_flg_95th: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average EPAP (cmH2O) per period */
             epap: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average daily headline HI per period (can mix device-reported and recounted days) */
@@ -6190,8 +6188,6 @@ export interface components {
             rr: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average sleep efficiency % per night, per period (Apple Health) */
             sleep_efficiency?: components['schemas']['TrendSeries'] | null
-            /** @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), per period, over the pooled samples of the period's enabled sessions */
-            snore_95th: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average SpO2 (%) per period */
             spo2: components['schemas']['TrendSeries']
             /** @description [DERIVED] Average total sleep hours per night, per period (Apple Health) */

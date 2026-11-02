@@ -687,6 +687,8 @@ class DeviceChannelStats(BaseModel):
     parent response; a channel none of them has reads null.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     device_flg_median: float | None = provenance_field(
         Provenance.DERIVED, f"Median of the {_FL_CHANNEL}, pooled", default=None
     )
@@ -757,12 +759,14 @@ class SessionDetail(BaseModel):
     channel_stats: DeviceChannelStats | None = Field(
         default=None,
         description="This session's flow-limitation and snore channel statistics, "
-        "whether or not it is enabled; null when it has neither channel",
+        "whether or not it is enabled; null when it has neither channel, and "
+        "always null on PATCH responses, which omit it",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,
         description="This session's mask-on spans; null when its mask-on segments "
-        "are unknown (for example OSCAR imports)",
+        "are unknown (sessions imported before segments were stored, or a "
+        "malformed stored value), empty when it is known to have none",
     )
 
 
@@ -1193,10 +1197,11 @@ class DayDetail(DayListItem):
         description="Flow-limitation and snore channel statistics over the pooled "
         "samples of the day's enabled sessions; null when none has either channel",
     )
-    mask_on_spans: list[MaskOnSpan] = Field(
-        default_factory=list,
-        description="Mask-on spans of the day's enabled sessions with known "
-        "segments, ascending by start; empty when none are known",
+    mask_on_spans: list[MaskOnSpan] | None = Field(
+        default=None,
+        description="Mask-on spans of the day's enabled sessions, ascending by "
+        "start; null when any of them has unknown segments, empty when the day "
+        "has no enabled session",
     )
 
 
@@ -1551,16 +1556,6 @@ class TrendsResponse(BaseModel):
     )
     mv: TrendSeries = provenance_field(
         Provenance.DERIVED, "Average minute ventilation (L/min) per period"
-    )
-    device_flg_95th: TrendSeries = provenance_field(
-        Provenance.DERIVED,
-        f"95th percentile of the {_FL_CHANNEL}, per period, over the pooled "
-        "samples of the period's enabled sessions",
-    )
-    snore_95th: TrendSeries = provenance_field(
-        Provenance.DERIVED,
-        f"95th percentile of the {_SNORE_CHANNEL}, per period, over the pooled "
-        "samples of the period's enabled sessions",
     )
     # Apple Health series: keys are omitted (not null) when no night has data.
     total_sleep_hours: TrendSeries | None = provenance_field(

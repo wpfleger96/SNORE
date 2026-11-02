@@ -13,7 +13,7 @@ from rich.text import Text
 
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.types import AnalysisEvent, AnalysisResult
-from snore.cli.display import console, mark_field, mark_provenance
+from snore.cli.display import console, mark_field, mark_provenance, print_kv
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.provenance import Provenance
 from snore.services.schemas import DeviceChannelStats, MaskOnSpan, SessionStatistics
@@ -359,9 +359,7 @@ def _print_channel_stats(title: str, stats: DeviceChannelStats, prefix: str) -> 
         return
     console.print(f"    {title}:")
     for label, field, value in rows:
-        console.print(
-            f"      {mark_field(label, DeviceChannelStats, field)}: {value:.2f}"
-        )
+        print_kv(mark_field(label, DeviceChannelStats, field), f"{value:.2f}", indent=3)
 
 
 def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:

@@ -1589,7 +1589,7 @@ class TestStatsPeriod:
         [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
         assert row.split()[-2:] == ["0.50", "2.00"]
 
-    def test_stats_period_shows_a_dash_for_absent_channels(
+    def test_stats_period_shows_na_for_absent_channels(
         self, cli_runner, populated_test_db_full
     ):
         result = cli_runner.invoke(
@@ -1599,7 +1599,20 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0
         [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
-        assert row.split()[-2:] == ["-", "-"]
+        assert row.split()[-2:] == ["N/A", "N/A"]
+
+    def test_stats_period_table_fits_80_columns(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(db_with_device_channels), "--period", "month"],
+        )
+
+        assert result.exit_code == 0
+        [header] = [line for line in result.output.splitlines() if "FL 95th" in line]
+        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        assert max(len(header), len(row)) <= 80
 
     def test_stats_trend_marks_derived_ahi_trend(
         self, cli_runner, populated_test_db_with_day_stats

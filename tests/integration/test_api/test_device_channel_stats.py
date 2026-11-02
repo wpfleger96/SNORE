@@ -5,6 +5,7 @@ from datetime import date, datetime
 import numpy as np
 import pytest
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession
 
 from snore.database.models import Day, Session, Waveform
@@ -126,10 +127,60 @@ def test_periods_serialize_channel_percentiles(api_client, night):
     assert period["snore_95th"] == 2.0
 
 
-def test_trends_serialize_channel_series(api_client, night):
+def test_trends_carry_no_channel_series(api_client, night):
     response = api_client.get("/api/v1/stats/trends", params={"period_type": "month"})
 
     assert response.status_code == 200
+    assert not {"device_flg_95th", "snore_95th"} & set(response.json())
+
+
+def test_patch_omits_channel_stats_and_keeps_spans(api_client, night):
+    response = api_client.patch(f"/api/v1/sessions/{night.id}", json={"enabled": False})
+
+    assert response.status_code == 200
     data = response.json()
-    assert data["device_flg_95th"] == [["2025-03-01", 0.5]]
-    assert data["snore_95th"] == [["2025-03-01", 2.0]]
+    assert data["enabled"] is False
+    assert data["channel_stats"] is None
+    assert data["mask_on_spans"] == _expected_spans(night.id)
+
+
+def test_segments_past_the_last_datetime_serialize_null_spans(
+    api_client, db_session, night
+):
+    night.mask_on_segments = [[0, 1e12]]
+    db_session.flush()
+
+    session = api_client.get(f"/api/v1/sessions/{night.id}")
+    day = api_client.get(f"/api/v1/days/{_NIGHT}")
+
+    assert session.status_code == 200
+    assert session.json()["mask_on_spans"] is None
+    assert day.status_code == 200
+    assert day.json()["mask_on_spans"] is None
+
+
+def test_day_with_a_session_of_unknown_segments_serializes_null_spans(
+    api_client, db_session, night
+):
+    night.mask_on_segments = None
+    db_session.flush()
+
+    assert api_client.get(f"/api/v1/days/{_NIGHT}").json()["mask_on_spans"] is None
+
+
+def test_day_with_invalid_stored_segments_json_returns_200(
+    api_client, db_session, night, caplog
+):
+    db_session.execute(
+        text("UPDATE sessions SET mask_on_segments = :stored WHERE id = :id"),
+        {"stored": "{not json", "id": night.id},
+    )
+
+    with caplog.at_level("WARNING", logger="snore.services.day_service"):
+        response = api_client.get(f"/api/v1/days/{_NIGHT}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mask_on_spans"] is None
+    assert data["channel_stats"] == _EXPECTED_STATS
+    assert f"Session {night.id}" in caplog.text

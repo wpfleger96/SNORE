@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
-from datetime import date
+from collections.abc import Sequence
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import Text, select, type_coerce
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import select
 
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, paginate
 from snore.services.channel_stats import (
-    load_channel_samples,
+    load_channel_histograms,
     mask_on_spans,
     pool_channel_stats,
 )
@@ -24,6 +26,7 @@ from snore.services.schemas import (
     DayExperimentalMetrics,
     DayListItem,
     HealthNightSummaryRead,
+    MaskOnSpan,
 )
 
 if TYPE_CHECKING:
@@ -55,6 +58,39 @@ def _null_fl_rera(day_date: date, reason: str) -> DayExperimentalMetrics:
 def _reason_value(reason: NullReason | None) -> str | None:
     """Plain-string form of a NullReason companion, or None when computable."""
     return reason.value if reason is not None else None
+
+
+def _decode_stored_segments(session_id: int, stored: str | None) -> object:
+    """The JSON value of a stored ``mask_on_segments``, ``None`` when it is not JSON."""
+    if stored is None:
+        return None
+    try:
+        return json.loads(stored)
+    except ValueError:
+        logger.warning(
+            "Session %d: mask_on_segments is not valid JSON; "
+            "treating segments as unknown",
+            session_id,
+        )
+        return None
+
+
+def _day_mask_on_spans(
+    sessions: Sequence[tuple[int, datetime, str | None]],
+) -> list[MaskOnSpan] | None:
+    """Spans of ``(id, start_time, stored segments)``, ``None`` if any is unknown.
+
+    Sessions can overlap, so the spans are sorted rather than concatenated.
+    """
+    spans: list[MaskOnSpan] = []
+    for session_id, start_time, stored in sessions:
+        session_spans = mask_on_spans(
+            session_id, start_time, _decode_stored_segments(session_id, stored)
+        )
+        if session_spans is None:
+            return None
+        spans.extend(session_spans)
+    return sorted(spans, key=lambda span: span.start)
 
 
 class DayService(ProfileScopedService):
@@ -148,7 +184,11 @@ class DayService(ProfileScopedService):
                     models.Session.id,
                     models.Session.enabled,
                     models.Session.start_time,
-                    models.Session.mask_on_segments,
+                    # Selected as text: the column type's own JSON decode raises
+                    # on an invalid stored value, failing the whole fetch.
+                    type_coerce(models.Session.mask_on_segments, Text).label(
+                        "mask_on_segments"
+                    ),
                 )
                 .where(models.Session.day_id == day.id)
                 .order_by(models.Session.start_time)
@@ -157,15 +197,9 @@ class DayService(ProfileScopedService):
         # Like the Day aggregates, device detail covers enabled sessions only.
         enabled_rows = [row for row in session_rows if row.enabled]
         enabled_ids = [row.id for row in enabled_rows]
-        samples = await load_channel_samples(self.db_session, enabled_ids)
-        spans = sorted(
-            (
-                span
-                for row in enabled_rows
-                for span in mask_on_spans(row.id, row.start_time, row.mask_on_segments)
-                or []
-            ),
-            key=lambda span: span.start,
+        histograms = await load_channel_histograms(self.db_session, enabled_ids)
+        spans = _day_mask_on_spans(
+            [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
         )
 
         health_summary_row = (
@@ -197,7 +231,7 @@ class DayService(ProfileScopedService):
                 **reported_counts(day, reported),
                 "session_ids": [row.id for row in session_rows],
                 "health_sleep": health_sleep,
-                "channel_stats": pool_channel_stats(samples, enabled_ids),
+                "channel_stats": pool_channel_stats(histograms, enabled_ids),
                 "mask_on_spans": spans,
             }
         )

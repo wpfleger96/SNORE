@@ -273,6 +273,20 @@ class TestParseMaskOnSegments:
             assert parse_mask_on_segments([[float("nan"), 1.0]], session_id=1) is None
         assert "mask_on_segments" in caplog.text
 
+    def test_integer_too_large_for_a_float_returns_none(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_mask_on_segments([[0, 10**400]], session_id=1) is None
+            assert parse_mask_on_segments([[-(10**400), 1]], session_id=1) is None
+        assert "mask_on_segments" in caplog.text
+
+    def test_negative_start_returns_none(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_mask_on_segments([[-1.0, 3600.0]], session_id=1) is None
+        assert "negative" in caplog.text
+
+    def test_start_at_zero_is_valid(self):
+        assert parse_mask_on_segments([[0.0, 1.0]], session_id=1) == [(0.0, 1.0)]
+
     def test_non_sequence_item_returns_none(self, caplog):
         with caplog.at_level("WARNING"):
             assert parse_mask_on_segments([42], session_id=1) is None

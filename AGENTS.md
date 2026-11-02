@@ -320,10 +320,13 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
   a winner is corrupt.
 
 **Device channel statistics** (FL and snore median, 95th, max) have no summary columns:
-`services/channel_stats.py` computes them on read from `Waveform.data_blob`. Pool the samples of
-every enabled session in scope; never average per-session percentiles. Only detail models and
-period/trend responses carry them, so list endpoints stay blob-free. The MCP nightly summary keeps
-its own implementation; `tests/integration/test_device_channel_stats.py` pins the two equal.
+`services/channel_stats.py` computes them on read from `Waveform.data_blob`, reducing each session
+to a value histogram. Pool every enabled session in scope; never average per-session percentiles.
+FL and snore are on detail models and `/stats/periods` only, not on trends, so list endpoints and
+`/stats/trends` stay blob-free; callers that do not show them pass `include_channel_stats=False`.
+The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_blobs`) and
+`CHANNEL_FLOORS` but keep their own percentile code; `tests/integration/test_device_channel_stats.py`
+pins them equal.
 
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.

@@ -1026,7 +1026,7 @@ class TestGetTrends:
     async def test_get_trends_returns_every_series_key(
         self, async_db_session, async_test_device
     ):
-        """get_trends returns all 15 metric keys."""
+        """get_trends returns all 13 metric keys."""
         today = date.today()
         await _create_day_with_session(
             async_db_session,
@@ -1053,8 +1053,6 @@ class TestGetTrends:
             "rr",
             "pulse",
             "mv",
-            "device_flg_95th",
-            "snore_95th",
         }
         assert result.model_fields_set == expected
 
@@ -1102,10 +1100,10 @@ class TestGetTrends:
         assert len(result.ahi) == 1
 
     async def test_get_trends_empty_returns_empty_series(self, async_db_session):
-        """Empty database returns 15-key dict with empty lists."""
+        """Empty database returns 13-key dict with empty lists."""
         service = StatsService(async_db_session, profile_id=1)
         result = await service.get_trends("week")
 
-        assert len(result.model_fields_set) == 15
+        assert len(result.model_fields_set) == 13
         for field in result.model_fields_set:
             assert getattr(result, field) == []

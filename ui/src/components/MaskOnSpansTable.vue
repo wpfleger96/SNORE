@@ -5,11 +5,11 @@
             <div v-for="span in spans" :key="spanKey(span)" class="data-card">
                 <div class="data-card-row">
                     <span class="data-card-label">Start</span>
-                    <span class="data-card-value">{{ formatDateTime(span.start) }}</span>
+                    <span class="data-card-value">{{ formatDateTimeSeconds(span.start) }}</span>
                 </div>
                 <div class="data-card-row">
                     <span class="data-card-label">End</span>
-                    <span class="data-card-value">{{ formatDateTime(span.end) }}</span>
+                    <span class="data-card-value">{{ formatDateTimeSeconds(span.end) }}</span>
                 </div>
                 <div class="data-card-row">
                     <span class="data-card-label">Duration</span>
@@ -29,8 +29,8 @@
             </TableHeader>
             <TableBody>
                 <TableRow v-for="span in spans" :key="spanKey(span)">
-                    <TableCell>{{ formatDateTime(span.start) }}</TableCell>
-                    <TableCell>{{ formatDateTime(span.end) }}</TableCell>
+                    <TableCell>{{ formatDateTimeSeconds(span.start) }}</TableCell>
+                    <TableCell>{{ formatDateTimeSeconds(span.end) }}</TableCell>
                     <TableCell>{{ formatTimeOffset(span.duration_seconds) }}</TableCell>
                 </TableRow>
             </TableBody>
@@ -48,7 +48,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { useIsMobile } from '@/composables/useIsMobile'
-import { formatDateTime, formatTimeOffset } from '@/utils/formatting'
+import { formatDateTimeSeconds, formatTimeOffset } from '@/utils/formatting'
 import type { MaskOnSpan } from '@/types'
 
 defineProps<{ spans?: MaskOnSpan[] | null }>()
