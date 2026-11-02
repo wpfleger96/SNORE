@@ -366,9 +366,12 @@ const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasDa
 
 // An all-null RERA trend means no device in range scores RERAs, so offer no toggle for it. The
 // key stays in selectedMetrics, so the chart returns if a wider range brings RERA data back.
-const metricKeys = computed(() =>
-    Object.keys(METRIC_CONFIG).filter((key) => key !== 'rera' || !trends.value || hasData(key)),
-)
+function isOffered(key: string): boolean {
+    if (key !== 'rera' || !trends.value) return true
+    return hasData(key)
+}
+
+const metricKeys = computed(() => Object.keys(METRIC_CONFIG).filter(isOffered))
 </script>
 
 <style scoped>

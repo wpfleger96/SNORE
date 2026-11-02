@@ -552,7 +552,9 @@ class TestExperimentalStats:
             )[0]
             for day_date, ahi, hours in seeds
         ]
-        weekly = calculate_period_statistics(days, "week")
+        weekly = calculate_period_statistics(
+            days, "week", {async_test_device.id: set()}
+        )
 
         result = await StatsService(
             async_db_session, profile_id=1

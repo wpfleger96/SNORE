@@ -6,15 +6,19 @@ session detail, day detail, the MCP nightly summary and period statistics.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from typing import Any
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Device, Statistics
 from snore.mcp.tools.summary import get_nightly_summary
+from snore.metrics import reported_count
 from snore.services.day_service import DayService
-from snore.services.event_service import device_event_types, reported_count
+from snore.services.event_service import device_event_types
 from snore.services.session_service import SessionService
 from snore.services.stats_service import StatsService
 from tests.integration.conftest import (
@@ -49,6 +53,55 @@ async def test_device_event_types_covers_disabled_sessions_per_device(
     reported = await device_event_types(async_db_session, [device.id, quiet_device.id])
 
     assert reported == {device.id: {"RE", "OA"}, quiet_device.id: set()}
+
+
+@contextmanager
+def _captured_sql(db: AsyncSession) -> Iterator[list[tuple[str, Any]]]:
+    """Collect the (statement, parameters) pairs ``db`` executes."""
+    captured: list[tuple[str, Any]] = []
+
+    def capture(
+        _conn: Any, _cursor: Any, statement: str, parameters: Any, *_args: Any
+    ) -> None:
+        captured.append((statement, parameters))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        yield captured
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+
+async def test_device_event_types_without_devices_runs_no_query(
+    async_db_session: AsyncSession,
+) -> None:
+    with _captured_sql(async_db_session) as captured:
+        reported = await device_event_types(async_db_session, [])
+
+    assert reported == {}
+    assert captured == []
+
+
+async def test_device_event_types_query_does_not_scan_events(
+    async_db_session: AsyncSession,
+) -> None:
+    profile = await _make_profile(async_db_session)
+    device = await _make_device(async_db_session, profile.id)
+    _, session = await _make_day_session(async_db_session, device, _NIGHT)
+    await _make_event(async_db_session, session, event_type="RE")
+
+    with _captured_sql(async_db_session) as captured:
+        await device_event_types(async_db_session, [device.id])
+
+    [(statement, parameters)] = captured
+    connection = await async_db_session.connection()
+    plan = await connection.exec_driver_sql(
+        f"EXPLAIN QUERY PLAN {statement}", parameters
+    )
+    details = [row.detail for row in plan]
+    assert details
+    assert not [detail for detail in details if "SCAN events" in detail]
 
 
 async def _seed_night(
@@ -104,6 +157,8 @@ async def test_counts_are_null_on_a_device_that_never_scored_them(
     assert (day.reras, day.unclassified_apneas) == (None, None)
     night = summary.nights[0]
     assert (night.reras, night.unclassified_apneas) == (None, None)
+    assert night.reras_reason == "not_reported_by_device"
+    assert night.unclassified_apneas_reason == "not_reported_by_device"
 
 
 async def test_zero_stays_zero_on_a_device_that_scored_one_on_another_session(
@@ -127,12 +182,13 @@ async def test_zero_stays_zero_on_a_device_that_scored_one_on_another_session(
     assert (day.reras, day.unclassified_apneas) == (0, 0)
     night = summary.nights[0]
     assert (night.reras, night.unclassified_apneas) == (0, 0)
+    assert (night.reras_reason, night.unclassified_apneas_reason) == (None, None)
 
 
 async def test_non_zero_count_is_never_hidden(
     async_db_session: AsyncSession,
 ) -> None:
-    """A count with no matching event rows, as an OSCAR summary could leave it."""
+    """Only zeros are hidden, so a stored count shows even with no event rows."""
     profile = await _make_profile(async_db_session)
     device = await _make_device(async_db_session, profile.id)
     session = await _seed_night(async_db_session, device, reras=2, unclassified=3)

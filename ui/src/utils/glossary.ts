@@ -116,6 +116,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'CA — Central Apnea',
         short: 'Brain stops signaling breathing effort; no airflow and no effort for ≥10 s.',
     },
+    event_type_caa: {
+        label: 'CAA — Clear Airway Apnea',
+        short: 'Apnea with an open airway, counted as a central apnea.',
+    },
     event_type_ua: {
         label: 'UA — Unclassified Apnea',
         short: 'Apnea the device could not classify as obstructive or central; counts toward AHI.',

@@ -9,11 +9,18 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.constants import OPTIONAL_EVENT_COUNT_FIELDS
 from snore.database import models
 from snore.exceptions import NotFoundError
+from snore.metrics import reported_count
 from snore.services._base import ProfileScopedService, session_device_join
 
-__all__ = ["EventService", "device_event_types", "reported_count"]
+__all__ = [
+    "EventService",
+    "device_event_types",
+    "device_reported_types",
+    "reported_counts",
+]
 
 
 async def device_event_types(
@@ -23,7 +30,11 @@ async def device_event_types(
 
     Covers all of a device's sessions, including disabled ones: one scored event
     anywhere makes that device's zeros real.  Every requested id gets an entry.
+    ``device_ids`` must already be scoped to the caller: nothing here checks
+    ownership.
     """
+    if not device_ids:
+        return {}
     reported: dict[int, set[str]] = {device_id: set() for device_id in device_ids}
     rows = await db_session.execute(
         select(models.Session.device_id, models.Event.event_type)
@@ -36,15 +47,23 @@ async def device_event_types(
     return reported
 
 
-def reported_count(
-    value: int | None, event_type: str, reported: Collection[str]
-) -> int | None:
-    """Return a device event count, or None for a zero that isn't a measurement.
+async def device_reported_types(db_session: AsyncSession, device_id: int) -> set[str]:
+    """``device_event_types`` for one device."""
+    return (await device_event_types(db_session, [device_id]))[device_id]
 
-    A zero only means "none happened" on a device that has scored ``event_type``
-    at least once; otherwise the device never reports that type.
+
+def reported_counts(
+    row: models.Day | models.Statistics, reported: Collection[str]
+) -> dict[str, int | None]:
+    """Return ``row``'s optional event counts, keyed by field, as ``reported_count``.
+
+    ``reported`` is what its device has scored.  A field ``row`` lacks is skipped.
     """
-    return value if value or event_type in reported else None
+    return {
+        field: reported_count(getattr(row, field), event_type, reported)
+        for field, event_type in OPTIONAL_EVENT_COUNT_FIELDS.items()
+        if hasattr(row, field)
+    }
 
 
 class EventService(ProfileScopedService):

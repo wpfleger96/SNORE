@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.shared.versioning import MV_FALLBACK_ALGO_VERSION
+from snore.analysis.shared.versioning import MV_FALLBACK_ALGO_VERSION, NullReason
 from snore.mcp.schemas import (
     EventContext,
     EventRow,
@@ -164,8 +164,9 @@ async def get_events(
         profile_id: Profile scope for BreathService ownership checks (required).
         device_id: Optional device filter; required when multiple devices share a date.
         types: Optional list of event types to filter (e.g. ["OA", "CA", "H"]).
-        min_duration: Minimum event duration in seconds (optional filter).
-            Excludes events with no recorded duration (ResMed hypopneas, RERAs).
+        min_duration: Minimum event duration in seconds (optional filter).  A
+            positive value excludes events with no recorded duration (ResMed
+            hypopneas, RERAs); 0 is no filter.
         include_context: Whether to compute and attach the per-event waveform
             context block; False skips all waveform I/O (context and the
             context ``*_reason`` fields are null).
@@ -200,6 +201,11 @@ async def get_events(
             EventRow(
                 **_row_base(ev).model_dump(),
                 duration_seconds=ev.duration_seconds,
+                duration_reason=(
+                    NullReason.NOT_RECORDED_BY_DEVICE.value
+                    if ev.duration_seconds is None
+                    else None
+                ),
                 spo2_drop_pct=ev.spo2_drop,
                 peak_flow_limitation=ev.peak_flow_limitation,
                 pressure_reason=str_or_none(ev.pressure_reason),
@@ -234,8 +240,9 @@ async def experimental_get_event_context(
         profile_id: Profile scope for BreathService ownership checks (required).
         device_id: Optional device filter; required when multiple devices share a date.
         types: Optional list of event types to filter (e.g. ["OA", "CA", "H"]).
-        min_duration: Minimum event duration in seconds (optional filter).
-            Excludes events with no recorded duration (ResMed hypopneas, RERAs).
+        min_duration: Minimum event duration in seconds (optional filter).  A
+            positive value excludes events with no recorded duration (ResMed
+            hypopneas, RERAs); 0 is no filter.
         max_events: Maximum events to return (≥1, pre-validated by server wrapper).
             total_events reflects the untruncated count; truncated=True when cut.
     """
@@ -308,6 +315,10 @@ def register(mcp: FastMCP) -> None:
         on it.
         ``include_context=false`` skips the waveform work entirely: ``context``
         and those reasons are null.
+        ``duration_reason`` is ``"not_recorded_by_device"`` when
+        ``duration_seconds`` is null, always the case for ResMed hypopneas and
+        RERAs.  Those events have no start, so their ``context`` windows anchor
+        on the event's end.
 
         For MV slope, MV stability, and flow-derived MV on devices with no MV
         channel, use ``experimental_get_event_context``.
@@ -320,8 +331,9 @@ def register(mcp: FastMCP) -> None:
                    Common values: ``OA`` (obstructive apnea), ``CA`` (central
                    apnea), ``H`` (hypopnea), ``RE`` (respiratory effort-related
                    arousal), ``FL`` (flow limitation), ``VS`` (vibratory snore).
-            min_duration: Minimum event duration in seconds (optional). Excludes
-                events with no recorded duration (ResMed hypopneas, RERAs).
+            min_duration: Minimum event duration in seconds (optional). A positive
+                value excludes events with no recorded duration (ResMed hypopneas,
+                RERAs); 0 is no filter.
             include_context: Compute and attach the per-event waveform context
                 block (default true); false is faster and leaves ``context``
                 and the context ``*_reason`` fields null.
@@ -385,8 +397,9 @@ def register(mcp: FastMCP) -> None:
             device_id: Optional device ID filter. Required when multiple devices
                        have data for the same date.
             types: Optional event type filter, e.g. ["CA", "OA", "H"].
-            min_duration: Minimum event duration in seconds (optional). Excludes
-                events with no recorded duration (ResMed hypopneas, RERAs).
+            min_duration: Minimum event duration in seconds (optional). A positive
+                value excludes events with no recorded duration (ResMed hypopneas,
+                RERAs); 0 is no filter.
             max_events: Maximum number of events to return after filtering (default 500,
                         minimum 1). When the result is truncated, ``total_events`` still
                         reports the full count and ``truncated`` is set to true in the

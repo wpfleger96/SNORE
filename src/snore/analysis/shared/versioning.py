@@ -237,6 +237,8 @@ class NullReason(StrEnum):
     TABLE_MISSING = "table_missing"
     RX_CHANGED_WITHIN_EPOCH = "rx_changed_within_epoch"
     NO_SESSIONS = "no_sessions"
+    NOT_REPORTED_BY_DEVICE = "not_reported_by_device"
+    NOT_RECORDED_BY_DEVICE = "not_recorded_by_device"
 
 
 class TimezoneStatus(StrEnum):

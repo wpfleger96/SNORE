@@ -130,12 +130,11 @@ import { getSession } from '@/api/sessions'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { usePagedRows } from '@/composables/usePagedRows'
 import { useIsMobile } from '@/composables/useIsMobile'
-import { formatTimeOffset } from '@/utils/formatting'
+import { formatDuration, formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import type { EventItem } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'
 
-const emDash = '\u2014' // em-dash used for null display
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
 const { isMobile } = useIsMobile()
@@ -170,10 +169,6 @@ const eventsPerHour = computed(() => {
     if (!sessionDuration.value) return null
     return filteredEvents.value.length / sessionDuration.value
 })
-
-function formatDuration(seconds: EventItem['duration_seconds']): string {
-    return seconds != null ? `${seconds.toFixed(1)}s` : emDash
-}
 
 function toggleType(type: string): void {
     const s = new Set(activeTypes.value)

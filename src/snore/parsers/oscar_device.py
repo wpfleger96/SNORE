@@ -9,7 +9,7 @@ import logging
 import xml.etree.ElementTree as ET
 
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
@@ -703,15 +703,8 @@ class OscarDeviceParser(DeviceParser):
                     )
 
                     duration = durations[i] if i < len(durations) else None
-                    recorded = duration if duration and duration > 0 else None
                     # OSCAR stores event timestamps at the event's end for all
-                    # event channels (its UI draws spans backward by duration);
-                    # normalize to true start.  With no recorded duration, keep
-                    # the stored time.
-                    event = RespiratoryEvent(
-                        event_type=event_type,
-                        start_time=event_time - timedelta(seconds=recorded or 0),
-                        duration_seconds=recorded,
+                    # event channels (its UI draws spans backward by duration).
+                    session.add_event(
+                        RespiratoryEvent.from_end_flag(event_type, event_time, duration)
                     )
-
-                    session.add_event(event)

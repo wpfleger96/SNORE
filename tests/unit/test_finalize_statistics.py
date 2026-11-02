@@ -149,6 +149,15 @@ class TestEventCounts:
 
         assert session.statistics.flow_limitations == 7
 
+    def test_flow_limitations_fall_back_to_events_without_a_summary_count(self) -> None:
+        session = _session_with_events(
+            RespiratoryEventType.FLOW_LIMITATION, RespiratoryEventType.FLOW_LIMITATION
+        )
+
+        session.finalize_statistics()
+
+        assert session.statistics.flow_limitations == 2
+
 
 class TestWaveformStatisticsOverStrSummary:
     @pytest.mark.parametrize(

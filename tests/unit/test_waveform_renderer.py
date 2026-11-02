@@ -7,6 +7,7 @@ import pytest
 
 from rich.console import Console
 
+from snore.analysis.types import AnalysisEvent
 from snore.waveform.renderer import WaveformRenderer
 from tests.helpers.terminal_charts import has_drawn_braille
 
@@ -48,6 +49,25 @@ def test_render_draws_single_waveform_chart():
     assert has_drawn_braille(out)
     assert "01:00:00" in out
     assert "Sample rate" in out
+
+
+def test_render_prints_a_machine_event_duration_only_when_recorded():
+    timestamps, values = _sine_window()
+    console_out = io.StringIO()
+    machine_events = [
+        AnalysisEvent(
+            event_type=event_type, start_time=start, duration=duration, source="machine"
+        )
+        for event_type, start, duration in (("H", 3610.0, 0.0), ("OA", 3620.0, 12.5))
+    ]
+
+    _renderer(console_out, width=60, height=12).render(
+        timestamps, values, machine_events=machine_events
+    )
+
+    lines = console_out.getvalue().splitlines()
+    assert "  Machine:      H at 01:00:10" in lines
+    assert "  Machine:      OA at 01:00:20 (12.5s)" in lines
 
 
 def test_render_with_infinite_values_draws_chart():

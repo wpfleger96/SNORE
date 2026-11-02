@@ -11,6 +11,7 @@ surfaces as a test failure instead of silent data loss.  Day aggregation
 genuine single-source wins: they are declared only here.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -210,3 +211,14 @@ DAY_INDEX_FIELDS: tuple[str, ...] = ("ahi", "oai", "cai", "hi")
 # on real nights.
 COVERAGE_TOLERANCE_HOURS = 5 / 60
 COVERAGE_TOLERANCE_FRACTION = 0.05
+
+
+def reported_count(
+    value: int | None, event_type: str, reported: Collection[str]
+) -> int | None:
+    """Return a device event count, or None for a zero that isn't a measurement.
+
+    A zero only means "none happened" on a device that has scored ``event_type``
+    at least once; otherwise the device never reports that type.
+    """
+    return value if value or event_type in reported else None

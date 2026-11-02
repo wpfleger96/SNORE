@@ -955,13 +955,14 @@ async def db_with_comparison(temp_db):
                 AnalysisEvent(
                     event_type=event_type,
                     start_time=event_start,
-                    duration=10.0,
+                    duration=duration,
                     source="machine",
                 )
-                for event_type, event_start in (
-                    ("OA", 100.0),
-                    ("H", 200.0),
-                    ("FL", 300.0),
+                for event_type, event_start, duration in (
+                    ("OA", 100.0, 10.0),
+                    ("H", 200.0, 10.0),
+                    ("H", 250.0, 0.0),  # the device recorded no duration
+                    ("FL", 300.0, 10.0),
                 )
             ],
             mode_results={
@@ -1029,15 +1030,17 @@ class TestWaveformCompareCommand:
         output = " ".join(result.output.split())
         assert "Session 1 - Event Comparison (aasm mode)" in output
         assert (
-            "Machine: 2 events (apneas and hypopneas, plus RERAs when the device scored any)"
+            "Machine: 3 events (apneas and hypopneas, plus RERAs when the device scored any)"
             in output
         )
         assert re.search(r"Programmatic\W*: 2 events", output)
         assert re.search(r"Matched\W*: 1\b", output)
         assert re.search(
-            r"FALSE NEGATIVES\W* \(machine events missed[^:]*: 1\b", output
+            r"FALSE NEGATIVES\W* \(machine events missed[^:]*: 2\b", output
         )
         assert "H at 00:03:20 (10.0s)" in output
+        assert "H at 00:04:10 → View:" in output
+        assert "(0.0s)" not in output
         assert re.search(r"FALSE POSITIVES\W* \(programmatic events[^:]*: 1\b", output)
         assert "H at 00:06:40 (conf: 0.70, flow_red: 40%)" in output
 

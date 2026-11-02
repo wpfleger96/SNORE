@@ -1069,6 +1069,70 @@ class TestGetEvents:
         assert result.total_events == 1
         assert result.events[0].duration_seconds == 30.0
 
+    @pytest.mark.parametrize(
+        ("min_duration", "expected_types"),
+        [(None, {"H", "OA"}), (0, {"H", "OA"}), (10.0, {"OA"})],
+    )
+    async def test_min_duration_keeps_null_duration_events_unless_positive(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        min_duration: float | None,
+        expected_types: set[str],
+    ) -> None:
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 19)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        for offset_minutes, event_type, duration in ((10, "H", None), (20, "OA", 30.0)):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type=event_type,
+                    start_time=sess.start_time + timedelta(minutes=offset_minutes),
+                    duration_seconds=duration,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await get_events(
+            async_db_session,
+            target_date,
+            min_duration=min_duration,
+            profile_id=async_test_profile.id,
+        )
+
+        assert {event.event_type for event in result.events} == expected_types
+
+    async def test_duration_reason_set_only_for_null_duration(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.events import get_events
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        target_date = date(2024, 8, 20)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        for offset_minutes, event_type, duration in ((10, "H", None), (20, "OA", 30.0)):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type=event_type,
+                    start_time=sess.start_time + timedelta(minutes=offset_minutes),
+                    duration_seconds=duration,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await get_events(
+            async_db_session, target_date, profile_id=async_test_profile.id
+        )
+
+        assert {e.event_type: e.duration_reason for e in result.events} == {
+            "H": "not_recorded_by_device",
+            "OA": None,
+        }
+
     async def test_event_context_includes_minutes_since_start(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:

@@ -22,9 +22,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.shared.versioning import NullReason
-from snore.constants import EVENT_TYPE_RERA, EVENT_TYPE_UNCLASSIFIED_APNEA
 from snore.database import models
-from snore.services.event_service import device_event_types, reported_count
+from snore.services.event_service import device_event_types, reported_counts
 from snore.services.tidal_volume import tidal_volume_ml
 
 if TYPE_CHECKING:
@@ -216,7 +215,6 @@ async def get_nightly_summary(
 
     for day in day_rows:
         session_id = day_to_session.get(int(day.id))
-        reported = reported_by_device[day.device_id]
         stats = stats_by_session.get(session_id) if session_id else None
         ti_median_s = stats.ti_median if stats else None
         ie_ratio_median = stats.ie_ratio_median if stats else None
@@ -232,10 +230,7 @@ async def get_nightly_summary(
                 obstructive_apneas=day.obstructive_apneas,
                 central_apneas=day.central_apneas,
                 hypopneas=day.hypopneas,
-                reras=reported_count(day.reras, EVENT_TYPE_RERA, reported),
-                unclassified_apneas=reported_count(
-                    day.unclassified_apneas, EVENT_TYPE_UNCLASSIFIED_APNEA, reported
-                ),
+                **_optional_counts(day, reported_by_device[day.device_id]),
                 pressure_median_cmh2o=day.pressure_median,
                 pressure_95th_cmh2o=day.pressure_95th,
                 epap_median_cmh2o=day.epap_median,
@@ -318,6 +313,19 @@ async def experimental_get_nightly_metrics(
             db_session, profile_id, bs_range.device_id, start, end
         ),
     )
+
+
+def _optional_counts(day: models.Day, reported: set[str]) -> dict[str, Any]:
+    """The Day's optional event counts, each null one with its ``*_reason``."""
+    counts = reported_counts(day, reported)
+    return {
+        **counts,
+        **{
+            f"{field}_reason": NullReason.NOT_REPORTED_BY_DEVICE.value
+            for field, count in counts.items()
+            if count is None
+        },
+    }
 
 
 def _rounded(value: float | None, ndigits: int) -> float | None:
@@ -460,7 +468,8 @@ def register(mcp: FastMCP) -> None:
         ``*_computed``. ``obstructive_apneas``, ``central_apneas``,
         ``hypopneas``, ``reras`` and ``unclassified_apneas`` are device-scored
         event counts. ``reras`` and ``unclassified_apneas`` are null, not zero,
-        when the device has never scored one.
+        with a ``"not_reported_by_device"`` companion ``*_reason``, when the
+        device has never scored one.
 
         ``leak_above_24_pct`` is the percent of leak samples at or above
         24 L/min, OSCAR's time over the default redline. ``device_flg_*`` and

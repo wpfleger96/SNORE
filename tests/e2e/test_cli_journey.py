@@ -55,6 +55,9 @@ def test_session_list_and_show(snore, imported_db):
     assert "OAI†: 7.1" in show.stdout
     assert "CAI†: 3.5" in show.stdout
     assert "HI†: 7.1" in show.stdout
+    # The AHI recount includes this night's one unclassified apnea, so OAI + CAI +
+    # HI alone falls short of it.
+    assert "Unclassified Apneas: 1" in show.stdout
     assert show.stdout.strip().splitlines()[-1] == (
         f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}"
     )

@@ -24,6 +24,7 @@ from snore.constants import (
     AHI_EVENT_TYPES,
     EVENT_TYPE_CENTRAL_APNEA,
     EVENT_TYPE_CLEAR_AIRWAY,
+    EVENT_TYPE_FLOW_LIMITATION,
     EVENT_TYPE_HYPOPNEA,
     EVENT_TYPE_MIXED_APNEA,
     EVENT_TYPE_OBSTRUCTIVE_APNEA,
@@ -371,6 +372,25 @@ class RespiratoryEvent(BaseModel):
     spo2_drop: float | None = Field(default=None, description="SpO2 drop (%)")
     end_time: datetime | None = Field(default=None, description="Event end time")
 
+    @classmethod
+    def from_end_flag(
+        cls,
+        event_type: RespiratoryEventType,
+        flag_time: datetime,
+        duration: float | None,
+    ) -> RespiratoryEvent:
+        """Build an event from a device time that flags the event's end.
+
+        A recorded duration moves the start back to the true start.  A missing or
+        non-positive one means none was recorded, so the flag time stands.
+        """
+        recorded = duration if duration and duration > 0 else None
+        return cls(
+            event_type=event_type,
+            start_time=flag_time - timedelta(seconds=recorded or 0),
+            duration_seconds=recorded,
+        )
+
 
 class WaveformData(BaseModel):
     """
@@ -589,6 +609,10 @@ class UnifiedSession(BaseModel):
         ]
         self.statistics.hypopneas = hypopneas
         self.statistics.reras = event_counts[EVENT_TYPE_RERA]
+        # OSCAR import sets this from its session summary, which can be absent.
+        self.statistics.flow_limitations = (
+            self.statistics.flow_limitations or event_counts[EVENT_TYPE_FLOW_LIMITATION]
+        )
 
         hours = therapy_hours(
             TherapyHoursBasis.MASK_ON, mask_on_segments=self.mask_on_segments

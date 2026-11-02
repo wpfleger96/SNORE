@@ -164,8 +164,8 @@ class PeriodStatistics(BaseModel):
     )
     avg_rera: float | None = provenance_field(
         Provenance.DERIVED,
-        "Average device-scored RERA index (events/hour) over days from devices "
-        "that have scored a RERA; null when none in the period has",
+        "Usage-weighted device-scored RERA index (events/hour) over days from "
+        "devices that have scored a RERA; null when none in the period has",
         default=None,
     )
 
@@ -378,13 +378,14 @@ class SessionStatistics(BaseModel):
     )
     reras: int | None = provenance_field(
         Provenance.DEVICE,
-        "Device-scored RERA count; null when the device has never scored one",
+        "Device-scored RERA count; null in API responses when the device has never "
+        "scored one, while exports keep the raw 0",
         default=None,
     )
     unclassified_apneas: int | None = provenance_field(
         Provenance.DEVICE,
-        "Device-scored unclassified apnea count; null when the device has never "
-        "scored one",
+        "Device-scored unclassified apnea count; null in API responses when the "
+        "device has never scored one, while exports keep the raw 0",
         default=None,
     )
     flow_limitations: int | None = provenance_field(
@@ -1315,7 +1316,8 @@ class EventComparisonDetail(BaseModel):
     )
     duration: float = provenance_field(
         Provenance.DEVICE,
-        "Event duration (seconds); experimental for programmatic events",
+        "Event duration (seconds), 0 when the device recorded none; experimental "
+        "for programmatic events",
         source_field="source",
     )
     source: Literal["machine", "programmatic"] = Field(

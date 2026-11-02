@@ -291,16 +291,20 @@ class NightlyRow(NightlyChannelFields):
     )
     reras: int | None = provenance_field(
         Provenance.DEVICE,
-        "Device-scored RERAs, summed across the night's sessions; null means the "
-        "device has never scored one, not a zero.",
+        "Device-scored RERAs, summed across the night's sessions; null with "
+        "reras_reason='not_reported_by_device' when the device has never scored "
+        "one, not a zero.",
         default=None,
     )
+    reras_reason: str | None = None
     unclassified_apneas: int | None = provenance_field(
         Provenance.DEVICE,
         "Device-scored unclassified apneas, summed across the night's sessions; "
-        "null means the device has never scored one, not a zero.",
+        "null with unclassified_apneas_reason='not_reported_by_device' when the "
+        "device has never scored one, not a zero.",
         default=None,
     )
+    unclassified_apneas_reason: str | None = None
 
     pressure_median_cmh2o: float | None = provenance_field(
         Provenance.DERIVED, "Median pressure (cmH₂O).", default=None
@@ -503,6 +507,15 @@ class ExperimentalNightlyResponse(BaseModel):
     device_capabilities: DeviceCapabilities | None = None
 
 
+# Hypopneas and RERAs have no duration, so no start: their context anchors on
+# the event's end.
+_END_ANCHOR_NOTE = "For H and RE the anchor is the event's end, not its start."
+_PRIOR_WINDOW_NOTE = (
+    "For H and RE the anchor is the event's end, so this window includes the "
+    "event itself."
+)
+
+
 class EventContext(BaseModel):
     """Per-event contextual snapshot."""
 
@@ -510,23 +523,30 @@ class EventContext(BaseModel):
 
     # Null companions' reasons live on EventRow.
     pressure_at_event_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED, "Mean pressure at the event (cmH₂O).", default=None
+        Provenance.DERIVED,
+        f"Mean pressure over ±5 s around the event start (cmH₂O). {_END_ANCHOR_NOTE}",
+        default=None,
     )
     leak_at_event_lpm: float | None = provenance_field(
-        Provenance.DERIVED, "Mean leak at the event (L/min).", default=None
+        Provenance.DERIVED,
+        f"Mean leak over ±5 s around the event start (L/min). {_END_ANCHOR_NOTE}",
+        default=None,
     )
     mv_prior_120s_lpm: float | None = provenance_field(
         Provenance.DERIVED,
         "Mean of the device minute-ventilation channel over the 120 s before "
-        "the event (L/min).",
+        f"the event (L/min). {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
     minutes_since_session_start: float | None = provenance_field(
-        Provenance.DEVICE, "Event start relative to session start (min).", default=None
+        Provenance.DEVICE,
+        f"Event start relative to session start (min). {_END_ANCHOR_NOTE}",
+        default=None,
     )
     ps_delivered_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
-        "Delivered pressure support: mean(therapy pressure − EPAP) over ±5 s (cmH₂O).",
+        "Delivered pressure support: mean(therapy pressure − EPAP) over ±5 s "
+        f"around the event start (cmH₂O). {_END_ANCHOR_NOTE}",
         default=None,
     )
 
@@ -560,10 +580,12 @@ class EventRow(EventRowBase):
 
     duration_seconds: float | None = provenance_field(
         Provenance.DEVICE,
-        "Device-recorded event duration (s); null when the device recorded none, "
+        "Device-recorded event duration (s); null with "
+        "duration_reason='not_recorded_by_device' when the device recorded none, "
         "which is always the case for ResMed hypopneas and RERAs.",
         default=None,
     )
+    duration_reason: str | None = None
     spo2_drop_pct: float | None = provenance_field(
         Provenance.DEVICE,
         "SpO₂ drop during the event (%), from the events table; null when the "
@@ -620,19 +642,20 @@ class ExperimentalEventContextRow(EventRowBase):
     mv_prior_120s_lpm: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Mean minute ventilation over the 120 s before the event (L/min); may "
-        "be flow-derived, see mv_source.",
+        f"be flow-derived, see mv_source. {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
     mv_reason: str | None = None
     preceding_mv_slope_lpm_per_min: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Least-squares MV slope over the 60 s before the event (L/min per min).",
+        "Least-squares MV slope over the 60 s before the event (L/min per min). "
+        f"{_PRIOR_WINDOW_NOTE}",
         default=None,
     )
     preceding_mv_slope_reason: str | None = None
     stability_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
-        "MV stdev / mean (CV) over the 60 s before the event.",
+        f"MV stdev / mean (CV) over the 60 s before the event. {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
     stability_reason: str | None = None

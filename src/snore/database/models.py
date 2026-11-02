@@ -855,6 +855,9 @@ class Event(Base):
         CheckConstraint(
             "duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"
         ),
+        # Covers ``device_event_types``; without it that query scans every event
+        # for each of a device's sessions.
+        Index("ix_events_session_id_event_type", "session_id", "event_type"),
     )
 
     def __repr__(self) -> str:

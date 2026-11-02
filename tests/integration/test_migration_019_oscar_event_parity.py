@@ -1,10 +1,14 @@
 """Migration 019 removes invented H/RE durations and recounts sessions like OSCAR."""
 
+import importlib
 import sqlite3
 
 import pytest
 
 from alembic import command as alembic_command
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import create_engine
 
 from snore.database.session import (
     _build_alembic_config,
@@ -13,6 +17,7 @@ from snore.database.session import (
 )
 
 _PRE_019 = "018_day_device_indices"
+_EVENT_TYPE_INDEX = "ix_events_session_id_event_type"
 _RESMED_SESSION = 1
 _OSCAR_SESSION = 2
 _UNAFFECTED_SESSION = 3
@@ -32,10 +37,14 @@ _RESMED_CA = (6, _RESMED_SESSION, "CA", _RAW_START, 15.0)
 _RESMED_CAA = (7, _RESMED_SESSION, "CAA", _RAW_START, 15.0)
 _RESMED_MA = (8, _RESMED_SESSION, "MA", _RAW_START, 15.0)
 _OSCAR_H = (9, _OSCAR_SESSION, "H", _RAW_START, 10.0)
+# The OSCAR parser cannot produce UA; this row pins that the recount keys on
+# ``events`` alone, not on the import source.
 _OSCAR_UA = (10, _OSCAR_SESSION, "UA", _RAW_START, 10.0)
 _UNAFFECTED_H = (11, _UNAFFECTED_SESSION, "H", _RAW_START, 10.0)
 _ZERO_USAGE_UA = (12, _ZERO_USAGE_SESSION, "UA", _RAW_START, 10.0)
 _DEMO_H = (13, _DEMO_SESSION, "H", _RAW_START, 10.0)
+_OSCAR_ZERO_RE = (14, _OSCAR_SESSION, "RE", _RAW_START, 0.0)
+_RESMED_ZERO_FL = (15, _RESMED_SESSION, "FL", _RAW_START, 0.0)
 
 _EVENTS = (
     _RESMED_H,
@@ -51,6 +60,8 @@ _EVENTS = (
     _UNAFFECTED_H,
     _ZERO_USAGE_UA,
     _DEMO_H,
+    _OSCAR_ZERO_RE,
+    _RESMED_ZERO_FL,
 )
 
 # session_id, central, mixed, ahi, cai, usage_hours, reras, hypopneas, obstructive.
@@ -165,6 +176,36 @@ def _unclassified(db_path: str) -> dict[int, tuple[int, str]]:
         con.close()
 
 
+def _link_sessions_to_day(db_path: str) -> None:
+    """Put three sessions with one UA each on the day, one of them disabled."""
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(
+            "UPDATE sessions SET day_id = 1 WHERE id IN (?, ?, ?)",
+            (_RESMED_SESSION, _ZERO_USAGE_SESSION, _OSCAR_SESSION),
+        )
+        con.execute("UPDATE sessions SET enabled = 0 WHERE id = ?", (_OSCAR_SESSION,))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _day_unclassified(db_path: str) -> int:
+    con = sqlite3.connect(db_path)
+    try:
+        return con.execute("SELECT unclassified_apneas FROM days").fetchone()[0]
+    finally:
+        con.close()
+
+
+def _event_indexes(db_path: str) -> set[str]:
+    con = sqlite3.connect(db_path)
+    try:
+        return {row[1] for row in con.execute("PRAGMA index_list(events)")}
+    finally:
+        con.close()
+
+
 @pytest.fixture
 async def pre_019(tmp_path):
     """A seeded DB at 018, plus its Alembic config."""
@@ -199,8 +240,16 @@ async def test_upgrade_leaves_real_durations_and_oscar_events_alone(pre_019):
     alembic_command.upgrade(cfg, "head")
 
     events = _events(db_path)
-    for untouched in (_RESMED_REAL_OA, _RESMED_LONG_H, _OSCAR_H):
+    for untouched in (_RESMED_REAL_OA, _RESMED_LONG_H, _OSCAR_H, _RESMED_ZERO_FL):
         assert events[untouched[0]] == untouched
+
+
+async def test_upgrade_clears_oscar_zero_durations_and_keeps_the_start(pre_019):
+    db_path, cfg = pre_019
+
+    alembic_command.upgrade(cfg, "head")
+
+    assert _events(db_path)[_OSCAR_ZERO_RE[0]] == (*_OSCAR_ZERO_RE[:4], None)
 
 
 async def test_upgrade_recounts_sessions_with_uncounted_events(pre_019):
@@ -224,7 +273,7 @@ async def test_upgrade_recounts_sessions_with_uncounted_events(pre_019):
         9.5,
         None,
     )
-    # OSCAR sessions are recounted too: H + UA = 2 over 2.0 h.
+    # Any session with such an event is recounted: H + UA = 2 over 2.0 h.
     assert stats[_OSCAR_SESSION][3] == pytest.approx(1.0)
     assert _unclassified(db_path) == {
         _RESMED_SESSION: (1, "integer"),
@@ -265,6 +314,24 @@ async def test_upgrade_adds_days_column_as_zero_and_leaves_day_values(pre_019):
     assert row == (0, 1, 1.0)
 
 
+async def test_upgrade_backfills_day_unclassified_from_enabled_sessions(pre_019):
+    db_path, cfg = pre_019
+    _link_sessions_to_day(db_path)
+
+    alembic_command.upgrade(cfg, "head")
+
+    assert _day_unclassified(db_path) == 2
+
+
+async def test_upgrade_adds_event_type_index(pre_019):
+    db_path, cfg = pre_019
+    assert _EVENT_TYPE_INDEX not in _event_indexes(db_path)
+
+    alembic_command.upgrade(cfg, "head")
+
+    assert _EVENT_TYPE_INDEX in _event_indexes(db_path)
+
+
 async def test_downgrade_restores_events_and_statistics(pre_019):
     db_path, cfg = pre_019
     events_before = _events(db_path)
@@ -292,6 +359,7 @@ async def test_downgrade_drops_columns_and_keeps_day_triggers(pre_019):
 
     alembic_command.downgrade(cfg, _PRE_019)
 
+    assert _EVENT_TYPE_INDEX not in _event_indexes(db_path)
     con = sqlite3.connect(db_path)
     try:
         for table in ("days", "statistics"):
@@ -303,8 +371,33 @@ async def test_downgrade_drops_columns_and_keeps_day_triggers(pre_019):
         con.close()
 
 
+async def test_downgrade_refuses_with_foreign_keys_enforced(pre_019):
+    db_path, cfg = pre_019
+    alembic_command.upgrade(cfg, "head")
+    migration = importlib.import_module(
+        "snore.database.migrations.versions.019_oscar_event_parity"
+    )
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            with Operations.context(MigrationContext.configure(connection)):
+                with pytest.raises(RuntimeError, match="foreign_keys=OFF"):
+                    migration.downgrade()
+    finally:
+        engine.dispose()
+
+    con = sqlite3.connect(db_path)
+    try:
+        assert con.execute("SELECT COUNT(*) FROM sessions").fetchone() == (5,)
+    finally:
+        con.close()
+
+
 async def test_reupgrade_after_downgrade_reaches_the_same_state(pre_019):
     db_path, cfg = pre_019
+    _link_sessions_to_day(db_path)
     alembic_command.upgrade(cfg, "head")
     events = _events(db_path)
     stats = _statistics(db_path)
@@ -314,13 +407,17 @@ async def test_reupgrade_after_downgrade_reaches_the_same_state(pre_019):
 
     assert _events(db_path) == events
     assert _statistics(db_path) == stats
+    assert _day_unclassified(db_path) == 2
 
 
 async def test_checksum_replay_of_019_keeps_corrected_data(pre_019):
     """Startup replay of an edited 019 runs the on-disk downgrade, then upgrade."""
     db_path, cfg = pre_019
+    _link_sessions_to_day(db_path)
     alembic_command.upgrade(cfg, "head")
     events = _events(db_path)
+    stats = _statistics(db_path)
+    unclassified = _unclassified(db_path)
     await init_database(db_path)
     await cleanup_database()
     con = sqlite3.connect(db_path)
@@ -337,3 +434,6 @@ async def test_checksum_replay_of_019_keeps_corrected_data(pre_019):
     await cleanup_database()
 
     assert _events(db_path) == events
+    assert _statistics(db_path) == stats
+    assert _unclassified(db_path) == unclassified
+    assert _day_unclassified(db_path) == 2

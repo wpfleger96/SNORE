@@ -56,7 +56,7 @@ src/snore/
 ├── constants.py        # Channel IDs, mappings, flow limitation classes, unit constants
 ├── completions.py      # Shell completion generation and installation
 ├── exceptions.py       # Domain exceptions (NotFoundError)
-├── metrics.py          # Session metric registry (MetricSpec: day aggregation), export keys
+├── metrics.py          # Session metric registry (MetricSpec: day aggregation), export keys, reported_count
 ├── provenance.py       # Provenance tiers + provenance_field / field_provenance / response_provenance
 ├── logging_config.py   # Logging configuration with rotation
 ├── types.py            # Shared type definitions
@@ -149,7 +149,7 @@ src/snore/
 │   ├── backup_service.py    # Raw file backup
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_service.py       # Day aggregation
-│   ├── event_service.py     # Event queries
+│   ├── event_service.py     # Event queries, device_event_types, reported_counts
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
@@ -229,7 +229,7 @@ Production runs as a Docker stack on a homelab host, provisioned from the privat
 - **Data layout:** the stack lives in `/opt/snore` on the host; `/opt/snore/data` mounts to `/data` in the container, and `HOME=/data`, so the production DB is `/data/.snore/snore.db`.
 - **Running the CLI in production:** SSH to the host, then `docker exec snore /app/.venv/bin/snore <command>` — the venv is not on the container's `PATH`, so the absolute path is required (add `-it` for commands that prompt). Production is multiuser — most commands need `--user <email>` (and `--profile <name>` when the user has several).
 - **Re-analysis after algorithm version bumps is manual.** Bumping any `*_ALGO_VERSION` constant (`src/snore/analysis/shared/versioning.py`) marks every stored analysis row `STALE_VERSION` on the next deploy; aggregates null stale sessions rather than serving old numbers, but nothing re-analyzes automatically. Re-run per profile with an open-ended range — `snore analysis run --from 2000-01-01 --user <email> --profile <name>` — which processes every session in range (no already-analyzed skip) and stores new version rows. Optionally drop the superseded rows afterward: `snore analysis delete --all --stale-versions`, then `snore db vacuum`.
-- **Day rows are not recomputed on deploy.** After any change to day aggregation, backfill historical Day rows with `docker exec -it snore /app/.venv/bin/snore db recompute-days`. It re-derives every Day across all users, profiles, and devices from stored session statistics (no reparse), so it takes no `--user`/`--profile`; it prompts for confirmation (`--yes` skips it) and is safe to re-run if interrupted. Migration 018 backfills existing days as derived (old values copied into `*_computed`), and `recompute-days` alone cannot promote them to the device-reported AHI headline: the trust rule needs the per-session `statistics.usage_hours_device` (STR daily mask-on time), which is NULL on sessions imported before 018. Only a forced re-parse fills it: `docker exec -it snore /app/.venv/bin/snore import --force --all --no-backup --user <email> --profile <name> /data/.snore/raw/<profile_id>` (the profile's raw archive). A plain import or web upload/rescan skips already-imported sessions. `--force` deletes and recreates each session it finds (statistics, events, waveforms, settings, and cascaded analysis/breath rows; post-import analysis re-runs unless `--no-analyze`), keeps disabled sessions disabled (so does any import whose session replaces only disabled overlapping rows; replacing a disabled/enabled mix imports enabled and logs a warning), and re-aggregates the affected days itself, so no `recompute-days` is needed afterwards. Migration 019 corrects stored `events` and `statistics` in place (no re-parse), but run `recompute-days` once after it deploys to refresh `*_computed` and the day-level `unclassified_apneas`.
+- **Day rows are not recomputed on deploy.** After any change to day aggregation, backfill historical Day rows with `docker exec -it snore /app/.venv/bin/snore db recompute-days`. It re-derives every Day across all users, profiles, and devices from stored session statistics (no reparse), so it takes no `--user`/`--profile`; it prompts for confirmation (`--yes` skips it) and is safe to re-run if interrupted. Migration 018 backfills existing days as derived (old values copied into `*_computed`), and `recompute-days` alone cannot promote them to the device-reported AHI headline: the trust rule needs the per-session `statistics.usage_hours_device` (STR daily mask-on time), which is NULL on sessions imported before 018. Only a forced re-parse fills it: `docker exec -it snore /app/.venv/bin/snore import --force --all --no-backup --user <email> --profile <name> /data/.snore/raw/<profile_id>` (the profile's raw archive). A plain import or web upload/rescan skips already-imported sessions. `--force` deletes and recreates each session it finds (statistics, events, waveforms, settings, and cascaded analysis/breath rows; post-import analysis re-runs unless `--no-analyze`), keeps disabled sessions disabled (so does any import whose session replaces only disabled overlapping rows; replacing a disabled/enabled mix imports enabled and logs a warning), and re-aggregates the affected days itself, so no `recompute-days` is needed afterwards. Migration 019 corrects stored `events` and `statistics` in place and backfills `days.unclassified_apneas` (no re-parse), but run `recompute-days` once after it deploys to refresh `days.central_apneas`, `*_computed` and the headline `ahi`/`cai` on derived days.
 
 ## Key Patterns
 
@@ -348,8 +348,9 @@ recount, when computable, is in `*_computed` (`DayListItem` carries only `ahi_co
 
 Absent, not zero: a device's zero count of UA, MA, RE or FL means it never scored that type unless
 the device has at least one such event, across all its sessions including disabled ones. Reported
-counts then go out as null (`reported_count` and `device_event_types` in `services/event_service.py`);
-non-zero values are never hidden, and OA, CA and H are always reported. `Event.duration_seconds` is
+counts then go out as null (`reported_count` in `metrics.py`, `device_event_types` in
+`services/event_service.py`); non-zero values are never hidden, and OA, CA and H are always reported.
+Exports are the exception: they keep the raw zeros. `Event.duration_seconds` is
 null when the device recorded no duration, which is always the case for ResMed hypopneas and RERAs,
 and such an event keeps the annotation time instead of a shifted start.
 

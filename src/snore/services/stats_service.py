@@ -14,7 +14,6 @@ from snore.analysis.calculations import (
     calculate_records,
     calculate_trends_extended,
 )
-from snore.constants import EVENT_TYPE_RERA
 from snore.database import models
 from snore.services._base import ProfileScopedService
 from snore.services.event_service import device_event_types
@@ -312,7 +311,7 @@ class StatsService(ProfileScopedService):
         days = await self._query_days()
         weekly_ahi = [
             week.avg_ahi
-            for week in calculate_period_statistics(days, "week")
+            for week in await self._period_statistics(days, "week")
             if week.avg_ahi is not None
         ]
         return ExperimentalStats(
@@ -327,15 +326,7 @@ class StatsService(ProfileScopedService):
         reported = await device_event_types(
             self.db_session, {day.device_id for day in day_records}
         )
-        return calculate_period_statistics(
-            day_records,
-            period_type,
-            rera_device_ids={
-                device_id
-                for device_id, event_types in reported.items()
-                if EVENT_TYPE_RERA in event_types
-            },
-        )
+        return calculate_period_statistics(day_records, period_type, reported)
 
     async def get_period_statistics(
         self,

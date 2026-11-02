@@ -139,6 +139,39 @@ class TestStatisticalAggregation:
         assert day.hypopneas == 20
         assert day.reras == 8
 
+    async def test_unclassified_apneas_sum_and_reset_with_last_enabled_session(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """The day count sums enabled sessions and resets once none is enabled."""
+        device = async_test_device
+        sessions = [
+            await async_test_session_factory(
+                device_id=device.id,
+                start_time=start_time,
+                duration_hours=4.0,
+                unclassified_apneas=count,
+            )
+            for start_time, count in (
+                (datetime(2024, 11, 5, 12, 0, 0), 3),
+                (datetime(2024, 11, 5, 22, 0, 0), 2),
+            )
+        ]
+        await DayManager.link_session_to_day(sessions[0], device.id, async_db_session)
+        day = await DayManager.link_session_to_day(
+            sessions[1], device.id, async_db_session
+        )
+        assert day.unclassified_apneas == 5
+
+        sessions[0].enabled = False
+        await async_db_session.flush()
+        await DayManager.aggregate_day_statistics(day, async_db_session)
+        assert day.unclassified_apneas == 2
+
+        sessions[1].enabled = False
+        await async_db_session.flush()
+        await DayManager.aggregate_day_statistics(day, async_db_session)
+        assert day.unclassified_apneas == 0
+
     async def test_weighted_average_ahi(
         self, async_db_session, async_test_device, async_test_session_factory
     ):

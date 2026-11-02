@@ -3358,7 +3358,7 @@ export interface components {
             confidence?: number | null
             /**
              * Duration
-             * @description [DEVICE] Event duration (seconds); experimental for programmatic events
+             * @description [DEVICE] Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
              */
             duration: number
             /**
@@ -4486,7 +4486,7 @@ export interface components {
             avg_pressure?: number | null
             /**
              * Avg Rera
-             * @description [DERIVED] Average device-scored RERA index (events/hour) over days from devices that have scored a RERA; null when none in the period has
+             * @description [DERIVED] Usage-weighted device-scored RERA index (events/hour) over days from devices that have scored a RERA; null when none in the period has
              */
             avg_rera?: number | null
             /**
@@ -5653,7 +5653,7 @@ export interface components {
             rei?: number | null
             /**
              * Reras
-             * @description [DEVICE] Device-scored RERA count; null when the device has never scored one
+             * @description [DEVICE] Device-scored RERA count; null in API responses when the device has never scored one, while exports keep the raw 0
              */
             reras?: number | null
             /**
@@ -5758,7 +5758,7 @@ export interface components {
             uai?: number | null
             /**
              * Unclassified Apneas
-             * @description [DEVICE] Device-scored unclassified apnea count; null when the device has never scored one
+             * @description [DEVICE] Device-scored unclassified apnea count; null in API responses when the device has never scored one, while exports keep the raw 0
              */
             unclassified_apneas?: number | null
             /**

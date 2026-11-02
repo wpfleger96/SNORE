@@ -237,6 +237,15 @@ describe('WaveformChart', () => {
             expect(ctx.moveTo).toHaveBeenCalledWith(50, BBOX.top)
         })
 
+        it('test_clear_airway_apnea_draws_a_band_and_label', () => {
+            mountWith(eventAt(40, 12, 'CAA'))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).toHaveBeenCalledTimes(1)
+            expect(ctx.fillText).toHaveBeenCalledWith('CAA', 0, 0)
+        })
+
         it('test_unclassified_apnea_draws_a_band_and_label', () => {
             mountWith(eventAt(40, 12, 'UA'))
 

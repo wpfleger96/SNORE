@@ -225,7 +225,7 @@ def register(mcp: FastMCP) -> None:
                     breaths with the lowest (most flow-limited) mid-inspiratory flattening,
                     ranked by that single anchor breath's score; use to find FL hotspots.
                 ``"ca_centered"`` — context window of ±``context_seconds`` around each
-                    CA event, ordered by offset within its session (see above); ``n``
+                    CA or CAA event, ordered by offset within its session (see above); ``n``
                     keeps the first N in that order.  Works even when the day mixes
                     algorithm versions.
                 ``"fl_run_ending_in_recovery"`` — FL runs immediately followed by a

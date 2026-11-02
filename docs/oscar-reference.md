@@ -215,7 +215,7 @@ float calcAHI(Session *session, qint64 start, qint64 end) {
 - CPAP_Hypopnea
 - CPAP_Apnea (unclassified)
 
-SNORE's `AHI_EVENT_TYPES` (`constants.py`) stores these as `CA`/`CAA`, `UA`, `OA` and `H`, and adds `MA`. RERAs are not an AHI channel.
+SNORE's `AHI_EVENT_TYPES` (`constants.py`) counts the event types these channels map to on the ResMed EDF path, `CA`/`CAA`, `UA`, `OA` and `H`, and adds `MA`, which no parser emits today. OSCAR-binary import does not read the `CPAP_Apnea` or `CPAP_AllApnea` channels yet (#432). RERAs are not an AHI channel.
 
 ### Leak Calculation
 
