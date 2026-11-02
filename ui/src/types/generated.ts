@@ -677,10 +677,10 @@ export interface paths {
         put?: never
         /**
          * Delete My Data
-         * @description Delete all sleep data owned by the authenticated user.
+         * @description Queue a background job that deletes all sleep data owned by the caller.
          *
-         *     Removes all Device rows for every live profile owned by the caller.  The
-         *     DB-level cascade (Device → Session/Day/Waveform/Event/Statistics/Setting/
+         *     The job removes all Device rows for every live profile owned by the caller.
+         *     The DB-level cascade (Device → Session/Day/Waveform/Event/Statistics/Setting/
          *     AnalysisResult/Breath/DetectedPattern) wipes all dependent sleep data.
          *     Import job records for this user are also deleted.  Raw backup directories
          *     under ``raw/<profile_id>/`` are purged via the quarantine-rename pattern.
@@ -688,31 +688,16 @@ export interface paths {
          *     Profile rows, the user account, preferences, auth identities, and invites
          *     are NOT affected.  The caller can re-import data after this operation.
          *
-         *     VACUUM runs as a post-response background task so that reclaiming large
-         *     waveform blobs never blocks the event loop or exceeds proxy timeouts.
-         *     ``size_after_mb`` is null and ``vacuum_scheduled`` is true in the response.
-         *     A persistent marker file is written before the commit so that a container
-         *     restart between commit and VACUUM causes startup to reschedule the VACUUM.
-         *
-         *     Crash-safe cleanup (quarantine-before-commit pattern): raw backup dirs are
-         *     renamed into ``.quarantine/`` BEFORE the commit so that a container restart
-         *     between quarantine and commit leaves dirs visible to
-         *     ``DeletionSaga.recover()`` case 2 on next boot.  DB rows survive so the
-         *     state is consistent.  New imports proceed normally, but the raw archive
-         *     is lost and cannot be rebuilt from the database.
+         *     The work outlasts the proxy's request timeout on a large database, so this
+         *     returns 202 at once with a ``job_id`` to poll with
+         *     ``GET /db/reset-jobs/status``.  Returns 409 while another reset or data
+         *     deletion is queued or running.
          *
          *     NOTE: Concurrent in-flight imports for this user's devices will fail if
          *     their device rows are deleted mid-import; this is accepted behavior.
          *
          *     Demo accounts are blocked by ``RequireWritable`` (403) before reaching
          *     this handler — fixture data is never at risk.
-         *
-         *     Write-lock design: two layers protect against concurrent writers.  The
-         *     app-level reset lock (``_lock: ResetLockDep``) serializes concurrent
-         *     /db/reset and /auth/me/delete-data requests, returning 409 immediately when
-         *     held.  ``ImmediateDbDep`` (BEGIN IMMEDIATE) guards against non-serialized
-         *     writers such as imports or analysis jobs; on write-lock contention the
-         *     endpoint returns 409 "Database is busy…" rather than a generic 500.
          */
         post: operations['delete_my_data_api_v1_auth_me_delete_data_post']
         delete?: never
@@ -1008,7 +993,7 @@ export interface paths {
         put?: never
         /**
          * Reset Db
-         * @description Delete database rows and vacuum.
+         * @description Queue a background job that deletes database rows and vacuums.
          *
          *     Two modes selected via the request body:
          *
@@ -1023,31 +1008,41 @@ export interface paths {
          *
          *     ``include_accounts=true``:
          *         Full factory reset (every row in every table) plus raw-dir purge and
-         *         vacuum.  A fresh bootstrap admin invite is created for
-         *         the calling admin's email and returned in ``bootstrap_invite_url``.  The
-         *         caller's session is immediately dead; they must redeem that URL to regain
-         *         access.
+         *         vacuum.  A fresh bootstrap admin invite is created for the calling
+         *         admin's email.  The caller's session dies mid-job; they must redeem that
+         *         invite to regain access.
          *
-         *     The response carries ``Cache-Control: no-store`` so the one-time
-         *     ``bootstrap_invite_url`` is never cached by a proxy or browser.
+         *     The work outlasts the proxy's request timeout on a large database, so this
+         *     returns 202 at once with a ``job_id`` to poll with
+         *     ``GET /db/reset-jobs/status``, which carries the result, including a factory
+         *     reset's one-time ``bootstrap_invite_url``.  Returns 409 while another reset
+         *     or data deletion is queued or running.
          *
-         *     VACUUM runs as a post-response background task.  ``size_after_mb`` is null
-         *     and ``vacuum_scheduled`` is true in the response when VACUUM is queued.
-         *     A persistent marker file is written before the commit so that a container
-         *     restart between commit and VACUUM causes startup to reschedule the VACUUM.
-         *
-         *     Crash-safe cleanup (quarantine-before-commit pattern): raw backup dirs are
-         *     renamed into ``.quarantine/`` BEFORE the commit.  A crash between quarantine
-         *     and commit leaves dirs in ``.quarantine/`` for ``DeletionSaga.recover()``
-         *     case 2 to sweep on next boot; DB rows survive so the state is consistent.
-         *     New imports proceed normally, but the raw archive is lost and cannot be
-         *     rebuilt from the database.
-         *
-         *     Note: this handler holds the SQLite write lock for the entire delete+commit,
-         *     so on large databases concurrent import/analysis writers may hit their 5 s
-         *     busy timeout — operators should quiesce imports before a factory reset.
+         *     Note: the job holds the SQLite write lock for the entire delete+commit, so
+         *     on large databases concurrent import/analysis writers may hit their busy
+         *     timeout — operators should quiesce imports before a factory reset.
          */
         post: operations['reset_db_api_v1_db_reset_post']
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/api/v1/db/reset-jobs/status': {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        /**
+         * Get Reset Job Status
+         * @description Report a reset or data deletion job to the holder of its token.
+         */
+        get: operations['get_reset_job_status_api_v1_db_reset_jobs_status_get']
+        put?: never
+        post?: never
         delete?: never
         options?: never
         head?: never
@@ -3215,9 +3210,9 @@ export interface components {
             profiles_processed: number
             /**
              * Size After Mb
-             * @description Database size after vacuum in MB. Null when vacuum_scheduled=true — the vacuum is still running as a post-response background task.
+             * @description Database size in MB once the job's VACUUM finished. Equals size_before_mb when the VACUUM could not run.
              */
-            size_after_mb?: number | null
+            size_after_mb: number
             /**
              * Size Before Mb
              * @description Database size before deletion in MB
@@ -3228,12 +3223,6 @@ export interface components {
              * @description Operation status ('success')
              */
             status: string
-            /**
-             * Vacuum Scheduled
-             * @description True when VACUUM has been queued as a post-response background task. size_after_mb will be null in this case.
-             * @default false
-             */
-            vacuum_scheduled: boolean
         }
         /**
          * DeletePreview
@@ -5062,6 +5051,39 @@ export interface components {
             /** Skipped */
             skipped: number
         }
+        /** ResetJobEnqueued */
+        ResetJobEnqueued: {
+            /** Job Id */
+            job_id: string
+            /**
+             * State
+             * @enum {string}
+             */
+            state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+        }
+        /**
+         * ResetJobStatus
+         * @description Snapshot of a database reset or data deletion job.
+         *
+         *     The job's kind decides which result field can be set; both stay null until
+         *     the job succeeds.
+         */
+        ResetJobStatus: {
+            delete_data_result: components['schemas']['DeleteDataResult'] | null
+            /** Error Message */
+            error_message: string | null
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: 'reset' | 'delete_data'
+            reset_result: components['schemas']['ResetResult'] | null
+            /**
+             * State
+             * @enum {string}
+             */
+            state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+        }
         /** ResetRequest */
         ResetRequest: {
             /**
@@ -5082,9 +5104,9 @@ export interface components {
             bootstrap_invite_url?: string | null
             /**
              * Size After Mb
-             * @description Database size after vacuum in MB. Null when vacuum_scheduled=true — the vacuum is still running as a post-response background task.
+             * @description Database size in MB once the job's VACUUM finished. Equals size_before_mb when the VACUUM could not run.
              */
-            size_after_mb?: number | null
+            size_after_mb: number
             /**
              * Size Before Mb
              * @description Database size before reset in MB
@@ -5107,12 +5129,6 @@ export interface components {
              * @description Total rows deleted across all tables
              */
             total_rows_deleted: number
-            /**
-             * Vacuum Scheduled
-             * @description True when VACUUM has been queued as a post-response background task. size_after_mb will be null in this case.
-             * @default false
-             */
-            vacuum_scheduled: boolean
         }
         /**
          * RxAllResponse
@@ -7276,12 +7292,12 @@ export interface operations {
         requestBody?: never
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown
                 }
                 content: {
-                    'application/json': components['schemas']['DeleteDataResult']
+                    'application/json': components['schemas']['ResetJobEnqueued']
                 }
             }
         }
@@ -7719,12 +7735,43 @@ export interface operations {
         }
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['ResetJobEnqueued']
+                }
+            }
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError']
+                }
+            }
+        }
+    }
+    get_reset_job_status_api_v1_db_reset_jobs_status_get: {
+        parameters: {
+            query?: never
+            header: {
+                'X-Reset-Job-Token': string
+            }
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown
                 }
                 content: {
-                    'application/json': components['schemas']['ResetResult']
+                    'application/json': components['schemas']['ResetJobStatus']
                 }
             }
             /** @description Validation Error */

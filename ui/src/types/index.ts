@@ -115,6 +115,8 @@ export type DatabaseStatsPublic = Schemas['DatabaseStatsPublic']
 export type VacuumResult = Schemas['VacuumResult']
 export type ResetResult = Schemas['ResetResult']
 export type DeleteDataResult = Schemas['DeleteDataResult']
+export type ResetJobEnqueued = Schemas['ResetJobEnqueued']
+export type ResetJobStatus = Schemas['ResetJobStatus']
 
 // Validation — events (apnea/hypopnea)
 export type ValidationReport = Schemas['ValidationReport']

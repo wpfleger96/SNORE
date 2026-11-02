@@ -28,7 +28,7 @@ __all__ = [
 async def db_busy_maps_to_409() -> AsyncGenerator[None]:
     """Map SQLite write-lock contention to 409 instead of a generic 500.
 
-    Covers writers the reset lock intentionally does not serialize
+    Covers writers the reset job intentionally does not serialize
     (imports, analysis jobs).
     """
     try:

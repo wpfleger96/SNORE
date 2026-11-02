@@ -69,19 +69,45 @@ class TestHealthBusyEndpoint:
         assert resp.status_code == 200
         assert resp.json() == {"busy": True}
 
-    def test_health_busy_with_held_reset_lock(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Held reset lock → busy=true."""
-        import snore.api.deps as deps
+    def test_health_busy_with_queued_reset_job(self) -> None:
+        """A QUEUED reset job → busy=true, unlike queued analysis or validation.
 
-        # Monkeypatch the accessor so the endpoint sees the lock as held
-        # without needing a live asyncio event loop in this sync test.
-        monkeypatch.setattr(deps, "is_reset_locked", lambda: True)
+        The user has been told their data is being deleted, so a container swap
+        must not silently drop the job.  The store fixture cleans it up.
+        """
+        import snore.api.reset_jobs as rj
+
+        job = rj.enqueue(kind=rj.ResetJobKind.RESET, user_id=1, db_path="")
+        assert job is not None
 
         resp = self._make_client().get("/health/busy")
         assert resp.status_code == 200
         assert resp.json() == {"busy": True}
+
+    def test_health_busy_with_running_reset_job(self) -> None:
+        """A RUNNING reset job, which includes its VACUUM → busy=true."""
+        import snore.api.reset_jobs as rj
+
+        job = rj.enqueue(kind=rj.ResetJobKind.DELETE_DATA, user_id=1, db_path="")
+        assert job is not None
+        assert job.try_start()
+
+        resp = self._make_client().get("/health/busy")
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": True}
+
+    def test_health_busy_after_reset_job_finishes_is_not_busy(self) -> None:
+        """A terminal reset job lingers for its status poll but is not busy."""
+        import snore.api.reset_jobs as rj
+
+        job = rj.enqueue(kind=rj.ResetJobKind.RESET, user_id=1, db_path="")
+        assert job is not None
+        assert job.try_start()
+        job.finish(succeeded=True)
+
+        resp = self._make_client().get("/health/busy")
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": False}
 
     def test_health_busy_queued_analysis_job_is_not_busy(self) -> None:
         """A QUEUED (not yet started) analysis job → busy=false.

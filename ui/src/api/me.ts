@@ -1,6 +1,6 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from './client'
 import type { components } from '@/types/generated'
-import type { DeleteDataResult } from '@/types'
+import type { ResetJobEnqueued } from '@/types'
 
 type MeResponse = components['schemas']['MeResponse']
 type MessageResponse = components['schemas']['MessageResponse']
@@ -33,4 +33,4 @@ export const updatePreferences = apiPatch<UserPreferences, [body: UserPreference
     (body) => ({ data: body }),
 )
 
-export const deleteMyData = apiPost<DeleteDataResult>('/auth/me/delete-data')
+export const deleteMyData = apiPost<ResetJobEnqueued>('/auth/me/delete-data')

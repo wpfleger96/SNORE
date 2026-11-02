@@ -184,6 +184,8 @@ _OPERATIONAL_MODELS = {
     "PipelineJobStatus",
     "ProfileResponse",
     "ResetAllBindingsResponse",
+    "ResetJobEnqueued",
+    "ResetJobStatus",
     "ResetResult",
     "TotpStatusResponse",
     "UserInfo",
