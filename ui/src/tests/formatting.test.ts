@@ -1,12 +1,23 @@
 // @vitest-environment node
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
+    formatDuration,
     formatPercent,
     formatPercentPointsDelta,
     formatRelativeTime,
     formatWallClockTime,
     nullReasonLabel,
 } from '@/utils/formatting'
+
+describe('formatDuration', () => {
+    it('test_real_duration_shows_one_decimal_with_seconds_suffix', () => {
+        expect(formatDuration(12.34)).toBe('12.3s')
+    })
+
+    it.each([null, undefined, 0])('test_absent_duration_%s_shows_em_dash', (value) => {
+        expect(formatDuration(value)).toBe('—')
+    })
+})
 
 describe('formatPercent', () => {
     it('test_ordinary_ratio_uses_fixed_decimals', () => {

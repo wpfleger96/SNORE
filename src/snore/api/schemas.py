@@ -149,8 +149,11 @@ class EventItem(BaseModel):
     id: int
     event_type: str
     start_time: float
-    duration_seconds: float = provenance_field(
-        Provenance.DEVICE, "Device-scored event duration (s)"
+    duration_seconds: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-recorded event duration (s); null when the device recorded none, "
+        "which is always the case for ResMed hypopneas and RERAs",
+        default=None,
     )
     offset_seconds: float
     spo2_drop: float | None = provenance_field(

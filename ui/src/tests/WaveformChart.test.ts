@@ -158,6 +158,104 @@ describe('WaveformChart', () => {
         expect(without.text()).not.toContain('Shaded bands')
     })
 
+    describe('device event overlay', () => {
+        const BBOX = { left: 0, top: 0, width: 1000, height: 200 }
+        const START_EPOCH = 1000
+
+        function eventAt(offsetSeconds: number, durationSeconds: number | null, eventType = 'H') {
+            return {
+                id: 1,
+                event_type: eventType,
+                start_time: 0,
+                duration_seconds: durationSeconds,
+                offset_seconds: offsetSeconds,
+                spo2_drop: null,
+                peak_flow_limitation: null,
+            }
+        }
+
+        /** Run the overlay plugin's hooks on a fake canvas, 1 px per second of session time. */
+        function drawOverlay() {
+            const ctx = {
+                save: vi.fn(),
+                restore: vi.fn(),
+                beginPath: vi.fn(),
+                rect: vi.fn(),
+                clip: vi.fn(),
+                moveTo: vi.fn(),
+                lineTo: vi.fn(),
+                stroke: vi.fn(),
+                fillRect: vi.fn(),
+                fillText: vi.fn(),
+                setTransform: vi.fn(),
+            }
+            const u = {
+                ctx,
+                bbox: BBOX,
+                valToPos: (value: number) => value - START_EPOCH,
+            }
+            const { plugins } = mockState.lastOpts as unknown as {
+                plugins: { hooks: Record<'drawClear' | 'draw', Array<(u: unknown) => void>> }[]
+            }
+            plugins[0].hooks.drawClear[0](u)
+            plugins[0].hooks.draw[0](u)
+            return ctx
+        }
+
+        function mountWith(event: ReturnType<typeof eventAt>) {
+            mount(WaveformChart, {
+                props: { ...LONG_PROPS, startEpoch: START_EPOCH, events: [event] },
+            })
+        }
+
+        it('test_null_duration_event_draws_band_marker_and_label_at_its_offset', () => {
+            mountWith(eventAt(40, null))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).toHaveBeenCalledWith(40, BBOX.top, 2, BBOX.height)
+            expect(ctx.moveTo).toHaveBeenCalledWith(40, BBOX.top)
+            expect(ctx.fillText).toHaveBeenCalledWith('H', 0, 0)
+            expect(ctx.setTransform.mock.calls[0][4]).toBe(40)
+        })
+
+        it('test_null_duration_event_past_the_viewport_is_skipped', () => {
+            mountWith(eventAt(1500, null))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).not.toHaveBeenCalled()
+            expect(ctx.fillText).not.toHaveBeenCalled()
+        })
+
+        it('test_timed_event_band_spans_its_duration', () => {
+            mountWith(eventAt(40, 20, 'OA'))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).toHaveBeenCalledWith(40, BBOX.top, 20, BBOX.height)
+            expect(ctx.moveTo).toHaveBeenCalledWith(50, BBOX.top)
+        })
+
+        it('test_clear_airway_apnea_draws_a_band_and_label', () => {
+            mountWith(eventAt(40, 12, 'CAA'))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).toHaveBeenCalledTimes(1)
+            expect(ctx.fillText).toHaveBeenCalledWith('CAA', 0, 0)
+        })
+
+        it('test_unclassified_apnea_draws_a_band_and_label', () => {
+            mountWith(eventAt(40, 12, 'UA'))
+
+            const ctx = drawOverlay()
+
+            expect(ctx.fillRect).toHaveBeenCalledTimes(1)
+            expect(ctx.fillText).toHaveBeenCalledWith('UA', 0, 0)
+        })
+    })
+
     it('test_refetching_true_renders_corner_spinner', () => {
         const wrapper = mount(WaveformChart, {
             props: { ...MINIMAL_PROPS, refetching: true },

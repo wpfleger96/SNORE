@@ -2104,7 +2104,7 @@ export interface components {
             confidence?: number | null
             /**
              * Duration
-             * @description [DEVICE] Event duration (seconds); experimental for programmatic events
+             * @description [DEVICE] Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
              */
             duration: number
             /**
@@ -2975,7 +2975,7 @@ export interface components {
             cai_computed?: number | null
             /**
              * Central Apneas
-             * @description [DEVICE] Device-scored central apnea count for the night
+             * @description [DEVICE] Device-scored central apnea count for the night, including clear airway events
              * @default 0
              */
             central_apneas: number
@@ -3088,10 +3088,9 @@ export interface components {
             pressure_min?: number | null
             /**
              * Reras
-             * @description [DEVICE] Device-scored RERA count for the night
-             * @default 0
+             * @description [DEVICE] Device-scored RERA count for the night; null when the device has never scored one
              */
-            reras: number
+            reras?: number | null
             /** Session Count */
             session_count: number
             /** Session Ids */
@@ -3111,6 +3110,11 @@ export interface components {
              * @description [DERIVED] Total mask-on hours across the day's sessions
              */
             total_therapy_hours?: number | null
+            /**
+             * Unclassified Apneas
+             * @description [DEVICE] Device-scored unclassified apnea count for the night; null when the device has never scored one
+             */
+            unclassified_apneas?: number | null
         }
         /**
          * DayExperimentalMetrics
@@ -3343,7 +3347,7 @@ export interface components {
             confidence?: number | null
             /**
              * Duration
-             * @description [DEVICE] Event duration (seconds); experimental for programmatic events
+             * @description [DEVICE] Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
              */
             duration: number
             /**
@@ -3423,9 +3427,9 @@ export interface components {
         EventItem: {
             /**
              * Duration Seconds
-             * @description [DEVICE] Device-scored event duration (s)
+             * @description [DEVICE] Device-recorded event duration (s); null when the device recorded none, which is always the case for ResMed hypopneas and RERAs
              */
-            duration_seconds: number
+            duration_seconds?: number | null
             /** Event Type */
             event_type: string
             /** Id */
@@ -4471,7 +4475,7 @@ export interface components {
             avg_pressure?: number | null
             /**
              * Avg Rera
-             * @description [DERIVED] Average device-scored RERA index (events/hour)
+             * @description [DERIVED] Usage-weighted device-scored RERA index (events/hour) over days from devices that have scored a RERA; null when none in the period has
              */
             avg_rera?: number | null
             /**
@@ -5385,7 +5389,7 @@ export interface components {
         SessionStatistics: {
             /**
              * Ahi
-             * @description [DERIVED] AHI: device-scored OA+CA+H per mask-on hour
+             * @description [DERIVED] AHI: device-scored apneas of every type and hypopneas per mask-on hour
              */
             ahi?: number | null
             /**
@@ -5430,7 +5434,7 @@ export interface components {
             cai_device?: number | null
             /**
              * Central Apneas
-             * @description [DEVICE] Device-scored central apnea count
+             * @description [DEVICE] Device-scored central apnea count, including clear airway events
              */
             central_apneas?: number | null
             /**
@@ -5475,7 +5479,7 @@ export interface components {
             flow_95th?: number | null
             /**
              * Flow Limitations
-             * @description [DEVICE] Device-flagged flow limitation count
+             * @description [DEVICE] Device-flagged flow limitation count; null when the device has never flagged one
              */
             flow_limitations?: number | null
             /**
@@ -5600,7 +5604,7 @@ export interface components {
             minute_ventilation_min?: number | null
             /**
              * Mixed Apneas
-             * @description [DEVICE] Device-scored mixed apnea count
+             * @description [DEVICE] Device-scored mixed apnea count; null when the device has never scored one
              */
             mixed_apneas?: number | null
             /**
@@ -5665,7 +5669,7 @@ export interface components {
             rei?: number | null
             /**
              * Reras
-             * @description [DEVICE] Device-scored RERA count
+             * @description [DEVICE] Device-scored RERA count; null in API responses when the device has never scored one, while exports keep the raw 0
              */
             reras?: number | null
             /**
@@ -5768,6 +5772,11 @@ export interface components {
              * @description [DEVICE] Unknown apnea index
              */
             uai?: number | null
+            /**
+             * Unclassified Apneas
+             * @description [DEVICE] Device-scored unclassified apnea count; null in API responses when the device has never scored one, while exports keep the raw 0
+             */
+            unclassified_apneas?: number | null
             /**
              * Usage Hours
              * @description [DERIVED] Mask-on therapy hours

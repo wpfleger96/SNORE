@@ -72,6 +72,7 @@ def create_machine_events_table(
         EVENT_TYPE_HYPOPNEA,
         EVENT_TYPE_MIXED_APNEA,
         EVENT_TYPE_OBSTRUCTIVE_APNEA,
+        EVENT_TYPE_UNCLASSIFIED_APNEA,
     )
 
     machine_event_counts: dict[str, int] = {}
@@ -84,6 +85,7 @@ def create_machine_events_table(
     ca_count = machine_event_counts.get(EVENT_TYPE_CENTRAL_APNEA, 0)
     caa_count = machine_event_counts.get(EVENT_TYPE_CLEAR_AIRWAY, 0)
     ma_count = machine_event_counts.get(EVENT_TYPE_MIXED_APNEA, 0)
+    ua_count = machine_event_counts.get(EVENT_TYPE_UNCLASSIFIED_APNEA, 0)
     h_count = machine_event_counts.get(EVENT_TYPE_HYPOPNEA, 0)
 
     table = Table(
@@ -109,6 +111,8 @@ def create_machine_events_table(
     if caa_count > 0 or ca_count > 0:
         clear_airway_total = caa_count + ca_count
         table.add_row("Central Apneas (CA)", str(clear_airway_total))
+    if ua_count > 0:
+        table.add_row("Unclassified Apneas (UA)", str(ua_count))
     if ma_count > 0:
         table.add_row("Mixed Apneas (MA)", str(ma_count))
     if h_count > 0:
@@ -417,6 +421,7 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
             [
                 (stats.obstructive_apneas or 0) > 0,
                 (stats.central_apneas or 0) > 0,
+                (stats.unclassified_apneas or 0) > 0,
                 (stats.mixed_apneas or 0) > 0,
                 (stats.hypopneas or 0) > 0,
                 (stats.reras or 0) > 0,
@@ -432,6 +437,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
             if stats.central_apneas and stats.central_apneas > 0:
                 console.print(
                     f"      {mark_field('Central Apneas', SessionStatistics, 'central_apneas')}: {stats.central_apneas}"
+                )
+            if stats.unclassified_apneas and stats.unclassified_apneas > 0:
+                console.print(
+                    f"      {mark_field('Unclassified Apneas', SessionStatistics, 'unclassified_apneas')}: {stats.unclassified_apneas}"
                 )
             if stats.mixed_apneas and stats.mixed_apneas > 0:
                 console.print(

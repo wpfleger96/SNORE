@@ -347,6 +347,15 @@ EVENT_TYPE_RERA = "RE"
 EVENT_TYPE_FLOW_LIMITATION = "FL"
 EVENT_TYPE_UNCLASSIFIED_APNEA = "UA"
 
+# Statistics count fields of the event types not every device scores, with the
+# type each one counts.  ``Day`` carries only ``reras`` and ``unclassified_apneas``.
+OPTIONAL_EVENT_COUNT_FIELDS: dict[str, str] = {
+    "mixed_apneas": EVENT_TYPE_MIXED_APNEA,
+    "unclassified_apneas": EVENT_TYPE_UNCLASSIFIED_APNEA,
+    "reras": EVENT_TYPE_RERA,
+    "flow_limitations": EVENT_TYPE_FLOW_LIMITATION,
+}
+
 # Type alias for valid apnea event types (used by ApneaEvent model)
 type ApneaEventType = Literal["OA", "CA", "MA", "UA"]
 
@@ -362,6 +371,14 @@ APNEA_TYPE_MAP: dict[str, ApneaEventType] = {
     EVENT_TYPE_MIXED_APNEA: "MA",
     EVENT_TYPE_UNCLASSIFIED_APNEA: "UA",
 }
+
+# Device event types counted in every AHI recount: every apnea plus hypopneas,
+# RERAs out.  The list follows OSCAR's AHI channels (schema.cpp:420-424:
+# ClearAirway, AllApnea, Obstructive, Hypopnea, Apnea), plus mixed apneas.  Only
+# ResMed EDF import produces UA and CAA: OSCAR-binary import does not read the
+# Apnea or AllApnea channels yet (issue #432), and no parser emits MA today, so
+# ``mixed_apneas`` is always 0 on imported data.
+AHI_EVENT_TYPES: frozenset[str] = frozenset(APNEA_TYPE_MAP) | {EVENT_TYPE_HYPOPNEA}
 
 
 def get_apnea_type(event_type: str) -> ApneaEventType | None:

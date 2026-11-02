@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
@@ -32,7 +32,7 @@ vi.mock('@/components/ui/toggle-group', () => ({
     }),
     ToggleGroupItem: {
         props: ['value', 'disabled'],
-        template: '<button><slot /></button>',
+        template: '<button :data-value="value"><slot /></button>',
     },
 }))
 
@@ -140,5 +140,54 @@ describe('StatsView', () => {
 
         expect(getPeriods).toHaveBeenLastCalledWith('month', undefined)
         expect(getTrends).toHaveBeenLastCalledWith('month', undefined)
+    })
+
+    describe('RERA trend', () => {
+        const TRENDS = { ...EMPTY_TRENDS, ahi: [['2026-04-01', 1.2]] as [string, number | null][] }
+        const reraPoints = (value: number | null) =>
+            [
+                ['2026-04-01', value],
+                ['2026-05-01', value],
+            ] as [string, number | null][]
+
+        beforeEach(() => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['rera']))
+        })
+
+        afterEach(() => {
+            localStorage.clear()
+        })
+
+        it('test_all_null_series_offers_no_toggle_or_chart', async () => {
+            vi.mocked(getTrends).mockResolvedValue({ ...TRENDS, rera: reraPoints(null) })
+
+            const wrapper = await mountAndLoad()
+
+            expect(wrapper.find('[data-value="rera"]').exists()).toBe(false)
+            expect(wrapper.find('[data-value="ahi"]').exists()).toBe(true)
+            expect(wrapper.find('.trend-chart-stub').exists()).toBe(false)
+        })
+
+        it('test_series_of_real_zeros_keeps_toggle_and_chart', async () => {
+            vi.mocked(getTrends).mockResolvedValue({ ...TRENDS, rera: reraPoints(0) })
+
+            const wrapper = await mountAndLoad()
+
+            expect(wrapper.find('[data-value="rera"]').exists()).toBe(true)
+            expect(wrapper.find('.trend-chart-stub').exists()).toBe(true)
+        })
+
+        it('test_selected_rera_returns_when_a_wider_range_has_data', async () => {
+            vi.mocked(getTrends).mockResolvedValue({ ...TRENDS, rera: reraPoints(null) })
+            const wrapper = await mountAndLoad()
+            vi.mocked(getTrends).mockResolvedValue({ ...TRENDS, rera: reraPoints(0.4) })
+
+            const rangeToggle = wrapper.findAllComponents({ name: 'ToggleGroup' })[1]
+            await rangeToggle.vm.$emit('update:model-value', 'all')
+            await flushPromises()
+
+            expect(wrapper.find('[data-value="rera"]').exists()).toBe(true)
+            expect(wrapper.find('.trend-chart-stub').exists()).toBe(true)
+        })
     })
 })

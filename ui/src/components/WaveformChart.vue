@@ -83,6 +83,15 @@ function clampSpan(min: number, max: number): [number, number] {
     return [lo, hi]
 }
 
+// Canvas x-span of an event; a missing duration (device recorded none) draws as a point.
+function eventSpan(u: uPlot, evt: EventItem): [number, number] {
+    const start = evt.offset_seconds + props.startEpoch
+    return [
+        u.valToPos(start, 'x', true),
+        u.valToPos(start + (evt.duration_seconds ?? 0), 'x', true),
+    ]
+}
+
 function buildEventPlugin(): uPlot.Plugin {
     return {
         hooks: {
@@ -100,12 +109,7 @@ function buildEventPlugin(): uPlot.Plugin {
                         const color = EVENT_COLORS[evt.event_type]
                         if (!color) continue
 
-                        const x0 = u.valToPos(evt.offset_seconds + props.startEpoch, 'x', true)
-                        const x1 = u.valToPos(
-                            evt.offset_seconds + evt.duration_seconds + props.startEpoch,
-                            'x',
-                            true,
-                        )
+                        const [x0, x1] = eventSpan(u, evt)
 
                         if (x1 < left || x0 > left + width) continue
 
@@ -143,12 +147,7 @@ function buildEventPlugin(): uPlot.Plugin {
                         const solidColor = EVENT_SOLID_COLORS[evt.event_type]
                         if (!solidColor) continue
 
-                        const x0 = u.valToPos(evt.offset_seconds + props.startEpoch, 'x', true)
-                        const x1 = u.valToPos(
-                            evt.offset_seconds + evt.duration_seconds + props.startEpoch,
-                            'x',
-                            true,
-                        )
+                        const [x0, x1] = eventSpan(u, evt)
 
                         if (x1 < left || x0 > left + width) continue
 

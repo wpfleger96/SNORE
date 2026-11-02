@@ -208,11 +208,14 @@ float calcAHI(Session *session, qint64 start, qint64 end) {
 - Recalculates AHI at each time step
 - Output: Waveform channel for visualization
 
-**Contributing channels:** `schema.cpp:419-423`
+**Contributing channels:** `schema.cpp:420-424`
 - CPAP_ClearAirway (central apnea)
+- CPAP_AllApnea
 - CPAP_Obstructive
 - CPAP_Hypopnea
 - CPAP_Apnea (unclassified)
+
+SNORE's `AHI_EVENT_TYPES` (`constants.py`) counts the event types these channels map to on the ResMed EDF path, `CA`/`CAA`, `UA`, `OA` and `H`, and adds `MA`, which no parser emits today. OSCAR-binary import does not read the `CPAP_Apnea` or `CPAP_AllApnea` channels yet (#432). RERAs are not an AHI channel.
 
 ### Leak Calculation
 

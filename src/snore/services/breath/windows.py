@@ -15,6 +15,7 @@ from snore.analysis.shared.versioning import (
     DayAnalysisStatus,
     NullReason,
 )
+from snore.constants import EVENT_TYPE_CENTRAL_APNEA, EVENT_TYPE_CLEAR_AIRWAY
 from snore.database import models
 
 from ._core import _BreathServiceCore
@@ -408,7 +409,9 @@ class WindowsMixin(_BreathServiceCore):
             .join(models.Session, models.Event.session_id == models.Session.id)
             .where(
                 models.Event.session_id.in_(session_ids),
-                models.Event.event_type == "CA",
+                models.Event.event_type.in_(
+                    (EVENT_TYPE_CENTRAL_APNEA, EVENT_TYPE_CLEAR_AIRWAY)
+                ),
             )
             .order_by(models.Event.start_time)
         )

@@ -16,6 +16,12 @@ describe('GLOSSARY text', () => {
         expect(text).not.toMatch(/period, and trend AHIs are SNORE recounts/)
     })
 
+    it('test_unclassified_apnea_entries_say_they_count_toward_ahi', () => {
+        expect(GLOSSARY.unclassified_apneas.label).toBe('Unclassified Apneas')
+        expect(GLOSSARY.unclassified_apneas.short).toMatch(/count toward AHI/)
+        expect(GLOSSARY.event_type_ua.short).toMatch(/counts toward AHI/)
+    })
+
     it('test_labels_are_unique_outside_device_settings', () => {
         // Device-setting entries (setting_*) reuse metric names by design; the two
         // I:E Ratio entries are one quantity from two sources (waveform, STR).

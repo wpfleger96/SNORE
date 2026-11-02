@@ -9,7 +9,7 @@ import logging
 import xml.etree.ElementTree as ET
 
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
@@ -69,8 +69,6 @@ from snore.parsers.unified import (
 from snore.therapy_hours import TherapyHoursBasis, therapy_hours
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_EVENT_DURATION_SECONDS = 10.0  # OSCAR's default apnea duration
 
 
 def _epoch_to_wall_clock(epoch_seconds: float, timezone_name: str | None) -> datetime:
@@ -704,20 +702,9 @@ class OscarDeviceParser(DeviceParser):
                         timestamp_ms / 1000, timezone_name
                     )
 
-                    duration = (
-                        durations[i]
-                        if i < len(durations)
-                        else DEFAULT_EVENT_DURATION_SECONDS
-                    )
-
-                    clamped_duration = max(duration, 0)
+                    duration = durations[i] if i < len(durations) else None
                     # OSCAR stores event timestamps at the event's end for all
-                    # event channels (its UI draws spans backward by duration);
-                    # normalize to true start.
-                    event = RespiratoryEvent(
-                        event_type=event_type,
-                        start_time=event_time - timedelta(seconds=clamped_duration),
-                        duration_seconds=clamped_duration,
+                    # event channels (its UI draws spans backward by duration).
+                    session.add_event(
+                        RespiratoryEvent.from_end_flag(event_type, event_time, duration)
                     )
-
-                    session.add_event(event)

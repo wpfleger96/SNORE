@@ -1,5 +1,7 @@
 """Unit tests for cli/display/analysis rendering helpers."""
 
+import re
+
 from io import StringIO
 from typing import Any
 from unittest.mock import patch
@@ -10,7 +12,7 @@ from rich.console import Console, RenderableType
 
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
-from snore.analysis.types import AnalysisResult
+from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import provenance_legend
 from snore.cli.display.analysis import (
     create_header_panel,
@@ -98,6 +100,21 @@ class TestAnalysisResultFromStoredJson:
             "machine_events": machine_events,
             "mode_results": {},
         }
+
+    def test_counts_every_ahi_event_type_and_not_reras(self):
+        events = [
+            {
+                "event_type": t,
+                "start_time": float(i),
+                "duration": 0.0,
+                "source": "machine",
+            }
+            for i, t in enumerate(["OA", "CA", "CAA", "MA", "UA", "H", "RE", "FL"])
+        ]
+
+        result = AnalysisResult.from_stored_json(self._stored(events))
+
+        assert result.machine_ahi == pytest.approx(6 / 8.0)
 
     def test_backfills_when_events_present_and_keys_absent(self):
         """Old payload with events → AHI/RDI computed from events over duration."""
@@ -213,6 +230,32 @@ class TestCreateValidationTableReraRow:
             rera_status="no_machine_re_events",
         )
         assert "RERAs" not in _render(empty_rera)
+
+
+class TestMachineEventsTable:
+    @staticmethod
+    def _events(*event_types: str) -> list[AnalysisEvent]:
+        return [
+            AnalysisEvent(
+                event_type=event_type,
+                start_time=float(i),
+                duration=10.0,
+                source="machine",
+            )
+            for i, event_type in enumerate(event_types)
+        ]
+
+    def test_unclassified_apneas_get_their_own_row(self):
+        output = _render(
+            create_machine_events_table(self._events("OA", "UA", "UA"), 2.0)
+        )
+
+        assert re.search(r"Unclassified Apneas \(UA\)\s+2\b", output)
+
+    def test_no_row_without_unclassified_apneas(self):
+        output = _render(create_machine_events_table(self._events("OA"), 2.0))
+
+        assert "Unclassified" not in output
 
 
 class TestAnalysisProvenanceLegend:

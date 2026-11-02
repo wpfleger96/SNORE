@@ -575,6 +575,37 @@ class TestCaCenteredNoAnalysis:
 
         assert [w.session_id for w in result.windows] == [enabled.id]
 
+    async def test_ca_centered_anchors_on_clear_airway_events(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """CAA is a central apnea too; an OA on the same night is not."""
+        from snore.mcp.tools.windows import find_windows  # noqa: PLC0415
+
+        target_date = date(2024, 3, 4)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        for offset_s, event_type in ((300.0, "CA"), (600.0, "CAA"), (900.0, "OA")):
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type=event_type,
+                    start_time=sess.start_time + timedelta(seconds=offset_s),
+                    duration_seconds=15.0,
+                )
+            )
+        await async_db_session.flush()
+
+        result = await find_windows(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            criterion="ca_centered",
+            n=5,
+            device_id=device.id,
+        )
+
+        assert [w.anchor_event_offset for w in result.windows] == [300.0, 600.0]
+
 
 # ---------------------------------------------------------------------------
 # TestFlRunEndingInRecovery

@@ -435,7 +435,7 @@
                         </div>
                         <div class="data-card-row">
                             <span class="data-card-label">Duration</span>
-                            <span class="data-card-value">{{ e.duration.toFixed(1) }}s</span>
+                            <span class="data-card-value">{{ formatDuration(e.duration) }}</span>
                         </div>
                     </div>
                 </div>
@@ -472,7 +472,7 @@
                                     {{ formatTimeOffset(e.start_time) }}
                                 </RouterLink>
                             </TableCell>
-                            <TableCell>{{ e.duration.toFixed(1) }}s</TableCell>
+                            <TableCell>{{ formatDuration(e.duration) }}</TableCell>
                         </TableRow>
                     </TableBody>
                 </Table>
@@ -609,7 +609,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { usePagedRows } from '@/composables/usePagedRows'
-import { formatTimeOffset } from '@/utils/formatting'
+import { formatDuration, formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import { FLOW_LIMITATION_CLASSES } from '@/utils/flowLimitation'
 import type { AnalysisResult, EventComparisonResult } from '@/types'

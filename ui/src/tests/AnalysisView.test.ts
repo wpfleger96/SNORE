@@ -257,6 +257,22 @@ describe('AnalysisView', () => {
         expect(types).toEqual(['RE', 'CA', 'OA'])
     })
 
+    it('test_false_negative_without_device_duration_shows_dash_not_zero_seconds', async () => {
+        vi.mocked(getWaveformCompare).mockResolvedValue({
+            ...COMPARISON,
+            false_negatives: [
+                { event_type: 'H', start_time: 100, duration: 0, source: 'machine' },
+                { event_type: 'OA', start_time: 200, duration: 12.5, source: 'machine' },
+            ],
+        } as never)
+        const wrapper = await mountView()
+
+        const durations = compareTable(wrapper, 'False Negatives')
+            .findAll('tbody tr')
+            .map((row) => row.findAll('td').at(-1)?.text())
+        expect(durations).toEqual(['—', '12.5s'])
+    })
+
     it('test_rera_false_positives_are_listed_and_counted', async () => {
         vi.mocked(getWaveformCompare).mockResolvedValue({
             ...COMPARISON,

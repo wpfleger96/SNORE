@@ -274,7 +274,9 @@ class CapabilitiesMixin(_BreathServiceCore):
     ) -> list[ContextualEvent]:
         """Machine events enriched with waveform context.
 
-        Returns events from ALL sessions on the resolved device.
+        Returns events from ALL sessions on the resolved device.  ``min_duration``
+        of 0 means no filter; a positive value also drops events with no recorded
+        duration.
         Pressure, leak and delivered PS are sampled around the event start
         (±5 s window).  MV is the device MV channel's mean over the 120 s
         preceding the event.
@@ -334,7 +336,7 @@ class CapabilitiesMixin(_BreathServiceCore):
             ev_stmt = select(models.Event).where(models.Event.session_id == session_id)
             if event_types:
                 ev_stmt = ev_stmt.where(models.Event.event_type.in_(event_types))
-            if min_duration is not None:
+            if min_duration:
                 ev_stmt = ev_stmt.where(models.Event.duration_seconds >= min_duration)
             ev_stmt = ev_stmt.order_by(models.Event.start_time)
             events = (await self._db.execute(ev_stmt)).scalars().all()

@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from snore.analysis.calculations import (
+    PeriodType,
     calculate_ahi_trend_direction,
     calculate_average_ahi,
     calculate_median_ahi,
@@ -20,7 +21,17 @@ from snore.analysis.calculations import (
     calculate_trends_extended,
 )
 from snore.database.day_manager import DayManager
-from snore.database.models import Day
+from snore.database.models import Day, Device
+from snore.services.schemas import PeriodStatistics
+
+
+def _periods(
+    days: list[Day], period_type: PeriodType, *reported: str
+) -> list[PeriodStatistics]:
+    """``calculate_period_statistics`` with every day's device scoring ``reported``."""
+    return calculate_period_statistics(
+        days, period_type, {day.device_id: set(reported) for day in days}
+    )
 
 
 class TestCalculateMedianAhi:
@@ -197,7 +208,7 @@ class TestCalculatePeriodStatistics:
             )
             days.append(day)
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 2
         assert result[0].period_start == date(2024, 10, 1)
@@ -228,7 +239,7 @@ class TestCalculatePeriodStatistics:
             )
             days.append(day)
 
-        result = calculate_period_statistics(days, "week")
+        result = _periods(days, "week")
 
         assert len(result) >= 2
 
@@ -251,7 +262,7 @@ class TestCalculatePeriodStatistics:
             )
             days.append(day)
 
-        result = calculate_period_statistics(days, "year")
+        result = _periods(days, "year")
 
         assert len(result) == 2
         assert result[0].period_start == date(2024, 1, 1)
@@ -278,7 +289,7 @@ class TestCalculatePeriodStatistics:
             )
             days.append(day)
 
-        result = calculate_period_statistics(days, "6month")
+        result = _periods(days, "6month")
 
         assert len(result) == 2
         assert result[0].period_start == date(2024, 1, 1)
@@ -288,7 +299,7 @@ class TestCalculatePeriodStatistics:
 
     def test_empty_days(self):
         """Empty day list returns empty result."""
-        result = calculate_period_statistics([], "month")
+        result = _periods([], "month")
 
         assert result == []
 
@@ -317,7 +328,7 @@ class TestCalculatePeriodStatistics:
             )
             days.append(day)
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 1
         period = result[0]
@@ -343,7 +354,7 @@ class TestCalculatePeriodStatistics:
         day = await DayManager.link_session_to_day(session, device.id, async_db_session)
 
         with pytest.raises(ValueError, match="Invalid period_type: invalid"):
-            calculate_period_statistics([day], "invalid")
+            _periods([day], "invalid")
 
 
 class TestDayGranularity:
@@ -368,7 +379,7 @@ class TestDayGranularity:
             )
             days_orm.append(day)
 
-        result = calculate_period_statistics(days_orm, "day")
+        result = _periods(days_orm, "day")
 
         assert len(result) == 3
         for i, period in enumerate(result):
@@ -401,7 +412,7 @@ class TestDayGranularity:
             .scalars()
             .all()
         )
-        result = calculate_period_statistics(day_records, "day")
+        result = _periods(day_records, "day")
 
         result_dates = [p.period_start for p in result]
         assert date(2024, 5, 1) in result_dates
@@ -445,7 +456,7 @@ class TestDayGranularity:
         same_date_days = [d for d in day_records if d.date == target_date]
         assert len(same_date_days) == 2
 
-        result = calculate_period_statistics(day_records, "day")
+        result = _periods(day_records, "day")
 
         matching = [p for p in result if p.period_start == target_date]
         assert len(matching) == 1, "two devices on same date must merge to one bucket"
@@ -495,7 +506,7 @@ class TestNewPeriodFields:
             for i in range(3)
         ]
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 1
         p = result[0]
@@ -503,8 +514,8 @@ class TestNewPeriodFields:
         assert p.avg_cai == pytest.approx(3.0, abs=0.01)  # mean of 2,3,4
         assert p.avg_hi == pytest.approx(4.0, abs=0.01)  # mean of 3,4,5
 
-    def test_avg_rera_hand_computed(self, db_session, test_device):
-        """avg_rera = mean(reras / total_therapy_hours) across days with usage."""
+    def test_avg_rera_is_usage_weighted(self, db_session, test_device):
+        """avg_rera = total RERAs / total therapy hours, not a mean of daily rates."""
         days = [
             self._make_day(
                 db_session,
@@ -529,11 +540,11 @@ class TestNewPeriodFields:
             ),
         ]
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 1
-        # mean(1.0, 1.0, 3.0) = 5/3 ≈ 1.667
-        assert result[0].avg_rera == pytest.approx(5.0 / 3.0, abs=0.01)
+        # (8 + 6 + 12) / (8 + 6 + 4); the mean of daily rates would be 5/3.
+        assert result[0].avg_rera == pytest.approx(26.0 / 18.0)
 
     def test_avg_rera_none_when_no_qualifying_days(self, db_session, test_device):
         """avg_rera is None when all days in a bucket have total_therapy_hours == 0."""
@@ -548,16 +559,15 @@ class TestNewPeriodFields:
             for i in range(2)
         ]
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         # Days exist so the bucket is NOT skipped; only avg_hours_per_day and avg_rera are None.
         assert len(result) == 1
         assert result[0].avg_hours_per_day is None
         assert result[0].avg_rera is None
 
-    def test_avg_rera_zero_when_reras_zero_with_usage(self, db_session, test_device):
-        """avg_rera is 0.0 when reras=0 and therapy hours are positive."""
-        days2 = [
+    def _zero_rera_days(self, db_session: object, test_device: object) -> list[Day]:
+        return [
             self._make_day(
                 db_session,
                 test_device,
@@ -567,9 +577,60 @@ class TestNewPeriodFields:
             )
             for i in range(2)
         ]
-        result2 = calculate_period_statistics(days2, "month")
-        assert len(result2) == 1
-        assert result2[0].avg_rera == pytest.approx(0.0, abs=0.01)
+
+    def test_avg_rera_zero_on_rera_reporting_device(self, db_session, test_device):
+        """Zero RERAs on a device that scores them is a real 0.0."""
+        days = self._zero_rera_days(db_session, test_device)
+
+        result = _periods(days, "month", "RE")
+
+        assert result[0].avg_rera == 0.0
+
+    def test_avg_rera_none_without_reporting_device(self, db_session, test_device):
+        """Zero RERAs on a device that never scores them is no measurement."""
+        days = self._zero_rera_days(db_session, test_device)
+
+        result = _periods(days, "month")
+
+        assert result[0].avg_rera is None
+
+    def test_avg_rera_skips_days_of_non_reporting_device(
+        self, db_session, test_device, test_profile
+    ):
+        """In a mixed period only the reporting device's days are averaged."""
+        other = Device(
+            profile_id=test_profile.id,
+            manufacturer="Test Manufacturer",
+            model="Other",
+            serial_number="OTHER",
+        )
+        db_session.add(other)
+        db_session.flush()
+        days = [
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 10, 1),
+                reras=4,
+                total_therapy_hours=8.0,  # rate = 0.5
+            ),
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 10, 2),
+                reras=0,
+                total_therapy_hours=8.0,  # rate = 0.0
+            ),
+            self._make_day(
+                db_session, other, date(2024, 10, 3), reras=0, total_therapy_hours=8.0
+            ),
+        ]
+
+        result = calculate_period_statistics(
+            days, "month", {test_device.id: {"RE"}, other.id: set()}
+        )
+
+        assert result[0].avg_rera == pytest.approx(0.25)
 
     def test_oai_cai_hi_usage_weighted(self, db_session, test_device):
         """avg_oai/cai/hi weight each day by total_therapy_hours, not equally."""
@@ -594,7 +655,7 @@ class TestNewPeriodFields:
             ),
         ]
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 1
         p = result[0]
@@ -632,7 +693,7 @@ class TestNewPeriodFields:
             _day(date(2024, 7, 2), 2.0, 15.0, 25.0, 90.0),
         ]
 
-        result = calculate_period_statistics(days, "month")
+        result = _periods(days, "month")
 
         assert len(result) == 1
         p = result[0]
@@ -652,7 +713,7 @@ class TestNewPeriodFields:
             total_therapy_hours=8.0,
         )
 
-        result = calculate_period_statistics([day], "month")
+        result = _periods([day], "month")
 
         assert len(result) == 1
         assert result[0].avg_oai is None
@@ -686,7 +747,7 @@ class TestCalculateTrends:
             )
             days.append(day)
 
-        period_stats = calculate_period_statistics(days, "week")
+        period_stats = _periods(days, "week")
         result = calculate_trends(period_stats)
 
         expected_keys = {
@@ -731,7 +792,7 @@ class TestCalculateTrends:
             )
             days.append(day)
 
-        period_stats = calculate_period_statistics(days, "week")
+        period_stats = _periods(days, "week")
         result = calculate_trends(period_stats)
 
         assert len(result["ahi"]) == len(period_stats)
@@ -785,7 +846,7 @@ class TestCalculateTrendsExtended:
             .filter(DayModel.device_id == test_device.id)
             .all()
         )
-        return calculate_period_statistics(day_records, "month")
+        return _periods(day_records, "month")
 
     def test_thirteen_keys_always_present(self, db_session, test_device):
         """calculate_trends_extended always returns exactly 13 keys."""
@@ -882,7 +943,7 @@ class TestNullGuardInPeriodStatistics:
     """
 
     def test_null_total_therapy_hours_excluded_from_avg_rera(self):
-        """Day with NULL total_therapy_hours is skipped in rera_rates without error."""
+        """Day with NULL total_therapy_hours is left out of avg_rera without error."""
         day = Day()
         day.date = date(2024, 1, 15)
         day.reras = 5
@@ -896,13 +957,13 @@ class TestNullGuardInPeriodStatistics:
         day.cai = None
         day.hi = None
 
-        result = calculate_period_statistics([day], "month")
+        result = _periods([day], "month")
 
         assert len(result) == 1
         assert result[0].avg_rera is None
 
     def test_null_reras_excluded_from_avg_rera(self):
-        """Day with NULL reras is skipped in rera_rates without error."""
+        """Day with NULL reras is left out of avg_rera without error."""
         day = Day()
         day.date = date(2024, 1, 15)
         day.reras = None  # simulates ALTER TABLE ADD COLUMN NULL
@@ -916,7 +977,7 @@ class TestNullGuardInPeriodStatistics:
         day.cai = None
         day.hi = None
 
-        result = calculate_period_statistics([day], "month")
+        result = _periods([day], "month")
 
         assert len(result) == 1
         assert result[0].avg_rera is None

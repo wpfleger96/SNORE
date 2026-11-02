@@ -65,24 +65,8 @@
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label">Duration</span>
-                        <span class="data-card-value">{{ row.duration_seconds.toFixed(1) }}s</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                        /></span>
                         <span class="data-card-value">{{
-                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                        }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Peak FL <InfoHint glossary-key="peak_fl"
-                        /></span>
-                        <span class="data-card-value">{{
-                            row.peak_flow_limitation != null
-                                ? row.peak_flow_limitation.toFixed(2)
-                                : emDash
+                            formatDuration(row.duration_seconds)
                         }}</span>
                     </div>
                 </div>
@@ -95,12 +79,6 @@
                         <TableHead style="width: 80px">Type</TableHead>
                         <TableHead>Time</TableHead>
                         <TableHead style="width: 100px">Duration</TableHead>
-                        <TableHead style="width: 100px" class="whitespace-nowrap"
-                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                        /></TableHead>
-                        <TableHead style="width: 90px" class="whitespace-nowrap"
-                            >Peak FL <InfoHint glossary-key="peak_fl"
-                        /></TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -121,15 +99,7 @@
                                 {{ formatTimeOffset(row.offset_seconds) }}
                             </button>
                         </TableCell>
-                        <TableCell>{{ row.duration_seconds.toFixed(1) }}s</TableCell>
-                        <TableCell>{{
-                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                        }}</TableCell>
-                        <TableCell>{{
-                            row.peak_flow_limitation != null
-                                ? row.peak_flow_limitation.toFixed(2)
-                                : emDash
-                        }}</TableCell>
+                        <TableCell>{{ formatDuration(row.duration_seconds) }}</TableCell>
                     </TableRow>
                 </TableBody>
             </Table>
@@ -160,12 +130,11 @@ import { getSession } from '@/api/sessions'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { usePagedRows } from '@/composables/usePagedRows'
 import { useIsMobile } from '@/composables/useIsMobile'
-import { formatTimeOffset } from '@/utils/formatting'
+import { formatDuration, formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import type { EventItem } from '@/types'
 import ErrorState from '@/components/ErrorState.vue'
 
-const emDash = '\u2014' // em-dash used for null display
 const props = defineProps<{ sessionId: number }>()
 const router = useRouter()
 const { isMobile } = useIsMobile()

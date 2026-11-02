@@ -2213,20 +2213,6 @@ class ResmedEDFParser(DeviceParser):
                 )
 
                 for annotation in annotations:
-                    event_timestamp = annotation.to_datetime(eve_start_time)
-
-                    # Duration must be computed before the window filter so the
-                    # shifted start is available for filtering below.
-                    duration = annotation.duration if annotation.duration else 10.0
-                    # ResMed flags events at their end; subtract duration to store
-                    # the true start (OSCAR renders backward from the flag time for
-                    # the same reason).
-                    event_start = event_timestamp - timedelta(seconds=duration)
-
-                    if not (session.start_time <= event_start <= session.end_time):
-                        total_events_filtered += 1
-                        continue
-
                     event_type = None
 
                     for text in annotation.annotations:
@@ -2240,11 +2226,20 @@ class ResmedEDFParser(DeviceParser):
                     if event_type is None:
                         continue
 
-                    event = RespiratoryEvent(
-                        event_type=event_type,
-                        start_time=event_start,
-                        duration_seconds=duration,
+                    # ResMed flags events at their end (OSCAR renders backward
+                    # from the flag time for the same reason).  Hypopneas record
+                    # no duration (OSCAR :3808), and neither did any arousal in
+                    # #434's tally of real EVE files, so both keep the
+                    # annotation time.
+                    event = RespiratoryEvent.from_end_flag(
+                        event_type,
+                        annotation.to_datetime(eve_start_time),
+                        annotation.duration,
                     )
+
+                    if not (session.start_time <= event.start_time <= session.end_time):
+                        total_events_filtered += 1
+                        continue
 
                     session.add_event(event)
                     total_events_added += 1

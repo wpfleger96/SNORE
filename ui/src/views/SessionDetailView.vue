@@ -181,6 +181,7 @@
                             glossary-key="ahi"
                         />
                         <StatCard
+                            v-if="session.statistics.rei != null"
                             label="REI"
                             :value="session.statistics.rei"
                             :decimals="1"
@@ -217,6 +218,14 @@
                             glossary-key="central_apneas"
                         />
                         <StatCard
+                            v-if="session.statistics.unclassified_apneas != null"
+                            label="Unclassified Apneas"
+                            :value="session.statistics.unclassified_apneas"
+                            :decimals="0"
+                            glossary-key="unclassified_apneas"
+                        />
+                        <StatCard
+                            v-if="session.statistics.mixed_apneas != null"
                             label="Mixed Apneas"
                             :value="session.statistics.mixed_apneas"
                             :decimals="0"
@@ -229,12 +238,14 @@
                             glossary-key="hypopneas"
                         />
                         <StatCard
+                            v-if="session.statistics.reras != null"
                             label="RERAs"
                             :value="session.statistics.reras"
                             :decimals="0"
                             glossary-key="reras"
                         />
                         <StatCard
+                            v-if="session.statistics.flow_limitations != null"
                             label="Flow Limitations"
                             :value="session.statistics.flow_limitations"
                             :decimals="0"

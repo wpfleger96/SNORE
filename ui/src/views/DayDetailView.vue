@@ -49,12 +49,25 @@
                 glossary-key="central_apneas"
             />
             <StatCard
+                v-if="data.unclassified_apneas != null"
+                label="Unclassified Apneas"
+                :value="data.unclassified_apneas"
+                :decimals="0"
+                glossary-key="unclassified_apneas"
+            />
+            <StatCard
                 label="Hypopneas"
                 :value="data.hypopneas"
                 :decimals="0"
                 glossary-key="hypopneas"
             />
-            <StatCard label="RERAs" :value="data.reras" :decimals="0" glossary-key="reras" />
+            <StatCard
+                v-if="data.reras != null"
+                label="RERAs"
+                :value="data.reras"
+                :decimals="0"
+                glossary-key="reras"
+            />
         </div>
 
         <p class="mb-6">

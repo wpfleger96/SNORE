@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from datetime import date, timedelta
 from statistics import median
 from typing import TYPE_CHECKING, Literal
 
-from snore.constants import AhiTrendDirection, TherapyEffectiveness
+from snore.constants import EVENT_TYPE_RERA, AhiTrendDirection, TherapyEffectiveness
 from snore.database import models
+from snore.metrics import reported_count
 from snore.utils.stats import weighted_mean
 
 if TYPE_CHECKING:
@@ -196,6 +198,7 @@ def _get_period_boundaries(
 def calculate_period_statistics(
     day_records: list[models.Day],
     period_type: PeriodType,
+    reported_by_device: Mapping[int, Collection[str]],
 ) -> list[PeriodStatistics]:
     """
     Calculate statistics grouped by time periods.
@@ -203,6 +206,9 @@ def calculate_period_statistics(
     Args:
         day_records: List of Day records
         period_type: One of 'day', 'week', 'month', '6month', 'year'
+        reported_by_device: Event types each device in ``day_records`` has scored.
+            A zero RERA count from a device that never scored one is not a
+            measurement, so ``avg_rera`` skips that day.
 
     Returns:
         List of PeriodStatistics for each period
@@ -255,14 +261,16 @@ def calculate_period_statistics(
         avg_cai = usage_weighted_avg(days_in_period, "cai")
         avg_hi = usage_weighted_avg(days_in_period, "hi")
 
-        rera_rates = [
-            day.reras / day.total_therapy_hours
+        avg_rera = weighted_mean(
+            (day.reras / day.total_therapy_hours, day.total_therapy_hours)
             for day in days_in_period
-            if day.reras is not None
+            if reported_count(
+                day.reras, EVENT_TYPE_RERA, reported_by_device[day.device_id]
+            )
+            is not None
             and day.total_therapy_hours is not None
             and day.total_therapy_hours > 0
-        ]
-        avg_rera = sum(rera_rates) / len(rera_rates) if rera_rates else None
+        )
 
         results.append(
             PeriodStatistics(

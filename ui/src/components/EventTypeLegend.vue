@@ -22,7 +22,7 @@ import { computed } from 'vue'
 import { EVENT_COLORS } from '@/types'
 import { GLOSSARY } from '@/utils/glossary'
 
-const ALL_TYPES = ['OA', 'CA', 'MA', 'H', 'RE', 'FL'] as const
+const ALL_TYPES = ['OA', 'CA', 'UA', 'MA', 'H', 'RE', 'FL'] as const
 type EventTypeCode = (typeof ALL_TYPES)[number]
 
 const props = defineProps<{

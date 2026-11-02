@@ -7,7 +7,7 @@ profile-scoping semantics are preserved.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.service import AnalysisService
-from snore.database.models import Day, Device, Session, Setting
+from snore.database.models import Day, Device, Event, Session, Setting
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,6 +74,30 @@ async def _seed_session(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLoadMachineEvents:
+    async def test_null_duration_loads_as_zero(
+        self, async_db_session, async_test_device
+    ):
+        """No duration is invented for an event the device recorded none for."""
+        sess = await _seed_session(async_db_session, async_test_device)
+        async_db_session.add(
+            Event(
+                session_id=sess.id,
+                event_type="H",
+                start_time=sess.start_time + timedelta(seconds=90),
+            )
+        )
+        await async_db_session.commit()
+
+        svc = AnalysisService(async_db_session, profile_id=async_test_device.profile_id)
+        events = await svc._load_machine_events(sess.id, sess.start_time.timestamp())
+
+        assert [(e.event_type, e.start_time, e.duration) for e in events] == [
+            ("H", 90.0, 0.0)
+        ]
 
 
 @pytest.mark.unit

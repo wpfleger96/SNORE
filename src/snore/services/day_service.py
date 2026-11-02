@@ -13,6 +13,7 @@ from sqlalchemy import select
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, paginate
+from snore.services.event_service import device_reported_types, reported_counts
 from snore.services.schemas import (
     DayDetail,
     DayExperimentalMetrics,
@@ -163,6 +164,7 @@ class DayService(ProfileScopedService):
             else None
         )
 
+        reported = await device_reported_types(self.db_session, day.device_id)
         identity = {name: getattr(day, name) for name in _DAY_DETAIL_IDENTITY_FIELDS}
         return DayDetail.model_validate(
             {
@@ -173,7 +175,7 @@ class DayService(ProfileScopedService):
                 "obstructive_apneas": day.obstructive_apneas or 0,
                 "central_apneas": day.central_apneas or 0,
                 "hypopneas": day.hypopneas or 0,
-                "reras": day.reras or 0,
+                **reported_counts(day, reported),
                 "session_ids": session_ids,
                 "health_sleep": health_sleep,
             }

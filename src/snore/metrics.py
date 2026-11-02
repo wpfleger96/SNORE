@@ -1,6 +1,6 @@
 """Drift-guard registry for the session/day metric set.
 
-The 78-field metric vocabulary is declared in several places (unified parser
+The 80-field metric vocabulary is declared in several places (unified parser
 model, ORM ``Statistics``, services schema, export lists, day aggregation).
 This leaf module (stdlib-only) does not collapse those declarations into one:
 adding a session metric still requires parallel edits to the ORM ``Statistics``
@@ -11,6 +11,7 @@ surfaces as a test failure instead of silent data loss.  Day aggregation
 genuine single-source wins: they are declared only here.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -49,6 +50,7 @@ SESSION_METRICS: tuple[MetricSpec, ...] = (
     _m("mixed_apneas"),
     _m("hypopneas"),
     _m("reras"),
+    _m("unclassified_apneas"),
     _m("flow_limitations"),
     # Indices
     _m("ahi"),
@@ -193,6 +195,7 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "cai_device",
     "hi_device",
     "usage_hours_device",
+    "unclassified_apneas",
 )
 
 
@@ -208,3 +211,14 @@ DAY_INDEX_FIELDS: tuple[str, ...] = ("ahi", "oai", "cai", "hi")
 # on real nights.
 COVERAGE_TOLERANCE_HOURS = 5 / 60
 COVERAGE_TOLERANCE_FRACTION = 0.05
+
+
+def reported_count(
+    value: int | None, event_type: str, reported: Collection[str]
+) -> int | None:
+    """Return a device event count, or None for a zero that isn't a measurement.
+
+    A zero only means "none happened" on a device that has scored ``event_type``
+    at least once; otherwise the device never reports that type.
+    """
+    return value if value or event_type in reported else None

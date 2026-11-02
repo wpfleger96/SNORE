@@ -103,6 +103,29 @@ describe('DayDetailView AHI source note', () => {
     })
 })
 
+describe('DayDetailView device event cards', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it.each([
+        ['RERAs', 'reras'],
+        ['Unclassified Apneas', 'unclassified_apneas'],
+    ])('test_%s_card_hidden_on_null_and_shows_real_zero', async (label, field) => {
+        expect(findCard(await mountDay(makeDay({ [field]: null })), label)).toBeUndefined()
+
+        const card = findCard(await mountDay(makeDay({ [field]: 0 })), label)
+        expect(card?.find('.stat-value').text()).toBe('0')
+    })
+
+    it('test_unclassified_apneas_card_follows_central_apneas', async () => {
+        const wrapper = await mountDay(makeDay({ central_apneas: 1, unclassified_apneas: 2 }))
+
+        const labels = wrapper.findAll('.stat-label').map((l) => l.text())
+        expect(labels[labels.indexOf('Central Apneas') + 1]).toBe('Unclassified Apneas')
+    })
+})
+
 describe('DayDetailView date changes', () => {
     const NEXT_DATE = '2026-05-04'
     const notFound = Object.assign(new Error('Not Found'), {

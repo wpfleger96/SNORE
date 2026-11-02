@@ -77,6 +77,7 @@ _DAY_NON_METRIC_COLUMNS = {
     "central_apneas",
     "hypopneas",
     "reras",
+    "unclassified_apneas",
     "ahi",
     "oai",
     "cai",

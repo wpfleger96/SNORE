@@ -16,6 +16,7 @@ from snore.services._base import (
     paginate,
     session_device_join,
 )
+from snore.services.event_service import device_reported_types, reported_counts
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
     DeletePreview,
@@ -200,12 +201,16 @@ class SessionService(ProfileScopedService):
 
         statistics = None
         if stats_record:
+            reported = await device_reported_types(self.db_session, session.device_id)
             statistics = SessionStatistics.model_validate(stats_record).model_copy(
                 update={
-                    field: tidal_volume_ml(
-                        getattr(stats_record, field), session.import_source
-                    )
-                    for field in _TIDAL_VOLUME_FIELDS
+                    **{
+                        field: tidal_volume_ml(
+                            getattr(stats_record, field), session.import_source
+                        )
+                        for field in _TIDAL_VOLUME_FIELDS
+                    },
+                    **reported_counts(stats_record, reported),
                 }
             )
 

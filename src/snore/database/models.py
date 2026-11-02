@@ -588,6 +588,9 @@ class Day(Base):
     central_apneas: Mapped[int] = mapped_column(Integer, default=0)
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
+    unclassified_apneas: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
 
     # Headline indices: the device-reported daily value when trusted, else the
     # SNORE recount.  ``index_source`` says which; see
@@ -852,6 +855,9 @@ class Event(Base):
         CheckConstraint(
             "duration_seconds IS NULL OR duration_seconds >= 0", name="chk_duration"
         ),
+        # Covers ``device_event_types``; without it that query scans every event
+        # for each of a device's sessions.
+        Index("ix_events_session_id_event_type", "session_id", "event_type"),
     )
 
     def __repr__(self) -> str:
@@ -872,6 +878,9 @@ class Statistics(Base):
     mixed_apneas: Mapped[int] = mapped_column(Integer, default=0)
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
+    unclassified_apneas: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     flow_limitations: Mapped[int] = mapped_column(Integer, default=0)
 
     ahi: Mapped[float | None] = mapped_column(Float)
