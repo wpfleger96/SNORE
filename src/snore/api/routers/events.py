@@ -18,7 +18,7 @@ def _event_to_item(event: models.Event, session_start: datetime) -> EventItem:
         id=event.id,
         event_type=event.event_type,
         start_time=event.start_time.timestamp(),
-        duration_seconds=event.duration_seconds or 0.0,
+        duration_seconds=event.duration_seconds,
         offset_seconds=(event.start_time - session_start).total_seconds(),
         spo2_drop=event.spo2_drop,
         peak_flow_limitation=event.peak_flow_limitation,

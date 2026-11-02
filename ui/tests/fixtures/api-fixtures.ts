@@ -1220,6 +1220,7 @@ export const sessionDetailFixture: SessionDetail = {
         hi: 0.0,
         obstructive_apneas: 3,
         central_apneas: 2,
+        unclassified_apneas: 0,
         mixed_apneas: 0,
         hypopneas: 0,
         reras: 0,

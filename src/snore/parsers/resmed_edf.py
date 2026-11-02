@@ -2217,11 +2217,13 @@ class ResmedEDFParser(DeviceParser):
 
                     # Duration must be computed before the window filter so the
                     # shifted start is available for filtering below.
-                    duration = annotation.duration if annotation.duration else 10.0
-                    # ResMed flags events at their end; subtract duration to store
-                    # the true start (OSCAR renders backward from the flag time for
-                    # the same reason).
-                    event_start = event_timestamp - timedelta(seconds=duration)
+                    duration = annotation.duration or None
+                    # ResMed flags events at their end, so subtract a recorded
+                    # duration to store the true start (OSCAR renders backward
+                    # from the flag time for the same reason).  Hypopneas and
+                    # arousals record none and keep the annotation time
+                    # (OSCAR resmed_loader.cpp:3808).
+                    event_start = event_timestamp - timedelta(seconds=duration or 0)
 
                     if not (session.start_time <= event_start <= session.end_time):
                         total_events_filtered += 1

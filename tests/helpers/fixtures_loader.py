@@ -317,6 +317,7 @@ async def async_import_to_test_db(
             mixed_apneas=stats.mixed_apneas,
             hypopneas=stats.hypopneas,
             reras=stats.reras,
+            unclassified_apneas=stats.unclassified_apneas,
             flow_limitations=stats.flow_limitations,
             ahi=stats.ahi,
             oai=stats.oai,

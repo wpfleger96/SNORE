@@ -201,7 +201,8 @@ class TestDaysRouter:
         assert data["obstructive_apneas"] == 0
         assert data["central_apneas"] == 0
         assert data["hypopneas"] == 0
-        assert data["reras"] == 0
+        assert data["reras"] is None
+        assert data["unclassified_apneas"] is None
 
     def test_days_endpoints_return_index_source_and_recount(
         self, api_client, db_session, test_device

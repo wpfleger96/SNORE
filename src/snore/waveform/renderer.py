@@ -188,8 +188,9 @@ class WaveformRenderer:
                 for event in machine_events:
                     time_str = format_time_offset(event.start_time)
                     event_type = getattr(event, "event_type", "Unknown")
+                    duration = f" ({event.duration:.1f}s)" if event.duration else ""
                     self.console.print(
-                        f"  Machine:      {escape(str(event_type))} at {time_str} ({event.duration:.1f}s)"
+                        f"  Machine:      {escape(str(event_type))} at {time_str}{duration}"
                     )
             else:
                 self.console.print("  Machine:      (none)")

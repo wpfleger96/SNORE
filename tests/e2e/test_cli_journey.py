@@ -51,7 +51,7 @@ def test_session_list_and_show(snore, imported_db):
     assert "Therapy Mode: APAP" in show.stdout
     # Indices are SNORE recounts over mask-on hours, so they carry the derived
     # marker and the command ends with its legend.
-    assert "AHI†: 17.6" in show.stdout
+    assert "AHI†: 19.4" in show.stdout
     assert "OAI†: 7.1" in show.stdout
     assert "CAI†: 3.5" in show.stdout
     assert "HI†: 7.1" in show.stdout

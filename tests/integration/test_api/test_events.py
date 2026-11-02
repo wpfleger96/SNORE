@@ -43,6 +43,28 @@ class TestEventsRouter:
         assert "spo2_drop" in data[0]
         assert "peak_flow_limitation" in data[0]
 
+    def test_list_events_returns_null_for_missing_duration(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        from snore.database.models import Event
+
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2025, 1, 10, 22, 0)
+        )
+        db_session.add(
+            Event(
+                session_id=session.id,
+                event_type="H",
+                start_time=datetime(2025, 1, 10, 23, 0),
+            )
+        )
+        db_session.flush()
+
+        response = api_client.get(f"/api/v1/sessions/{session.id}/events")
+
+        assert response.status_code == 200
+        assert response.json()[0]["duration_seconds"] is None
+
     def test_list_events_filter_by_type(
         self, api_client, db_session, test_device, test_session_factory
     ):

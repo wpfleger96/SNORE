@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date, timedelta
 from statistics import median
 from typing import TYPE_CHECKING, Literal
@@ -196,6 +197,7 @@ def _get_period_boundaries(
 def calculate_period_statistics(
     day_records: list[models.Day],
     period_type: PeriodType,
+    rera_device_ids: Collection[int] = (),
 ) -> list[PeriodStatistics]:
     """
     Calculate statistics grouped by time periods.
@@ -203,6 +205,8 @@ def calculate_period_statistics(
     Args:
         day_records: List of Day records
         period_type: One of 'day', 'week', 'month', '6month', 'year'
+        rera_device_ids: Devices that have scored a RERA. A zero RERA count from
+            any other device is not a measurement, so ``avg_rera`` skips it.
 
     Returns:
         List of PeriodStatistics for each period
@@ -259,6 +263,7 @@ def calculate_period_statistics(
             day.reras / day.total_therapy_hours
             for day in days_in_period
             if day.reras is not None
+            and (day.reras > 0 or day.device_id in rera_device_ids)
             and day.total_therapy_hours is not None
             and day.total_therapy_hours > 0
         ]

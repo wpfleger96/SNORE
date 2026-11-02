@@ -20,7 +20,7 @@ from snore.analysis.calculations import (
     calculate_trends_extended,
 )
 from snore.database.day_manager import DayManager
-from snore.database.models import Day
+from snore.database.models import Day, Device
 
 
 class TestCalculateMedianAhi:
@@ -555,9 +555,8 @@ class TestNewPeriodFields:
         assert result[0].avg_hours_per_day is None
         assert result[0].avg_rera is None
 
-    def test_avg_rera_zero_when_reras_zero_with_usage(self, db_session, test_device):
-        """avg_rera is 0.0 when reras=0 and therapy hours are positive."""
-        days2 = [
+    def _zero_rera_days(self, db_session: object, test_device: object) -> list[Day]:
+        return [
             self._make_day(
                 db_session,
                 test_device,
@@ -567,9 +566,62 @@ class TestNewPeriodFields:
             )
             for i in range(2)
         ]
-        result2 = calculate_period_statistics(days2, "month")
-        assert len(result2) == 1
-        assert result2[0].avg_rera == pytest.approx(0.0, abs=0.01)
+
+    def test_avg_rera_zero_on_rera_reporting_device(self, db_session, test_device):
+        """Zero RERAs on a device that scores them is a real 0.0."""
+        days = self._zero_rera_days(db_session, test_device)
+
+        result = calculate_period_statistics(
+            days, "month", rera_device_ids={test_device.id}
+        )
+
+        assert result[0].avg_rera == 0.0
+
+    def test_avg_rera_none_without_reporting_device(self, db_session, test_device):
+        """Zero RERAs on a device that never scores them is no measurement."""
+        days = self._zero_rera_days(db_session, test_device)
+
+        result = calculate_period_statistics(days, "month")
+
+        assert result[0].avg_rera is None
+
+    def test_avg_rera_skips_days_of_non_reporting_device(
+        self, db_session, test_device, test_profile
+    ):
+        """In a mixed period only the reporting device's days are averaged."""
+        other = Device(
+            profile_id=test_profile.id,
+            manufacturer="Test Manufacturer",
+            model="Other",
+            serial_number="OTHER",
+        )
+        db_session.add(other)
+        db_session.flush()
+        days = [
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 10, 1),
+                reras=4,
+                total_therapy_hours=8.0,  # rate = 0.5
+            ),
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 10, 2),
+                reras=0,
+                total_therapy_hours=8.0,  # rate = 0.0
+            ),
+            self._make_day(
+                db_session, other, date(2024, 10, 3), reras=0, total_therapy_hours=8.0
+            ),
+        ]
+
+        result = calculate_period_statistics(
+            days, "month", rera_device_ids={test_device.id}
+        )
+
+        assert result[0].avg_rera == pytest.approx(0.25)
 
     def test_oai_cai_hi_usage_weighted(self, db_session, test_device):
         """avg_oai/cai/hi weight each day by total_therapy_hours, not equally."""

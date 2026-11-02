@@ -1,6 +1,6 @@
 """Drift-guard registry for the session/day metric set.
 
-The 78-field metric vocabulary is declared in several places (unified parser
+The 80-field metric vocabulary is declared in several places (unified parser
 model, ORM ``Statistics``, services schema, export lists, day aggregation).
 This leaf module (stdlib-only) does not collapse those declarations into one:
 adding a session metric still requires parallel edits to the ORM ``Statistics``
@@ -49,6 +49,7 @@ SESSION_METRICS: tuple[MetricSpec, ...] = (
     _m("mixed_apneas"),
     _m("hypopneas"),
     _m("reras"),
+    _m("unclassified_apneas"),
     _m("flow_limitations"),
     # Indices
     _m("ahi"),
@@ -193,6 +194,7 @@ EXPORT_STAT_KEYS: tuple[str, ...] = (
     "cai_device",
     "hi_device",
     "usage_hours_device",
+    "unclassified_apneas",
 )
 
 

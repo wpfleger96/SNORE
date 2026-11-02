@@ -14,8 +14,10 @@ from snore.analysis.calculations import (
     calculate_records,
     calculate_trends_extended,
 )
+from snore.constants import EVENT_TYPE_RERA
 from snore.database import models
 from snore.services._base import ProfileScopedService
+from snore.services.event_service import device_event_types
 from snore.services.schemas import (
     DataRange,
     EventTypeCount,
@@ -318,6 +320,23 @@ class StatsService(ProfileScopedService):
             ahi_trend_direction=calculate_ahi_trend_direction(weekly_ahi),
         )
 
+    async def _period_statistics(
+        self, day_records: list[models.Day], period_type: PeriodType
+    ) -> list[PeriodStatistics]:
+        """Period statistics, telling RERA zeros from devices that never score one."""
+        reported = await device_event_types(
+            self.db_session, {day.device_id for day in day_records}
+        )
+        return calculate_period_statistics(
+            day_records,
+            period_type,
+            rera_device_ids={
+                device_id
+                for device_id, event_types in reported.items()
+                if EVENT_TYPE_RERA in event_types
+            },
+        )
+
     async def get_period_statistics(
         self,
         period_type: PeriodType,
@@ -329,7 +348,7 @@ class StatsService(ProfileScopedService):
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
-        period_stats = calculate_period_statistics(day_records, period_type)
+        period_stats = await self._period_statistics(day_records, period_type)
         if not period_stats:
             return period_stats
         health_nights = await self._query_health_nights(
@@ -413,7 +432,7 @@ class StatsService(ProfileScopedService):
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
-        period_stats = calculate_period_statistics(day_records, period_type)
+        period_stats = await self._period_statistics(day_records, period_type)
         session_extras = await self._aggregate_session_stats_per_period(
             day_records, period_stats
         )

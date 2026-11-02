@@ -11,6 +11,7 @@ unified structures - they never see parser-specific formats.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timedelta
 from enum import Enum
 from uuid import UUID, uuid4
@@ -19,6 +20,16 @@ import numpy as np
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from snore.constants import (
+    AHI_EVENT_TYPES,
+    EVENT_TYPE_CENTRAL_APNEA,
+    EVENT_TYPE_CLEAR_AIRWAY,
+    EVENT_TYPE_HYPOPNEA,
+    EVENT_TYPE_MIXED_APNEA,
+    EVENT_TYPE_OBSTRUCTIVE_APNEA,
+    EVENT_TYPE_RERA,
+    EVENT_TYPE_UNCLASSIFIED_APNEA,
+)
 from snore.therapy_hours import TherapyHoursBasis, therapy_hours
 
 
@@ -150,10 +161,13 @@ class SessionStatistics(BaseModel):
     """Universal session statistics."""
 
     obstructive_apneas: int = Field(default=0, ge=0, description="OA count")
-    central_apneas: int = Field(default=0, ge=0, description="CA count")
+    central_apneas: int = Field(
+        default=0, ge=0, description="CA + CAA count (clear airway is OSCAR's central)"
+    )
     mixed_apneas: int = Field(default=0, ge=0, description="MA count")
     hypopneas: int = Field(default=0, ge=0, description="Hypopnea count")
     reras: int = Field(default=0, ge=0, description="RERA count")
+    unclassified_apneas: int = Field(default=0, ge=0, description="UA count")
     flow_limitations: int = Field(default=0, ge=0, description="FL count")
 
     ahi: float | None = Field(default=None, ge=0, description="Apnea-Hypopnea Index")
@@ -332,15 +346,24 @@ class SessionStatistics(BaseModel):
 class RespiratoryEvent(BaseModel):
     """A single respiratory event (apnea, hypopnea, etc.).
 
-    ``start_time`` is the true start of the event. Parsers that read device
-    formats which flag events at their end (ResMed EVE EDF annotations, OSCAR
-    binary event lists) normalize to the true start by subtracting the
-    duration at parse time.
+    Device formats flag events at their end (ResMed EVE EDF annotations, OSCAR
+    binary event lists), so parsers subtract the recorded duration to store the
+    true start.  An event with no recorded duration, such as a ResMed hypopnea
+    or arousal, has ``duration_seconds=None`` and keeps the device's annotation
+    time as ``start_time``.
     """
 
     event_type: RespiratoryEventType = Field(description="Event type")
-    start_time: datetime = Field(description="True start time of the event")
-    duration_seconds: float = Field(ge=0, description="Event duration (seconds)")
+    start_time: datetime = Field(
+        description="True start time of the event, or the device's annotation "
+        "time when it recorded no duration"
+    )
+    duration_seconds: float | None = Field(
+        default=None,
+        ge=0,
+        description="Device-recorded event duration (seconds); None when the "
+        "device recorded none",
+    )
 
     peak_flow_limitation: float | None = Field(
         default=None, description="Peak FL value"
@@ -545,20 +568,27 @@ class UnifiedSession(BaseModel):
 
     def finalize_statistics(self) -> None:
         """Calculate all statistics from parsed events and waveforms."""
-        event_counts = {"OA": 0, "CA": 0, "H": 0, "RE": 0, "UA": 0}
-        for event in self.events:
-            event_type_str = (
-                event.event_type.value
-                if isinstance(event.event_type, RespiratoryEventType)
-                else event.event_type
-            )
-            if event_type_str in event_counts:
-                event_counts[event_type_str] += 1
+        event_counts = Counter(
+            event.event_type.value
+            if isinstance(event.event_type, RespiratoryEventType)
+            else event.event_type
+            for event in self.events
+        )
+        obstructive = event_counts[EVENT_TYPE_OBSTRUCTIVE_APNEA]
+        central = (
+            event_counts[EVENT_TYPE_CENTRAL_APNEA]
+            + event_counts[EVENT_TYPE_CLEAR_AIRWAY]
+        )
+        hypopneas = event_counts[EVENT_TYPE_HYPOPNEA]
 
-        self.statistics.obstructive_apneas = event_counts["OA"]
-        self.statistics.central_apneas = event_counts["CA"]
-        self.statistics.hypopneas = event_counts["H"]
-        self.statistics.reras = event_counts["RE"]
+        self.statistics.obstructive_apneas = obstructive
+        self.statistics.central_apneas = central
+        self.statistics.mixed_apneas = event_counts[EVENT_TYPE_MIXED_APNEA]
+        self.statistics.unclassified_apneas = event_counts[
+            EVENT_TYPE_UNCLASSIFIED_APNEA
+        ]
+        self.statistics.hypopneas = hypopneas
+        self.statistics.reras = event_counts[EVENT_TYPE_RERA]
 
         hours = therapy_hours(
             TherapyHoursBasis.MASK_ON, mask_on_segments=self.mask_on_segments
@@ -570,11 +600,11 @@ class UnifiedSession(BaseModel):
             )
 
         if hours and hours > 0:
-            total_events = event_counts["OA"] + event_counts["CA"] + event_counts["H"]
+            total_events = sum(event_counts[t] for t in AHI_EVENT_TYPES)
             self.statistics.ahi = total_events / hours
-            self.statistics.oai = event_counts["OA"] / hours
-            self.statistics.cai = event_counts["CA"] / hours
-            self.statistics.hi = event_counts["H"] / hours
+            self.statistics.oai = obstructive / hours
+            self.statistics.cai = central / hours
+            self.statistics.hi = hypopneas / hours
             self.statistics.usage_hours = hours
         elif self.mask_on_segments is not None:
             # Explicitly empty segments: known-zero mask-on time; rates undefined.

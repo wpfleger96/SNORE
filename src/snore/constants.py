@@ -347,6 +347,20 @@ EVENT_TYPE_RERA = "RE"
 EVENT_TYPE_FLOW_LIMITATION = "FL"
 EVENT_TYPE_UNCLASSIFIED_APNEA = "UA"
 
+# Device event types counted in every AHI recount: OSCAR's AHI channels
+# (schema.cpp:420-424: ClearAirway, AllApnea, Obstructive, Hypopnea, Apnea),
+# which SNORE stores as CA/CAA, UA, OA and H, plus mixed apneas.  RERAs are out.
+AHI_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        EVENT_TYPE_OBSTRUCTIVE_APNEA,
+        EVENT_TYPE_CENTRAL_APNEA,
+        EVENT_TYPE_CLEAR_AIRWAY,
+        EVENT_TYPE_MIXED_APNEA,
+        EVENT_TYPE_UNCLASSIFIED_APNEA,
+        EVENT_TYPE_HYPOPNEA,
+    }
+)
+
 # Type alias for valid apnea event types (used by ApneaEvent model)
 type ApneaEventType = Literal["OA", "CA", "MA", "UA"]
 

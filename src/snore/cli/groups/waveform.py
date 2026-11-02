@@ -386,9 +386,8 @@ async def compare_events(
         )
         for event in comparison.false_negatives:
             time_str = format_time_offset(event.start_time)
-            console.print(
-                f"  {escape(str(event.event_type))} at {time_str} ({event.duration:.1f}s)"
-            )
+            duration = f" ({event.duration:.1f}s)" if event.duration else ""
+            console.print(f"  {escape(str(event.event_type))} at {time_str}{duration}")
             console.print(
                 f"    → View: snore waveform show --session-id {resolved_id} --time {time_str}"
             )

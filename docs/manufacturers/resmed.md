@@ -77,6 +77,7 @@ Backup/
   - PB (Periodic Breathing)
 - **Format**: EDF+C (continuous) or EDF+D (discontinuous)
 - **Important**: Stores all-day events; filter by session time range after parsing
+- **Timing**: Annotations mark the end of an event. Apneas carry a real duration, so SNORE subtracts it to store the start. Hypopneas and arousals carry none (`resmed_loader.cpp:3808`), so they keep the annotation time and a null duration
 
 ## File Naming
 

@@ -70,8 +70,6 @@ from snore.therapy_hours import TherapyHoursBasis, therapy_hours
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EVENT_DURATION_SECONDS = 10.0  # OSCAR's default apnea duration
-
 
 def _epoch_to_wall_clock(epoch_seconds: float, timezone_name: str | None) -> datetime:
     """Convert epoch seconds to a naive wall-clock datetime.
@@ -704,20 +702,16 @@ class OscarDeviceParser(DeviceParser):
                         timestamp_ms / 1000, timezone_name
                     )
 
-                    duration = (
-                        durations[i]
-                        if i < len(durations)
-                        else DEFAULT_EVENT_DURATION_SECONDS
-                    )
-
-                    clamped_duration = max(duration, 0)
+                    duration = durations[i] if i < len(durations) else None
+                    recorded = duration if duration and duration > 0 else None
                     # OSCAR stores event timestamps at the event's end for all
                     # event channels (its UI draws spans backward by duration);
-                    # normalize to true start.
+                    # normalize to true start.  With no recorded duration, keep
+                    # the stored time.
                     event = RespiratoryEvent(
                         event_type=event_type,
-                        start_time=event_time - timedelta(seconds=clamped_duration),
-                        duration_seconds=clamped_duration,
+                        start_time=event_time - timedelta(seconds=recorded or 0),
+                        duration_seconds=recorded,
                     )
 
                     session.add_event(event)

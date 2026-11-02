@@ -73,6 +73,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Central Apneas',
         short: 'Breathing pauses where the brain stops signaling breathing effort; no airflow and no effort for ≥10 s.',
     },
+    unclassified_apneas: {
+        label: 'Unclassified Apneas',
+        short: 'Apneas the device could not classify as obstructive or central; they count toward AHI.',
+    },
     mixed_apneas: {
         label: 'Mixed Apneas',
         short: 'Apneas that begin central (no effort) and end obstructive (effort against a blocked airway).',
@@ -112,6 +116,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'CA — Central Apnea',
         short: 'Brain stops signaling breathing effort; no airflow and no effort for ≥10 s.',
     },
+    event_type_ua: {
+        label: 'UA — Unclassified Apnea',
+        short: 'Apnea the device could not classify as obstructive or central; counts toward AHI.',
+    },
     event_type_ma: {
         label: 'MA — Mixed Apnea',
         short: 'Begins as a central apnea (no effort) and ends obstructive (effort against a blocked airway).',
@@ -150,10 +158,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'SpO₂',
         short: 'Blood oxygen saturation from the pulse oximeter, in percent.',
     },
-    spo2_drop: {
-        label: 'SpO₂ Drop',
-        short: 'Decrease in blood oxygen saturation during the event window.',
-    },
     spo2_below_90: {
         label: 'SpO₂ Below 90%',
         short: 'Total time with oxygen saturation under 90%.',
@@ -173,10 +177,6 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     mv: {
         label: 'Minute Ventilation',
         short: 'Total air volume breathed per minute (tidal volume × respiratory rate), in L/min.',
-    },
-    peak_fl: {
-        label: 'Peak Flow Limitation',
-        short: 'Highest flow-limitation score recorded during the event window (0–1 scale).',
     },
     usage: {
         label: 'Usage',

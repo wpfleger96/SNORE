@@ -6,7 +6,13 @@ from typing import Any
 from sqlalchemy import ColumnElement, UnaryExpression, delete, func, select
 from sqlalchemy.engine import CursorResult
 
-from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
+from snore.constants import (
+    DEFAULT_LIST_SESSIONS_LIMIT,
+    EVENT_TYPE_FLOW_LIMITATION,
+    EVENT_TYPE_MIXED_APNEA,
+    EVENT_TYPE_RERA,
+    EVENT_TYPE_UNCLASSIFIED_APNEA,
+)
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.exceptions import NotFoundError
@@ -16,6 +22,7 @@ from snore.services._base import (
     paginate,
     session_device_join,
 )
+from snore.services.event_service import device_event_types, reported_count
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
     DeletePreview,
@@ -37,6 +44,14 @@ _TIDAL_VOLUME_FIELDS = (
     "tidal_volume_max",
     "tidal_volume_95th",
 )
+
+# Statistics counts of the event types not every device scores.
+_OPTIONAL_EVENT_COUNT_FIELDS = {
+    "mixed_apneas": EVENT_TYPE_MIXED_APNEA,
+    "unclassified_apneas": EVENT_TYPE_UNCLASSIFIED_APNEA,
+    "reras": EVENT_TYPE_RERA,
+    "flow_limitations": EVENT_TYPE_FLOW_LIMITATION,
+}
 
 
 class SessionService(ProfileScopedService):
@@ -200,12 +215,23 @@ class SessionService(ProfileScopedService):
 
         statistics = None
         if stats_record:
+            reported = (await device_event_types(self.db_session, [session.device_id]))[
+                session.device_id
+            ]
             statistics = SessionStatistics.model_validate(stats_record).model_copy(
                 update={
-                    field: tidal_volume_ml(
-                        getattr(stats_record, field), session.import_source
-                    )
-                    for field in _TIDAL_VOLUME_FIELDS
+                    **{
+                        field: tidal_volume_ml(
+                            getattr(stats_record, field), session.import_source
+                        )
+                        for field in _TIDAL_VOLUME_FIELDS
+                    },
+                    **{
+                        field: reported_count(
+                            getattr(stats_record, field), event_type, reported
+                        )
+                        for field, event_type in _OPTIONAL_EVENT_COUNT_FIELDS.items()
+                    },
                 }
             )
 

@@ -468,6 +468,13 @@ class TestEVEEventParsing:
         session = sessions[0]
 
         for event in session.events:
+            if event.duration_seconds is None:
+                assert event.event_type in {
+                    RespiratoryEventType.HYPOPNEA,
+                    RespiratoryEventType.RERA,
+                }
+                continue
+
             assert event.duration_seconds > 0, (
                 f"{event.event_type} has invalid duration: {event.duration_seconds}"
             )

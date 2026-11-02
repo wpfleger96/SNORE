@@ -588,6 +588,9 @@ class Day(Base):
     central_apneas: Mapped[int] = mapped_column(Integer, default=0)
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
+    unclassified_apneas: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
 
     # Headline indices: the device-reported daily value when trusted, else the
     # SNORE recount.  ``index_source`` says which; see
@@ -872,6 +875,9 @@ class Statistics(Base):
     mixed_apneas: Mapped[int] = mapped_column(Integer, default=0)
     hypopneas: Mapped[int] = mapped_column(Integer, default=0)
     reras: Mapped[int] = mapped_column(Integer, default=0)
+    unclassified_apneas: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     flow_limitations: Mapped[int] = mapped_column(Integer, default=0)
 
     ahi: Mapped[float | None] = mapped_column(Float)

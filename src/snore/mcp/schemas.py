@@ -280,7 +280,8 @@ class NightlyRow(NightlyChannelFields):
     )
     central_apneas: int | None = provenance_field(
         Provenance.DEVICE,
-        "Device-scored central apneas, summed across the night's sessions.",
+        "Device-scored central apneas including clear airway events, summed across "
+        "the night's sessions.",
         default=None,
     )
     hypopneas: int | None = provenance_field(
@@ -290,7 +291,14 @@ class NightlyRow(NightlyChannelFields):
     )
     reras: int | None = provenance_field(
         Provenance.DEVICE,
-        "Device-scored RERAs, summed across the night's sessions.",
+        "Device-scored RERAs, summed across the night's sessions; null means the "
+        "device has never scored one, not a zero.",
+        default=None,
+    )
+    unclassified_apneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored unclassified apneas, summed across the night's sessions; "
+        "null means the device has never scored one, not a zero.",
         default=None,
     )
 
@@ -551,7 +559,10 @@ class EventRow(EventRowBase):
     """A single respiratory event with inline context."""
 
     duration_seconds: float | None = provenance_field(
-        Provenance.DEVICE, "Device-scored event duration (s).", default=None
+        Provenance.DEVICE,
+        "Device-recorded event duration (s); null when the device recorded none, "
+        "which is always the case for ResMed hypopneas and RERAs.",
+        default=None,
     )
     spo2_drop_pct: float | None = provenance_field(
         Provenance.DEVICE,

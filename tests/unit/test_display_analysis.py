@@ -99,6 +99,21 @@ class TestAnalysisResultFromStoredJson:
             "mode_results": {},
         }
 
+    def test_counts_every_ahi_event_type_and_not_reras(self):
+        events = [
+            {
+                "event_type": t,
+                "start_time": float(i),
+                "duration": 0.0,
+                "source": "machine",
+            }
+            for i, t in enumerate(["OA", "CA", "CAA", "MA", "UA", "H", "RE", "FL"])
+        ]
+
+        result = AnalysisResult.from_stored_json(self._stored(events))
+
+        assert result.machine_ahi == pytest.approx(6 / 8.0)
+
     def test_backfills_when_events_present_and_keys_absent(self):
         """Old payload with events → AHI/RDI computed from events over duration."""
         events = [

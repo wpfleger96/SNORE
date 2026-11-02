@@ -282,7 +282,7 @@ class AnalysisService:
                 AnalysisEvent(
                     event_type=event.event_type,
                     start_time=offset_seconds,
-                    duration=event.duration_seconds or 10.0,
+                    duration=event.duration_seconds or 0.0,
                     source="machine",
                     confidence=1.0,
                 )

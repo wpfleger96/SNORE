@@ -58,8 +58,8 @@
                     class="metrics-toggle"
                     @update:model-value="(v) => setSelectedMetrics(v as string[])"
                 >
-                    <ToggleGroupItem v-for="(cfg, key) in METRIC_CONFIG" :key="key" :value="key">
-                        {{ cfg.label }}
+                    <ToggleGroupItem v-for="key in metricKeys" :key="key" :value="key">
+                        {{ METRIC_CONFIG[key].label }}
                     </ToggleGroupItem>
                 </ToggleGroup>
             </div>
@@ -363,6 +363,12 @@ function metricDataset(key: string): { label: string; values: (number | null)[];
 }
 
 const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasData(key)))
+
+// An all-null RERA trend means no device in range scores RERAs, so offer no toggle for it. The
+// key stays in selectedMetrics, so the chart returns if a wider range brings RERA data back.
+const metricKeys = computed(() =>
+    Object.keys(METRIC_CONFIG).filter((key) => key !== 'rera' || !trends.value || hasData(key)),
+)
 </script>
 
 <style scoped>

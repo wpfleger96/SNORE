@@ -1,8 +1,10 @@
-"""Regression tests: RespiratoryEvent.start_time is always the true event start.
+"""Regression tests: RespiratoryEvent.start_time is the true start when one is known.
 
 ResMed EVE EDF annotations and OSCAR binary event lists both timestamp events at
-their END.  The parsers compensate by subtracting the duration so
-RespiratoryEvent.start_time always represents the true start.
+their END.  The parsers compensate by subtracting the recorded duration so
+RespiratoryEvent.start_time represents the true start.  An event with no
+recorded duration has nothing to subtract: it keeps the device's time and a None
+duration.
 
 The CSL path already stores the true start (it pairs the "CSR Start" / "CSR End"
 annotation texts itself and never sees an end-flagged timestamp), so it must NOT
@@ -23,7 +25,12 @@ from snore.constants import CPAP_OBSTRUCTIVE
 from snore.parsers.oscar_device import OscarDeviceParser
 from snore.parsers.resmed_edf import ResmedEDFParser
 from snore.parsers.types import EventList, EventListType, SessionEvents, SessionSummary
-from snore.parsers.unified import DeviceInfo, RespiratoryEventType, UnifiedSession
+from snore.parsers.unified import (
+    DeviceInfo,
+    RespiratoryEvent,
+    RespiratoryEventType,
+    UnifiedSession,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -84,9 +91,12 @@ def _make_oscar_summary(first_ms: int, last_ms: int) -> SessionSummary:
 
 
 def _make_oscar_events(
-    first_ms: int, last_ms: int, event_at_ms: int, duration_s: int
+    first_ms: int, last_ms: int, event_at_ms: int, duration_s: int | None
 ) -> SessionEvents:
-    """Build a SessionEvents with one OA event at event_at_ms with the given duration (seconds)."""
+    """Build a SessionEvents with one OA event at event_at_ms.
+
+    ``duration_s=None`` leaves the event list without a value for the event.
+    """
     event_list = EventList(
         channel_id=CPAP_OBSTRUCTIVE,
         first_timestamp=event_at_ms,
@@ -99,7 +109,7 @@ def _make_oscar_events(
         min_value=0.0,
         max_value=60.0,
         dimension="s",
-        data=[duration_s],
+        data=[] if duration_s is None else [duration_s],
         time_deltas=[0],
     )
     return SessionEvents(
@@ -154,34 +164,53 @@ class TestEVEEventStartNormalization:
         assert events[0].start_time == flag_time - timedelta(seconds=duration_s)
         assert events[0].duration_seconds == pytest.approx(duration_s)
 
-    def test_eve_no_duration_applies_10s_default_shift(self, tmp_path):
-        """Annotation with no duration falls back to the 10 s default and shifts by that amount."""
+    @pytest.mark.parametrize(
+        ("label", "event_type"),
+        [
+            ("Hypopnea", RespiratoryEventType.HYPOPNEA),
+            ("Arousal", RespiratoryEventType.RERA),
+        ],
+    )
+    def test_eve_no_duration_keeps_annotation_time(self, tmp_path, label, event_type):
+        """An annotation with no duration keeps its time and gets no invented duration."""
         session_start = datetime(2025, 1, 1, 22, 0, 0)
         session = _make_session(start=session_start)
         parser = ResmedEDFParser()
 
-        # H annotation: 300 seconds into the session, no explicit duration.
         flag_onset_s = 300.0
-        default_duration_s = 10.0
         eve_file = _write_annotation_edf(
             tmp_path,
             "20250101_220000_EVE_nodur.edf",
             session_start,
             [
                 (0.0, None, "Recording starts"),
-                (flag_onset_s, None, "Hypopnea"),
+                (flag_onset_s, None, label),
             ],
         )
 
         parser._parse_eve_files_for_night([eve_file], session)
 
-        events = [
-            e for e in session.events if e.event_type == RespiratoryEventType.HYPOPNEA
-        ]
+        events = [e for e in session.events if e.event_type == event_type]
         assert len(events) == 1
-        flag_time = session_start + timedelta(seconds=flag_onset_s)
-        assert events[0].start_time == flag_time - timedelta(seconds=default_duration_s)
-        assert events[0].duration_seconds == pytest.approx(default_duration_s)
+        assert events[0].start_time == session_start + timedelta(seconds=flag_onset_s)
+        assert events[0].duration_seconds is None
+
+    def test_eve_no_duration_inside_session_first_seconds_is_kept(self, tmp_path):
+        """A hypopnea flagged just after session start stays inside the session."""
+        session_start = datetime(2025, 1, 1, 22, 0, 0)
+        session = _make_session(start=session_start)
+        eve_file = _write_annotation_edf(
+            tmp_path,
+            "20250101_220000_EVE_early.edf",
+            session_start,
+            [(0.0, None, "Recording starts"), (5.0, None, "Hypopnea")],
+        )
+
+        ResmedEDFParser()._parse_eve_files_for_night([eve_file], session)
+
+        assert [e.start_time for e in session.events] == [
+            session_start + timedelta(seconds=5)
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +221,15 @@ class TestEVEEventStartNormalization:
 class TestOSCAREventStartNormalization:
     """_populate_events_from_events: OSCAR timestamps are end-of-event; parser shifts to true start."""
 
-    def test_oscar_event_flag_time_shifted_to_true_start(self, tmp_path):
-        """OA event at flag_time T with duration D → start_time == T - D (UTC wall clock)."""
+    @staticmethod
+    def _parse_event(tmp_path: Path, duration_s: int | None) -> RespiratoryEvent:
+        """Parse a session with one OA flagged at 01:30:00 UTC wall clock."""
         # Session: 2024-01-15 00:30 UTC to 06:30 UTC
         first_ms = int(datetime(2024, 1, 15, 0, 30, tzinfo=UTC).timestamp() * 1000)
         last_ms = first_ms + 6 * 3600 * 1000
 
-        # Event flagged 1 hour into the session; duration 30 seconds.
+        # Event flagged 1 hour into the session.
         event_at_ms = first_ms + 3600 * 1000
-        duration_s = 30
 
         summary = _make_oscar_summary(first_ms, last_ms)
         events_data = _make_oscar_events(first_ms, last_ms, event_at_ms, duration_s)
@@ -232,11 +261,24 @@ class TestOSCAREventStartNormalization:
             )
 
         assert len(session.events) == 1
-        event = session.events[0]
-        assert event.duration_seconds == pytest.approx(float(duration_s))
-        # UTC wall clock: flag_time is 01:30:00; true start is 01:29:30.
-        flag_time = datetime(2024, 1, 15, 1, 30, 0)
-        assert event.start_time == flag_time - timedelta(seconds=duration_s)
+        return session.events[0]
+
+    def test_oscar_event_flag_time_shifted_to_true_start(self, tmp_path):
+        """OA event at flag_time T with duration D → start_time == T - D (UTC wall clock)."""
+        event = self._parse_event(tmp_path, duration_s=30)
+
+        assert event.duration_seconds == pytest.approx(30.0)
+        assert event.start_time == datetime(2024, 1, 15, 1, 29, 30)
+
+    @pytest.mark.parametrize("duration_s", [None, 0, -5])
+    def test_oscar_missing_or_non_positive_duration_keeps_flag_time(
+        self, tmp_path, duration_s
+    ):
+        """No usable duration: no shift and no invented value."""
+        event = self._parse_event(tmp_path, duration_s=duration_s)
+
+        assert event.duration_seconds is None
+        assert event.start_time == datetime(2024, 1, 15, 1, 30, 0)
 
 
 # ---------------------------------------------------------------------------

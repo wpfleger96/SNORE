@@ -86,6 +86,70 @@ def _session(
 # ---------------------------------------------------------------------------
 
 
+def _session_with_events(*event_types: RespiratoryEventType) -> UnifiedSession:
+    session = _session(duration_s=7200)
+    for event_type in event_types:
+        session.add_event(RespiratoryEvent(event_type=event_type, start_time=_BASE))
+    return session
+
+
+class TestEventCounts:
+    def test_ahi_counts_unclassified_clear_airway_and_mixed(self) -> None:
+        session = _session_with_events(
+            RespiratoryEventType.OBSTRUCTIVE_APNEA,
+            RespiratoryEventType.CENTRAL_APNEA,
+            RespiratoryEventType.CLEAR_AIRWAY,
+            RespiratoryEventType.MIXED_APNEA,
+            RespiratoryEventType.UNCLASSIFIED_APNEA,
+            RespiratoryEventType.HYPOPNEA,
+        )
+
+        session.finalize_statistics()
+
+        assert session.statistics.ahi == pytest.approx(3.0)
+
+    def test_reras_and_flow_limitations_stay_out_of_ahi(self) -> None:
+        session = _session_with_events(
+            RespiratoryEventType.RERA, RespiratoryEventType.FLOW_LIMITATION
+        )
+
+        session.finalize_statistics()
+
+        assert session.statistics.ahi == 0.0
+        assert session.statistics.reras == 1
+
+    def test_central_count_and_index_include_clear_airway(self) -> None:
+        session = _session_with_events(
+            RespiratoryEventType.CENTRAL_APNEA, RespiratoryEventType.CLEAR_AIRWAY
+        )
+
+        session.finalize_statistics()
+
+        assert session.statistics.central_apneas == 2
+        assert session.statistics.cai == pytest.approx(1.0)
+
+    def test_writes_mixed_and_unclassified_counts(self) -> None:
+        session = _session_with_events(
+            RespiratoryEventType.MIXED_APNEA,
+            RespiratoryEventType.UNCLASSIFIED_APNEA,
+            RespiratoryEventType.UNCLASSIFIED_APNEA,
+        )
+
+        session.finalize_statistics()
+
+        assert session.statistics.mixed_apneas == 1
+        assert session.statistics.unclassified_apneas == 2
+
+    def test_keeps_flow_limitations_set_before_finalizing(self) -> None:
+        """OSCAR import sets this from its summary, not from events."""
+        session = _session_with_events(RespiratoryEventType.FLOW_LIMITATION)
+        session.statistics.flow_limitations = 7
+
+        session.finalize_statistics()
+
+        assert session.statistics.flow_limitations == 7
+
+
 class TestWaveformStatisticsOverStrSummary:
     @pytest.mark.parametrize(
         ("waveform_type", "prefix"),

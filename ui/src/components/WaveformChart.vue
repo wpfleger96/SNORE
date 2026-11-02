@@ -102,7 +102,7 @@ function buildEventPlugin(): uPlot.Plugin {
 
                         const x0 = u.valToPos(evt.offset_seconds + props.startEpoch, 'x', true)
                         const x1 = u.valToPos(
-                            evt.offset_seconds + evt.duration_seconds + props.startEpoch,
+                            evt.offset_seconds + (evt.duration_seconds ?? 0) + props.startEpoch,
                             'x',
                             true,
                         )
@@ -145,7 +145,7 @@ function buildEventPlugin(): uPlot.Plugin {
 
                         const x0 = u.valToPos(evt.offset_seconds + props.startEpoch, 'x', true)
                         const x1 = u.valToPos(
-                            evt.offset_seconds + evt.duration_seconds + props.startEpoch,
+                            evt.offset_seconds + (evt.duration_seconds ?? 0) + props.startEpoch,
                             'x',
                             true,
                         )

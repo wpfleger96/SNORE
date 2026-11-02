@@ -208,11 +208,14 @@ float calcAHI(Session *session, qint64 start, qint64 end) {
 - Recalculates AHI at each time step
 - Output: Waveform channel for visualization
 
-**Contributing channels:** `schema.cpp:419-423`
+**Contributing channels:** `schema.cpp:420-424`
 - CPAP_ClearAirway (central apnea)
+- CPAP_AllApnea
 - CPAP_Obstructive
 - CPAP_Hypopnea
 - CPAP_Apnea (unclassified)
+
+SNORE's `AHI_EVENT_TYPES` (`constants.py`) stores these as `CA`/`CAA`, `UA`, `OA` and `H`, and adds `MA`. RERAs are not an AHI channel.
 
 ### Leak Calculation
 

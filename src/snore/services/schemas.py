@@ -164,7 +164,8 @@ class PeriodStatistics(BaseModel):
     )
     avg_rera: float | None = provenance_field(
         Provenance.DERIVED,
-        "Average device-scored RERA index (events/hour)",
+        "Average device-scored RERA index (events/hour) over days from devices "
+        "that have scored a RERA; null when none in the period has",
         default=None,
     )
 
@@ -315,7 +316,9 @@ class SessionStatistics(BaseModel):
         Provenance.DERIVED, "Mask-on therapy hours", default=None
     )
     ahi: float | None = provenance_field(
-        Provenance.DERIVED, "AHI: device-scored OA+CA+H per mask-on hour", default=None
+        Provenance.DERIVED,
+        "AHI: device-scored apneas of every type and hypopneas per mask-on hour",
+        default=None,
     )
     rei: float | None = provenance_field(
         Provenance.DERIVED, "Respiratory Event Index", default=None
@@ -361,19 +364,34 @@ class SessionStatistics(BaseModel):
         Provenance.DEVICE, "Device-scored obstructive apnea count", default=None
     )
     central_apneas: int | None = provenance_field(
-        Provenance.DEVICE, "Device-scored central apnea count", default=None
+        Provenance.DEVICE,
+        "Device-scored central apnea count, including clear airway events",
+        default=None,
     )
     mixed_apneas: int | None = provenance_field(
-        Provenance.DEVICE, "Device-scored mixed apnea count", default=None
+        Provenance.DEVICE,
+        "Device-scored mixed apnea count; null when the device has never scored one",
+        default=None,
     )
     hypopneas: int | None = provenance_field(
         Provenance.DEVICE, "Device-scored hypopnea count", default=None
     )
     reras: int | None = provenance_field(
-        Provenance.DEVICE, "Device-scored RERA count", default=None
+        Provenance.DEVICE,
+        "Device-scored RERA count; null when the device has never scored one",
+        default=None,
+    )
+    unclassified_apneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored unclassified apnea count; null when the device has never "
+        "scored one",
+        default=None,
     )
     flow_limitations: int | None = provenance_field(
-        Provenance.DEVICE, "Device-flagged flow limitation count", default=None
+        Provenance.DEVICE,
+        "Device-flagged flow limitation count; null when the device has never "
+        "flagged one",
+        default=None,
     )
     pressure_mean: float | None = provenance_field(
         Provenance.DERIVED, "Mean pressure (cmH2O)", default=None
@@ -1074,13 +1092,25 @@ class DayDetail(DayListItem):
         default=0,
     )
     central_apneas: int = provenance_field(
-        Provenance.DEVICE, "Device-scored central apnea count for the night", default=0
+        Provenance.DEVICE,
+        "Device-scored central apnea count for the night, including clear airway "
+        "events",
+        default=0,
     )
     hypopneas: int = provenance_field(
         Provenance.DEVICE, "Device-scored hypopnea count for the night", default=0
     )
-    reras: int = provenance_field(
-        Provenance.DEVICE, "Device-scored RERA count for the night", default=0
+    reras: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored RERA count for the night; null when the device has never "
+        "scored one",
+        default=None,
+    )
+    unclassified_apneas: int | None = provenance_field(
+        Provenance.DEVICE,
+        "Device-scored unclassified apnea count for the night; null when the "
+        "device has never scored one",
+        default=None,
     )
     session_ids: list[int] = Field(default_factory=list)
     health_sleep: HealthNightSummaryRead | None = None

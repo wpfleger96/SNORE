@@ -251,6 +251,7 @@ export interface RecordsData {
 export const EVENT_COLORS: Record<string, string> = {
     OA: 'rgba(220, 38, 38, 0.25)', // red — Obstructive Apnea
     CA: 'rgba(37, 99, 235, 0.25)', // blue — Central Apnea
+    UA: 'rgba(13, 148, 136, 0.25)', // teal — Unclassified Apnea
     MA: 'rgba(168, 85, 247, 0.25)', // purple — Mixed Apnea
     H: 'rgba(234, 179, 8, 0.25)', // yellow — Hypopnea
     RE: 'rgba(34, 197, 94, 0.25)', // green — RERA
@@ -262,6 +263,7 @@ export const EVENT_COLORS: Record<string, string> = {
 export const EVENT_SOLID_COLORS: Record<string, string> = {
     OA: 'rgba(220, 38, 38, 0.85)',
     CA: 'rgba(37, 99, 235, 0.85)',
+    UA: 'rgba(13, 148, 136, 0.85)',
     MA: 'rgba(168, 85, 247, 0.85)',
     H: 'rgba(234, 179, 8, 0.85)',
     RE: 'rgba(34, 197, 94, 0.85)',

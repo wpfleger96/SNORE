@@ -65,24 +65,8 @@
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label">Duration</span>
-                        <span class="data-card-value">{{ row.duration_seconds.toFixed(1) }}s</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                        /></span>
                         <span class="data-card-value">{{
-                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                        }}</span>
-                    </div>
-                    <div class="data-card-row">
-                        <span class="data-card-label"
-                            >Peak FL <InfoHint glossary-key="peak_fl"
-                        /></span>
-                        <span class="data-card-value">{{
-                            row.peak_flow_limitation != null
-                                ? row.peak_flow_limitation.toFixed(2)
-                                : emDash
+                            formatDuration(row.duration_seconds)
                         }}</span>
                     </div>
                 </div>
@@ -95,12 +79,6 @@
                         <TableHead style="width: 80px">Type</TableHead>
                         <TableHead>Time</TableHead>
                         <TableHead style="width: 100px">Duration</TableHead>
-                        <TableHead style="width: 100px" class="whitespace-nowrap"
-                            >SpO₂ Drop <InfoHint glossary-key="spo2_drop"
-                        /></TableHead>
-                        <TableHead style="width: 90px" class="whitespace-nowrap"
-                            >Peak FL <InfoHint glossary-key="peak_fl"
-                        /></TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -121,15 +99,7 @@
                                 {{ formatTimeOffset(row.offset_seconds) }}
                             </button>
                         </TableCell>
-                        <TableCell>{{ row.duration_seconds.toFixed(1) }}s</TableCell>
-                        <TableCell>{{
-                            row.spo2_drop != null ? row.spo2_drop.toFixed(1) + '%' : emDash
-                        }}</TableCell>
-                        <TableCell>{{
-                            row.peak_flow_limitation != null
-                                ? row.peak_flow_limitation.toFixed(2)
-                                : emDash
-                        }}</TableCell>
+                        <TableCell>{{ formatDuration(row.duration_seconds) }}</TableCell>
                     </TableRow>
                 </TableBody>
             </Table>
@@ -200,6 +170,10 @@ const eventsPerHour = computed(() => {
     if (!sessionDuration.value) return null
     return filteredEvents.value.length / sessionDuration.value
 })
+
+function formatDuration(seconds: EventItem['duration_seconds']): string {
+    return seconds != null ? `${seconds.toFixed(1)}s` : emDash
+}
 
 function toggleType(type: string): void {
     const s = new Set(activeTypes.value)

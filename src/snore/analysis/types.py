@@ -8,26 +8,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from snore.analysis.modes.types import ModeResult
-from snore.constants import (
-    EVENT_TYPE_CENTRAL_APNEA,
-    EVENT_TYPE_CLEAR_AIRWAY,
-    EVENT_TYPE_HYPOPNEA,
-    EVENT_TYPE_MIXED_APNEA,
-    EVENT_TYPE_OBSTRUCTIVE_APNEA,
-)
+from snore.constants import AHI_EVENT_TYPES
 from snore.provenance import Provenance, provenance_field
-
-# Machine event types counted toward the machine-event AHI recount (apneas +
-# hypopneas).  Device-flagged RERAs are excluded.
-_MACHINE_AHI_EVENT_TYPES: frozenset[str] = frozenset(
-    {
-        EVENT_TYPE_OBSTRUCTIVE_APNEA,
-        EVENT_TYPE_CENTRAL_APNEA,
-        EVENT_TYPE_CLEAR_AIRWAY,
-        EVENT_TYPE_MIXED_APNEA,
-        EVENT_TYPE_HYPOPNEA,
-    }
-)
 
 
 class AnalysisEvent(BaseModel):
@@ -43,7 +25,8 @@ class AnalysisEvent(BaseModel):
     start_time: float = Field(description="Session offset (seconds from session start)")
     duration: float = provenance_field(
         Provenance.DEVICE,
-        "Event duration (seconds); experimental for programmatic events",
+        "Event duration (seconds), 0 when the device recorded none; experimental "
+        "for programmatic events",
         source_field="source",
         ge=0,
     )
@@ -71,7 +54,7 @@ def _machine_ahi(
     """
     if not machine_events:
         return None
-    count = sum(1 for e in machine_events if e.event_type in _MACHINE_AHI_EVENT_TYPES)
+    count = sum(1 for e in machine_events if e.event_type in AHI_EVENT_TYPES)
     return count / session_duration_hours if session_duration_hours > 0 else 0.0
 
 

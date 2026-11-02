@@ -165,6 +165,7 @@ async def get_events(
         device_id: Optional device filter; required when multiple devices share a date.
         types: Optional list of event types to filter (e.g. ["OA", "CA", "H"]).
         min_duration: Minimum event duration in seconds (optional filter).
+            Excludes events with no recorded duration (ResMed hypopneas, RERAs).
         include_context: Whether to compute and attach the per-event waveform
             context block; False skips all waveform I/O (context and the
             context ``*_reason`` fields are null).
@@ -234,6 +235,7 @@ async def experimental_get_event_context(
         device_id: Optional device filter; required when multiple devices share a date.
         types: Optional list of event types to filter (e.g. ["OA", "CA", "H"]).
         min_duration: Minimum event duration in seconds (optional filter).
+            Excludes events with no recorded duration (ResMed hypopneas, RERAs).
         max_events: Maximum events to return (≥1, pre-validated by server wrapper).
             total_events reflects the untruncated count; truncated=True when cut.
     """
@@ -318,7 +320,8 @@ def register(mcp: FastMCP) -> None:
                    Common values: ``OA`` (obstructive apnea), ``CA`` (central
                    apnea), ``H`` (hypopnea), ``RE`` (respiratory effort-related
                    arousal), ``FL`` (flow limitation), ``VS`` (vibratory snore).
-            min_duration: Minimum event duration in seconds (optional).
+            min_duration: Minimum event duration in seconds (optional). Excludes
+                events with no recorded duration (ResMed hypopneas, RERAs).
             include_context: Compute and attach the per-event waveform context
                 block (default true); false is faster and leaves ``context``
                 and the context ``*_reason`` fields null.
@@ -382,7 +385,8 @@ def register(mcp: FastMCP) -> None:
             device_id: Optional device ID filter. Required when multiple devices
                        have data for the same date.
             types: Optional event type filter, e.g. ["CA", "OA", "H"].
-            min_duration: Minimum event duration in seconds (optional).
+            min_duration: Minimum event duration in seconds (optional). Excludes
+                events with no recorded duration (ResMed hypopneas, RERAs).
             max_events: Maximum number of events to return after filtering (default 500,
                         minimum 1). When the result is truncated, ``total_events`` still
                         reports the full count and ``truncated`` is set to true in the

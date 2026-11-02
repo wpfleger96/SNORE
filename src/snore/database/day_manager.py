@@ -263,6 +263,7 @@ class DayManager:
             day.central_apneas = 0
             day.hypopneas = 0
             day.reras = 0
+            day.unclassified_apneas = 0
             cls._set_indices(day, computed=None, device=None)
             for spec in DAY_METRIC_STAT_COLUMNS:
                 setattr(day, spec.name, None)
@@ -296,6 +297,9 @@ class DayManager:
             )
             day.hypopneas = sum(s.hypopneas for s in stats_records if s.hypopneas)
             day.reras = sum(s.reras for s in stats_records if s.reras)
+            day.unclassified_apneas = sum(
+                s.unclassified_apneas for s in stats_records if s.unclassified_apneas
+            )
 
             for spec in DAY_METRIC_STAT_COLUMNS:
                 if spec.day_agg in (DayAgg.MIN, DayAgg.MAX):
