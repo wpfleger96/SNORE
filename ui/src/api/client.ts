@@ -8,6 +8,18 @@ const api = axios.create({
     baseURL: '/api/v1',
 })
 
+let sessionLossExpected = false
+
+/**
+ * Tell the 401 handler that this session is meant to die. A factory reset ends it
+ * mid-job, and a 401 from anything else running in the app (the validation run poll
+ * outlives its view) must not sign out and redirect away from the view that is
+ * waiting to show the one-time admin invite.
+ */
+export function expectSessionLoss(expected: boolean): void {
+    sessionLossExpected = expected
+}
+
 api.interceptors.response.use(
     (response) => response,
     async (error: AxiosError<{ message?: string; detail?: string | Array<{ msg: string }> }>) => {
@@ -28,7 +40,11 @@ api.interceptors.response.use(
 
         // Session expired on a data endpoint: clear local auth state and redirect to login.
         // Auth endpoints (/auth/*) handle their own 401 responses (e.g., wrong password).
-        if (error.response?.status === 401 && !error.config?.url?.startsWith('/auth/')) {
+        if (
+            error.response?.status === 401 &&
+            !error.config?.url?.startsWith('/auth/') &&
+            !sessionLossExpected
+        ) {
             const { useAuth } = await import('@/composables/useAuth')
             const { clearAuth } = useAuth()
             clearAuth()

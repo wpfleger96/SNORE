@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ref, defineComponent } from 'vue'
 
 vi.mock('@/composables/useAuth')
@@ -31,6 +31,7 @@ import {
 } from './helpers/mockUseAuth'
 vi.mock('@/api/me')
 vi.mock('@/api/totp')
+vi.mock('@/api/db')
 
 import AccountView from '@/views/AccountView.vue'
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog.vue'
@@ -39,6 +40,10 @@ import { useDateFormat } from '@/composables/useDateFormat'
 import { useRoute, useRouter } from 'vue-router'
 import { getMe, changePassword, getPreferences, unlinkGoogle, deleteMyData } from '@/api/me'
 import { getTotpStatus, disableTotp, regenerateRecoveryCodes } from '@/api/totp'
+import { getResetJobStatus } from '@/api/db'
+import { POLL_INTERVAL_MS } from '@/composables/useResetJob'
+
+enableAutoUnmount(afterEach)
 
 const ME_WITH_PASSWORD = {
     id: 1,
@@ -423,20 +428,63 @@ describe('AccountView — sign-in methods / Google unlink', () => {
 })
 
 describe('AccountView — danger zone (delete-data)', () => {
+    const DELETE_RESULT = {
+        status: 'success',
+        devices_deleted: 2,
+        import_jobs_deleted: 5,
+        profiles_processed: 1,
+        size_before_mb: 10.0,
+        size_after_mb: 1.5,
+    }
+
+    function jobStatus(overrides: Record<string, unknown> = {}) {
+        return {
+            kind: 'delete_data',
+            state: 'running',
+            error_message: null,
+            reset_result: null,
+            delete_data_result: null,
+            ...overrides,
+        } as never
+    }
+
     beforeEach(() => {
+        // flushPromises schedules through setImmediate, so that stays real.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
         vi.resetAllMocks()
+        sessionStorage.clear()
         makeAuthMock()
         makeDateFormatMock()
         vi.mocked(useRoute).mockReturnValue({ query: {} } as never)
         vi.mocked(getMe).mockResolvedValue(ME_WITH_PASSWORD)
         vi.mocked(getPreferences).mockResolvedValue(PREFS as never)
         vi.mocked(getTotpStatus).mockResolvedValue(TOTP_STATUS_DISABLED)
+        vi.mocked(deleteMyData).mockResolvedValue({ job_id: 'job-token', state: 'queued' })
+        vi.mocked(getResetJobStatus).mockResolvedValue(jobStatus())
+    })
+
+    afterEach(() => {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+        sessionStorage.clear()
     })
 
     async function mountAndLoad() {
         const wrapper = mount(AccountView)
         await flushPromises()
         return wrapper
+    }
+
+    async function confirmDeleteData(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        await wrapper.find('.danger-zone-card button').trigger('click')
+        await wrapper.vm.$nextTick()
+        await wrapper.find('.stub-confirm').trigger('click')
+        await flushPromises()
+    }
+
+    async function pollOnce() {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+        await flushPromises()
     }
 
     it('test_danger_zone_visible_for_non_demo', async () => {
@@ -451,16 +499,6 @@ describe('AccountView — danger zone (delete-data)', () => {
     })
 
     it('test_confirm_calls_deleteMyData_and_shows_success', async () => {
-        vi.mocked(deleteMyData).mockResolvedValueOnce({
-            status: 'success',
-            devices_deleted: 2,
-            import_jobs_deleted: 5,
-            profiles_processed: 1,
-            size_before_mb: 10.0,
-            size_after_mb: null,
-            vacuum_scheduled: true,
-        })
-
         const wrapper = await mountAndLoad()
 
         // The stub-confirm button only renders when deleteDataDialogOpen is true.
@@ -477,9 +515,63 @@ describe('AccountView — danger zone (delete-data)', () => {
         await flushPromises()
 
         expect(deleteMyData).toHaveBeenCalledTimes(1)
+        expect(wrapper.find('.form-success').exists()).toBe(false)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'succeeded', delete_data_result: DELETE_RESULT }),
+        )
+        await pollOnce()
+
         expect(wrapper.find('.form-success').text()).toContain('2 device(s)')
         expect(wrapper.find('.form-success').text()).toContain('5 import record(s)')
         expect(wrapper.find('.form-success').text()).toContain('1 profile(s)')
+        expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    })
+
+    it('test_running_deletion_shows_notice_and_keeps_button_disabled', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmDeleteData(wrapper)
+
+        const button = wrapper.find('.danger-zone-card button')
+        expect((button.element as HTMLButtonElement).disabled).toBe(true)
+        expect(wrapper.find('[role="status"]').text()).toContain('several minutes')
+    })
+
+    it('test_deletion_resumes_after_returning_to_the_page', async () => {
+        const firstVisit = await mountAndLoad()
+        await confirmDeleteData(firstVisit)
+        firstVisit.unmount()
+
+        const wrapper = await mountAndLoad()
+
+        expect(getResetJobStatus).toHaveBeenCalledWith('job-token')
+        expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    })
+
+    it('test_failed_deletion_shows_job_error_and_no_success', async () => {
+        const wrapper = await mountAndLoad()
+        await confirmDeleteData(wrapper)
+
+        vi.mocked(getResetJobStatus).mockResolvedValue(
+            jobStatus({ state: 'failed', error_message: 'The deletion failed.' }),
+        )
+        await pollOnce()
+
+        expect(wrapper.find('[role="alert"]').text()).toContain('The deletion failed.')
+        expect(wrapper.find('.form-success').exists()).toBe(false)
+    })
+
+    it('test_conflict_shows_in_progress_message', async () => {
+        vi.mocked(deleteMyData).mockRejectedValueOnce(
+            Object.assign(new Error('Conflict'), { response: { status: 409 } }),
+        )
+
+        const wrapper = await mountAndLoad()
+        await confirmDeleteData(wrapper)
+
+        expect(wrapper.find('[role="alert"]').text()).toContain(
+            'Another reset or data deletion is in progress',
+        )
     })
 
     it('test_deleteMyData_error_shows_inline_error', async () => {

@@ -1361,18 +1361,10 @@ class ResetResult(BaseModel):
     )
     total_rows_deleted: int = Field(description="Total rows deleted across all tables")
     size_before_mb: float = Field(description="Database size before reset in MB")
-    size_after_mb: float | None = Field(
-        default=None,
+    size_after_mb: float = Field(
         description=(
-            "Database size after vacuum in MB. Null when vacuum_scheduled=true — the"
-            " vacuum is still running as a post-response background task."
-        ),
-    )
-    vacuum_scheduled: bool = Field(
-        default=False,
-        description=(
-            "True when VACUUM has been queued as a post-response background task."
-            " size_after_mb will be null in this case."
+            "Database size in MB once the job's VACUUM finished. Equals"
+            " size_before_mb when the VACUUM could not run."
         ),
     )
     bootstrap_invite_url: str | None = Field(
@@ -1531,17 +1523,9 @@ class DeleteDataResult(BaseModel):
         description="Profiles whose raw backup dirs were purged"
     )
     size_before_mb: float = Field(description="Database size before deletion in MB")
-    size_after_mb: float | None = Field(
-        default=None,
+    size_after_mb: float = Field(
         description=(
-            "Database size after vacuum in MB. Null when vacuum_scheduled=true — the"
-            " vacuum is still running as a post-response background task."
-        ),
-    )
-    vacuum_scheduled: bool = Field(
-        default=False,
-        description=(
-            "True when VACUUM has been queued as a post-response background task."
-            " size_after_mb will be null in this case."
+            "Database size in MB once the job's VACUUM finished. Equals"
+            " size_before_mb when the VACUUM could not run."
         ),
     )

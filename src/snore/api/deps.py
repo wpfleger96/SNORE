@@ -1,10 +1,8 @@
-import asyncio
-
 from collections.abc import AsyncGenerator, Callable
 from datetime import date, datetime, time
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Path, Query, Request
+from fastapi import Depends, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.auth.actor import ActorContext, AuthMode
@@ -23,9 +21,8 @@ async def get_db_immediate() -> AsyncGenerator[AsyncSession]:
     Acquires the SQLite write lock at transaction open (BEGIN IMMEDIATE) so
     contending writers queue on busy_timeout rather than failing instantly on a
     WAL snapshot-upgrade conflict.  Use for endpoints that read before writing
-    or perform large bulk deletes (e.g. /db/reset, /auth/me/delete-data) to
-    prevent SQLITE_BUSY bypassing the timeout that a deferred-BEGIN transaction
-    would trigger.
+    to prevent SQLITE_BUSY bypassing the timeout that a deferred-BEGIN
+    transaction would trigger.
     """
     async with session_scope(immediate=True) as session:
         yield session
@@ -96,44 +93,6 @@ async def get_actor(
 
 
 ActorDep = Annotated[ActorContext, Depends(get_actor)]
-
-
-_reset_lock = asyncio.Lock()
-
-
-def is_reset_locked() -> bool:
-    """Return True if the destructive-operation reset lock is currently held.
-
-    Used by the /health/busy endpoint to gate watchtower container replacement.
-    """
-    return _reset_lock.locked()
-
-
-async def require_reset_lock(_actor: ActorDep) -> AsyncGenerator[None]:
-    """Serialize destructive DB operations (admin reset, per-user delete-all).
-
-    Authentication is enforced structurally via the ``_actor: ActorDep``
-    sub-dependency — unauthenticated requests are rejected before the lock is
-    checked (enforced by the dependency graph, not parameter order).
-
-    Non-blocking: a request arriving while another reset holds the lock gets
-    409 immediately instead of queueing on the SQLite write lock.
-
-    Callers must declare ``_lock: ResetLockDep`` BEFORE their DB session
-    dependency (e.g. ``ImmediateDbDep``) so the app-level lock is acquired
-    before BEGIN IMMEDIATE and concurrent requests fail fast with 409 instead
-    of queueing on the SQLite write lock.
-    """
-    if _reset_lock.locked():
-        raise HTTPException(
-            status_code=409,
-            detail="A database reset or data deletion is already in progress",
-        )
-    async with _reset_lock:
-        yield
-
-
-ResetLockDep = Annotated[None, Depends(require_reset_lock)]
 
 
 def service_dep[T](cls: Callable[[AsyncSession, int], T]) -> Callable[..., T]:

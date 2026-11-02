@@ -20,6 +20,7 @@ from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.api import reset_jobs
 from snore.api.app import create_app
 from snore.api.deps import get_actor, get_db, get_db_immediate
 from snore.auth.actor import ActorContext, AuthMode
@@ -47,10 +48,6 @@ DEMO_ALLOWED_MUTATING = {
     "POST /api/v1/validate/breaths",
     "POST /api/v1/validate/apple",
     "POST /api/v1/validate/rera",
-    # Local-only route: protected by require_local_only (→ 403 in multiuser
-    # where demo users actually live). In local mode (test default) it passes
-    # require_local_only but demo users don't exist in practice.
-    "POST /api/v1/db/reset",
 }
 
 # HTTP methods that are considered mutating.
@@ -202,3 +199,12 @@ class TestDemoEnforcement:
         """The writable guard must reject demo requests before BEGIN IMMEDIATE."""
         response = demo_client.request(method, path, json={})
         assert response.status_code == 403
+
+    @pytest.mark.parametrize(
+        "path", ["/api/v1/db/reset", "/api/v1/auth/me/delete-data"]
+    )
+    def test_destructive_routes_reject_demo_before_queueing_a_job(
+        self, demo_client: TestClient, path: str
+    ) -> None:
+        assert demo_client.post(path, json={}).status_code == 403
+        assert not reset_jobs.has_active_job()

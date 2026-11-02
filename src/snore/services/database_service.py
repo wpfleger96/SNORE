@@ -2,17 +2,29 @@
 
 import logging
 import os
+import secrets
 import shutil
+import sqlite3
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import ColumnElement, create_engine, delete, func, select, text
+from sqlalchemy import (
+    ColumnElement,
+    create_engine,
+    delete,
+    func,
+    insert,
+    select,
+    text,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.auth.invite_tokens import hash_invite_token
 from snore.database import models
+from snore.database.models import Base
 from snore.services._base import ProfileScopedService, session_device_join
 from snore.services.schemas import DatabaseStats, VacuumResult
 from snore.services.waveform_service import clear_waveform_array_cache
@@ -20,6 +32,25 @@ from snore.services.waveform_service import clear_waveform_array_cache
 __all__ = ["DatabaseService", "_vacuum_background", "file_size_mb"]
 
 logger = logging.getLogger(__name__)
+
+# Tables preserved by the data-only reset (include_accounts=False).
+# Sleep data tables are deleted; account/auth/profile containers survive.
+_DATA_RESET_SKIP = frozenset(
+    {
+        "users",
+        "auth_identities",
+        "invites",
+        "profiles",
+        "oauth_attempts",
+        "totp_recovery_codes",
+    }
+)
+
+# How long VACUUM queues behind a writer before giving up.
+_VACUUM_BUSY_TIMEOUT_SECONDS = 120
+# A TRUNCATE checkpoint blocks new writers while it waits on readers, so it gets
+# a much shorter wait than the VACUUM before it.
+_CHECKPOINT_BUSY_TIMEOUT_MS = 5000
 
 
 def file_size_mb(path: str) -> float:
@@ -30,20 +61,19 @@ def file_size_mb(path: str) -> float:
 
 
 def _vacuum_background(db_path: str) -> None:
-    """Run VACUUM on a SQLite file path; intended for BackgroundTasks scheduling.
+    """Run VACUUM on a SQLite file path, then shrink the file.
 
-    FastAPI runs sync background-task functions in a thread pool, so this never
-    blocks the event loop. No-op when db_path is not a valid SQLite file target.
+    Blocking: callers run it off the event loop (the reset job's worker thread,
+    or an executor for startup recovery).  No-op when db_path is not a valid
+    SQLite file target.
 
     Uses the Python ``sqlite3`` module directly (no SQLAlchemy pool) with
     ``isolation_level=None`` (autocommit) so each statement runs outside any
-    transaction.  VACUUM requires exclusive access; if any reader holds a lock,
-    the VACUUM fails immediately and the failure is logged as a warning.  This
-    is non-fatal — the DB is simply not compacted until the next scheduled run
-    (e.g. after the next reset, or on the next server start with a VACUUM cron).
+    transaction.  VACUUM fails only when something prevents the write: an open
+    reader does not stop it, and it waits ``_VACUUM_BUSY_TIMEOUT_SECONDS`` for a
+    writer.  A failure is logged as a warning and is non-fatal: the pending-vacuum
+    marker stays in place, so the next startup retries.
     """
-    import sqlite3  # noqa: PLC0415
-
     if not DatabaseService.is_sqlite_target(db_path):
         logger.debug("_vacuum_background: skipping non-SQLite target %r", db_path)
         return
@@ -52,9 +82,13 @@ def _vacuum_background(db_path: str) -> None:
         # isolation_level=None → SQLite autocommit; VACUUM must run outside
         # an explicit transaction.  No SQLAlchemy pool, so the connection is
         # opened, used, and closed in a single call path.
-        conn = sqlite3.connect(db_path, isolation_level=None)
+        conn = sqlite3.connect(
+            db_path, timeout=_VACUUM_BUSY_TIMEOUT_SECONDS, isolation_level=None
+        )
         conn.execute("VACUUM")
         logger.info("Background VACUUM completed for %s", db_path)
+        conn.execute(f"PRAGMA busy_timeout = {_CHECKPOINT_BUSY_TIMEOUT_MS}")
+        _truncate_wal(conn, db_path)
         # Remove the pending-vacuum marker so a subsequent restart does not
         # schedule another VACUUM unnecessarily.
         try:
@@ -68,6 +102,114 @@ def _vacuum_background(db_path: str) -> None:
     finally:
         if conn is not None:
             conn.close()
+
+
+def _truncate_wal(conn: sqlite3.Connection, db_path: str) -> None:
+    """Checkpoint the WAL so a just-finished VACUUM actually shrinks the file.
+
+    In WAL mode VACUUM writes the compacted database into the WAL; the main file
+    keeps its old size until a checkpoint moves those pages back.  The server's
+    pooled connections keep the WAL alive, so the main file can stay large and the
+    ``-wal`` file keeps its size until a TRUNCATE checkpoint.  A failure only delays
+    that, so it never counts as a failed VACUUM.
+    """
+    try:
+        row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    except sqlite3.Error as exc:
+        logger.warning("WAL checkpoint failed for %s: %s", db_path, exc)
+        return
+    if row[0] == 1:
+        logger.warning(
+            "WAL checkpoint for %s stopped by a busy connection; the file stays "
+            "large until a later checkpoint",
+            db_path,
+        )
+
+
+async def _mint_admin_invite(db: AsyncSession, email: str, base_url: str) -> str:
+    """Insert a new admin invite row and return its redemption URL.
+
+    Called after a full factory reset (include_accounts=True) when all rows
+    have been deleted.  At that point there are no users or pending invites,
+    so the duplicate-guard queries are elided.
+    """
+    raw = secrets.token_urlsafe(32)
+    token_hash = hash_invite_token(raw)
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(days=7)
+
+    await db.execute(
+        insert(models.Invite).values(
+            email=email,
+            token_hash=token_hash,
+            role="admin",
+            created_by=None,
+            expires_at=expires_at,
+            created_at=now,
+        )
+    )
+
+    url_base = base_url.rstrip("/") if base_url else ""
+    return f"{url_base}/invite#{raw}" if url_base else f"/invite#{raw}"
+
+
+async def _commit_and_purge_raw_dirs(
+    db: AsyncSession, profile_ids: Sequence[int], raw_root: Path, label: str
+) -> None:
+    """Commit *db* with crash-safe cleanup of each profile's raw backup dir.
+
+    Dirs are quarantine-renamed BEFORE the commit.  A crash between quarantine
+    and commit leaves them in ``.quarantine/`` for ``DeletionSaga.recover()``
+    case 2 to sweep on next boot; the DB rows survive so the state is consistent.
+    If a quarantine rename or the commit fails, the dirs quarantined so far are
+    renamed back.  After a successful commit nothing here raises: the caller's
+    data is gone and it must get to report so.
+    """
+    from snore.services.profile_service import (  # noqa: PLC0415
+        quarantine_profile_raw_dir,
+    )
+
+    quarantined: list[tuple[int, Path]] = []
+    try:
+        for pid in profile_ids:
+            dst = quarantine_profile_raw_dir(pid, raw_root)
+            if dst is not None:
+                quarantined.append((pid, dst))
+
+        await db.commit()
+    except Exception:
+        # A later rename or the commit failed — restore quarantined dirs so raw
+        # backups are not orphaned alongside the uncommitted DB rows.
+        for pid, dst in quarantined:
+            src = raw_root / str(pid)
+            try:
+                dst.rename(src)
+            except Exception:
+                logger.warning(
+                    "Could not restore quarantined raw dir for profile %d after a "
+                    "failed delete; dir remains in .quarantine/ for startup recovery",
+                    pid,
+                )
+        raise
+
+    # The user asked for this data to be gone; see clear_waveform_array_cache.
+    try:
+        clear_waveform_array_cache()
+    except Exception:
+        logger.exception("Could not clear the waveform cache after %s", label)
+
+    # Best-effort rmtree.  A crash may skip this; startup recovery
+    # (DeletionSaga case 2) purges .quarantine/ leftovers.
+    for pid, dst in quarantined:
+        try:
+            shutil.rmtree(dst, ignore_errors=True)
+            logger.info("Purged raw backup for profile %d (%s)", pid, label)
+        except Exception:
+            logger.warning(
+                "Post-commit rmtree for profile %d failed; dir remains in "
+                ".quarantine/ for startup recovery",
+                pid,
+            )
 
 
 class DatabaseService(ProfileScopedService):
@@ -297,33 +439,21 @@ class DatabaseService(ProfileScopedService):
 
         Import job records (no FK, explicit delete) are also removed.
 
-        Crash-safe cleanup (quarantine-before-commit pattern):
-
-        Raw backup directories are quarantine-renamed into ``.quarantine/``
-        BEFORE the commit so that a container restart between quarantine and
-        commit leaves the dirs visible to ``DeletionSaga.recover()`` case 2 on
-        next boot.  On commit failure the dirs are renamed back; on success
-        they are rmtree'd best-effort.  ``CancelledError`` may skip the rmtree
-        — startup recovery cleans up any ``.quarantine/`` leftovers.
-
-        Trade-off: a crash between quarantine and commit means DB rows survive
-        but raw backups are swept by startup recovery.  New imports proceed
-        normally, but the raw archive is lost and cannot be rebuilt from the
-        database.
+        Raw backup directories are purged through
+        :func:`_commit_and_purge_raw_dirs`.  Trade-off: a crash between
+        quarantine and commit means DB rows survive but raw backups are swept by
+        startup recovery.  New imports proceed normally, but the raw archive is
+        lost and cannot be rebuilt from the database.
 
         NOTE: Concurrent in-flight imports for this user's devices will fail if
         their device rows are deleted mid-import; this is accepted behavior.
 
         Commits the transaction.  Caller is responsible for writing the vacuum
-        marker and scheduling vacuum.
+        marker and running the VACUUM.
 
         Returns:
             (devices_deleted, import_jobs_deleted, profiles_processed) counts.
         """
-        from snore.services.profile_service import (
-            quarantine_profile_raw_dir,  # noqa: PLC0415
-        )
-
         profile_ids = list(
             (
                 await db.execute(
@@ -353,49 +483,91 @@ class DatabaseService(ProfileScopedService):
         )
         import_jobs_deleted = import_cursor.rowcount or 0  # type: ignore[attr-defined]
 
-        # Quarantine raw dirs BEFORE committing.  A crash between quarantine
-        # and commit leaves the dirs in .quarantine/ for startup recovery to
-        # sweep; the DB rows survive so the state is consistent.
-        quarantined: list[tuple[int, Path]] = []
-        for pid in profile_ids:
-            dst = quarantine_profile_raw_dir(pid, raw_root)
-            if dst is not None:
-                quarantined.append((pid, dst))
-
-        try:
-            await db.commit()
-        except Exception:
-            # Commit failed — restore quarantined dirs so raw backups are not
-            # orphaned alongside the uncommitted DB rows.
-            for pid, dst in quarantined:
-                src = raw_root / str(pid)
-                try:
-                    dst.rename(src)
-                except Exception:
-                    logger.warning(
-                        "Could not restore quarantined raw dir for profile %d after "
-                        "commit failure; dir remains in .quarantine/ for startup recovery",
-                        pid,
-                    )
-            raise
-
-        # The user asked for this data to be gone; see clear_waveform_array_cache.
-        clear_waveform_array_cache()
-
-        # Commit succeeded — best-effort rmtree.  CancelledError may skip this;
-        # startup recovery (DeletionSaga case 2) purges .quarantine/ leftovers.
-        for pid, dst in quarantined:
-            try:
-                shutil.rmtree(dst, ignore_errors=True)
-                logger.info("Purged raw backup for profile %d (delete-data)", pid)
-            except Exception:
-                logger.warning(
-                    "Post-commit rmtree for profile %d failed; dir remains in "
-                    ".quarantine/ for startup recovery",
-                    pid,
-                )
+        await _commit_and_purge_raw_dirs(db, profile_ids, raw_root, "delete-data")
 
         return devices_deleted, import_jobs_deleted, len(profile_ids)
+
+    @staticmethod
+    async def reset_all_data(
+        db: AsyncSession,
+        *,
+        include_accounts: bool,
+        actor_user_id: int,
+        raw_root: Path,
+        public_base_url: str,
+    ) -> tuple[dict[str, int], str | None]:
+        """Delete every user's data; commit; purge raw dirs.
+
+        ``include_accounts=False`` deletes sleep data and keeps accounts, auth
+        and profile containers (:data:`_DATA_RESET_SKIP`).
+        ``include_accounts=True`` is a factory reset: every row in every table
+        goes, and a fresh bootstrap admin invite for the actor's email is minted
+        in the same transaction.
+
+        Commits the transaction.  Caller is responsible for writing the vacuum
+        marker and running the VACUUM.
+
+        Returns:
+            (tables_cleared, bootstrap_invite_url); the URL is None unless
+            ``include_accounts`` is set.
+
+        Raises:
+            RuntimeError: A factory reset could not resolve the actor's email.
+                Nothing has been deleted.
+        """
+        caller_email = ""
+        if include_accounts:
+            # Fetch caller email BEFORE any deletes — this is a hard precondition.
+            # If the calling user's row can't be found, abort rather than wiping
+            # the database and leaving the system with no admin and no invite.
+            row = (
+                await db.execute(
+                    select(models.User.canonical_email).where(
+                        models.User.id == actor_user_id
+                    )
+                )
+            ).first()
+            caller_email = str(row[0]) if row and row[0] else ""
+
+            if not caller_email:
+                raise RuntimeError(
+                    "Could not resolve caller email; reset aborted to prevent data loss."
+                )
+
+        # Collect all profile IDs for raw-dir quarantine (Core SQL, avoids ORM
+        # identity-map conflicts with the bulk delete that follows).
+        profile_ids = list((await db.execute(select(models.Profile.id))).scalars())
+
+        skip = frozenset() if include_accounts else _DATA_RESET_SKIP
+        tables_cleared: dict[str, int] = {}
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name in skip:
+                continue
+            cursor = await db.execute(table.delete())
+            tables_cleared[table.name] = cursor.rowcount or 0  # type: ignore[attr-defined]
+
+        bootstrap_invite_url: str | None = None
+        if include_accounts:
+            # After bulk deletes, expunge stale ORM state (e.g. the acting user's
+            # row, which was deleted) before inserting the invite so the subsequent
+            # commit does not try to flush stale ORM objects.
+            db.expunge_all()
+
+            # Insert the bootstrap invite in the same transaction as the deletion.
+            bootstrap_invite_url = await _mint_admin_invite(
+                db, caller_email, public_base_url
+            )
+
+        await _commit_and_purge_raw_dirs(db, profile_ids, raw_root, "reset")
+
+        if include_accounts:
+            logger.warning(
+                "Full factory reset committed for caller %s; the bootstrap invite "
+                "URL is only in the job result and will not be recoverable afterward.",
+                caller_email,
+            )
+
+        return tables_cleared, bootstrap_invite_url
 
     @staticmethod
     def is_sqlite_target(db_path: str) -> bool:

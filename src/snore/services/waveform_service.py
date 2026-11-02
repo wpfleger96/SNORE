@@ -1,6 +1,7 @@
 """Waveform service for listing and loading waveform data."""
 
 import logging
+import threading
 
 from collections import OrderedDict
 from datetime import datetime
@@ -86,14 +87,11 @@ class _WaveformArrayCache:
     Both key parts are read fresh from the DB on every request; an entry for a
     deleted row is simply never looked up again and ages out through the LRU.
 
-    Confinement: in the API server, every read (the ``get_waveform`` route) and
-    clear (the user-delete routes) runs on the one event loop, and no ``await``
-    occurs between the ``OrderedDict`` operations below, so they never interleave
-    and no lock is used.  The one caller off that loop is multi-channel ``snore
-    waveform show``, which loads up to four channels on worker threads in its own
-    short-lived process.  Cached arrays are read-only and each entry is complete
-    before it is inserted, so a thread race there can skew the byte count or fail
-    one channel with a warning, but never serve wrong data.
+    Threads: in the API server, reads run on the event loop (the ``get_waveform``
+    route) while the database reset job clears from its worker thread, and
+    multi-channel ``snore waveform show`` loads up to four channels on worker
+    threads.  The lock is only ever held for in-memory bookkeeping, so taking it
+    on the event loop cannot stall the server.
     """
 
     def __init__(self) -> None:
@@ -101,13 +99,15 @@ class _WaveformArrayCache:
             OrderedDict()
         )
         self._total_bytes = 0
+        self._lock = threading.Lock()
 
     def get(self, key: _WaveformCacheKey) -> tuple[np.ndarray, np.ndarray] | None:
         """Return cached ``(timestamps, values)`` for a key, or ``None``."""
-        entry = self._entries.get(key)
-        if entry is not None:
-            self._entries.move_to_end(key)
-        return entry
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None:
+                self._entries.move_to_end(key)
+            return entry
 
     def put(
         self, key: _WaveformCacheKey, timestamps: np.ndarray, values: np.ndarray
@@ -119,21 +119,23 @@ class _WaveformArrayCache:
         double-counting bytes.  The just-inserted entry is never evicted, so a
         single oversized channel is still served (all others make way for it).
         """
-        if key in self._entries:
-            return
-        self._entries[key] = (timestamps, values)
-        self._total_bytes += timestamps.nbytes + values.nbytes
-        while (
-            self._total_bytes > WAVEFORM_ARRAY_CACHE_MAX_BYTES
-            and len(self._entries) > 1
-        ):
-            _, (old_ts, old_vals) = self._entries.popitem(last=False)
-            self._total_bytes -= old_ts.nbytes + old_vals.nbytes
+        with self._lock:
+            if key in self._entries:
+                return
+            self._entries[key] = (timestamps, values)
+            self._total_bytes += timestamps.nbytes + values.nbytes
+            while (
+                self._total_bytes > WAVEFORM_ARRAY_CACHE_MAX_BYTES
+                and len(self._entries) > 1
+            ):
+                _, (old_ts, old_vals) = self._entries.popitem(last=False)
+                self._total_bytes -= old_ts.nbytes + old_vals.nbytes
 
     def clear(self) -> None:
         """Drop all entries."""
-        self._entries.clear()
-        self._total_bytes = 0
+        with self._lock:
+            self._entries.clear()
+            self._total_bytes = 0
 
 
 _waveform_array_cache = _WaveformArrayCache()

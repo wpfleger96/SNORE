@@ -1,24 +1,52 @@
+import asyncio
+import sqlite3
+import time
 import typing
 import uuid
 
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import patch
 
+import httpx
 import pytest
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session as SyncSession
+from sqlalchemy.pool import NullPool
 
+from snore.api import reset_jobs
+from snore.api.app import create_app
+from snore.api.config import load_config, set_config
 from snore.auth.actor import ActorContext, AuthMode, Role
+from snore.auth.session_cookie import encode_session
 from snore.database import models
 from snore.database.models import Base
+from snore.database.session import cleanup_database, init_database, session_scope
+from snore.services.database_service import DatabaseService
+from snore.services.database_service import _vacuum_background as _REAL_VACUUM_BG
 from snore.services.waveform_service import _waveform_array_cache
 from tests.helpers.api_client import make_test_client
+from tests.helpers.reset_jobs import (
+    DELETE_DATA_PATH,
+    RESET_PATH,
+    STATUS_PATH,
+    post_and_run_job,
+    read_status,
+    run_queued_job,
+    run_reset,
+    token_header,
+)
 from tests.integration.test_api.conftest import _multiuser_env
 
 
@@ -66,6 +94,12 @@ def _demo_actor(user_id: int) -> ActorContext:
         role=Role.DEMO,
         mode=AuthMode.MULTIUSER,
     )
+
+
+def _session_count(db_session: SyncSession) -> int:
+    return db_session.execute(
+        select(func.count()).select_from(models.Session)
+    ).scalar_one()
 
 
 class TestDbStats:
@@ -151,11 +185,31 @@ class TestDbVacuum:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("reset_job_session")
 class TestDbReset:
     def test_reset_status_is_success(self, api_client, temp_db):
         with _patch_target(temp_db, api_client):
-            response = api_client.post("/api/v1/db/reset")
-        assert response.json()["status"] == "success"
+            result = run_reset(api_client)
+        assert result["status"] == "success"
+
+    def test_post_returns_202_and_deletes_only_in_the_job(
+        self, api_client, db_session, test_device, test_session_factory, temp_db
+    ):
+        """The request returns a token at once; the rows go when the job runs."""
+        test_session_factory(test_device.id, start_time=datetime(2025, 1, 1, 22, 0))
+        db_session.commit()
+
+        with _patch_target(temp_db, api_client):
+            response = api_client.post(RESET_PATH)
+
+        assert response.status_code == 202
+        assert response.json()["state"] == "queued"
+        assert response.headers["cache-control"] == "no-store"
+        assert _session_count(db_session) == 1
+
+        run_queued_job()
+
+        assert _session_count(db_session) == 0
 
     def test_reset_clears_data(
         self, api_client, db_session, test_device, test_session_factory, temp_db
@@ -163,24 +217,27 @@ class TestDbReset:
         test_session_factory(test_device.id, start_time=datetime(2025, 1, 1, 22, 0))
         db_session.commit()
         with _patch_target(temp_db, api_client):
-            response = api_client.post("/api/v1/db/reset")
-        assert response.json()["total_rows_deleted"] >= 1
+            result = run_reset(api_client)
+        assert result["total_rows_deleted"] >= 1
+
+    def test_reset_reports_measured_size_after_vacuum(self, api_client, temp_db):
+        """size_after_mb is always a number now that VACUUM runs inside the job."""
+        with _patch_target(temp_db, api_client):
+            result = run_reset(api_client)
+        assert isinstance(result["size_after_mb"], float)
+        assert "vacuum_scheduled" not in result
 
     def test_reset_no_body_uses_data_only_default(self, api_client, temp_db):
         """Empty POST (no body) defaults to data-only reset — no bootstrap_invite_url."""
         with _patch_target(temp_db, api_client):
-            response = api_client.post("/api/v1/db/reset")
-        data = response.json()
+            data = run_reset(api_client)
         assert data["status"] == "success"
         assert data.get("bootstrap_invite_url") is None
 
     def test_reset_explicit_data_only(self, api_client, temp_db):
         """include_accounts=false explicitly — same result as default."""
         with _patch_target(temp_db, api_client):
-            response = api_client.post(
-                "/api/v1/db/reset", json={"include_accounts": False}
-            )
-        data = response.json()
+            data = run_reset(api_client, json={"include_accounts": False})
         assert data["status"] == "success"
         assert data.get("bootstrap_invite_url") is None
 
@@ -207,12 +264,13 @@ class TestDbReset:
         assert len(_waveform_array_cache._entries) == 1
 
         with _patch_target(temp_db, api_client):
-            response = api_client.post("/api/v1/db/reset")
+            result = run_reset(api_client)
 
-        assert response.json()["status"] == "success"
+        assert result["status"] == "success"
         assert not _waveform_array_cache._entries
 
 
+@pytest.mark.usefixtures("reset_job_session")
 class TestDbResetMultiuser:
     """Reset tests with an explicit admin actor in multiuser mode."""
 
@@ -266,6 +324,7 @@ class TestDbResetMultiuser:
         with _patch_target(temp_db, client):
             response = client.post("/api/v1/db/reset")
         assert response.status_code == 403
+        assert not reset_jobs.has_active_job()
 
     def test_demo_gets_403(self, async_db_session, db_session, monkeypatch, temp_db):
         """Demo role cannot trigger a reset."""
@@ -282,6 +341,7 @@ class TestDbResetMultiuser:
         with _patch_target(temp_db, client):
             response = client.post("/api/v1/db/reset")
         assert response.status_code == 403
+        assert not reset_jobs.has_active_job()
 
     def test_data_only_reset_zeroes_sleep_data_preserves_accounts(
         self,
@@ -304,10 +364,8 @@ class TestDbResetMultiuser:
         )
 
         with _patch_target(temp_db, client):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            data = run_reset(client, json={"include_accounts": False})
 
-        assert response.status_code == 200
-        data = response.json()
         assert data["status"] == "success"
         assert data["total_rows_deleted"] >= 1
         assert data.get("bootstrap_invite_url") is None
@@ -338,14 +396,13 @@ class TestDbResetMultiuser:
         recovery_code_id = recovery_code.id
 
         with _patch_target(temp_db, client):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            data = run_reset(client, json={"include_accounts": False})
 
-        assert response.status_code == 200
         db_session.expire_all()
         assert db_session.get(models.TotpRecoveryCode, recovery_code_id) is not None, (
             "Recovery codes must survive data-only reset"
         )
-        assert "totp_recovery_codes" not in response.json()["tables_cleared"]
+        assert "totp_recovery_codes" not in data["tables_cleared"]
 
     def test_include_accounts_reset_empties_users_returns_invite_url(
         self,
@@ -365,10 +422,8 @@ class TestDbResetMultiuser:
         db_session.flush()
 
         with _patch_target(temp_db, client):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": True})
+            data = run_reset(client, json={"include_accounts": True})
 
-        assert response.status_code == 200
-        data = response.json()
         assert data["status"] == "success"
         assert data.get("bootstrap_invite_url") is not None
         invite_url: str = data["bootstrap_invite_url"]
@@ -411,10 +466,8 @@ class TestDbResetMultiuser:
         )
 
         with _patch_target(temp_db, client):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            data = run_reset(client, json={"include_accounts": False})
 
-        assert response.status_code == 200
-        data = response.json()
         assert data["status"] == "success"
 
         # Literal on purpose: a new table in the schema fails this test until
@@ -464,13 +517,71 @@ class TestDbResetMultiuser:
 
         with (
             _patch_target(temp_db, client),
-            patch("snore.api.routers.db._raw_root", return_value=raw_root),
+            patch("snore.api.reset_jobs._raw_root", return_value=raw_root),
         ):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            run_reset(client, json={"include_accounts": False})
 
-        assert response.status_code == 200
         # The raw dir should no longer exist (purged via quarantine).
         assert not profile_dir.exists(), "Profile raw dir must be purged after reset"
+
+    def test_factory_reset_invite_reaches_client_with_no_session(
+        self, async_db_session, db_session, monkeypatch, temp_db
+    ):
+        """The invite survives the session it replaced: only the token is needed."""
+        client, _, _ = self._make_admin_client(
+            async_db_session, db_session, monkeypatch
+        )
+        with _patch_target(temp_db, client):
+            response = client.post(RESET_PATH, json={"include_accounts": True})
+        run_queued_job()
+
+        anonymous = make_test_client(async_db_session, unauthenticated=True)
+        status = read_status(anonymous, response.json()["job_id"]).json()
+
+        assert status["state"] == "succeeded"
+        assert "#" in status["reset_result"]["bootstrap_invite_url"]
+
+    def test_vacuum_failure_after_commit_still_delivers_invite(
+        self, async_db_session, db_session, monkeypatch, temp_db
+    ):
+        """A factory reset whose VACUUM blows up is committed, so it succeeded."""
+        client, _, _ = self._make_admin_client(
+            async_db_session, db_session, monkeypatch
+        )
+
+        def _vacuum_raises(db_path: str) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(reset_jobs, "_vacuum_background", _vacuum_raises)
+
+        with _patch_target(temp_db, client):
+            data = run_reset(client, json={"include_accounts": True})
+
+        assert data["bootstrap_invite_url"] is not None
+        assert data["size_after_mb"] == data["size_before_mb"]
+
+    def test_rmtree_failure_after_commit_still_delivers_invite(
+        self, async_db_session, db_session, monkeypatch, temp_db, tmp_path
+    ):
+        """A factory reset whose raw-dir purge blows up still returns its invite."""
+        client, _, profile = self._make_admin_client(
+            async_db_session, db_session, monkeypatch
+        )
+        raw_root = tmp_path / "raw"
+        profile_dir = raw_root / str(profile.id)
+        profile_dir.mkdir(parents=True)
+
+        with (
+            _patch_target(temp_db, client),
+            patch("snore.api.reset_jobs._raw_root", return_value=raw_root),
+            patch(
+                "snore.services.database_service.shutil.rmtree",
+                side_effect=OSError("disk error"),
+            ),
+        ):
+            data = run_reset(client, json={"include_accounts": True})
+
+        assert data["bootstrap_invite_url"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -478,35 +589,44 @@ class TestDbResetMultiuser:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("reset_job_session")
 class TestDbResetConcurrency:
-    def test_409_when_lock_held(self, api_client, monkeypatch, temp_db):
-        """Reset returns 409 immediately when the reset lock is already held.
-
-        Monkeypatching the module-level lock is safe here because
-        require_reset_lock does a LOAD_GLOBAL lookup at call time, so it
-        sees the replacement value on the next request.
-        """
-        import snore.api.deps as deps  # noqa: PLC0415
-
-        mock_lock = MagicMock()
-        mock_lock.locked = lambda: True
-        monkeypatch.setattr(deps, "_reset_lock", mock_lock)
-
+    def test_409_while_reset_job_active(self, api_client, temp_db):
+        """A second reset returns 409 without queueing another job."""
         with _patch_target(temp_db, api_client):
-            response = api_client.post("/api/v1/db/reset")
+            first = api_client.post(RESET_PATH)
+            second = api_client.post(RESET_PATH)
 
-        assert response.status_code == 409
-        assert "already in progress" in response.json()["detail"]
+        assert first.status_code == 202
+        assert second.status_code == 409
+        assert "already in progress" in second.json()["detail"]
+        assert len(reset_jobs._queue) == 1
+
+    def test_409_while_delete_data_job_active(self, api_client, temp_db):
+        """A queued delete-data also blocks a reset: they share one job slot."""
+        with _patch_target(temp_db, api_client):
+            first = api_client.post(DELETE_DATA_PATH)
+            second = api_client.post(RESET_PATH)
+
+        assert first.status_code == 202
+        assert second.status_code == 409
+
+    def test_409_while_job_running(self, api_client, temp_db):
+        """The slot stays taken once the worker has picked the job up."""
+        with _patch_target(temp_db, api_client):
+            first = api_client.post(RESET_PATH)
+            job = reset_jobs.get_job(first.json()["job_id"])
+            job.try_start()
+            second = api_client.post(RESET_PATH)
+
+        assert second.status_code == 409
 
     def test_no_database_service_in_reset_db_signature(self):
         """reset_db must not take a DatabaseService parameter.
 
-        A DatabaseService dependency constructs its own get_db session.
-        Having that alongside ImmediateDbDep's BEGIN IMMEDIATE session means
-        two concurrent sessions: the plain deferred session's first write
-        blocks on the write lock held by the immediate session, producing
-        OperationalError("database is locked") after busy_timeout=5000ms.
-        This structural regression test guards against reintroducing that bug.
+        The job owns the only write transaction.  A DatabaseService dependency
+        constructs its own get_db session, which a request has no use for and
+        which could block on that transaction's write lock.
 
         Resolves annotations via typing.get_type_hints so deferred string
         annotations (PEP 563 / from __future__ import annotations) are
@@ -527,17 +647,348 @@ class TestDbResetConcurrency:
         for name, hint in hints.items():
             assert not _references_db_service(hint), (
                 f"reset_db parameter '{name}' annotation resolves to DatabaseService — "
-                "this would reintroduce the dual-session deadlock"
+                "the request must not open a session alongside the job's"
             )
 
     def test_sequential_resets_both_succeed(self, api_client, temp_db):
-        """Two consecutive data-only resets both return 200, proving the lock is released."""
+        """Two consecutive data-only resets both succeed: a finished job frees the slot."""
         with _patch_target(temp_db, api_client):
-            first = api_client.post("/api/v1/db/reset")
-            second = api_client.post("/api/v1/db/reset")
+            first = run_reset(api_client)
+            second = run_reset(api_client)
 
-        assert first.status_code == 200, first.json()
-        assert second.status_code == 200, second.json()
+        assert first["status"] == "success"
+        assert second["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# Job status endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("reset_job_session")
+class TestResetJobStatus:
+    def test_unauthenticated_client_reads_status(
+        self, api_client, async_db_session, temp_db
+    ):
+        """No session is needed: a factory reset deletes the caller's mid-job."""
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        anonymous = make_test_client(async_db_session, unauthenticated=True)
+        assert anonymous.get("/api/v1/db/stats").status_code == 401
+
+        response = read_status(anonymous, job_id)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "kind": "reset",
+            "state": "queued",
+            "error_message": None,
+            "reset_result": None,
+            "delete_data_result": None,
+        }
+
+    def test_status_is_not_cacheable(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        assert read_status(api_client, job_id).headers["cache-control"] == "no-store"
+
+    def test_unknown_token_returns_404(self, api_client):
+        assert read_status(api_client, "not-a-real-token").status_code == 404
+
+    def test_missing_token_header_returns_422(self, api_client):
+        assert api_client.get(STATUS_PATH).status_code == 422
+
+    def test_wrong_token_cannot_read_a_live_job(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        assert read_status(api_client, job_id).status_code == 200
+        assert read_status(api_client, job_id[:-1] + "!").status_code == 404
+
+    def test_wrong_token_cannot_read_a_finished_jobs_invite(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+        run_queued_job()
+
+        assert read_status(api_client, job_id).status_code == 200
+        assert read_status(api_client, "not-the-token").status_code == 404
+
+    def test_token_in_query_string_is_not_accepted(self, api_client, temp_db):
+        """URLs land in access logs, so the token only ever travels in the header."""
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        response = api_client.get(STATUS_PATH, params={"token": job_id})
+
+        assert response.status_code == 422
+
+    def test_expired_job_returns_404(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+        run_queued_job()
+        reset_jobs.get_job(job_id)._finished_at = (
+            time.monotonic() - reset_jobs.JOB_TTL_SECONDS - 1
+        )
+
+        reset_jobs._reap_terminal()
+
+        assert read_status(api_client, job_id).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Job failures
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("reset_job_session")
+class TestResetJobFailures:
+    def test_locked_database_fails_job_with_busy_message(
+        self,
+        api_client,
+        db_session,
+        test_device,
+        test_session_factory,
+        temp_db,
+        monkeypatch,
+    ):
+        """A real writer holding the lock fails the job; the data survives."""
+        test_session_factory(test_device.id, start_time=datetime(2025, 1, 1, 22, 0))
+        db_session.commit()
+        impatient_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{temp_db}",
+            connect_args={"timeout": 0.05},
+            poolclass=NullPool,
+        )
+        factory = async_sessionmaker(bind=impatient_engine, class_=AsyncSession)
+
+        @asynccontextmanager
+        async def _impatient_scope(*, immediate=False):
+            async with factory() as session, session.begin():
+                yield session
+
+        monkeypatch.setattr(reset_jobs, "session_scope", _impatient_scope)
+
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        writer = sqlite3.connect(temp_db, isolation_level=None)
+        try:
+            writer.execute("BEGIN IMMEDIATE")
+            run_queued_job()
+            writer.execute("ROLLBACK")
+        finally:
+            writer.close()
+
+        status = read_status(api_client, job_id).json()
+        assert status["state"] == "failed"
+        assert "busy" in status["error_message"].lower()
+        assert status["reset_result"] is None
+        assert _session_count(db_session) == 1
+
+    def test_lock_timeout_opening_the_transaction_gives_busy_message(
+        self, api_client, temp_db, monkeypatch
+    ):
+        """BEGIN IMMEDIATE itself is where production contention surfaces."""
+
+        @asynccontextmanager
+        async def _locked_scope(*, immediate=False):
+            raise OperationalError(
+                "BEGIN IMMEDIATE", {}, Exception("database is locked")
+            )
+            yield
+
+        monkeypatch.setattr(reset_jobs, "session_scope", _locked_scope)
+
+        with _patch_target(temp_db, api_client):
+            status = post_and_run_job(api_client, RESET_PATH)
+
+        assert status["state"] == "failed"
+        assert "busy" in status["error_message"].lower()
+
+    def test_unexpected_exception_reports_generic_message(self, api_client, temp_db):
+        """Exception text reaches an unauthenticated endpoint, so it never gets in."""
+        with (
+            _patch_target(temp_db, api_client),
+            patch.object(
+                DatabaseService,
+                "reset_all_data",
+                side_effect=RuntimeError("/data/.snore/snore.db: disk I/O error"),
+            ),
+        ):
+            status = post_and_run_job(api_client, RESET_PATH)
+
+        assert status["state"] == "failed"
+        assert status["error_message"] == reset_jobs._FAILURE_MESSAGE
+        assert "disk I/O" not in status["error_message"]
+
+    def test_new_job_accepted_after_failure(self, api_client, temp_db):
+        with (
+            _patch_target(temp_db, api_client),
+            patch.object(
+                DatabaseService, "reset_all_data", side_effect=RuntimeError("boom")
+            ),
+        ):
+            assert post_and_run_job(api_client, RESET_PATH)["state"] == "failed"
+
+        with _patch_target(temp_db, api_client):
+            assert run_reset(api_client)["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# End to end: real session cookies, the lifespan worker, and a real VACUUM
+# ---------------------------------------------------------------------------
+
+
+async def _wait_for_terminal_status(
+    client: httpx.AsyncClient, job_id: str, *, cookie: str = ""
+) -> dict[str, typing.Any]:
+    headers = token_header(job_id) | ({"cookie": cookie} if cookie else {})
+    deadline = time.monotonic() + 15.0
+    while True:
+        response = await client.get(STATUS_PATH, headers=headers)
+        assert response.status_code == 200, response.text
+        status = response.json()
+        if status["state"] not in ("queued", "running"):
+            return status
+        assert time.monotonic() < deadline, f"job still {status['state']}"
+        await asyncio.sleep(0.02)
+
+
+class TestResetJobEndToEnd:
+    @pytest.fixture
+    async def lifespan_client(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> AsyncIterator[tuple[httpx.AsyncClient, Path]]:
+        """The app with its real lifespan, worker thread, and VACUUM."""
+        db_path = tmp_path / "reset_lifecycle.db"
+        monkeypatch.setenv("SNORE_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+        monkeypatch.setattr(reset_jobs, "_vacuum_background", _REAL_VACUUM_BG)
+        await cleanup_database()
+
+        app = create_app()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            async with app.router.lifespan_context(app):
+                yield client, db_path
+
+        await cleanup_database()
+
+    async def test_lifespan_worker_deletes_vacuums_and_frees_the_slot(
+        self, lifespan_client
+    ):
+        """POST → poll → success, with the file really shrunk on disk.
+
+        The server's pooled connections keep the WAL alive throughout, which is
+        what left production's file at 11 GB until the VACUUM began checkpointing.
+        """
+        client, db_path = lifespan_client
+        async with session_scope(immediate=True) as db:
+            user = models.User(canonical_email="owner@test.local", role="admin")
+            db.add(user)
+            await db.flush()
+            profile = models.Profile(user_id=user.id, name="Default")
+            db.add(profile)
+            await db.flush()
+            device = models.Device(
+                profile_id=profile.id,
+                manufacturer="ResMed",
+                model="AirSense 10",
+                serial_number="E2E",
+            )
+            db.add(device)
+            await db.flush()
+            session = models.Session(
+                device_id=device.id,
+                device_session_id="s1",
+                start_time=datetime(2025, 1, 1, 22, 0),
+                end_time=datetime(2025, 1, 2, 6, 0),
+                duration_seconds=28800,
+            )
+            db.add(session)
+            await db.flush()
+            db.add(
+                models.Waveform(
+                    session_id=session.id,
+                    waveform_type="flow",
+                    sample_rate=25.0,
+                    unit="L/min",
+                    sample_count=1024,
+                    data_blob=bytes(8 * 1024 * 1024),
+                )
+            )
+
+        response = await client.post(RESET_PATH)
+        assert response.status_code == 202, response.text
+
+        status = await _wait_for_terminal_status(client, response.json()["job_id"])
+
+        assert status["state"] == "succeeded", status
+        result = status["reset_result"]
+        assert result["tables_cleared"]["waveforms"] == 1
+        assert result["size_after_mb"] < result["size_before_mb"]
+        assert result["size_after_mb"] < 1.0
+        assert db_path.stat().st_size < 1024 * 1024
+        assert Path(f"{db_path}-wal").stat().st_size == 0
+        assert (await client.get("/health/busy")).json() == {"busy": False}
+        assert (await client.post(RESET_PATH)).status_code == 202
+
+    async def test_factory_reset_kills_session_but_token_still_reads_invite(
+        self, temp_db, monkeypatch
+    ):
+        """The caller's cookie dies mid-job; polling with it keeps working."""
+        _multiuser_env(monkeypatch)
+        cfg = load_config(
+            auth_mode_override="multiuser", bind_host_override="127.0.0.1"
+        )
+        set_config(cfg)
+        await cleanup_database()
+        await init_database(str(temp_db))
+        async with session_scope() as db:
+            user = models.User(
+                canonical_email="admin@test.local", role="admin", session_version=0
+            )
+            db.add(user)
+            await db.flush()
+            profile = models.Profile(user_id=user.id, name="Default")
+            db.add(profile)
+            await db.flush()
+            user.default_profile_id = profile.id
+            user_id, profile_id = user.id, profile.id
+
+        cookie = "snore_session=" + encode_session(
+            cfg.session_secret,
+            user_id=user_id,
+            active_profile_id=profile_id,
+            session_version=0,
+        )
+        reset_jobs.start_worker()
+
+        app = create_app()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            response = await client.post(
+                RESET_PATH,
+                json={"include_accounts": True},
+                headers={"origin": "http://127.0.0.1:8000", "cookie": cookie},
+            )
+            assert response.status_code == 202, response.text
+
+            status = await _wait_for_terminal_status(
+                client, response.json()["job_id"], cookie=cookie
+            )
+            me = await client.get("/api/v1/auth/me", headers={"cookie": cookie})
+
+        assert status["state"] == "succeeded", status
+        assert status["reset_result"]["bootstrap_invite_url"].startswith(
+            "http://127.0.0.1:8000/invite#"
+        )
+        assert me.status_code == 401
+        await cleanup_database()
 
 
 # ---------------------------------------------------------------------------
@@ -589,8 +1040,9 @@ class TestDbBusyMapsTo409:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("reset_job_session")
 class TestDbResetVacuumMarker:
-    """POST /db/reset writes the vacuum pending marker before the commit."""
+    """The reset job writes the vacuum pending marker before the commit."""
 
     def _make_admin_client(
         self,
@@ -625,7 +1077,14 @@ class TestDbResetVacuumMarker:
         return client, user, profile
 
     def test_reset_writes_vacuum_marker(
-        self, async_db_session, db_session, monkeypatch, temp_db, tmp_path
+        self,
+        async_db_session,
+        db_session,
+        test_device,
+        test_session_factory,
+        monkeypatch,
+        temp_db,
+        tmp_path,
     ):
         """POST /db/reset writes a vacuum pending marker file before committing.
 
@@ -635,6 +1094,8 @@ class TestDbResetVacuumMarker:
         """
         from unittest.mock import patch  # noqa: PLC0415
 
+        test_session_factory(test_device.id, start_time=datetime(2025, 1, 1, 22, 0))
+        db_session.commit()
         client, _, _ = self._make_admin_client(
             async_db_session, db_session, monkeypatch
         )
@@ -642,11 +1103,10 @@ class TestDbResetVacuumMarker:
 
         with (
             _patch_target(temp_db, client),
-            patch("snore.api.routers.db.DEFAULT_VACUUM_PENDING_MARKER", marker),
+            patch("snore.api.reset_jobs.DEFAULT_VACUUM_PENDING_MARKER", marker),
         ):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            run_reset(client, json={"include_accounts": False})
 
-        assert response.status_code == 200
         # _vacuum_background is patched to a no-op in tests so the marker persists.
         assert marker.exists(), (
             "Vacuum pending marker must be written by reset endpoint"
@@ -678,19 +1138,22 @@ class TestDbResetVacuumMarker:
         profile_dir.mkdir(parents=True)
         (profile_dir / "data.edf").write_text("backup")
 
-        # Patch shutil.rmtree in the db router to simulate a crash right after commit.
+        # Patch shutil.rmtree in the service to simulate a crash right after commit.
         def _rmtree_raise(path, **kwargs):
             raise OSError("disk error")
 
         with (
             _patch_target(temp_db, client),
-            patch("snore.api.routers.db._raw_root", return_value=raw_root),
-            patch("snore.api.routers.db.shutil.rmtree", side_effect=_rmtree_raise),
+            patch("snore.api.reset_jobs._raw_root", return_value=raw_root),
+            patch(
+                "snore.services.database_service.shutil.rmtree",
+                side_effect=_rmtree_raise,
+            ),
         ):
-            response = client.post("/api/v1/db/reset", json={"include_accounts": False})
+            # The reset is committed; the job must still succeed.
+            result = run_reset(client, json={"include_accounts": False})
 
-        # The reset is committed; response must still be 200.
-        assert response.status_code == 200
+        assert result["status"] == "success"
 
         # Quarantine dir must exist (rmtree was skipped/failed).
         quarantine_dst = raw_root / ".quarantine" / str(profile.id)

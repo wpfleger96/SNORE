@@ -1,9 +1,13 @@
+from contextlib import asynccontextmanager
+
 import pytest
 
 import snore.api.import_jobs as _import_job_store
+import snore.api.reset_jobs as _reset_jobs
 import snore.auth.lockout as _lockout
 
 from tests.helpers.api_client import make_test_client
+from tests.helpers.reset_jobs import clear_reset_jobs
 
 # ---------------------------------------------------------------------------
 # Shared multiuser test helpers — imported by test_auth.py and test_me.py
@@ -44,6 +48,33 @@ def reset_import_job_store():
 
 
 @pytest.fixture(autouse=True)
+def reset_reset_job_store():
+    """Empty the module-global reset job store around each test.
+
+    A leftover non-terminal job would make every later POST in this worker 409.
+    """
+    clear_reset_jobs()
+    yield
+    clear_reset_jobs()
+
+
+@pytest.fixture
+def reset_job_session(async_db_session, monkeypatch):
+    """Point the reset job at this test's database.
+
+    The job opens ``session_scope`` itself rather than taking a request session,
+    so ``make_test_client``'s ``get_db`` override never reaches it.
+    """
+
+    @asynccontextmanager
+    async def _scope(*, immediate=False):
+        async with async_db_session.begin():
+            yield async_db_session
+
+    monkeypatch.setattr(_reset_jobs, "session_scope", _scope)
+
+
+@pytest.fixture(autouse=True)
 def reset_auth_throttle_stores():
     """Clear the module-global rate-limit and lockout stores before each test.
 
@@ -61,16 +92,12 @@ def reset_auth_throttle_stores():
 def _hermetic_raw_root(monkeypatch, tmp_path):
     """Redirect DEFAULT_RAW_BACKUP_DIR to a tmp_path subdir for every API test.
 
-    db.py's _raw_root() imports the constant at call time (covered by patching
-    snore.constants); me.py imports it at module level (covered by the binding
-    patch below).  Both must be redirected so no code path in any API test can
-    write to the real ~/.snore/raw/ directory.
+    The reset job's _raw_root() imports the constant at call time, so patching
+    snore.constants keeps every code path in any API test away from the real
+    ~/.snore/raw/ directory.
     """
-    import snore.api.routers.me as _me_router  # noqa: PLC0415
-
     fake_raw = tmp_path / "raw"
     monkeypatch.setattr("snore.constants.DEFAULT_RAW_BACKUP_DIR", fake_raw)
-    monkeypatch.setattr(_me_router, "DEFAULT_RAW_BACKUP_DIR", fake_raw)
 
 
 @pytest.fixture
