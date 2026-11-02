@@ -700,6 +700,21 @@ class TestResetJobStatus:
     def test_missing_token_header_returns_422(self, api_client):
         assert api_client.get(STATUS_PATH).status_code == 422
 
+    def test_wrong_token_cannot_read_a_live_job(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+
+        assert read_status(api_client, job_id).status_code == 200
+        assert read_status(api_client, job_id[:-1] + "!").status_code == 404
+
+    def test_wrong_token_cannot_read_a_finished_jobs_invite(self, api_client, temp_db):
+        with _patch_target(temp_db, api_client):
+            job_id = api_client.post(RESET_PATH).json()["job_id"]
+        run_queued_job()
+
+        assert read_status(api_client, job_id).status_code == 200
+        assert read_status(api_client, "not-the-token").status_code == 404
+
     def test_token_in_query_string_is_not_accepted(self, api_client, temp_db):
         """URLs land in access logs, so the token only ever travels in the header."""
         with _patch_target(temp_db, api_client):
@@ -1062,7 +1077,14 @@ class TestDbResetVacuumMarker:
         return client, user, profile
 
     def test_reset_writes_vacuum_marker(
-        self, async_db_session, db_session, monkeypatch, temp_db, tmp_path
+        self,
+        async_db_session,
+        db_session,
+        test_device,
+        test_session_factory,
+        monkeypatch,
+        temp_db,
+        tmp_path,
     ):
         """POST /db/reset writes a vacuum pending marker file before committing.
 
@@ -1072,6 +1094,8 @@ class TestDbResetVacuumMarker:
         """
         from unittest.mock import patch  # noqa: PLC0415
 
+        test_session_factory(test_device.id, start_time=datetime(2025, 1, 1, 22, 0))
+        db_session.commit()
         client, _, _ = self._make_admin_client(
             async_db_session, db_session, monkeypatch
         )

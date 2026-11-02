@@ -1,10 +1,10 @@
 """In-memory background job for the database reset and per-user data deletion.
 
-Both operations delete a whole dataset in one SQLite transaction and then VACUUM.
-On a production-sized database that takes minutes (``secure_delete`` zeroes every
-freed page through the WAL, deliberately), which outlasts Cloudflare's 120-second
-request limit, so the routes enqueue a job and clients poll
-``GET /api/v1/db/reset-jobs/status``.
+Both operations delete a whole dataset in one SQLite transaction and, if that
+removed anything, VACUUM.  On a production-sized database that takes minutes
+(``secure_delete`` zeroes every freed page through the WAL, deliberately), which
+outlasts Cloudflare's 120-second request limit, so the routes enqueue a job and
+clients poll ``GET /api/v1/db/reset-jobs/status``.
 
 Structurally a twin of :mod:`snore.api.validation_jobs` — same
 :class:`~snore.api.jobs.core.JobRecordBase` core, same
@@ -84,6 +84,8 @@ TERMINAL_STATES = frozenset(
 class ResetJob(JobRecordBase[ResetJobState]):
     _TERMINAL_STATES = TERMINAL_STATES
 
+    # Re-declared from the base so repr(job) cannot put the bearer token in a log.
+    job_id: str = field(repr=False)
     kind: ResetJobKind
     user_id: int
     include_accounts: bool = False
@@ -105,6 +107,12 @@ class ResetJob(JobRecordBase[ResetJobState]):
     def finished_at(self) -> float | None:
         with self._lock:
             return self._finished_at
+
+    @property
+    def result(self) -> ResetResult | DeleteDataResult | None:
+        """The stored result; not None means the delete committed."""
+        with self._lock:
+            return self._result
 
     def set_result(self, result: ResetResult | DeleteDataResult) -> None:
         with self._lock:
@@ -144,9 +152,13 @@ class ResetJob(JobRecordBase[ResetJobState]):
             self._stamp_finished()
 
     def to_dict(self) -> dict[str, object]:
-        """A ``ResetJobStatus.model_validate`` snapshot."""
+        """A ``ResetJobStatus.model_validate`` snapshot.
+
+        The result stays hidden until the job is terminal: it is stored before the
+        VACUUM, and ``size_after_mb`` is a placeholder until the job re-measures.
+        """
         with self._lock:
-            result = self._result
+            result = self._result if self._state in TERMINAL_STATES else None
             return {
                 "kind": self.kind.value,
                 "state": self._state.value,
@@ -265,11 +277,31 @@ def _write_vacuum_marker(db_path: str) -> None:
         )
 
 
-async def _delete(job: ResetJob, size_before: float) -> ResetResult | DeleteDataResult:
+def _clear_vacuum_marker() -> None:
+    """Remove the marker when no VACUUM is owed.
+
+    Best-effort: a marker left behind only costs a redundant VACUUM at startup.
+    """
+    try:
+        DEFAULT_VACUUM_PENDING_MARKER.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not clear vacuum pending marker: %s", exc)
+
+
+def _deleted_nothing(result: ResetResult | DeleteDataResult) -> bool:
+    if isinstance(result, ResetResult):
+        return result.total_rows_deleted == 0
+    # Device cascades cover the rest of a user's rows.
+    return result.devices_deleted == 0 and result.import_jobs_deleted == 0
+
+
+async def _delete(job: ResetJob, size_before: float) -> None:
     """Run the delete in one write transaction, which the service commits.
 
-    The result reports ``size_before`` as its ``size_after_mb`` until the VACUUM
-    has measured something better.
+    The result is stored as soon as the service returns, inside the session
+    scope, because leaving the scope can still fail after the commit.  A stored
+    result therefore means the delete committed.  It reports ``size_before`` as
+    its ``size_after_mb`` until :func:`_run` measures the file again.
     """
     from snore.api.config import get_config  # noqa: PLC0415
 
@@ -285,52 +317,75 @@ async def _delete(job: ResetJob, size_before: float) -> ResetResult | DeleteData
                 raw_root=raw_root,
                 public_base_url=public_base_url,
             )
-            return ResetResult(
-                status="success",
-                tables_cleared=tables_cleared,
-                total_rows_deleted=sum(tables_cleared.values()),
-                size_before_mb=size_before,
-                size_after_mb=size_before,
-                bootstrap_invite_url=invite_url,
+            job.set_result(
+                ResetResult(
+                    status="success",
+                    tables_cleared=tables_cleared,
+                    total_rows_deleted=sum(tables_cleared.values()),
+                    size_before_mb=size_before,
+                    size_after_mb=size_before,
+                    bootstrap_invite_url=invite_url,
+                )
             )
+            return
 
         (
             devices_deleted,
             import_jobs_deleted,
             profiles_processed,
         ) = await DatabaseService.delete_user_data(db, job.user_id, raw_root)
-        return DeleteDataResult(
-            status="success",
-            devices_deleted=devices_deleted,
-            import_jobs_deleted=import_jobs_deleted,
-            profiles_processed=profiles_processed,
-            size_before_mb=size_before,
-            size_after_mb=size_before,
+        job.set_result(
+            DeleteDataResult(
+                status="success",
+                devices_deleted=devices_deleted,
+                import_jobs_deleted=import_jobs_deleted,
+                profiles_processed=profiles_processed,
+                size_before_mb=size_before,
+                size_after_mb=size_before,
+            )
         )
 
 
-def _run(job: ResetJob) -> ResetResult | DeleteDataResult:
+def _run(job: ResetJob) -> None:
     size_before = file_size_mb(job.db_path)
+    # A marker already here means an earlier VACUUM is still owed, so this job
+    # only ever removes a marker it wrote itself.
+    owns_marker = not DEFAULT_VACUUM_PENDING_MARKER.exists()
+    # Written before the delete because a crash right after the commit needs it.
     _write_vacuum_marker(job.db_path)
-    result = asyncio.run(_delete(job, size_before))
+
+    try:
+        asyncio.run(_delete(job, size_before))
+    except BaseException:
+        if job.result is None:
+            # Nothing committed, so this job owes no VACUUM.
+            if owns_marker:
+                _clear_vacuum_marker()
+            raise
+        logger.exception("Cleanup failed after a committed %s job", job.kind.value)
+
+    result = job.result
+    assert result is not None  # Every path that reaches here stored one.
 
     # The delete is committed, so nothing below may fail the job: a factory
     # reset's invite URL exists nowhere else.  The vacuum marker survives a
-    # failure here, so the next startup retries the VACUUM.
+    # failed VACUUM, so the next startup retries it.
     try:
-        if job.db_path:
+        if _deleted_nothing(result):
+            if owns_marker:
+                _clear_vacuum_marker()
+        elif job.db_path:
             _vacuum_background(job.db_path)
         result.size_after_mb = file_size_mb(job.db_path)
     except Exception:
         logger.exception("VACUUM failed after a committed %s job", job.kind.value)
-    return result
 
 
 def _execute_job(job: ResetJob) -> None:
     if not job.try_start():
         return
     try:
-        job.set_result(_run(job))
+        _run(job)
     except HTTPException as exc:
         job.finish(succeeded=False, error_message=str(exc.detail))
     except BaseException:

@@ -1160,6 +1160,8 @@ class TestDeleteData:
         from snore.database.target import DatabaseTarget  # noqa: PLC0415
 
         user, profile = _seed_user(db_session, role="member")
+        _seed_device_with_session(db_session, profile.id)
+        db_session.commit()
         client = _make_client(async_db_session, user.id, profile.id, "member")
 
         # Use a real file target so the job has a db_path.

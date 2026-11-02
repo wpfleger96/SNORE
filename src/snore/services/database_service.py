@@ -46,6 +46,12 @@ _DATA_RESET_SKIP = frozenset(
     }
 )
 
+# How long VACUUM queues behind a writer before giving up.
+_VACUUM_BUSY_TIMEOUT_SECONDS = 120
+# A TRUNCATE checkpoint blocks new writers while it waits on readers, so it gets
+# a much shorter wait than the VACUUM before it.
+_CHECKPOINT_BUSY_TIMEOUT_MS = 5000
+
 
 def file_size_mb(path: str) -> float:
     """Size of *path* in MiB; 0.0 when *path* is empty or missing."""
@@ -63,10 +69,10 @@ def _vacuum_background(db_path: str) -> None:
 
     Uses the Python ``sqlite3`` module directly (no SQLAlchemy pool) with
     ``isolation_level=None`` (autocommit) so each statement runs outside any
-    transaction.  VACUUM requires exclusive access; if any reader holds a lock,
-    the VACUUM fails immediately and the failure is logged as a warning.  This
-    is non-fatal — the DB is simply not compacted until the next scheduled run
-    (e.g. after the next reset, or on the next server start with a VACUUM cron).
+    transaction.  VACUUM fails only when something prevents the write: an open
+    reader does not stop it, and it waits ``_VACUUM_BUSY_TIMEOUT_SECONDS`` for a
+    writer.  A failure is logged as a warning and is non-fatal: the pending-vacuum
+    marker stays in place, so the next startup retries.
     """
     if not DatabaseService.is_sqlite_target(db_path):
         logger.debug("_vacuum_background: skipping non-SQLite target %r", db_path)
@@ -76,9 +82,12 @@ def _vacuum_background(db_path: str) -> None:
         # isolation_level=None → SQLite autocommit; VACUUM must run outside
         # an explicit transaction.  No SQLAlchemy pool, so the connection is
         # opened, used, and closed in a single call path.
-        conn = sqlite3.connect(db_path, isolation_level=None)
+        conn = sqlite3.connect(
+            db_path, timeout=_VACUUM_BUSY_TIMEOUT_SECONDS, isolation_level=None
+        )
         conn.execute("VACUUM")
         logger.info("Background VACUUM completed for %s", db_path)
+        conn.execute(f"PRAGMA busy_timeout = {_CHECKPOINT_BUSY_TIMEOUT_MS}")
         _truncate_wal(conn, db_path)
         # Remove the pending-vacuum marker so a subsequent restart does not
         # schedule another VACUUM unnecessarily.
@@ -100,8 +109,9 @@ def _truncate_wal(conn: sqlite3.Connection, db_path: str) -> None:
 
     In WAL mode VACUUM writes the compacted database into the WAL; the main file
     keeps its old size until a checkpoint moves those pages back.  The server's
-    pooled connections keep the WAL alive, so without this the file never shrinks.
-    A failure only delays that, so it never counts as a failed VACUUM.
+    pooled connections keep the WAL alive, so the main file can stay large and the
+    ``-wal`` file keeps its size until a TRUNCATE checkpoint.  A failure only delays
+    that, so it never counts as a failed VACUUM.
     """
     try:
         row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -151,32 +161,33 @@ async def _commit_and_purge_raw_dirs(
     Dirs are quarantine-renamed BEFORE the commit.  A crash between quarantine
     and commit leaves them in ``.quarantine/`` for ``DeletionSaga.recover()``
     case 2 to sweep on next boot; the DB rows survive so the state is consistent.
-    On commit failure the dirs are renamed back.  After a successful commit
-    nothing here raises: the caller's data is gone and it must get to report so.
+    If a quarantine rename or the commit fails, the dirs quarantined so far are
+    renamed back.  After a successful commit nothing here raises: the caller's
+    data is gone and it must get to report so.
     """
     from snore.services.profile_service import (  # noqa: PLC0415
         quarantine_profile_raw_dir,
     )
 
     quarantined: list[tuple[int, Path]] = []
-    for pid in profile_ids:
-        dst = quarantine_profile_raw_dir(pid, raw_root)
-        if dst is not None:
-            quarantined.append((pid, dst))
-
     try:
+        for pid in profile_ids:
+            dst = quarantine_profile_raw_dir(pid, raw_root)
+            if dst is not None:
+                quarantined.append((pid, dst))
+
         await db.commit()
     except Exception:
-        # Commit failed — restore quarantined dirs so raw backups are not
-        # orphaned alongside the uncommitted DB rows.
+        # A later rename or the commit failed — restore quarantined dirs so raw
+        # backups are not orphaned alongside the uncommitted DB rows.
         for pid, dst in quarantined:
             src = raw_root / str(pid)
             try:
                 dst.rename(src)
             except Exception:
                 logger.warning(
-                    "Could not restore quarantined raw dir for profile %d after "
-                    "commit failure; dir remains in .quarantine/ for startup recovery",
+                    "Could not restore quarantined raw dir for profile %d after a "
+                    "failed delete; dir remains in .quarantine/ for startup recovery",
                     pid,
                 )
         raise

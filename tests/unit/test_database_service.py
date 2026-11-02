@@ -2,6 +2,8 @@
 
 import logging
 import sqlite3
+import threading
+import time
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -603,6 +605,63 @@ class TestVacuumBackgroundShrinksWalDatabase:
             reader.close()
             checkpointer.close()
             writer.close()
+
+
+class TestVacuumBackgroundBusyTimeouts:
+    @pytest.mark.slow
+    def test_waits_out_a_writer_holding_past_the_default_timeout(self, tmp_path):
+        """A writer past Python's default 5 s delays the VACUUM, not fails it."""
+        from unittest.mock import patch
+
+        db_path = tmp_path / "wal.db"
+        _wal_database_with_deleted_data(db_path).close()
+        marker = tmp_path / "vacuum.pending"
+        marker.write_text(str(db_path))
+        lock_held = threading.Event()
+
+        def _hold_write_lock() -> None:
+            writer = sqlite3.connect(db_path, isolation_level=None)
+            try:
+                writer.execute("BEGIN IMMEDIATE")
+                lock_held.set()
+                time.sleep(5.5)
+                writer.execute("ROLLBACK")
+            finally:
+                writer.close()
+
+        holder = threading.Thread(target=_hold_write_lock)
+        holder.start()
+        try:
+            assert lock_held.wait(timeout=5)
+            with patch("snore.constants.DEFAULT_VACUUM_PENDING_MARKER", marker):
+                _REAL_VACUUM_BG(str(db_path))
+        finally:
+            holder.join()
+
+        assert not marker.exists()
+        assert db_path.stat().st_size < 64 * 1024
+
+    def test_checkpoint_runs_with_the_short_timeout(self, tmp_path):
+        """A TRUNCATE checkpoint blocks new writers, so it must not wait 120 s."""
+        from unittest.mock import patch
+
+        db_path = tmp_path / "wal.db"
+        _wal_database_with_deleted_data(db_path).close()
+        timeouts_ms: list[int] = []
+
+        def _spy(conn: sqlite3.Connection, _db_path: str) -> None:
+            timeouts_ms.append(conn.execute("PRAGMA busy_timeout").fetchone()[0])
+
+        with (
+            patch(
+                "snore.constants.DEFAULT_VACUUM_PENDING_MARKER",
+                tmp_path / "vacuum.pending",
+            ),
+            patch("snore.services.database_service._truncate_wal", _spy),
+        ):
+            _REAL_VACUUM_BG(str(db_path))
+
+        assert timeouts_ms == [5000]
 
 
 class TestResetAllDataCommitFailure:
