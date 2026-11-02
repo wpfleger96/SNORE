@@ -167,7 +167,10 @@ class ReportService(ProfileScopedService):
         """
         summary = await self._stats.get_summary(from_date=from_date, to_date=to_date)
         monthly = await self._stats.get_period_statistics(
-            "month", from_date=from_date, to_date=to_date
+            "month",
+            from_date=from_date,
+            to_date=to_date,
+            include_channel_stats=False,
         )
         trends = await self._stats.get_trends(
             "week", from_date=from_date, to_date=to_date

@@ -31,6 +31,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Apnea-Hypopnea Index: total apneas and hypopneas per hour of therapy.',
         long: "A night's headline AHI (and OAI, CAI, HI) is the device-reported daily value when SNORE can trust it: the night has no disabled sessions, every enabled session carries the same device indices and device mask-on time, and SNORE's imported hours are within the larger of 5 minutes or 5% of the device's mask-on time. Otherwise it is SNORE's recount: device-scored events divided by SNORE's mask-on hours. A session's AHI is always the recount. Period and trend AHIs are usage-hours-weighted averages of the nightly headline values, so they can mix device-reported and recounted nights. Common clinical thresholds: <5 normal, 5–15 mild, 15–30 moderate, >30 severe.",
     },
+    ahi_device: {
+        label: 'Device-reported AHI',
+        short: "The AHI from the device's own daily summary, covering the whole therapy day.",
+        long: "A session's AHI is SNORE's recount: device-scored events divided by SNORE's mask-on hours for that session. This figure is the device's, and on a day with several sessions each one shows the same daily value, so the two can differ.",
+    },
     mode_ahi: {
         label: 'Mode AHI',
         short: "SNORE-detected apneas and hypopneas per hour, from this detection mode's own analysis of the flow waveform.",
@@ -281,13 +286,13 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     // ── New device-channel labels ──────────────────────────────────────────
     fl_device: {
         label: 'Flow Limitation (device)',
-        short: "ResMed's proprietary per-breath severity index for flow limitation, 0 (none) to 1 (severe).",
-        long: "This is distinct from SNORE's computed flow-limitation classes. The device reports a continuous 0–1 score derived from its own internal algorithm; SNORE's FL classes are based on inspiratory flow-shape analysis.",
+        short: "ResMed's proprietary flow limitation severity index, 0 (none) to 1 (severe), sampled every 2 seconds.",
+        long: "The device's own continuous signal, from its internal algorithm. It is distinct from the Flow Limitations count, which tallies the discrete events the device scored, and from SNORE's computed flow-limitation classes, which are based on inspiratory flow-shape analysis.",
     },
     snore_device: {
         label: 'Snore (device)',
-        short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled once per breath.',
-        long: 'A unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.',
+        short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled every 2 seconds.',
+        long: "The device's own signal: a unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.",
     },
     ie_ratio_waveform: {
         label: 'I:E Ratio',

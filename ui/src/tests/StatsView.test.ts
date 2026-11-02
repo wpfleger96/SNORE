@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
 // uPlot is instantiated at module scope in StatsView; mock it before the view is imported.
@@ -37,7 +37,11 @@ vi.mock('@/components/ui/toggle-group', () => ({
 }))
 
 vi.mock('@/components/TrendChart.vue', () => ({
-    default: { template: '<canvas class="trend-chart-stub" />' },
+    default: defineComponent({
+        name: 'TrendChart',
+        props: ['labels', 'datasets', 'height', 'syncKey'],
+        template: '<canvas class="trend-chart-stub" />',
+    }),
 }))
 
 // Expose emptyMessage as a data attribute so tests can assert on it.
@@ -72,6 +76,7 @@ vi.mock('@/components/ErrorState.vue', () => ({
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { useAuth } from '@/composables/useAuth'
 import { getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
+import type { PeriodStatistics } from '@/types'
 import StatsView from '@/views/StatsView.vue'
 
 const EMPTY_TRENDS = { ahi: [], usage: [], spo2: [], leak: [] }
@@ -188,6 +193,118 @@ describe('StatsView', () => {
 
             expect(wrapper.find('[data-value="rera"]').exists()).toBe(true)
             expect(wrapper.find('.trend-chart-stub').exists()).toBe(true)
+        })
+    })
+
+    describe('device channel trends', () => {
+        const LABELS = { ahi: [['2026-04-01', 1.2]] as [string, number | null][] }
+        const series = (value: number | null) =>
+            [['2026-04-01', value]] as [string, number | null][]
+        const period = (start: string, flg: number | null, snore: number | null) =>
+            ({
+                period_type: 'month',
+                period_start: start,
+                period_end: start,
+                device_flg_95th: flg,
+                snore_95th: snore,
+            }) as PeriodStatistics
+
+        afterEach(() => {
+            localStorage.clear()
+        })
+
+        it.each(['device_flg_95th', 'snore_95th'])(
+            'test_all_null_%s_offers_no_toggle',
+            async (key) => {
+                vi.mocked(getTrends).mockResolvedValue({ ...EMPTY_TRENDS, ...LABELS })
+                vi.mocked(getPeriods).mockResolvedValue([period('2026-04-01', null, null)])
+
+                const wrapper = await mountAndLoad()
+
+                expect(wrapper.find(`[data-value="${key}"]`).exists()).toBe(false)
+            },
+        )
+
+        it.each(['device_flg_95th', 'snore_95th'])(
+            'test_series_of_real_zeros_keeps_%s_toggle_and_chart',
+            async (key) => {
+                localStorage.setItem('snore:trend-metrics', JSON.stringify([key]))
+                vi.mocked(getTrends).mockResolvedValue({ ...EMPTY_TRENDS, ...LABELS })
+                vi.mocked(getPeriods).mockResolvedValue([period('2026-04-01', 0, 0)])
+
+                const wrapper = await mountAndLoad()
+
+                expect(wrapper.find(`[data-value="${key}"]`).exists()).toBe(true)
+                expect(wrapper.find('.trend-chart-stub').exists()).toBe(true)
+            },
+        )
+
+        it('test_chart_values_align_to_trend_labels_by_period_start', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['device_flg_95th']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: [
+                    ['2026-02-01', 1],
+                    ['2026-03-01', 1],
+                    ['2026-04-01', 1],
+                ],
+            })
+            // Out of order, and 2026-03 is missing.
+            vi.mocked(getPeriods).mockResolvedValue([
+                period('2026-04-01', 0.4, 0.1),
+                period('2026-02-01', 0.2, 0.3),
+            ])
+
+            const wrapper = await mountAndLoad()
+
+            const chart = wrapper.findComponent({ name: 'TrendChart' })
+            expect(chart.props('datasets')[0].values).toEqual([0.2, null, 0.4])
+        })
+
+        it('test_always_on_series_keep_their_toggle_when_all_null', async () => {
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ...LABELS,
+                spo2: series(null),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(wrapper.find('[data-value="spo2"]').exists()).toBe(true)
+        })
+    })
+
+    describe('stored trend selection', () => {
+        const selectedMetrics = (wrapper: VueWrapper) =>
+            wrapper.findAllComponents({ name: 'ToggleGroup' })[2].props('modelValue')
+
+        afterEach(() => {
+            localStorage.clear()
+        })
+
+        it('test_selection_saved_before_the_device_series_existed_still_loads', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['ahi', 'pressure', 'rera']))
+
+            const wrapper = await mountAndLoad()
+
+            expect(selectedMetrics(wrapper)).toEqual(['ahi', 'pressure', 'rera'])
+        })
+
+        it('test_saved_device_series_survive_a_reload_and_retired_keys_drop', async () => {
+            localStorage.setItem(
+                'snore:trend-metrics',
+                JSON.stringify(['device_flg_95th', 'snore_95th', 'retired_metric']),
+            )
+
+            const wrapper = await mountAndLoad()
+
+            expect(selectedMetrics(wrapper)).toEqual(['device_flg_95th', 'snore_95th'])
+        })
+
+        it('test_no_stored_selection_falls_back_to_defaults_without_device_series', async () => {
+            const wrapper = await mountAndLoad()
+
+            expect(selectedMetrics(wrapper)).toEqual(['ahi', 'usage', 'spo2', 'leak'])
         })
     })
 })

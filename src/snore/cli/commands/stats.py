@@ -207,12 +207,14 @@ async def stats(
                         hours_str,
                         avg_ahi_str,
                         med_ahi_str,
+                        _channel_cell(period_stat.device_flg_95th),
+                        _channel_cell(period_stat.snore_95th),
                     )
                 )
 
             print_table(
                 [
-                    Column("Period", 20),
+                    Column("Period", 12),
                     Column(
                         "Days",
                         6,
@@ -226,6 +228,16 @@ async def stats(
                     Column("Avg AHI", 9, field_provenance(PeriodStatistics, "avg_ahi")),
                     Column(
                         "Med AHI", 9, field_provenance(PeriodStatistics, "median_ahi")
+                    ),
+                    Column(
+                        "FL 95th",
+                        9,
+                        field_provenance(PeriodStatistics, "device_flg_95th"),
+                    ),
+                    Column(
+                        "Snore 95th",
+                        11,
+                        field_provenance(PeriodStatistics, "snore_95th"),
                     ),
                 ],
                 period_rows,
@@ -327,6 +339,11 @@ async def stats(
     console.print()
     print_footer()
     console.print()
+
+
+def _channel_cell(value: float | None) -> str:
+    """Format a device-channel percentile cell, ``N/A`` when the channel is absent."""
+    return f"{value:.2f}" if value is not None else "N/A"
 
 
 def _summary_kv(label: str, field: str, value: str) -> None:

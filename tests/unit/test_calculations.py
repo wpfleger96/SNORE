@@ -727,7 +727,7 @@ class TestCalculateTrends:
     async def test_trends_structure(
         self, async_db_session, async_test_device, async_test_session_factory
     ):
-        """Trends returns dict with all 13 expected keys."""
+        """Trends returns dict with all 15 expected keys."""
         device = async_test_device
         start_date = date(2024, 11, 1)
 
@@ -848,7 +848,7 @@ class TestCalculateTrendsExtended:
         )
         return _periods(day_records, "month")
 
-    def test_thirteen_keys_always_present(self, db_session, test_device):
+    def test_every_series_key_always_present(self, db_session, test_device):
         """calculate_trends_extended always returns exactly 13 keys."""
         period_stats = self._make_period_stats(db_session, test_device)
         result = calculate_trends_extended(period_stats, {})

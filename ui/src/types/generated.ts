@@ -2979,6 +2979,8 @@ export interface components {
              * @default 0
              */
             central_apneas: number
+            /** @description Flow-limitation and snore channel statistics over the pooled samples of the day's enabled sessions; null when none has either channel */
+            channel_stats?: components['schemas']['DeviceChannelStats'] | null
             /**
              * Date
              * Format: date
@@ -3050,6 +3052,11 @@ export interface components {
              * @description [DERIVED] Min leak (L/min)
              */
             leak_min?: number | null
+            /**
+             * Mask On Spans
+             * @description Mask-on spans of the day's enabled sessions, ascending by start; null when any of them has unknown segments, empty when the day has no enabled session
+             */
+            mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /**
              * Oai
              * @description [DEVICE] Headline OAI: same source rule as ahi
@@ -3249,6 +3256,45 @@ export interface components {
              * @description Total waveform records to be deleted
              */
             waveform_count: number
+        }
+        /**
+         * DeviceChannelStats
+         * @description Distribution of the stored flow-limitation and snore waveform channels.
+         *
+         *     Each statistic is taken over the samples pooled across the sessions of the
+         *     parent response; a channel none of them has reads null.
+         */
+        DeviceChannelStats: {
+            /**
+             * Device Flg 95Th
+             * @description [DERIVED] 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             */
+            device_flg_95th?: number | null
+            /**
+             * Device Flg Max
+             * @description [DERIVED] Maximum of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             */
+            device_flg_max?: number | null
+            /**
+             * Device Flg Median
+             * @description [DERIVED] Median of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             */
+            device_flg_median?: number | null
+            /**
+             * Snore 95Th
+             * @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), pooled
+             */
+            snore_95th?: number | null
+            /**
+             * Snore Max
+             * @description [DERIVED] Maximum of the device snore channel (0-5 unitless), pooled
+             */
+            snore_max?: number | null
+            /**
+             * Snore Median
+             * @description [DERIVED] Median of the device snore channel (0-5 unitless), pooled
+             */
+            snore_median?: number | null
         }
         /**
          * DeviceDetail
@@ -4243,6 +4289,31 @@ export interface components {
             /** Style */
             style?: ('pillows' | 'nasal' | 'full_face') | null
         }
+        /**
+         * MaskOnSpan
+         * @description One continuous stretch of mask-on time, on the device's wall clock.
+         */
+        MaskOnSpan: {
+            /**
+             * Duration Seconds
+             * @description [DERIVED] Span length in seconds
+             */
+            duration_seconds: number
+            /**
+             * End
+             * Format: date-time
+             * @description Device wall-clock end of the span
+             */
+            end: string
+            /** Session Id */
+            session_id: number
+            /**
+             * Start
+             * Format: date-time
+             * @description Device wall-clock start of the span
+             */
+            start: string
+        }
         /** McpStatus */
         McpStatus: {
             /** Auth Provider */
@@ -4506,6 +4577,11 @@ export interface components {
              */
             days_used: number
             /**
+             * Device Flg 95Th
+             * @description [DERIVED] 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, over the pooled samples of every enabled session in the period; null when none has the channel
+             */
+            device_flg_95th?: number | null
+            /**
              * Median Ahi
              * @description [DERIVED] Median of daily headline AHI (can mix device-reported and recounted days)
              */
@@ -4530,6 +4606,11 @@ export interface components {
              * @description Type: daily, weekly, monthly, yearly
              */
             period_type: string
+            /**
+             * Snore 95Th
+             * @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), over the pooled samples of every enabled session in the period; null when none has the channel
+             */
+            snore_95th?: number | null
         }
         /**
          * PipelineJobStatus
@@ -5248,6 +5329,8 @@ export interface components {
          */
         SessionDetail: {
             active_mask?: components['schemas']['MaskLogEntryResponse'] | null
+            /** @description This session's flow-limitation and snore channel statistics, whether or not it is enabled; null when it has neither channel, and always null on PATCH responses, which omit it */
+            channel_stats?: components['schemas']['DeviceChannelStats'] | null
             /** Data Quality Notes */
             data_quality_notes?: string[]
             /** Device Manufacturer */
@@ -5285,6 +5368,11 @@ export interface components {
             id: number
             /** Import Source */
             import_source?: string | null
+            /**
+             * Mask On Spans
+             * @description This session's mask-on spans; null when its mask-on segments are unknown (sessions imported before segments were stored, or a malformed stored value), empty when it is known to have none
+             */
+            mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /** Parser Version */
             parser_version?: string | null
             /** Settings */

@@ -182,8 +182,10 @@ class TestStatsTrends:
         data = response.json()
         assert isinstance(data, dict)
 
-    def test_trends_payload_has_13_keys(self, api_client, db_session, test_device):
-        """/trends always returns exactly 13 metric keys."""
+    def test_trends_payload_has_every_series_key(
+        self, api_client, db_session, test_device
+    ):
+        """/trends always returns exactly 15 metric keys."""
         db_session.add(
             Day(
                 device_id=test_device.id,
@@ -298,7 +300,7 @@ class TestStatsTrends:
     def test_trends_wire_shape_with_health_data(
         self, api_client, db_session, test_device
     ):
-        """Apple Health series appear alongside the 13 device keys when present."""
+        """Apple Health series appear alongside the 15 device keys when present."""
         db_session.add(
             Day(
                 device_id=test_device.id,

@@ -13,10 +13,10 @@ from rich.text import Text
 
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.types import AnalysisEvent, AnalysisResult
-from snore.cli.display import console, mark_field, mark_provenance
+from snore.cli.display import console, mark_field, mark_provenance, print_kv
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.provenance import Provenance
-from snore.services.schemas import SessionStatistics
+from snore.services.schemas import DeviceChannelStats, MaskOnSpan, SessionStatistics
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
@@ -344,6 +344,24 @@ def _get_severity_color(severity: str) -> str:
         return "red"
 
 
+def _print_channel_stats(title: str, stats: DeviceChannelStats, prefix: str) -> None:
+    """Print a channel's median, 95th and max, skipping a channel with no data."""
+    rows = [
+        (label, field, value)
+        for label, field in (
+            ("Median", f"{prefix}_median"),
+            ("95th percentile", f"{prefix}_95th"),
+            ("Max", f"{prefix}_max"),
+        )
+        if (value := getattr(stats, field)) is not None
+    ]
+    if not rows:
+        return
+    console.print(f"    {title}:")
+    for label, field, value in rows:
+        print_kv(mark_field(label, DeviceChannelStats, field), f"{value:.2f}", indent=3)
+
+
 def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
     """Print a full session detail view to stdout."""
     import pint
@@ -589,6 +607,20 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
                 console.print(
                     f"      {mark_field('Mean Minute Ventilation', SessionStatistics, 'minute_ventilation_mean')}: {stats.minute_ventilation_mean:.1f} L/min"
                 )
+
+    if detail.channel_stats:
+        console.print("\n  Device Channels:")
+        _print_channel_stats("Flow Limitation", detail.channel_stats, "device_flg")
+        _print_channel_stats("Snore", detail.channel_stats, "snore")
+
+    if detail.mask_on_spans:
+        console.print("\n  Mask-On Spans:")
+        duration_label = mark_field("Duration", MaskOnSpan, "duration_seconds")
+        for span in detail.mask_on_spans:
+            console.print(
+                f"    {span.start:%Y-%m-%d %H:%M:%S} to {span.end:%Y-%m-%d %H:%M:%S}, "
+                f"{duration_label}: {span.duration_seconds / 3600:.2f}h"
+            )
 
     if detail.settings:
         console.print("\n  Settings:")

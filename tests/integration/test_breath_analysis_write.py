@@ -557,7 +557,7 @@ class TestValidityFlagsEndToEnd:
         """Malformed mask_on_segments JSON must not crash analysis.
 
         The stored column value is untrusted; a wrong-shape item is rejected by
-        _parse_mask_on_segments (warning + None) so analysis completes with
+        parse_mask_on_segments (warning + None) so analysis completes with
         mask_off=None / "segments_unknown" instead of raising.
         """
         await init_database(str(temp_db))

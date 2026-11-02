@@ -721,6 +721,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -735,6 +737,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -749,6 +753,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -763,6 +769,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.04,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -777,6 +785,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -791,6 +801,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.04,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -805,6 +817,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 1.2,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -819,6 +833,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.8,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -833,6 +849,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.4,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -847,6 +865,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.13,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -861,6 +881,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.16,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -875,6 +897,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
 ]
 
@@ -1214,6 +1238,7 @@ export const sessionDetailFixture: SessionDetail = {
     statistics: {
         usage_hours: 9.59,
         ahi: 0.52,
+        ahi_device: 0.5,
         rei: null,
         oai: 0.31,
         cai: 0.21,
@@ -1256,6 +1281,28 @@ export const sessionDetailFixture: SessionDetail = {
         start_date: '2025-11-02',
         notes: null,
     },
+    channel_stats: {
+        device_flg_median: 0.0,
+        device_flg_95th: 0.21,
+        device_flg_max: 0.68,
+        snore_median: 0.0,
+        snore_95th: 0.14,
+        snore_max: 1.2,
+    },
+    mask_on_spans: [
+        {
+            session_id: 1470,
+            start: '2026-04-06T23:42:24',
+            end: '2026-04-07T03:10:00',
+            duration_seconds: 12456,
+        },
+        {
+            session_id: 1470,
+            start: '2026-04-07T03:14:30',
+            end: '2026-04-07T09:17:46',
+            duration_seconds: 21796,
+        },
+    ],
 }
 
 // Synthetic flow-rate waveform: deterministic breathing-like signal at the

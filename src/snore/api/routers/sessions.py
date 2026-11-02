@@ -96,7 +96,7 @@ async def update_session(
     service: SessionImmediateServiceDep,
 ) -> SessionDetail:
     await service.set_session_enabled(session_id, body.enabled)
-    return await service.get_session_detail(session_id)
+    return await service.get_session_detail(session_id, include_channel_stats=False)
 
 
 @router.delete("/", response_model=dict)

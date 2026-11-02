@@ -8,7 +8,7 @@ Covers:
 3. Importer round-trip: UnifiedSession.mask_on_segments lands in the
    sessions.mask_on_segments JSON column (tuples serialized to lists).
 4. Sessions without segment info (e.g. OSCAR imports) persist NULL.
-5. Analysis-side validation: _parse_mask_on_segments rejects malformed or
+5. Analysis-side validation: parse_mask_on_segments rejects malformed or
    mis-ordered stored JSON with a warning + None instead of crashing.
 """
 
@@ -24,12 +24,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from snore.analysis.service import _parse_mask_on_segments
 from snore.database import models
 from snore.database.importers import SessionImporter
 from snore.database.models import Base
 from snore.parsers.resmed_edf import ResmedEDFParser
 from snore.parsers.unified import DeviceInfo, UnifiedSession
+from snore.therapy_hours import parse_mask_on_segments
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -235,68 +235,87 @@ class TestOverlappingSegmentCoalescing:
 
 
 class TestParseMaskOnSegments:
-    """_parse_mask_on_segments must degrade to None on any malformed value."""
+    """parse_mask_on_segments must degrade to None on any malformed value."""
 
     def test_none_stays_none(self):
-        assert _parse_mask_on_segments(None, session_id=1) is None
+        assert parse_mask_on_segments(None, session_id=1) is None
 
     def test_valid_segments_return_tuples(self):
-        result = _parse_mask_on_segments(
-            [[0.0, 3600.0], [4200.0, 7800.0]], session_id=1
-        )
+        result = parse_mask_on_segments([[0.0, 3600.0], [4200.0, 7800.0]], session_id=1)
         assert result == [(0.0, 3600.0), (4200.0, 7800.0)]
         assert all(isinstance(seg, tuple) for seg in result)
 
     def test_adjacent_segments_are_valid(self):
         """next start == previous end (touching intervals) is allowed."""
-        result = _parse_mask_on_segments([[0.0, 100.0], [100.0, 200.0]], session_id=1)
+        result = parse_mask_on_segments([[0.0, 100.0], [100.0, 200.0]], session_id=1)
         assert result == [(0.0, 100.0), (100.0, 200.0)]
 
     def test_integer_values_are_coerced_to_float(self):
-        assert _parse_mask_on_segments([[0, 3600]], session_id=1) == [(0.0, 3600.0)]
+        assert parse_mask_on_segments([[0, 3600]], session_id=1) == [(0.0, 3600.0)]
 
     def test_wrong_length_item_returns_none(self, caplog):
         with caplog.at_level("WARNING"):
-            assert _parse_mask_on_segments([[0.0, 1.0, 2.0]], session_id=1) is None
-            assert _parse_mask_on_segments([[0.0]], session_id=1) is None
+            assert parse_mask_on_segments([[0.0, 1.0, 2.0]], session_id=1) is None
+            assert parse_mask_on_segments([[0.0]], session_id=1) is None
         assert "mask_on_segments" in caplog.text
 
     def test_non_numeric_item_returns_none(self, caplog):
         with caplog.at_level("WARNING"):
-            assert _parse_mask_on_segments([[0.0, "3600"]], session_id=1) is None
-            assert _parse_mask_on_segments([[None, 3600.0]], session_id=1) is None
-            assert _parse_mask_on_segments([[True, 3600.0]], session_id=1) is None
+            assert parse_mask_on_segments([[0.0, "3600"]], session_id=1) is None
+            assert parse_mask_on_segments([[None, 3600.0]], session_id=1) is None
+            assert parse_mask_on_segments([[True, 3600.0]], session_id=1) is None
         assert "mask_on_segments" in caplog.text
+
+    def test_non_finite_item_returns_none(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_mask_on_segments([[0.0, float("inf")]], session_id=1) is None
+            assert parse_mask_on_segments([[float("-inf"), 1.0]], session_id=1) is None
+            assert parse_mask_on_segments([[float("nan"), 1.0]], session_id=1) is None
+        assert "mask_on_segments" in caplog.text
+
+    def test_integer_too_large_for_a_float_returns_none(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_mask_on_segments([[0, 10**400]], session_id=1) is None
+            assert parse_mask_on_segments([[-(10**400), 1]], session_id=1) is None
+        assert "mask_on_segments" in caplog.text
+
+    def test_negative_start_returns_none(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert parse_mask_on_segments([[-1.0, 3600.0]], session_id=1) is None
+        assert "negative" in caplog.text
+
+    def test_start_at_zero_is_valid(self):
+        assert parse_mask_on_segments([[0.0, 1.0]], session_id=1) == [(0.0, 1.0)]
 
     def test_non_sequence_item_returns_none(self, caplog):
         with caplog.at_level("WARNING"):
-            assert _parse_mask_on_segments([42], session_id=1) is None
-            assert _parse_mask_on_segments(["0.0,3600.0"], session_id=1) is None
+            assert parse_mask_on_segments([42], session_id=1) is None
+            assert parse_mask_on_segments(["0.0,3600.0"], session_id=1) is None
 
     def test_non_list_value_returns_none(self, caplog):
         with caplog.at_level("WARNING"):
-            assert _parse_mask_on_segments({"start": 0.0}, session_id=1) is None
-            assert _parse_mask_on_segments("[[0.0, 3600.0]]", session_id=1) is None
+            assert parse_mask_on_segments({"start": 0.0}, session_id=1) is None
+            assert parse_mask_on_segments("[[0.0, 3600.0]]", session_id=1) is None
 
     def test_out_of_order_segments_return_none(self, caplog):
         with caplog.at_level("WARNING"):
             assert (
-                _parse_mask_on_segments([[4200.0, 7800.0], [0.0, 3600.0]], session_id=1)
+                parse_mask_on_segments([[4200.0, 7800.0], [0.0, 3600.0]], session_id=1)
                 is None
             )
         assert "out of order" in caplog.text
 
     def test_overlapping_segments_return_none(self):
         assert (
-            _parse_mask_on_segments([[0.0, 3600.0], [3599.0, 7800.0]], session_id=1)
+            parse_mask_on_segments([[0.0, 3600.0], [3599.0, 7800.0]], session_id=1)
             is None
         )
 
     def test_inverted_interval_returns_none(self):
-        assert _parse_mask_on_segments([[3600.0, 0.0]], session_id=1) is None
+        assert parse_mask_on_segments([[3600.0, 0.0]], session_id=1) is None
 
     def test_empty_interval_returns_none(self):
-        assert _parse_mask_on_segments([[100.0, 100.0]], session_id=1) is None
+        assert parse_mask_on_segments([[100.0, 100.0]], session_id=1) is None
 
 
 # ---------------------------------------------------------------------------

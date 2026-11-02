@@ -54,6 +54,18 @@ export function formatDateTime(iso: string): string {
     })
 }
 
+/** e.g. "Jan 5, 2024, 03:12:24 AM" — like formatDateTime, with seconds. */
+export function formatDateTimeSeconds(iso: string): string {
+    return parseLocalDate(iso).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    })
+}
+
 /** e.g. "Jan 5" — month and day only. */
 export function formatDateMonthDay(iso: string): string {
     return parseLocalDate(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })

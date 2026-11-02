@@ -1,6 +1,7 @@
 """Statistics service for therapy data aggregation and analysis."""
 
 from bisect import bisect_right
+from collections.abc import Callable
 from datetime import date, timedelta
 
 from sqlalchemy import Row, func, select
@@ -16,9 +17,11 @@ from snore.analysis.calculations import (
 )
 from snore.database import models
 from snore.services._base import ProfileScopedService
+from snore.services.channel_stats import load_channel_histograms, pool_channel_stats
 from snore.services.event_service import device_event_types
 from snore.services.schemas import (
     DataRange,
+    DeviceChannelStats,
     EventTypeCount,
     ExperimentalStats,
     PeriodStatistics,
@@ -36,6 +39,22 @@ from snore.utils.stats import usage_weighted_means, weighted_mean
 _HealthNights = list[models.HealthNightlySummary]
 
 __all__ = ["StatsService"]
+
+
+def _period_start_lookup(
+    period_stats: list[PeriodStatistics],
+) -> Callable[[date], date | None]:
+    """Return a function mapping a date to the start of the period containing it."""
+    sorted_starts = sorted(ps.period_start for ps in period_stats)
+    period_end_by_start = {ps.period_start: ps.period_end for ps in period_stats}
+
+    def period_start_of(day_date: date) -> date | None:
+        idx = bisect_right(sorted_starts, day_date) - 1
+        if idx < 0 or day_date > period_end_by_start[sorted_starts[idx]]:
+            return None
+        return sorted_starts[idx]
+
+    return period_start_of
 
 
 class StatsService(ProfileScopedService):
@@ -87,21 +106,14 @@ class StatsService(ProfileScopedService):
         period_stats: list[PeriodStatistics],
     ) -> dict[date, _HealthNights]:
         """Bin health nights into their corresponding period_start buckets."""
-        if not nights or not period_stats:
-            return {ps.period_start: [] for ps in period_stats}
-
-        sorted_starts = sorted(ps.period_start for ps in period_stats)
-        period_end_by_start: dict[date, date] = {
-            ps.period_start: ps.period_end for ps in period_stats
-        }
         binned: dict[date, _HealthNights] = {ps.period_start: [] for ps in period_stats}
+        if not nights or not period_stats:
+            return binned
 
+        period_start_of = _period_start_lookup(period_stats)
         for night in nights:
-            idx = bisect_right(sorted_starts, night.night_date) - 1
-            if idx < 0:
-                continue
-            pstart = sorted_starts[idx]
-            if night.night_date <= period_end_by_start[pstart]:
+            pstart = period_start_of(night.night_date)
+            if pstart is not None:
                 binned[pstart].append(night)
 
         return binned
@@ -328,18 +340,73 @@ class StatsService(ProfileScopedService):
         )
         return calculate_period_statistics(day_records, period_type, reported)
 
+    async def _with_channel_percentiles(
+        self,
+        day_records: list[models.Day],
+        period_stats: list[PeriodStatistics],
+    ) -> list[PeriodStatistics]:
+        """Return period stats with the FL and snore 95ths of their pooled samples.
+
+        Every enabled session of a period feeds one pool, so a period's value is
+        not an average of its nights' percentiles.
+        """
+        if not period_stats:
+            return period_stats
+
+        period_start_of = _period_start_lookup(period_stats)
+        sessions_by_period: dict[date, list[int]] = {
+            ps.period_start: [] for ps in period_stats
+        }
+        for chunk in iter_id_chunks([day.id for day in day_records]):
+            rows = await self.db_session.execute(
+                select(models.Session.id, models.Day.date)
+                .join(models.Day, models.Session.day_id == models.Day.id)
+                .where(models.Day.id.in_(chunk), models.Session.enabled.is_(True))
+            )
+            for session_id, day_date in rows:
+                pstart = period_start_of(day_date)
+                if pstart is not None:
+                    sessions_by_period[pstart].append(session_id)
+
+        histograms = await load_channel_histograms(
+            self.db_session,
+            [sid for sids in sessions_by_period.values() for sid in sids],
+        )
+        pooled = {
+            pstart: pool_channel_stats(histograms, sids) or DeviceChannelStats()
+            for pstart, sids in sessions_by_period.items()
+        }
+        return [
+            ps.model_copy(
+                update=pooled[ps.period_start].model_dump(
+                    include={"device_flg_95th", "snore_95th"}
+                )
+            )
+            for ps in period_stats
+        ]
+
     async def get_period_statistics(
         self,
         period_type: PeriodType,
         days_limit: int | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+        *,
+        include_channel_stats: bool = True,
     ) -> list[PeriodStatistics]:
-        """Calculate statistics grouped by time periods."""
+        """Calculate statistics grouped by time periods.
+
+        ``include_channel_stats=False`` skips decoding the FL and snore blobs and
+        leaves those fields null, for callers that do not show them.
+        """
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
         period_stats = await self._period_statistics(day_records, period_type)
+        if include_channel_stats:
+            period_stats = await self._with_channel_percentiles(
+                day_records, period_stats
+            )
         if not period_stats:
             return period_stats
         health_nights = await self._query_health_nights(
@@ -359,11 +426,6 @@ class StatsService(ProfileScopedService):
                 ps.period_start: {"epap": None, "rr": None, "pulse": None, "mv": None}
                 for ps in period_stats
             }
-
-        sorted_starts = sorted(ps.period_start for ps in period_stats)
-        period_end_by_start: dict[date, date] = {
-            ps.period_start: ps.period_end for ps in period_stats
-        }
 
         day_ids = [d.id for d in day_records]
         rows: list[Row[models.Statistics, date]] = []
@@ -389,15 +451,12 @@ class StatsService(ProfileScopedService):
             "mv": "minute_ventilation_mean",
         }
 
+        period_start_of = _period_start_lookup(period_stats)
         grouped: dict[date, list[models.Statistics]] = {}
         for stat, day_date in rows:
-            idx = bisect_right(sorted_starts, day_date) - 1
-            if idx < 0:
-                continue
-            period_start = sorted_starts[idx]
-            if day_date > period_end_by_start[period_start]:
-                continue
-            grouped.setdefault(period_start, []).append(stat)
+            period_start = period_start_of(day_date)
+            if period_start is not None:
+                grouped.setdefault(period_start, []).append(stat)
 
         return {
             ps.period_start: usage_weighted_means(

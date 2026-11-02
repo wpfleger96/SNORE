@@ -23,6 +23,8 @@ export type SessionListItem = Schemas['SessionListItem']
 export type SessionStatistics = Schemas['SessionStatistics']
 export type SessionSetting = Schemas['SessionSetting']
 export type SessionDetail = Schemas['SessionDetail']
+export type DeviceChannelStats = Schemas['DeviceChannelStats']
+export type MaskOnSpan = Schemas['MaskOnSpan']
 
 // Waveforms
 export type WaveformInfo = Schemas['WaveformInfo']

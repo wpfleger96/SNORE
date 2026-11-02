@@ -29,6 +29,7 @@ from snore.analysis.shared.versioning import (
 )
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.services.channel_stats import CHANNEL_FLOORS
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import percentile_nearest_rank
 
@@ -278,7 +279,7 @@ class EpochsMixin(_BreathServiceCore):
                 stats.device_flg = _device_distrib(
                     channel_vals["fl"],
                     night_by_session,
-                    lambda v: v >= 0 and math.isfinite(v),
+                    lambda v: v >= CHANNEL_FLOORS["fl"] and math.isfinite(v),
                 )
                 stats.snore_dist = _device_distrib(
                     channel_vals["snore"], night_by_session, math.isfinite

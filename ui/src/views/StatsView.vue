@@ -129,14 +129,25 @@ import { formatDateFull } from '@/utils/formatting'
 import { GLOSSARY } from '@/utils/glossary'
 import type { PeriodStatistics, TrendData } from '@/types'
 
+type PeriodSeriesKey = 'device_flg_95th' | 'snore_95th'
+type Series = [string, number | null][]
+
 // ────────────────────────────── Metric config ──────────────────────────────
 
-// glossaryKey is the GLOSSARY key for InfoHint; differs from the METRIC_CONFIG entry key only
-// for rr (glossary: resp_rate). Labels are composed from GLOSSARY where the label matches the
-// desired display name; rr/mv/rera keep local names because their glossary labels differ.
+// glossaryKey is the GLOSSARY key for InfoHint; differs from the METRIC_CONFIG entry key for rr
+// (glossary: resp_rate) and the device-channel series. Labels are composed from GLOSSARY where the
+// label matches the desired display name; the others keep local names because theirs differ.
+// hideWhenEmpty marks a series a device may never produce, so isOffered drops its toggle when the
+// series is all null.
 const METRIC_CONFIG: Record<
     string,
-    { label: string; glossaryKey: string; key: keyof TrendData; color: string }
+    {
+        label: string
+        glossaryKey: string
+        key: keyof TrendData | PeriodSeriesKey
+        color: string
+        hideWhenEmpty?: boolean
+    }
 > = {
     ahi: {
         label: `${GLOSSARY.ahi.label} (events/hr)`,
@@ -200,7 +211,27 @@ const METRIC_CONFIG: Record<
         key: 'hi',
         color: '#ca8a04',
     },
-    rera: { label: 'RERA (events/hr)', glossaryKey: 'rera', key: 'rera', color: '#ea580c' },
+    rera: {
+        label: 'RERA (events/hr)',
+        glossaryKey: 'rera',
+        key: 'rera',
+        color: '#ea580c',
+        hideWhenEmpty: true,
+    },
+    device_flg_95th: {
+        label: 'FL 95th',
+        glossaryKey: 'fl_device',
+        key: 'device_flg_95th',
+        color: '#0d9488',
+        hideWhenEmpty: true,
+    },
+    snore_95th: {
+        label: 'Snore 95th',
+        glossaryKey: 'snore_device',
+        key: 'snore_95th',
+        color: '#c026d3',
+        hideWhenEmpty: true,
+    },
     total_sleep_hours: {
         label: 'Avg Sleep (hrs)',
         glossaryKey: 'total_sleep',
@@ -345,16 +376,32 @@ const recordsEmptyMessage = computed(() => rangeEmptyMessage('records', 'No reco
 
 const trendLabels = computed(() => trends.value?.ahi?.map((t) => t[0]) ?? [])
 
+// FL and snore 95th percentiles come from the periods response, aligned to the trend x-axis by
+// period_start; a period missing from the response is null.
+const trendSeries = computed<Partial<Record<keyof TrendData | PeriodSeriesKey, Series>> | null>(
+    () => {
+        if (!trends.value) return null
+        const byStart = new Map(periods.value.map((p) => [p.period_start, p]))
+        const fromPeriods = (key: PeriodSeriesKey): Series =>
+            trendLabels.value.map((label) => [label, byStart.get(label)?.[key] ?? null])
+        return {
+            ...trends.value,
+            device_flg_95th: fromPeriods('device_flg_95th'),
+            snore_95th: fromPeriods('snore_95th'),
+        }
+    },
+)
+
 function hasData(key: string): boolean {
     const cfg = METRIC_CONFIG[key]
-    if (!cfg || !trends.value) return false
-    const series = trends.value[cfg.key]
+    if (!cfg || !trendSeries.value) return false
+    const series = trendSeries.value[cfg.key]
     return Array.isArray(series) && series.length > 0 && series.some((t) => t[1] !== null)
 }
 
 function metricDataset(key: string): { label: string; values: (number | null)[]; color: string } {
     const cfg = METRIC_CONFIG[key]
-    const series = trends.value?.[cfg.key] ?? []
+    const series = trendSeries.value?.[cfg.key] ?? []
     return {
         label: cfg.label,
         values: series.map((t) => t[1]),
@@ -364,10 +411,10 @@ function metricDataset(key: string): { label: string; values: (number | null)[];
 
 const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasData(key)))
 
-// An all-null RERA trend means no device in range scores RERAs, so offer no toggle for it. The
-// key stays in selectedMetrics, so the chart returns if a wider range brings RERA data back.
+// An all-null hideWhenEmpty trend means no device in range produces that series, so offer no toggle
+// for it. The key stays in selectedMetrics, so the chart returns if a wider range brings data back.
 function isOffered(key: string): boolean {
-    if (key !== 'rera' || !trends.value) return true
+    if (!METRIC_CONFIG[key].hideWhenEmpty || !trendSeries.value) return true
     return hasData(key)
 }
 

@@ -5931,14 +5931,14 @@ class TestDeriveMvFromFlow:
 @pytest.mark.unit
 class TestFetchChannelValsChunked:
     async def test_fetch_channel_vals_chunked(self, async_db_session, monkeypatch):
-        """fl/snore values survive the ID-chunk boundary in _fetch_channel_vals.
+        """fl/snore values survive the batch boundary in _fetch_channel_vals.
 
-        With ID_CHUNK_SIZE=2 and three sessions each carrying an fl AND a snore
-        waveform, the session_ids span two chunks.  Both per-session dicts must
+        With a batch size of 2 and three sessions each carrying an fl AND a snore
+        waveform, the session_ids span two batches.  Both per-session dicts must
         return every session on both channels — a bug that dropped any non-final
-        chunk would leave a session out.
+        batch would leave a session out.
         """
-        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
+        monkeypatch.setattr("snore.services.channel_stats._DECODE_BATCH_SESSIONS", 2)
 
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
@@ -5988,6 +5988,33 @@ class TestFetchChannelValsChunked:
         for sid in session_ids:
             assert channel_vals["fl"][sid] == pytest.approx(expected_fl[sid])
             assert channel_vals["snore"][sid] == pytest.approx(expected_snore[sid])
+
+    async def test_fetch_channel_vals_returns_raw_python_floats(self, async_db_session):
+        """Callers filter sentinels themselves, on plain float lists."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        _, session = await _make_day_and_session(
+            async_db_session, dev.id, date(2025, 8, 1)
+        )
+        raw = np.array([-0.01, 0.0, 0.25], dtype=np.float32)
+        async_db_session.add(
+            models.Waveform(
+                session_id=session.id,
+                waveform_type="fl",
+                sample_rate=1.0,
+                sample_count=3,
+                data_blob=_make_waveform_blob_from_arrays(np.arange(3.0), raw),
+            )
+        )
+        await async_db_session.flush()
+
+        channel_vals, _ = await BreathService._fetch_channel_vals(
+            async_db_session, [session.id], ["fl"]
+        )
+
+        vals = channel_vals["fl"][session.id]
+        assert all(type(v) is float for v in vals)
+        assert vals == [float(v) for v in raw]
 
 
 # ---------------------------------------------------------------------------

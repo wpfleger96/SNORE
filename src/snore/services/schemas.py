@@ -23,6 +23,8 @@ __all__ = [
     "SessionDetail",
     "SessionStatistics",
     "SessionSetting",
+    "DeviceChannelStats",
+    "MaskOnSpan",
     "DeletePreview",
     "TherapySummary",
     "EventTypeCount",
@@ -91,6 +93,13 @@ INDEX_SOURCE_DESCRIPTION = (
     "Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily "
     "value) or 'derived' (SNORE's recount); null when the day has no index"
 )
+
+# What the stored fl and snore waveform channels measure, for every statistic
+# computed over them.  Each statistic pools samples, never averages per session.
+_FL_CHANNEL = (
+    "device flow-limitation channel (0-1 unitless), excluding mask-off sentinels"
+)
+_SNORE_CHANNEL = "device snore channel (0-5 unitless)"
 
 
 class PeriodStatistics(BaseModel):
@@ -166,6 +175,18 @@ class PeriodStatistics(BaseModel):
         Provenance.DERIVED,
         "Usage-weighted device-scored RERA index (events/hour) over days from "
         "devices that have scored a RERA; null when none in the period has",
+        default=None,
+    )
+    device_flg_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        f"95th percentile of the {_FL_CHANNEL}, over the pooled samples of every "
+        "enabled session in the period; null when none has the channel",
+        default=None,
+    )
+    snore_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        f"95th percentile of the {_SNORE_CHANNEL}, over the pooled samples of "
+        "every enabled session in the period; null when none has the channel",
         default=None,
     )
 
@@ -659,6 +680,50 @@ class SessionSetting(BaseModel):
     value: str | None = Field(default=None, description="Setting value")
 
 
+class DeviceChannelStats(BaseModel):
+    """Distribution of the stored flow-limitation and snore waveform channels.
+
+    Each statistic is taken over the samples pooled across the sessions of the
+    parent response; a channel none of them has reads null.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_flg_median: float | None = provenance_field(
+        Provenance.DERIVED, f"Median of the {_FL_CHANNEL}, pooled", default=None
+    )
+    device_flg_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        f"95th percentile of the {_FL_CHANNEL}, pooled",
+        default=None,
+    )
+    device_flg_max: float | None = provenance_field(
+        Provenance.DERIVED, f"Maximum of the {_FL_CHANNEL}, pooled", default=None
+    )
+    snore_median: float | None = provenance_field(
+        Provenance.DERIVED, f"Median of the {_SNORE_CHANNEL}, pooled", default=None
+    )
+    snore_95th: float | None = provenance_field(
+        Provenance.DERIVED,
+        f"95th percentile of the {_SNORE_CHANNEL}, pooled",
+        default=None,
+    )
+    snore_max: float | None = provenance_field(
+        Provenance.DERIVED, f"Maximum of the {_SNORE_CHANNEL}, pooled", default=None
+    )
+
+
+class MaskOnSpan(BaseModel):
+    """One continuous stretch of mask-on time, on the device's wall clock."""
+
+    session_id: int
+    start: datetime = Field(description="Device wall-clock start of the span")
+    end: datetime = Field(description="Device wall-clock end of the span")
+    duration_seconds: float = provenance_field(
+        Provenance.DERIVED, "Span length in seconds"
+    )
+
+
 class SessionDetail(BaseModel):
     """Detailed view of a single session with all metadata."""
 
@@ -691,6 +756,18 @@ class SessionDetail(BaseModel):
     statistics: SessionStatistics | None = None
     settings: list[SessionSetting] | None = None
     active_mask: MaskLogEntryResponse | None = None
+    channel_stats: DeviceChannelStats | None = Field(
+        default=None,
+        description="This session's flow-limitation and snore channel statistics, "
+        "whether or not it is enabled; null when it has neither channel, and "
+        "always null on PATCH responses, which omit it",
+    )
+    mask_on_spans: list[MaskOnSpan] | None = Field(
+        default=None,
+        description="This session's mask-on spans; null when its mask-on segments "
+        "are unknown (sessions imported before segments were stored, or a "
+        "malformed stored value), empty when it is known to have none",
+    )
 
 
 class DeletePreview(BaseModel):
@@ -1115,6 +1192,17 @@ class DayDetail(DayListItem):
     )
     session_ids: list[int] = Field(default_factory=list)
     health_sleep: HealthNightSummaryRead | None = None
+    channel_stats: DeviceChannelStats | None = Field(
+        default=None,
+        description="Flow-limitation and snore channel statistics over the pooled "
+        "samples of the day's enabled sessions; null when none has either channel",
+    )
+    mask_on_spans: list[MaskOnSpan] | None = Field(
+        default=None,
+        description="Mask-on spans of the day's enabled sessions, ascending by "
+        "start; null when any of them has unknown segments, empty when the day "
+        "has no enabled session",
+    )
 
 
 class DayExperimentalMetrics(BaseModel):

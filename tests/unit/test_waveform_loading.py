@@ -7,6 +7,8 @@ Tests the waveform_loader module's ability to:
 - Handle errors and edge cases
 """
 
+import logging
+
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
@@ -44,6 +46,17 @@ class TestWaveformDeserialization:
         """Empty blob should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid waveform blob"):
             deserialize_waveform_blob(b"", sample_count=0)
+
+    def test_deserialize_logs_the_value_range_at_debug(self, caplog):
+        """The debug message survives being skipped when debug logging is off."""
+        blob = np.array([[0.0, 10.0], [1.0, 20.0]], dtype=np.float32).tobytes()
+
+        with caplog.at_level(
+            logging.DEBUG, logger="snore.analysis.data.waveform_loader"
+        ):
+            deserialize_waveform_blob(blob, sample_count=2)
+
+        assert "value range [10.00, 20.00]" in caplog.text
 
     def test_deserialize_size_mismatch(self):
         """Blob with wrong size should raise ValueError."""

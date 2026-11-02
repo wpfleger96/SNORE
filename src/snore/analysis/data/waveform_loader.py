@@ -151,16 +151,20 @@ def deserialize_waveform_blob(
                 f"got {len(blob_data)}"
             )
 
+        if sample_count == 0:
+            raise ValueError("Blob has no samples")
+
         data = np.frombuffer(blob_data, dtype=np.float32).reshape((sample_count, 2))
 
         timestamps = data[:, 0]  # Seconds from session start
         values = data[:, 1]  # Signal values
 
-        logger.debug(
-            f"Deserialized {sample_count} samples: "
-            f"time range [{timestamps[0]:.2f}, {timestamps[-1]:.2f}]s, "
-            f"value range [{values.min():.2f}, {values.max():.2f}]"
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Deserialized {sample_count} samples: "
+                f"time range [{timestamps[0]:.2f}, {timestamps[-1]:.2f}]s, "
+                f"value range [{values.min():.2f}, {values.max():.2f}]"
+            )
 
         return timestamps, values
 

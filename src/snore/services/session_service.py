@@ -16,6 +16,11 @@ from snore.services._base import (
     paginate,
     session_device_join,
 )
+from snore.services.channel_stats import (
+    load_channel_histograms,
+    mask_on_spans,
+    pool_channel_stats,
+)
 from snore.services.event_service import device_reported_types, reported_counts
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
@@ -126,9 +131,16 @@ class SessionService(ProfileScopedService):
         )
 
     async def get_session_detail(
-        self, session_id: int, include_settings: bool = False
+        self,
+        session_id: int,
+        include_settings: bool = False,
+        *,
+        include_channel_stats: bool = True,
     ) -> SessionDetail:
         """Get detailed information for a single session.
+
+        ``include_channel_stats=False`` skips decoding the FL and snore blobs and
+        leaves ``channel_stats`` null, for callers that do not show them.
 
         Raises NotFoundError if the session doesn't exist or belongs to a
         different profile (foreign ID → 404, not 403, to avoid oracle attacks).
@@ -236,6 +248,11 @@ class SessionService(ProfileScopedService):
             session.start_time.date()
         )
 
+        channel_stats = None
+        if include_channel_stats:
+            histograms = await load_channel_histograms(self.db_session, [session.id])
+            channel_stats = pool_channel_stats(histograms, [session.id])
+
         duration_seconds = session.duration_seconds or 0.0
         return SessionDetail(
             id=session.id,
@@ -265,6 +282,10 @@ class SessionService(ProfileScopedService):
             statistics=statistics,
             settings=settings_list,
             active_mask=active_mask,
+            channel_stats=channel_stats,
+            mask_on_spans=mask_on_spans(
+                session.id, session.start_time, session.mask_on_segments
+            ),
         )
 
     async def get_delete_preview(

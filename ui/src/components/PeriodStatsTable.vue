@@ -62,6 +62,22 @@
                         /></span>
                         <span class="data-card-value">{{ row.avg_spo2?.toFixed(1) ?? '---' }}</span>
                     </div>
+                    <div v-if="showFlColumn" class="data-card-row">
+                        <span class="data-card-label"
+                            >FL 95th <InfoHint glossary-key="fl_device"
+                        /></span>
+                        <span class="data-card-value">{{
+                            row.device_flg_95th?.toFixed(2) ?? '---'
+                        }}</span>
+                    </div>
+                    <div v-if="showSnoreColumn" class="data-card-row">
+                        <span class="data-card-label"
+                            >Snore 95th <InfoHint glossary-key="snore_device"
+                        /></span>
+                        <span class="data-card-value">{{
+                            row.snore_95th?.toFixed(2) ?? '---'
+                        }}</span>
+                    </div>
                     <div v-if="showSleepColumns" class="data-card-row">
                         <span class="data-card-label"
                             >Avg Sleep <InfoHint glossary-key="total_sleep"
@@ -108,6 +124,12 @@
                     <TableHead class="w-[90px] whitespace-nowrap"
                         >Avg SpO₂ <InfoHint glossary-key="spo2"
                     /></TableHead>
+                    <TableHead v-if="showFlColumn" class="w-[90px] whitespace-nowrap"
+                        >FL 95th <InfoHint glossary-key="fl_device"
+                    /></TableHead>
+                    <TableHead v-if="showSnoreColumn" class="w-[100px] whitespace-nowrap"
+                        >Snore 95th <InfoHint glossary-key="snore_device"
+                    /></TableHead>
                     <TableHead v-if="showSleepColumns" class="w-[100px] whitespace-nowrap"
                         >Avg Sleep <InfoHint glossary-key="total_sleep"
                     /></TableHead>
@@ -143,6 +165,12 @@
                         <TableCell>{{ row.avg_pressure?.toFixed(1) ?? '---' }}</TableCell>
                         <TableCell>{{ row.avg_leak?.toFixed(1) ?? '---' }}</TableCell>
                         <TableCell>{{ row.avg_spo2?.toFixed(1) ?? '---' }}</TableCell>
+                        <TableCell v-if="showFlColumn">{{
+                            row.device_flg_95th?.toFixed(2) ?? '---'
+                        }}</TableCell>
+                        <TableCell v-if="showSnoreColumn">{{
+                            row.snore_95th?.toFixed(2) ?? '---'
+                        }}</TableCell>
                         <TableCell v-if="showSleepColumns">{{
                             row.avg_total_sleep_hours?.toFixed(1) ?? '---'
                         }}</TableCell>
@@ -165,6 +193,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Loader2 } from '@lucide/vue'
 import {
     Table,
@@ -179,7 +208,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import type { PeriodStatistics } from '@/types'
 import { ahiClass, formatDateMonthDay } from '@/utils/formatting'
 
-defineProps<{
+const props = defineProps<{
     periods: PeriodStatistics[]
     loading: boolean
     emptyMessage?: string
@@ -187,4 +216,7 @@ defineProps<{
 }>()
 
 const { isMobile } = useIsMobile()
+
+const showFlColumn = computed(() => props.periods.some((p) => p.device_flg_95th != null))
+const showSnoreColumn = computed(() => props.periods.some((p) => p.snore_95th != null))
 </script>

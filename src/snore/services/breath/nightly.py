@@ -25,6 +25,7 @@ from snore.analysis.shared.versioning import (
 from snore.constants import LEAK_REDLINE_LPM
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.services.channel_stats import CHANNEL_FLOORS
 from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import fraction_at_or_above, percentile_nearest_rank
@@ -177,8 +178,12 @@ def _device_night_stats(
     waveform is already L/min.  A session in ``corrupt_leak_sessions`` nulls the
     night's leak share: the surviving sessions' samples would be a partial value.
     """
-    fl = _night_samples(day_sessions, channel_vals["fl"], min_value=0.0)
-    snore = _night_samples(day_sessions, channel_vals["snore"])
+    fl = _night_samples(
+        day_sessions, channel_vals["fl"], min_value=CHANNEL_FLOORS["fl"]
+    )
+    snore = _night_samples(
+        day_sessions, channel_vals["snore"], min_value=CHANNEL_FLOORS["snore"]
+    )
     leak = _night_samples(day_sessions, channel_vals["leak"], min_value=0.0)
 
     device_flg_median, device_flg_95th, device_flg_max, device_flg_reason = (

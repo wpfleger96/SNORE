@@ -24,5 +24,5 @@ def test_stats_monthly_breakdown_lists_every_month(snore, multi_night_db):
     jun_row = next(
         line for line in result.stdout.splitlines() if line.startswith("Jun 2024")
     )
-    _month, _year, _days, _hours, avg_ahi, _med_ahi = jun_row.split()
+    _month, _year, _days, _hours, avg_ahi, _med_ahi, _fl, _snore = jun_row.split()
     assert avg_ahi == "19.4", jun_row

@@ -69,7 +69,11 @@ from snore.constants import BreathSegmentationConstants as BSC
 from snore.constants import PatternDetectionConstants as PDC
 from snore.constants import PulseChangeConstants as PCC
 from snore.database import models
-from snore.therapy_hours import TherapyHoursBasis, therapy_hours
+from snore.therapy_hours import (
+    TherapyHoursBasis,
+    parse_mask_on_segments,
+    therapy_hours,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +410,7 @@ class AnalysisService:
         }
 
         # Validity-flag inputs: persisted mask-on segments + ramp settings.
-        mask_on_segments = _parse_mask_on_segments(session.mask_on_segments, session_id)
+        mask_on_segments = parse_mask_on_segments(session.mask_on_segments, session_id)
         session_duration_s = (
             float(session.duration_seconds)
             if session.duration_seconds is not None
@@ -988,62 +992,6 @@ class AnalysisService:
 # ---------------------------------------------------------------------------
 # Module-level compute helpers (private to this module)
 # ---------------------------------------------------------------------------
-
-
-def _parse_mask_on_segments(
-    raw: Any, session_id: int
-) -> list[tuple[float, float]] | None:
-    """Validate and parse the persisted ``sessions.mask_on_segments`` JSON value.
-
-    The column stores ascending, non-overlapping ``[start, end)`` intervals in
-    session offset seconds as a JSON list of 2-element number lists.  The value
-    is untrusted at this boundary (written by older code versions, or edited
-    outside the app), so it is validated instead of consumed blindly:
-
-    - the value must be a list whose items are each a 2-element sequence of
-      real numbers (bools rejected), and
-    - intervals must have positive measure (start < end) and be ascending and
-      non-overlapping (each start >= the previous end).
-
-    On any violation a warning is logged and None is returned, so downstream
-    validity flags degrade to ``segments_unknown`` / ``not_available`` instead
-    of crashing the analysis run.
-    """
-    if raw is None:
-        return None
-    if not isinstance(raw, (list, tuple)):
-        logger.warning(
-            f"Session {session_id}: mask_on_segments is not a list "
-            f"({type(raw).__name__}) — treating segments as unknown"
-        )
-        return None
-
-    parsed: list[tuple[float, float]] = []
-    previous_end = float("-inf")
-    for seg in raw:
-        if (
-            not isinstance(seg, (list, tuple))
-            or len(seg) != 2
-            or not all(
-                isinstance(v, (int, float)) and not isinstance(v, bool) for v in seg
-            )
-        ):
-            logger.warning(
-                f"Session {session_id}: malformed mask_on_segments item {seg!r} "
-                "(expected a 2-sequence of numbers) — treating segments as unknown"
-            )
-            return None
-        start, end = float(seg[0]), float(seg[1])
-        if not start < end or start < previous_end:
-            logger.warning(
-                f"Session {session_id}: mask_on_segments interval "
-                f"[{start}, {end}) is empty, out of order, or overlaps the "
-                "previous interval — treating segments as unknown"
-            )
-            return None
-        parsed.append((start, end))
-        previous_end = end
-    return parsed
 
 
 def _collect_recovery_breath_indices(

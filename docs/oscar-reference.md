@@ -510,6 +510,8 @@ GenerateMachineList()       // Device list section
 - OSCAR Day → SNORE Day (aggregation layer)
 - OSCAR EventList → SNORE Waveform/Event tables
 - OSCAR Summary types → SNORE Statistics table
+- OSCAR Statistics page `FLG` row (`oscar/statistics.cpp:790`, `Profile::calcPercentile`) → FL 95th percentile in `GET /stats/periods`, computed over the pooled waveform samples of a period's enabled sessions (`services/channel_stats.py`). The snore 95th beside it is a SNORE addition. Per-session and per-day median, 95th and max are in `GET /sessions/{id}` and `GET /days/{date}` as `channel_stats`.
+- OSCAR mask-on slices → `mask_on_spans` in the same session and day responses, built from `Session.mask_on_segments`. OSCAR imports store one whole-session segment (`parsers/oscar_device.py:501`). Null means unknown: a session imported before segments were stored or holding a malformed stored value, and a day with any such enabled session. `[]` means known-zero: a session stored with no segments, or a day with no enabled sessions.
 
 **Algorithm reuse opportunities:**
 - FlowParser breath segmentation → SNORE BreathSegmenter (already implemented)
