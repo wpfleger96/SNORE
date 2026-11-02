@@ -248,6 +248,34 @@ export const trendsFixture: TrendData = {
         ['2026-03-01', 0.04],
         ['2026-04-01', 0.04],
     ],
+    device_flg_95th: [
+        ['2025-05-01', 0.24],
+        ['2025-06-01', 0.31],
+        ['2025-07-01', 0.28],
+        ['2025-08-01', 0.26],
+        ['2025-09-01', 0.27],
+        ['2025-10-01', 0.22],
+        ['2025-11-01', 0.25],
+        ['2025-12-01', 0.21],
+        ['2026-01-01', 0.23],
+        ['2026-02-01', 0.19],
+        ['2026-03-01', 0.22],
+        ['2026-04-01', 0.21],
+    ],
+    snore_95th: [
+        ['2025-05-01', 0.18],
+        ['2025-06-01', 0.25],
+        ['2025-07-01', 0.21],
+        ['2025-08-01', 0.2],
+        ['2025-09-01', 0.19],
+        ['2025-10-01', 0.16],
+        ['2025-11-01', 0.17],
+        ['2025-12-01', 0.14],
+        ['2026-01-01', 0.15],
+        ['2026-02-01', 0.12],
+        ['2026-03-01', 0.15],
+        ['2026-04-01', 0.14],
+    ],
 }
 
 export const daysFixture: PaginatedResponse<DayListItem> = {
@@ -721,6 +749,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -735,6 +765,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -749,6 +781,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -763,6 +797,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.04,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -777,6 +813,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -791,6 +829,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.04,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -805,6 +845,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 1.2,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -819,6 +861,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.8,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -833,6 +877,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.4,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -847,6 +893,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.13,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -861,6 +909,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.16,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
     {
         period_type: 'month',
@@ -875,6 +925,8 @@ export const periodsFixture: PeriodStatistics[] = [
         avg_leak: 0.0,
         avg_spo2: null,
         min_spo2: null,
+        device_flg_95th: 0.21,
+        snore_95th: 0.14,
     },
 ]
 
@@ -1214,6 +1266,7 @@ export const sessionDetailFixture: SessionDetail = {
     statistics: {
         usage_hours: 9.59,
         ahi: 0.52,
+        ahi_device: 0.5,
         rei: null,
         oai: 0.31,
         cai: 0.21,
@@ -1256,6 +1309,28 @@ export const sessionDetailFixture: SessionDetail = {
         start_date: '2025-11-02',
         notes: null,
     },
+    channel_stats: {
+        device_flg_median: 0.0,
+        device_flg_95th: 0.21,
+        device_flg_max: 0.68,
+        snore_median: 0.0,
+        snore_95th: 0.14,
+        snore_max: 1.2,
+    },
+    mask_on_spans: [
+        {
+            session_id: 1470,
+            start: '2026-04-06T23:42:24',
+            end: '2026-04-07T03:10:00',
+            duration_seconds: 12456,
+        },
+        {
+            session_id: 1470,
+            start: '2026-04-07T03:14:30',
+            end: '2026-04-07T09:17:46',
+            duration_seconds: 21796,
+        },
+    ],
 }
 
 // Synthetic flow-rate waveform: deterministic breathing-like signal at the

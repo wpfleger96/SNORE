@@ -23,6 +23,8 @@ export type SessionListItem = Schemas['SessionListItem']
 export type SessionStatistics = Schemas['SessionStatistics']
 export type SessionSetting = Schemas['SessionSetting']
 export type SessionDetail = Schemas['SessionDetail']
+export type DeviceChannelStats = Schemas['DeviceChannelStats']
+export type MaskOnSpan = Schemas['MaskOnSpan']
 
 // Waveforms
 export type WaveformInfo = Schemas['WaveformInfo']
@@ -241,6 +243,8 @@ export interface TrendData {
     cai?: [string, number | null][]
     hi?: [string, number | null][]
     rera?: [string, number | null][]
+    device_flg_95th?: [string, number | null][]
+    snore_95th?: [string, number | null][]
     total_sleep_hours?: [string, number | null][]
     sleep_efficiency?: [string, number | null][]
 }

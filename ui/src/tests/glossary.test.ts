@@ -22,6 +22,18 @@ describe('GLOSSARY text', () => {
         expect(GLOSSARY.event_type_ua.short).toMatch(/counts toward AHI/)
     })
 
+    it('test_device_ahi_entry_separates_it_from_the_session_recount', () => {
+        const text = `${GLOSSARY.ahi_device.short} ${GLOSSARY.ahi_device.long ?? ''}`
+        expect(text).toMatch(/whole therapy day/)
+        expect(text).toMatch(/SNORE's recount/)
+    })
+
+    it('test_device_channel_entries_name_the_device_as_their_source', () => {
+        expect(GLOSSARY.fl_device.long).toMatch(/device's own/)
+        expect(GLOSSARY.fl_device.long).toMatch(/distinct from the Flow Limitations count/)
+        expect(GLOSSARY.snore_device.long).toMatch(/device's own/)
+    })
+
     it('test_labels_are_unique_outside_device_settings', () => {
         // Device-setting entries (setting_*) reuse metric names by design; the two
         // I:E Ratio entries are one quantity from two sources (waveform, STR).

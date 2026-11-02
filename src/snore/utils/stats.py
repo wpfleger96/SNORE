@@ -6,6 +6,11 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 
+def nearest_rank_index(n: int, q: float) -> int:
+    """Index of the nearest-rank ``q`` quantile among ``n`` ascending values."""
+    return min(int(n * q), n - 1)
+
+
 def percentile_nearest_rank(sorted_vals: Sequence[float], q: float) -> float | None:
     """Return the nearest-rank percentile of a pre-sorted sequence.
 
@@ -14,12 +19,12 @@ def percentile_nearest_rank(sorted_vals: Sequence[float], q: float) -> float | N
         q: Quantile in ``[0, 1]``.
 
     Returns:
-        ``sorted_vals[min(int(len(sorted_vals) * q), len(sorted_vals) - 1)]``,
-        or ``None`` when the sequence is empty.
+        ``sorted_vals[nearest_rank_index(len(sorted_vals), q)]``, or ``None``
+        when the sequence is empty.
     """
     if not sorted_vals:
         return None
-    return sorted_vals[min(int(len(sorted_vals) * q), len(sorted_vals) - 1)]
+    return sorted_vals[nearest_rank_index(len(sorted_vals), q)]
 
 
 def fraction_at_or_above(vals: Sequence[float], threshold: float) -> float | None:

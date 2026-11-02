@@ -727,7 +727,7 @@ class TestCalculateTrends:
     async def test_trends_structure(
         self, async_db_session, async_test_device, async_test_session_factory
     ):
-        """Trends returns dict with all 13 expected keys."""
+        """Trends returns dict with all 15 expected keys."""
         device = async_test_device
         start_date = date(2024, 11, 1)
 
@@ -764,6 +764,8 @@ class TestCalculateTrends:
             "rr",
             "pulse",
             "mv",
+            "device_flg_95th",
+            "snore_95th",
         }
         assert set(result.keys()) == expected_keys
         assert isinstance(result["ahi"], list)
@@ -801,7 +803,7 @@ class TestCalculateTrends:
             assert trend_ahi == period_stats[i].avg_ahi
 
     def test_trends_empty(self):
-        """Empty period statistics returns empty lists for all 13 keys."""
+        """Empty period statistics returns empty lists for all 15 keys."""
         result = calculate_trends([])
 
         expected_keys = {
@@ -818,6 +820,8 @@ class TestCalculateTrends:
             "rr",
             "pulse",
             "mv",
+            "device_flg_95th",
+            "snore_95th",
         }
         assert set(result.keys()) == expected_keys
         for key in expected_keys:
@@ -848,8 +852,8 @@ class TestCalculateTrendsExtended:
         )
         return _periods(day_records, "month")
 
-    def test_thirteen_keys_always_present(self, db_session, test_device):
-        """calculate_trends_extended always returns exactly 13 keys."""
+    def test_every_series_key_always_present(self, db_session, test_device):
+        """calculate_trends_extended always returns exactly 15 keys."""
         period_stats = self._make_period_stats(db_session, test_device)
         result = calculate_trends_extended(period_stats, {})
 
@@ -867,6 +871,8 @@ class TestCalculateTrendsExtended:
             "rr",
             "pulse",
             "mv",
+            "device_flg_95th",
+            "snore_95th",
         }
         assert set(result.keys()) == expected
 
@@ -901,11 +907,11 @@ class TestCalculateTrendsExtended:
         assert pulse_by_date[feb_start] == pytest.approx(65.0)
 
     def test_empty_period_stats_returns_empty_lists(self):
-        """Empty period_stats yields empty lists for all 13 keys."""
+        """Empty period_stats yields empty lists for all 15 keys."""
         result = calculate_trends_extended([], {})
 
         assert all(v == [] for v in result.values())
-        assert len(result) == 13
+        assert len(result) == 15
 
 
 class TestCalculateAhiTrendDirection:

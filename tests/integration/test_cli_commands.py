@@ -31,6 +31,7 @@ from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
 from snore.provenance import PROVENANCE_NOTES, Provenance
 from tests.helpers.terminal_charts import has_drawn_braille
+from tests.integration.conftest import _make_channel_waveform
 
 _DERIVED_LEGEND = (
     f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
@@ -1429,6 +1430,56 @@ class TestSessionShowExpanded:
         assert result.output.rstrip().endswith(_DERIVED_LEGEND)
         assert f"* {Provenance.EXPERIMENTAL.value}:" not in result.output
 
+    def test_session_show_displays_device_channels(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(db_with_device_channels)],
+        )
+
+        assert result.exit_code == 0
+        output = result.output
+        flow_limitation = output[output.index("Flow Limitation:") :]
+        assert "Median†: 0.25" in flow_limitation
+        assert "95th percentile†: 0.50" in flow_limitation
+        assert "Max†: 0.50" in flow_limitation
+        snore = output[output.index("Snore:") :]
+        assert "Median†: 1.00" in snore
+        assert "95th percentile†: 2.00" in snore
+        assert "Max†: 2.00" in snore
+
+    def test_session_show_displays_mask_on_spans(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(db_with_device_channels)],
+        )
+
+        assert result.exit_code == 0
+        assert "Mask-On Spans:" in result.output
+        assert (
+            "2025-10-01 22:00:00 to 2025-10-01 23:00:00, Duration†: 1.00h"
+            in result.output
+        )
+        assert (
+            "2025-10-01 23:30:00 to 2025-10-02 00:30:00, Duration†: 1.00h"
+            in result.output
+        )
+
+    def test_session_show_omits_absent_device_detail(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "2", "--db", str(db_with_device_channels)],
+        )
+
+        assert result.exit_code == 0
+        assert "Device Channels:" not in result.output
+        assert "Mask-On Spans:" not in result.output
+
     def test_session_show_displays_waveform_types(
         self, cli_runner, populated_test_db_full
     ):
@@ -1492,6 +1543,17 @@ class TestStatsEnhanced:
 
 
 @pytest.fixture
+async def db_with_device_channels(populated_test_db_full):
+    """``populated_test_db_full`` with FL and snore channels on the first session."""
+    async with session_scope() as session:
+        first = await session.get(models.Session, 1)
+        first.mask_on_segments = [[0.0, 3600.0], [5400.0, 9000.0]]
+        await _make_channel_waveform(session, first, "fl", [0.0, 0.25, 0.5])
+        await _make_channel_waveform(session, first, "snore", [0.0, 1.0, 2.0])
+    return populated_test_db_full
+
+
+@pytest.fixture
 async def populated_test_db_with_day_stats(populated_test_db_full):
     """``populated_test_db_full`` with Day roll-ups aggregated (trends/records read Days)."""
     async with session_scope() as session:
@@ -1512,6 +1574,32 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0
         assert "Oct 2025" in result.output or "2025-10" in result.output
+
+    def test_stats_period_shows_channel_percentiles(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(db_with_device_channels), "--period", "month"],
+        )
+
+        assert result.exit_code == 0
+        assert "FL 95th†" in result.output
+        assert "Snore 95th†" in result.output
+        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        assert row.split()[-2:] == ["0.50", "2.00"]
+
+    def test_stats_period_shows_a_dash_for_absent_channels(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_full), "--period", "month"],
+        )
+
+        assert result.exit_code == 0
+        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        assert row.split()[-2:] == ["-", "-"]
 
     def test_stats_trend_marks_derived_ahi_trend(
         self, cli_runner, populated_test_db_with_day_stats

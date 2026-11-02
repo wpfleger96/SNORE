@@ -229,6 +229,9 @@
             />
         </div>
 
+        <DeviceChannelStatsTable :stats="data.channel_stats" />
+        <MaskOnSpansTable :spans="data.mask_on_spans" />
+
         <!-- Apple Health group -->
         <template v-if="data.health_sleep">
             <div class="apple-health-section">
@@ -311,6 +314,8 @@
 import { computed, watch } from 'vue'
 import { isAxiosError } from 'axios'
 import StatCard from '@/components/StatCard.vue'
+import DeviceChannelStatsTable from '@/components/DeviceChannelStatsTable.vue'
+import MaskOnSpansTable from '@/components/MaskOnSpansTable.vue'
 import {
     Table,
     TableBody,

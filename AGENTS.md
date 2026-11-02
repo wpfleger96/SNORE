@@ -148,6 +148,7 @@ src/snore/
 │   ├── schemas.py      # Service response schemas (Pydantic)
 │   ├── analysis_facade.py   # Analysis orchestration
 │   ├── backup_service.py    # Raw file backup
+│   ├── channel_stats.py     # FL/snore stats pooled from waveform blobs on read; mask-on spans
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_service.py       # Day aggregation
 │   ├── event_service.py     # Event queries, device_event_types, reported_counts
@@ -317,6 +318,12 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
   observed). `_load_str_caches` merges primary + backups longer-file-wins per start-date, probing
   EDF headers before full loads (`_preload_str_file`) and falling back to the next candidate when
   a winner is corrupt.
+
+**Device channel statistics** (FL and snore median, 95th, max) have no summary columns:
+`services/channel_stats.py` computes them on read from `Waveform.data_blob`. Pool the samples of
+every enabled session in scope; never average per-session percentiles. Only detail models and
+period/trend responses carry them, so list endpoints stay blob-free. The MCP nightly summary keeps
+its own implementation; `tests/integration/test_device_channel_stats.py` pins the two equal.
 
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.

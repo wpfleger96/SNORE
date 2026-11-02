@@ -13,6 +13,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Any
 
+import numpy as np
 import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,7 @@ from snore.database.models import (
     Profile,
     Session,
     User,
+    Waveform,
 )
 from snore.database.session import cleanup_database
 
@@ -156,3 +158,23 @@ async def _make_event(
     db.add(event)
     await db.flush()
     return event
+
+
+async def _make_channel_waveform(
+    db: AsyncSession,
+    session: Session,
+    channel: str,
+    values: list[float],
+) -> Waveform:
+    """Store ``values`` as a ``channel`` waveform blob sampled every 2 seconds."""
+    pairs = [(i * 2.0, value) for i, value in enumerate(values)]
+    waveform = Waveform(
+        session_id=session.id,
+        waveform_type=channel,
+        sample_rate=0.5,
+        data_blob=np.array(pairs, dtype=np.float32).tobytes(),
+        sample_count=len(values),
+    )
+    db.add(waveform)
+    await db.flush()
+    return waveform

@@ -179,7 +179,20 @@
                             :value="session.statistics.ahi"
                             :decimals="1"
                             glossary-key="ahi"
-                        />
+                        >
+                            <template v-if="session.statistics.ahi != null" #default
+                                >SNORE recount</template
+                            >
+                        </StatCard>
+                        <StatCard
+                            v-if="session.statistics.ahi_device != null"
+                            label="Device-reported AHI"
+                            :value="session.statistics.ahi_device"
+                            :decimals="1"
+                            glossary-key="ahi_device"
+                        >
+                            Whole therapy day
+                        </StatCard>
                         <StatCard
                             v-if="session.statistics.rei != null"
                             label="REI"
@@ -829,6 +842,9 @@
             </Collapsible>
         </div>
 
+        <DeviceChannelStatsTable :stats="session.channel_stats" />
+        <MaskOnSpansTable :spans="session.mask_on_spans" />
+
         <!-- Apple Health -->
         <Collapsible v-model:open="healthOpen" class="settings-panel">
             <CollapsibleTrigger as-child>
@@ -1013,6 +1029,8 @@ import WaveformChart from '@/components/WaveformChart.vue'
 import WaveformToolbar from '@/components/WaveformToolbar.vue'
 import MultiWaveformView from '@/components/MultiWaveformView.vue'
 import StatCard from '@/components/StatCard.vue'
+import DeviceChannelStatsTable from '@/components/DeviceChannelStatsTable.vue'
+import MaskOnSpansTable from '@/components/MaskOnSpansTable.vue'
 import { getSession } from '@/api/sessions'
 import { getSessionEvents } from '@/api/events'
 import { getDay } from '@/api/days'

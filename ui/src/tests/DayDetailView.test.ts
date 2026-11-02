@@ -126,6 +126,40 @@ describe('DayDetailView device event cards', () => {
     })
 })
 
+describe('DayDetailView device channel and mask-on sections', () => {
+    const CHANNEL_STATS = { snore_median: 0, snore_95th: 0.4, snore_max: 1.2 }
+    const SPANS = [
+        {
+            session_id: 7,
+            start: '2026-05-03T22:00:00',
+            end: '2026-05-04T06:00:00',
+            duration_seconds: 28800,
+        },
+    ]
+
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    function sectionHeadings(wrapper: VueWrapper): string[] {
+        return wrapper.findAll('section h2').map((h) => h.text())
+    }
+
+    it('test_both_sections_render_from_the_day_payload', async () => {
+        const wrapper = await mountDay(
+            makeDay({ channel_stats: CHANNEL_STATS, mask_on_spans: SPANS }),
+        )
+
+        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore', 'Mask-On Spans'])
+    })
+
+    it('test_unknown_channels_and_empty_spans_hide_both_sections', async () => {
+        const wrapper = await mountDay(makeDay({ channel_stats: null, mask_on_spans: [] }))
+
+        expect(sectionHeadings(wrapper)).toEqual([])
+    })
+})
+
 describe('DayDetailView date changes', () => {
     const NEXT_DATE = '2026-05-04'
     const notFound = Object.assign(new Error('Not Found'), {

@@ -13,6 +13,11 @@ from sqlalchemy import select
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, paginate
+from snore.services.channel_stats import (
+    load_channel_samples,
+    mask_on_spans,
+    pool_channel_stats,
+)
 from snore.services.event_service import device_reported_types, reported_counts
 from snore.services.schemas import (
     DayDetail,
@@ -137,16 +142,30 @@ class DayService(ProfileScopedService):
         """Return detailed day record with session IDs (see ``_select_day``)."""
         day = await self._select_day(day_date, device_id)
 
-        session_ids = (
-            (
-                await self.db_session.execute(
-                    select(models.Session.id)
-                    .where(models.Session.day_id == day.id)
-                    .order_by(models.Session.start_time)
+        session_rows = (
+            await self.db_session.execute(
+                select(
+                    models.Session.id,
+                    models.Session.enabled,
+                    models.Session.start_time,
+                    models.Session.mask_on_segments,
                 )
+                .where(models.Session.day_id == day.id)
+                .order_by(models.Session.start_time)
             )
-            .scalars()
-            .all()
+        ).all()
+        # Like the Day aggregates, device detail covers enabled sessions only.
+        enabled_rows = [row for row in session_rows if row.enabled]
+        enabled_ids = [row.id for row in enabled_rows]
+        samples = await load_channel_samples(self.db_session, enabled_ids)
+        spans = sorted(
+            (
+                span
+                for row in enabled_rows
+                for span in mask_on_spans(row.id, row.start_time, row.mask_on_segments)
+                or []
+            ),
+            key=lambda span: span.start,
         )
 
         health_summary_row = (
@@ -176,8 +195,10 @@ class DayService(ProfileScopedService):
                 "central_apneas": day.central_apneas or 0,
                 "hypopneas": day.hypopneas or 0,
                 **reported_counts(day, reported),
-                "session_ids": session_ids,
+                "session_ids": [row.id for row in session_rows],
                 "health_sleep": health_sleep,
+                "channel_stats": pool_channel_stats(samples, enabled_ids),
+                "mask_on_spans": spans,
             }
         )
 

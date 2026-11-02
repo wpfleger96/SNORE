@@ -16,6 +16,11 @@ from snore.services._base import (
     paginate,
     session_device_join,
 )
+from snore.services.channel_stats import (
+    load_channel_samples,
+    mask_on_spans,
+    pool_channel_stats,
+)
 from snore.services.event_service import device_reported_types, reported_counts
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
@@ -236,6 +241,8 @@ class SessionService(ProfileScopedService):
             session.start_time.date()
         )
 
+        samples = await load_channel_samples(self.db_session, [session.id])
+
         duration_seconds = session.duration_seconds or 0.0
         return SessionDetail(
             id=session.id,
@@ -265,6 +272,10 @@ class SessionService(ProfileScopedService):
             statistics=statistics,
             settings=settings_list,
             active_mask=active_mask,
+            channel_stats=pool_channel_stats(samples, [session.id]),
+            mask_on_spans=mask_on_spans(
+                session.id, session.start_time, session.mask_on_segments
+            ),
         )
 
     async def get_delete_preview(
