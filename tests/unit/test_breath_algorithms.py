@@ -85,13 +85,42 @@ class TestRollingWindowCalculation:
             )
             mock_breaths.append(breath)
 
+        current = mock_breaths[24]
         rolling_rr = segmenter.calculate_rolling_respiratory_rate(
-            mock_breaths, current_breath_idx=24, window_seconds=60.0
+            mock_breaths[:24],
+            current.start_time,
+            current.end_time,
+            window_seconds=60.0,
         )
 
         assert 19.0 <= rolling_rr <= 21.0, (
             f"Rolling RR {rolling_rr} should be ~20 breaths/min"
         )
+
+    def test_first_breath_without_priors_returns_instantaneous_rate(self):
+        """With no prior breaths, the window scales to the breath's own rate."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate([], 10.0, 14.0)
+
+        assert rolling_rr == 60.0 / 4.0
+
+    def test_breath_longer_than_window_is_weighted_partially(self):
+        """A breath starting before the window counts only its overlapping part."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            [], 0.0, 15.0, window_seconds=10.0
+        )
+
+        assert 0.0 < rolling_rr < 1.0
+        assert rolling_rr == 10.0 / 15.0
+
+    def test_zero_duration_breath_returns_zero(self):
+        """A zero-duration current breath has no defined rate."""
+        segmenter = BreathSegmenter()
+
+        assert segmenter.calculate_rolling_respiratory_rate([], 5.0, 5.0) == 0.0
 
 
 class TestWeightedAverageSmoothing:

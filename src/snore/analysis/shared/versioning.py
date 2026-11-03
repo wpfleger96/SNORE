@@ -31,7 +31,9 @@ from snore.analysis.modes.config import AVAILABLE_CONFIGS
 # cross-version comparison.
 # ---------------------------------------------------------------------------
 
-SEGMENTER_ALGO_VERSION: str = "v1"
+# v2: rolling respiratory rate includes the current breath (was always 0), so
+# per-breath respiratory_rate_rolling and minute ventilation change.
+SEGMENTER_ALGO_VERSION: str = "v2"
 FL_CLASSIFIER_ALGO_VERSION: str = "v2"
 FLATTENING_ALGO_VERSION: str = "v2"  # mid-insp flattening
 TRIGGER_CYCLE_ALGO_VERSION: str = "v1"  # trigger/cycle heuristic (new, experimental)

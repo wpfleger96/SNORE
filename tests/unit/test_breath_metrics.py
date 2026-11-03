@@ -97,6 +97,32 @@ class TestRespiratoryRateCalculation:
 
             assert np.std(roll_rr) <= np.std(inst_rr)
 
+    def test_segment_breaths_rolling_rr_nonzero_and_tracks_true_rate(self):
+        """Rolling RR counts the current breath and drives minute ventilation."""
+        segmenter = BreathSegmenter()
+        breath_duration = 4.0
+        true_rate = 60.0 / breath_duration
+        t, flow = create_session(
+            num_breaths=40,
+            avg_duration=breath_duration,
+            duration_variability=0.0,
+            amplitude_variability=0.0,
+            sample_rate=25.0,
+        )
+
+        breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
+
+        assert len(breaths) >= 30
+        assert all(b.respiratory_rate_rolling > 0 for b in breaths)
+        full_window = [b for b in breaths if b.end_time - breaths[0].start_time >= 60.0]
+        assert full_window
+        for breath in full_window:
+            assert breath.respiratory_rate_rolling == pytest.approx(true_rate, abs=1.0)
+        for breath in breaths:
+            assert breath.minute_ventilation == pytest.approx(
+                breath.tidal_volume_smoothed / 1000.0 * breath.respiratory_rate_rolling
+            )
+
 
 class TestIERatioCalculation:
     """Test inspiration:expiration ratio calculation."""

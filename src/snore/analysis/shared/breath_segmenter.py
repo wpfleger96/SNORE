@@ -8,6 +8,8 @@ calculating breath-level metrics.
 
 import logging
 
+from collections.abc import Sequence
+
 import numpy as np
 
 from snore.analysis.shared.types import BreathMetrics
@@ -368,8 +370,7 @@ class BreathSegmenter:
 
         # Rolling window rate (OSCAR's method)
         respiratory_rate_rolling = self.calculate_rolling_respiratory_rate(
-            all_breaths,
-            len(all_breaths),
+            all_breaths, float(start_time), float(end_time)
         )
 
         # Calculate minute ventilation using rolling RR (more stable)
@@ -403,8 +404,9 @@ class BreathSegmenter:
 
     def calculate_rolling_respiratory_rate(
         self,
-        breaths: list[BreathMetrics],
-        current_breath_idx: int,
+        prior_breaths: Sequence[BreathMetrics],
+        start_time: float,
+        end_time: float,
         window_seconds: float = 60.0,
     ) -> float:
         """
@@ -413,28 +415,37 @@ class BreathSegmenter:
         This matches OSCAR's algorithm (calcs.cpp lines 642-701) which counts
         breaths in the last minute with proportional weighting for partial breaths.
 
+        The window ends at the current breath's end and counts the current
+        breath plus every prior breath that overlaps it. Early in a session,
+        when less than a full window of data exists, the count is scaled up to
+        a per-minute rate.
+
         Args:
-            breaths: List of all breaths so far
-            current_breath_idx: Index of current breath
+            prior_breaths: Breaths before the current one, in time order
+            start_time: Current breath start time in seconds
+            end_time: Current breath end time in seconds
             window_seconds: Rolling window size in seconds (default 60)
 
         Returns:
             Respiratory rate in breaths/min
 
         Example:
-            >>> rr = segmenter.calculate_rolling_respiratory_rate(breaths, 10)
+            >>> rr = segmenter.calculate_rolling_respiratory_rate(
+            ...     breaths, start_time=120.0, end_time=124.0
+            ... )
         """
-        if current_breath_idx < 0 or current_breath_idx >= len(breaths):
+        duration = end_time - start_time
+        if duration <= 0:
             return 0.0
 
-        current_breath = breaths[current_breath_idx]
-        window_start = current_breath.end_time - window_seconds
+        window_start = end_time - window_seconds
 
-        breath_count = 0.0
+        if start_time < window_start:
+            breath_count = (end_time - window_start) / duration
+        else:
+            breath_count = 1.0
 
-        for i in range(current_breath_idx, -1, -1):
-            breath = breaths[i]
-
+        for breath in reversed(prior_breaths):
             if breath.end_time < window_start:
                 break
 
@@ -445,15 +456,10 @@ class BreathSegmenter:
             else:
                 breath_count += 1.0
 
-        if current_breath_idx == 0:
-            actual_window = current_breath.end_time - current_breath.start_time
-        else:
-            first_breath = breaths[0]
-            actual_window = current_breath.end_time - max(
-                first_breath.start_time, window_start
-            )
+        first_start = prior_breaths[0].start_time if prior_breaths else start_time
+        actual_window = end_time - max(first_start, window_start)
 
-        if actual_window < window_seconds and actual_window > 0:
+        if 0 < actual_window < window_seconds:
             breath_count *= window_seconds / actual_window
 
         return breath_count
