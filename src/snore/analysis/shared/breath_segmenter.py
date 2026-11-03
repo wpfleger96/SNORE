@@ -7,6 +7,7 @@ calculating breath-level metrics.
 """
 
 import logging
+import math
 
 from collections.abc import Sequence
 
@@ -18,6 +19,10 @@ from snore.constants import BreathSegmentationConstants
 logger = logging.getLogger(__name__)
 
 __all__ = ["BreathSegmenter", "BreathMetrics"]
+
+# A step between consecutive flow timestamps larger than this means no flow was
+# recorded (mask-off between merged segments), so the rolling window restarts.
+MAX_SAMPLE_GAP_SECONDS = 1.0
 
 
 class BreathSegmenter:
@@ -94,9 +99,20 @@ class BreathSegmenter:
         breaths: list[BreathMetrics] = []
         tv_history: list[float] = []
 
+        # Resume times after each recording gap; breaths between two of them
+        # form one continuous run, and the rolling window never crosses a gap.
+        gap_ends = timestamps[1:][np.diff(timestamps) > MAX_SAMPLE_GAP_SECONDS]
+        current_run = 0
+        run_start: float | None = None
+
         for idx, (start_idx, end_idx) in enumerate(boundaries):
             breath_segment = flow_data[start_idx:end_idx]
             breath_timestamps = timestamps[start_idx:end_idx]
+
+            run = int(np.searchsorted(gap_ends, timestamps[start_idx], side="right"))
+            if run != current_run:
+                current_run = run
+                run_start = None
 
             metrics = self.calculate_breath_metrics(
                 breath_number=idx + 1,
@@ -105,10 +121,15 @@ class BreathSegmenter:
                 sample_rate=sample_rate,
                 tv_history=tv_history,
                 all_breaths=breaths,
+                run_start_time=(
+                    run_start if run_start is not None else float(timestamps[start_idx])
+                ),
             )
 
             if metrics.is_complete:
                 breaths.append(metrics)
+                if run_start is None:
+                    run_start = metrics.start_time
                 tv_history.append(metrics.tidal_volume)
                 if len(tv_history) > 3:
                     tv_history.pop(0)
@@ -276,6 +297,7 @@ class BreathSegmenter:
         sample_rate: float,
         tv_history: list[float],
         all_breaths: list[BreathMetrics],
+        run_start_time: float,
     ) -> BreathMetrics:
         """
         Calculate comprehensive metrics for a single breath.
@@ -287,13 +309,15 @@ class BreathSegmenter:
             sample_rate: Sample rate in Hz
             tv_history: List of previous TV values for smoothing
             all_breaths: List of all breaths processed so far
+            run_start_time: Start time of the earliest breath in the current
+                continuous data run (this breath's start if it is the first)
 
         Returns:
             BreathMetrics object with all calculated metrics
 
         Example:
             >>> metrics = segmenter.calculate_breath_metrics(
-            ...     1, timestamps, flow, 25.0, tv_history, all_breaths
+            ...     1, timestamps, flow, 25.0, tv_history, all_breaths, 0.0
             ... )
         """
         start_time = timestamps[0]
@@ -370,17 +394,11 @@ class BreathSegmenter:
 
         # Rolling window rate (OSCAR's method)
         respiratory_rate_rolling = self.calculate_rolling_respiratory_rate(
-            all_breaths, float(start_time), float(end_time)
+            all_breaths, float(start_time), float(end_time), run_start_time
         )
 
-        # Calculate minute ventilation using rolling RR (more stable)
         # MV = tidal_volume_smoothed (mL) × respiratory_rate_rolling (breaths/min)
-        if respiratory_rate_rolling > 0:
-            minute_ventilation = (
-                tidal_volume_smoothed / 1000.0
-            ) * respiratory_rate_rolling
-        else:
-            minute_ventilation = (tidal_volume_smoothed / 1000.0) * respiratory_rate
+        minute_ventilation = (tidal_volume_smoothed / 1000.0) * respiratory_rate_rolling
 
         return BreathMetrics(
             breath_number=breath_number,
@@ -407,6 +425,7 @@ class BreathSegmenter:
         prior_breaths: Sequence[BreathMetrics],
         start_time: float,
         end_time: float,
+        run_start_time: float,
         window_seconds: float = 60.0,
     ) -> float:
         """
@@ -415,15 +434,20 @@ class BreathSegmenter:
         This matches OSCAR's algorithm (calcs.cpp lines 642-701) which counts
         breaths in the last minute with proportional weighting for partial breaths.
 
-        The window ends at the current breath's end and counts the current
-        breath plus every prior breath that overlaps it. Early in a session,
-        when less than a full window of data exists, the count is scaled up to
-        a per-minute rate.
+        The window ends at the current breath's end and is clipped to the
+        current continuous data run, so it never reaches back across a
+        mask-off gap. It counts the current breath plus every prior breath
+        that overlaps the window, and the count is divided by the window's
+        actual length, so a window shorter than ``window_seconds`` (early in a
+        run) still yields a per-minute rate.
 
         Args:
             prior_breaths: Breaths before the current one, in time order
             start_time: Current breath start time in seconds
             end_time: Current breath end time in seconds
+            run_start_time: Start time of the earliest breath in the current
+                continuous data run (equals ``start_time`` for a run's first
+                breath)
             window_seconds: Rolling window size in seconds (default 60)
 
         Returns:
@@ -431,14 +455,15 @@ class BreathSegmenter:
 
         Example:
             >>> rr = segmenter.calculate_rolling_respiratory_rate(
-            ...     breaths, start_time=120.0, end_time=124.0
+            ...     prior_breaths, start_time=120.0, end_time=124.0,
+            ...     run_start_time=0.0,
             ... )
         """
         duration = end_time - start_time
-        if duration <= 0:
+        if not (duration > 0 and math.isfinite(duration)):
             return 0.0
 
-        window_start = end_time - window_seconds
+        window_start = max(end_time - window_seconds, run_start_time)
 
         if start_time < window_start:
             breath_count = (end_time - window_start) / duration
@@ -456,13 +481,11 @@ class BreathSegmenter:
             else:
                 breath_count += 1.0
 
-        first_start = prior_breaths[0].start_time if prior_breaths else start_time
-        actual_window = end_time - max(first_start, window_start)
-
-        if 0 < actual_window < window_seconds:
-            breath_count *= window_seconds / actual_window
-
-        return breath_count
+        # Positive since end_time > start_time >= run_start_time. The clamp drops
+        # float rounding in end_time - (end_time - window_seconds), so a full
+        # window divides by exactly window_seconds.
+        actual_window = min(end_time - window_start, window_seconds)
+        return breath_count * (60.0 / actual_window)
 
     def calculate_smoothed_tidal_volume(
         self, tv_history: list[float], current_tv: float

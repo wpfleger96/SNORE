@@ -31,8 +31,9 @@ from snore.analysis.modes.config import AVAILABLE_CONFIGS
 # cross-version comparison.
 # ---------------------------------------------------------------------------
 
-# v2: rolling respiratory rate includes the current breath (was always 0), so
-# per-breath respiratory_rate_rolling and minute ventilation change.
+# v2: rolling respiratory rate counts the current breath (was always 0) and
+# restarts after mask-off gaps, so stored per-breath respiratory_rate_rolling
+# changes.
 SEGMENTER_ALGO_VERSION: str = "v2"
 FL_CLASSIFIER_ALGO_VERSION: str = "v2"
 FLATTENING_ALGO_VERSION: str = "v2"  # mid-insp flattening
