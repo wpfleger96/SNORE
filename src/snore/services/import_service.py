@@ -217,10 +217,13 @@ class ImportService:
                 )
                 continue
 
-            parse_root = Path(source.root_path)
+            source_root = Path(source.root_path)
             warnings: list[str] = []
 
-            # Backup raw files before parsing
+            # Back up raw files, then parse the source, not the backup copy: the
+            # backup is a cumulative per-device archive, so parsing the source
+            # keeps each import to the files it brought. Rescan is the path
+            # that parses the archive.
             if backup and not dry_run and parser.supports_raw_backup:
                 device_serial = source.device_serial or ""
                 if device_serial:
@@ -231,7 +234,7 @@ class ImportService:
                         emit("Backing up raw files...")
                         backup_result = backup_svc.backup_via_parser(
                             parser,
-                            parse_root,
+                            source_root,
                             device_serial,
                             progress_callback=emit,
                         )
@@ -239,7 +242,6 @@ class ImportService:
                             emit(f"Backup skipped: {backup_result.skipped_reason}")
                         else:
                             emit(f"Backed up to {backup_result.backup_root}")
-                            parse_root = backup_result.backup_root
                             if backup_result.files_failed:
                                 msg = (
                                     f"Backup partial: {backup_result.files_failed} "
@@ -262,7 +264,7 @@ class ImportService:
             # parse_sessions() returns a generator; import_sessions_batch consumes
             # it in bounded batch_size chunks so memory is bounded per-batch.
             session_iter = parser.parse_sessions(
-                parse_root,
+                source_root,
                 date_from=date_from,
                 date_to=date_to,
                 limit=limit,

@@ -504,7 +504,7 @@ class ResmedEDFParser(DeviceParser):
         Searches for STR.edf + DATALOG signature in:
         - Current path
         - Parent directories (up to 5 levels)
-        - Child directories (up to 3 levels)
+        - Child directories (up to ``PARSER_MAX_SEARCH_DEPTH`` levels)
 
         Supports both raw SD card format and OSCAR profile format.
         """
@@ -562,9 +562,11 @@ class ResmedEDFParser(DeviceParser):
         Stateless on purpose: the parser registry shares one instance across
         every source of an import, so the root must come from the argument,
         never from the last ``detect()``.  A path that is itself a root (an SD
-        card or its raw backup copy) is used as-is; otherwise the first root
-        found is used and any others are logged as skipped.  A path with no
-        root is returned unchanged.
+        card or its raw backup copy) is used as-is, checked first because a
+        parent or child root with higher confidence would otherwise outrank
+        the path the caller named.  Otherwise the highest-confidence root is
+        used and any others are logged as skipped.  A path with no root is
+        returned unchanged.
         """
         path = Path(path)
         if self._is_resmed_root(path):
