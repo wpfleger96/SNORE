@@ -9,12 +9,43 @@ This module tests core breath processing algorithms including:
 - End-to-end breath segmentation
 """
 
+import math
+
 import numpy as np
+import pytest
 
 from snore.analysis.shared.breath_segmenter import (
     BreathMetrics,
     BreathSegmenter,
 )
+
+
+def _regular_breaths(
+    count: int, duration: float, offset: float = 0.0
+) -> list[BreathMetrics]:
+    """Back-to-back breaths of equal duration starting at ``offset``."""
+    return [
+        BreathMetrics(
+            breath_number=i + 1,
+            start_time=offset + i * duration,
+            middle_time=offset + i * duration + duration / 2,
+            end_time=offset + (i + 1) * duration,
+            duration=duration,
+            tidal_volume=500.0,
+            tidal_volume_smoothed=500.0,
+            peak_inspiratory_flow=30.0,
+            peak_expiratory_flow=20.0,
+            inspiration_time=duration / 2,
+            expiration_time=duration / 2,
+            i_e_ratio=1.0,
+            respiratory_rate=60.0 / duration,
+            respiratory_rate_rolling=0.0,
+            minute_ventilation=10.0,
+            amplitude=50.0,
+            is_complete=True,
+        )
+        for i in range(count)
+    ]
 
 
 class TestBreathAmplitudeValidation:
@@ -61,37 +92,94 @@ class TestRollingWindowCalculation:
         Uses partial breath weighting for breaths spanning window boundary.
         """
         segmenter = BreathSegmenter()
+        mock_breaths = _regular_breaths(30, 3.0)
 
-        mock_breaths = []
-        for i in range(30):
-            breath = BreathMetrics(
-                breath_number=i + 1,
-                start_time=i * 3.0,
-                middle_time=i * 3.0 + 1.5,
-                end_time=i * 3.0 + 3.0,
-                duration=3.0,
-                tidal_volume=500.0,
-                tidal_volume_smoothed=500.0,
-                peak_inspiratory_flow=30.0,
-                peak_expiratory_flow=20.0,
-                inspiration_time=1.5,
-                expiration_time=1.5,
-                i_e_ratio=1.0,
-                respiratory_rate=20.0,
-                respiratory_rate_rolling=0.0,
-                minute_ventilation=10.0,
-                amplitude=50.0,
-                is_complete=True,
-            )
-            mock_breaths.append(breath)
-
+        current = mock_breaths[24]
         rolling_rr = segmenter.calculate_rolling_respiratory_rate(
-            mock_breaths, current_breath_idx=24, window_seconds=60.0
+            mock_breaths[:24],
+            current.start_time,
+            current.end_time,
+            run_start_time=mock_breaths[0].start_time,
+            window_seconds=60.0,
         )
 
         assert 19.0 <= rolling_rr <= 21.0, (
             f"Rolling RR {rolling_rr} should be ~20 breaths/min"
         )
+
+    def test_first_breath_without_priors_returns_instantaneous_rate(self):
+        """With no prior breaths, the window scales to the breath's own rate."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            [], 10.0, 14.0, run_start_time=10.0
+        )
+
+        assert rolling_rr == 60.0 / 4.0
+
+    def test_breath_longer_than_window_is_weighted_partially(self):
+        """A breath starting before the window counts only its overlapping part."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            [], 0.0, 15.0, run_start_time=0.0, window_seconds=10.0
+        )
+
+        # 10 of the breath's 15 s fall in the 10 s window: one 15 s breath = 4/min
+        assert rolling_rr == pytest.approx(4.0)
+
+    def test_zero_duration_breath_returns_zero(self):
+        """A zero-duration current breath has no defined rate."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            [], 5.0, 5.0, run_start_time=5.0
+        )
+
+        assert rolling_rr == 0.0
+
+    def test_infinite_end_time_returns_zero(self):
+        """A non-finite breath end has no defined rate."""
+        segmenter = BreathSegmenter()
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            [], 5.0, math.inf, run_start_time=5.0
+        )
+
+        assert rolling_rr == 0.0
+
+    def test_breaths_before_run_start_are_excluded_and_window_scaled(self):
+        """After a mask-off gap, only breaths since the run start are counted."""
+        segmenter = BreathSegmenter()
+        pre_gap = _regular_breaths(10, 3.0)
+        post_gap = _regular_breaths(3, 3.0, offset=330.0)
+        current = post_gap[-1]
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            pre_gap + post_gap[:-1],
+            current.start_time,
+            current.end_time,
+            run_start_time=post_gap[0].start_time,
+        )
+
+        # 3 breaths in the 9 s since the run started: 20 breaths/min
+        assert rolling_rr == pytest.approx(20.0)
+
+    def test_non_default_window_returns_breaths_per_minute(self):
+        """A 30 s window still reports breaths/min, not breaths per window."""
+        segmenter = BreathSegmenter()
+        mock_breaths = _regular_breaths(30, 3.0)
+        current = mock_breaths[24]
+
+        rolling_rr = segmenter.calculate_rolling_respiratory_rate(
+            mock_breaths[:24],
+            current.start_time,
+            current.end_time,
+            run_start_time=mock_breaths[0].start_time,
+            window_seconds=30.0,
+        )
+
+        assert rolling_rr == pytest.approx(20.0)
 
 
 class TestWeightedAverageSmoothing:

@@ -97,6 +97,56 @@ class TestRespiratoryRateCalculation:
 
             assert np.std(roll_rr) <= np.std(inst_rr)
 
+    def test_segment_breaths_rolling_rr_nonzero_and_tracks_true_rate(self):
+        """Rolling RR counts the current breath and drives minute ventilation."""
+        segmenter = BreathSegmenter()
+        breath_duration = 4.0
+        true_rate = 60.0 / breath_duration
+        t, flow = create_session(
+            num_breaths=40,
+            avg_duration=breath_duration,
+            duration_variability=0.0,
+            amplitude_variability=0.0,
+            sample_rate=25.0,
+        )
+
+        breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
+
+        assert len(breaths) >= 30
+        assert all(b.respiratory_rate_rolling > 0 for b in breaths)
+        full_window = [b for b in breaths if b.end_time - breaths[0].start_time >= 60.0]
+        assert full_window
+        for breath in full_window:
+            assert breath.respiratory_rate_rolling == pytest.approx(true_rate, abs=0.1)
+        for breath in breaths:
+            assert breath.minute_ventilation == pytest.approx(
+                breath.tidal_volume_smoothed / 1000.0 * breath.respiratory_rate_rolling
+            )
+
+    def test_segment_breaths_after_mask_off_gap_rolling_rr_tracks_true_rate(self):
+        """Rolling RR restarts after a timestamp gap instead of diluting over it."""
+        segmenter = BreathSegmenter()
+        true_rate = 60.0 / 4.0
+        t, flow = create_session(
+            num_breaths=40,
+            avg_duration=4.0,
+            duration_variability=0.0,
+            amplitude_variability=0.0,
+            sample_rate=25.0,
+        )
+        # Breath 21 starts at 80 s; a merged session resumes 300 s later there.
+        gap_index = int(np.searchsorted(t, 80.0, side="right"))
+        t[gap_index:] += 300.0
+
+        breaths = segmenter.segment_breaths(t, flow, sample_rate=25.0)
+
+        post_gap = [b for b in breaths if b.start_time > t[gap_index - 1]]
+        assert len(post_gap) >= 15
+        for breath in post_gap:
+            # 0.2, not 0.1: a run's first breath is rated from its 3.96 s
+            # segment alone (60 / 3.96 = 15.15), exactly as at session start.
+            assert breath.respiratory_rate_rolling == pytest.approx(true_rate, abs=0.2)
+
 
 class TestIERatioCalculation:
     """Test inspiration:expiration ratio calculation."""
