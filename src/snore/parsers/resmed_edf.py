@@ -470,9 +470,6 @@ class ResmedEDFParser(DeviceParser):
     def __init__(self) -> None:
         """Initialize ResMed parser."""
         super().__init__()
-        self._data_root: Path | None = None
-        self._root_metadata: DataRoot | None = None
-        self._all_roots: list[DataRoot] = []
         self._finder = DataRootFinder()
         self._str_series11: bool = False
 
@@ -518,12 +515,7 @@ class ResmedEDFParser(DeviceParser):
                 detected=False, message=f"Path does not exist: {path}"
             )
 
-        roots = self._finder.find_data_roots(
-            path,
-            validator_func=self._is_resmed_root,
-            metadata_extractor_func=self._create_data_root,
-            max_levels_down=PARSER_MAX_SEARCH_DEPTH,
-        )
+        roots = self._find_data_roots(path)
 
         if not roots:
             return ParserDetectionResult(
@@ -531,18 +523,17 @@ class ResmedEDFParser(DeviceParser):
                 message=f"No ResMed data found. Searched {path} and parent/child directories for STR.edf + DATALOG structure.",
             )
 
-        self._data_root = roots[0].path
-        self._root_metadata = roots[0]
-        self._all_roots = roots
-
+        first = roots[0]
         metadata_dict = build_root_metadata(roots)
 
-        if self._data_root != path:
-            location_desc = f"in {'parent' if self._data_root in path.parents else 'child'} directory"
+        if first.path != path:
+            location_desc = (
+                f"in {'parent' if first.path in path.parents else 'child'} directory"
+            )
         else:
             location_desc = "at provided path"
 
-        structure_name = self._root_metadata.structure_type.replace("_", " ")
+        structure_name = first.structure_type.replace("_", " ")
 
         if len(roots) > 1:
             message = f"Found {len(roots)} ResMed data locations ({location_desc})"
@@ -551,10 +542,48 @@ class ResmedEDFParser(DeviceParser):
 
         return ParserDetectionResult(
             detected=True,
-            confidence=self._root_metadata.confidence,
+            confidence=first.confidence,
             message=message,
             metadata=metadata_dict,
         )
+
+    def _find_data_roots(self, path: Path) -> list[DataRoot]:
+        """Find ResMed data roots at, above, or below path."""
+        return self._finder.find_data_roots(
+            path,
+            validator_func=self._is_resmed_root,
+            metadata_extractor_func=self._create_data_root,
+            max_levels_down=PARSER_MAX_SEARCH_DEPTH,
+        )
+
+    def _resolve_data_root(self, path: Path) -> Path:
+        """Resolve path to the one ResMed data root it names.
+
+        Stateless on purpose: the parser registry shares one instance across
+        every source of an import, so the root must come from the argument,
+        never from the last ``detect()``.  A path that is itself a root (an SD
+        card or its raw backup copy) is used as-is; otherwise the first root
+        found is used and any others are logged as skipped.  A path with no
+        root is returned unchanged.
+        """
+        path = Path(path)
+        if self._is_resmed_root(path):
+            return path
+
+        roots = self._find_data_roots(path)
+        if not roots:
+            return path
+        if len(roots) > 1:
+            skipped = ", ".join(str(r.path) for r in roots[1:])
+            logger.warning(
+                "ResMed path %s resolved to %d data roots; using %s and "
+                "skipping %s. Import one root at a time for full coverage.",
+                path,
+                len(roots),
+                roots[0].path,
+                skipped,
+            )
+        return roots[0].path
 
     def _is_resmed_root(self, path: Path) -> bool:
         """Check if path contains ResMed data signature (STR.edf + DATALOG)."""
@@ -676,7 +705,7 @@ class ResmedEDFParser(DeviceParser):
 
         Tries Identification.json first, falls back to STR.edf.
         """
-        path = Path(self._data_root if self._data_root else path)
+        path = self._resolve_data_root(path)
 
         id_file = path / "Identification.json"
         if id_file.exists():
@@ -839,15 +868,7 @@ class ResmedEDFParser(DeviceParser):
             (resolved_path, night_items) where night_items is a list of
             (night_date, chain_id, segments) tuples in the requested sort order.
         """
-        if self._all_roots:
-            matching_roots = [r for r in self._all_roots if r.path == path]
-            if matching_roots:
-                path = matching_roots[0].path
-            elif self._data_root:
-                path = self._data_root
-        elif self._data_root:
-            path = self._data_root
-
+        path = self._resolve_data_root(path)
         datalog_dir = path / "DATALOG"
 
         if not datalog_dir.exists():
