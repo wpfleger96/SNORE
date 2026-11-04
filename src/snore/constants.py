@@ -1,42 +1,45 @@
 """
 Constants and mappings for OSCAR CPAP data analysis.
 
-Based on OSCAR's schema.h and machine_common.h definitions.
+OSCAR channel IDs are the values registered in OSCAR's
+``oscar/SleepLib/schema.cpp``; ``RMS9_*`` IDs come from
+``oscar/SleepLib/loader_plugins/resmed_loader.cpp``.
 """
 
 from pathlib import Path
 from typing import Literal, TypedDict
 
-# CPAP Pressure Channels
-CPAP_PRESSURE = 0x1000
-CPAP_EPAP = 0x1002
-
 # CPAP Event Flags
-CPAP_OBSTRUCTIVE = 0x1100
-CPAP_HYPOPNEA = 0x1101
-CPAP_CLEAR_AIRWAY = 0x1102
-CPAP_RERA = 0x1104  # Respiratory effort related arousal
-CPAP_FLOW_LIMIT = 0x1106
-CPAP_CSR = 0x1107  # Cheyne-Stokes Respiration
-CPAP_PERIODIC_BREATHING = 0x1108
+CPAP_CSR = 0x1000  # Cheyne-Stokes Respiration (span)
+CPAP_CLEAR_AIRWAY = 0x1001
+CPAP_OBSTRUCTIVE = 0x1002
+CPAP_HYPOPNEA = 0x1003
+CPAP_APNEA = 0x1004  # UA: apnea not classified as central or obstructive
+CPAP_FLOW_LIMIT = 0x1005
+CPAP_RERA = 0x1006  # Respiratory effort related arousal
+CPAP_ALL_APNEA = 0x1010  # A: apnea from a device that does not classify apneas
+CPAP_PERIODIC_BREATHING = 0x1028  # OSCAR's CPAP_PB (span)
 
 # CPAP Waveforms
-CPAP_FLOW_RATE = 0x1200
-CPAP_MASK_PRESSURE = 0x1201
-CPAP_LEAK = 0x1202
-CPAP_RESPRATE = 0x1203
-CPAP_TIDAL_VOLUME = 0x1204
-CPAP_MINUTE_VENT = 0x1205
+CPAP_FLOW_RATE = 0x1100
+CPAP_MASK_PRESSURE = 0x1101
+CPAP_TIDAL_VOLUME = 0x1103
+CPAP_MINUTE_VENT = 0x1105
+CPAP_RESPRATE = 0x1106
+CPAP_LEAK = 0x1108
+CPAP_PRESSURE = 0x110C  # Also the fixed-CPAP set pressure in session settings
+CPAP_EPAP = 0x110E
 
 # CPAP Settings
-CPAP_MODE = 0x1400
-CPAP_PRESSURE_MIN = 0x1401
-CPAP_PRESSURE_MAX = 0x1402
-CPAP_EPR_LEVEL = 0x1403  # Expiratory pressure relief
+CPAP_PRESSURE_MIN = 0x1020
+CPAP_PRESSURE_MAX = 0x1021
+CPAP_MODE = 0x1200
+# Expiratory pressure relief; registered by OSCAR's ResMed loader, not schema.cpp.
+RMS9_EPR_LEVEL = 0xE202
 
 # Oximetry Channels
-OXI_SPO2 = 0x2000
-OXI_PULSE = 0x2001
+OXI_PULSE = 0x1800
+OXI_SPO2 = 0x1801
 
 # OSCAR profile parser; also its sessions' ``import_source``.
 OSCAR_BINARY_PARSER_ID = "oscar_binary"
@@ -374,9 +377,9 @@ APNEA_TYPE_MAP: dict[str, ApneaEventType] = {
 
 # Device event types counted in every AHI recount: every apnea plus hypopneas,
 # RERAs out.  The list follows OSCAR's AHI channels (schema.cpp:420-424:
-# ClearAirway, AllApnea, Obstructive, Hypopnea, Apnea), plus mixed apneas.  Only
-# ResMed EDF import produces UA and CAA: OSCAR-binary import does not read the
-# Apnea or AllApnea channels yet (issue #432), and no parser emits MA today, so
+# ClearAirway, AllApnea, Obstructive, Hypopnea, Apnea), plus mixed apneas.
+# ResMed EDF and OSCAR-binary import both produce UA (OSCAR's Apnea and AllApnea
+# channels), only ResMed EDF produces CAA, and no parser emits MA today, so
 # ``mixed_apneas`` is always 0 on imported data.
 AHI_EVENT_TYPES: frozenset[str] = frozenset(APNEA_TYPE_MAP) | {EVENT_TYPE_HYPOPNEA}
 

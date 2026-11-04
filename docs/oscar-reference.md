@@ -41,28 +41,46 @@ Profile (user account)
 
 ### Channel System
 
-Channels are 32-bit identifiers for all data types. Defined in `oscar/SleepLib/schema.cpp`:
+Channels are 32-bit `ChannelID` values for every data type. The core channels are registered in `oscar/SleepLib/schema.cpp` (lines 140-365); loaders register device-specific ones, such as ResMed's `RMS9_*` settings in `oscar/SleepLib/loader_plugins/resmed_loader.cpp` (lines 148-175). IDs are only loosely grouped by kind: the `0x10xx` block mixes flags with settings, `CPAP_Mode` sits at `0x1200`, and the `CPAP_LargeLeak` span sits among the waveforms at `0x1158`. SNORE mirrors the IDs its OSCAR import reads in `src/snore/constants.py`.
 
-| Range | Category | Examples |
-|-------|----------|----------|
-| 0x1000-0x11FF | CPAP waveforms | Flow (0x1004), Pressure (0x1001), Leak (0x1009) |
-| 0x1200-0x13FF | CPAP events | Obstructive Apnea (0x1201), Hypopnea (0x1203), RERA (0x120A) |
-| 0x1400-0x14FF | CPAP settings | Pressure Min/Max, EPR, Ramp |
-| 0x2100-0x21FF | Oximetry | SpO2 (0x2100), Pulse (0x2101) |
-| 0x2300-0x23FF | Sleep staging | Sleep Stage (0x2300) |
-| 0x2990-0x2992 | Position | Orientation, Inclination, Movement |
-
-**Key channels:**
-```cpp
-CPAP_FlowRate     = 0x1004  // Flow waveform (L/min)
-CPAP_Pressure     = 0x1001  // Therapy pressure (cmH2O)
-CPAP_Leak         = 0x1009  // Unintentional leak (L/min)
-CPAP_Obstructive  = 0x1201  // Obstructive apnea flag
-CPAP_Hypopnea     = 0x1203  // Hypopnea flag
-CPAP_RERA         = 0x120A  // RERA flag
-OXI_SPO2          = 0x2100  // SpO2 percentage
-OXI_Pulse         = 0x2101  // Pulse rate (BPM)
-```
+| Kind | Channel | ID | Meaning | Source |
+|------|---------|----|---------|--------|
+| Events | `CPAP_CSR` | `0x1000` | Cheyne-Stokes respiration (span) | `schema.cpp:163` |
+| | `CPAP_ClearAirway` | `0x1001` | Clear airway / central apnea (CA) | `schema.cpp:167` |
+| | `CPAP_Obstructive` | `0x1002` | Obstructive apnea (OA) | `schema.cpp:169` |
+| | `CPAP_Hypopnea` | `0x1003` | Hypopnea (H) | `schema.cpp:171` |
+| | `CPAP_Apnea` | `0x1004` | Unclassified apnea (UA) | `schema.cpp:173` |
+| | `CPAP_FlowLimit` | `0x1005` | Flow limitation flag (FL) | `schema.cpp:177` |
+| | `CPAP_RERA` | `0x1006` | RERA (RE) | `schema.cpp:179` |
+| | `CPAP_VSnore` | `0x1007` | Vibratory snore (VS) | `schema.cpp:181` |
+| | `CPAP_AllApnea` | `0x1010` | Device-reported apnea, unclassified (A) | `schema.cpp:175` |
+| | `CPAP_PB` | `0x1028` | Periodic breathing (span) | `schema.cpp:165` |
+| | `CPAP_LargeLeak` | `0x1158` | Large leak (span) | `schema.cpp:190` |
+| Settings | `CPAP_PressureMin` | `0x1020` | Minimum therapy pressure | `schema.cpp:153` |
+| | `CPAP_PressureMax` | `0x1021` | Maximum therapy pressure | `schema.cpp:154` |
+| | `CPAP_RampTime` | `0x1022` | Ramp time (min) | `schema.cpp:155` |
+| | `CPAP_RampPressure` | `0x1023` | Starting ramp pressure | `schema.cpp:156` |
+| | `CPAP_Mode` | `0x1200` | PAP mode (lookup) | `schema.cpp:311` |
+| | `RMS9_EPR` | `0xE201` | ResMed EPR type | `resmed_loader.cpp:167` |
+| | `RMS9_EPRLevel` | `0xE202` | ResMed EPR level | `resmed_loader.cpp:175` |
+| | `RMS9_Mode` | `0xE203` | ResMed device mode | `resmed_loader.cpp:148` |
+| Waveforms | `CPAP_FlowRate` | `0x1100` | Flow rate (L/min) | `schema.cpp:234` |
+| | `CPAP_MaskPressure` | `0x1101` | Mask pressure (cmH2O) | `schema.cpp:237` |
+| | `CPAP_TidalVolume` | `0x1103` | Tidal volume (mL) | `schema.cpp:243` |
+| | `CPAP_Snore` | `0x1104` | Snore | `schema.cpp:246` |
+| | `CPAP_MinuteVent` | `0x1105` | Minute ventilation (L/min) | `schema.cpp:249` |
+| | `CPAP_RespRate` | `0x1106` | Respiratory rate (breaths/min) | `schema.cpp:252` |
+| | `CPAP_Leak` | `0x1108` | Unintentional leak rate (L/min) | `schema.cpp:258` |
+| | `CPAP_Pressure` | `0x110C` | Therapy pressure (cmH2O) | `schema.cpp:140` |
+| | `CPAP_EPAP` | `0x110E` | Expiratory pressure (cmH2O) | `schema.cpp:144` |
+| | `CPAP_FLG` | `0x1113` | Flow limitation severity | `schema.cpp:274` |
+| | `CPAP_LeakTotal` | `0x1117` | Total leak rate (L/min) | `schema.cpp:286` |
+| Oximetry | `OXI_Pulse` | `0x1800` | Pulse rate (BPM) | `schema.cpp:212` |
+| | `OXI_SPO2` | `0x1801` | SpO2 (%) | `schema.cpp:215` |
+| | `OXI_Plethy`, `OXI_PulseChange`, `OXI_SPO2Drop`, `OXI_Perf` | `0x1802`-`0x1805` | Plethysmogram, pulse-change and SpO2-drop flags, perfusion index | `schema.cpp:218-228` |
+| Sleep stage | `ZEO_SleepStage` | `0x2000` | Sleep stage | `schema.cpp:354` |
+| | Brain wave, `ZEO_Awakenings` ... `ZEO_ZQ` | `0x2001`-`0x2009` | Zeo per-session values | `schema.cpp:356-365` |
+| Position | `POS_Orientation`, `POS_Inclination`, `POS_Movement` | `0x2990`-`0x2992` | Sleep position, upright angle, movement | `schema.cpp:296-302` |
 
 ### Summary Types
 
@@ -169,7 +187,7 @@ Version 18 summary files contain pre-calculated statistics per channel:
 | `parsers/compression.py` | qCompress/qUncompress, CRC16, delta encoding |
 | `parsers/oscar_summary.py` | .000 summary file parser |
 | `parsers/oscar_events.py` | .001 events file parser |
-| `constants.py:285` | `OSCAR_MAGIC_NUMBER = 0xC73216AB` |
+| `constants.py` | `OSCAR_MAGIC_NUMBER = 0xC73216AB` |
 
 ---
 
@@ -209,29 +227,32 @@ float calcAHI(Session *session, qint64 start, qint64 end) {
 - Output: Waveform channel for visualization
 
 **Contributing channels:** `schema.cpp:420-424`
-- CPAP_ClearAirway (central apnea)
-- CPAP_AllApnea
-- CPAP_Obstructive
-- CPAP_Hypopnea
-- CPAP_Apnea (unclassified)
+- `CPAP_ClearAirway` (central apnea)
+- `CPAP_AllApnea` (device-reported apnea)
+- `CPAP_Obstructive`
+- `CPAP_Hypopnea`
+- `CPAP_Apnea` (unclassified apnea, UA)
 
-SNORE's `AHI_EVENT_TYPES` (`constants.py`) counts the event types these channels map to on the ResMed EDF path, `CA`/`CAA`, `UA`, `OA` and `H`, and adds `MA`, which no parser emits today. OSCAR-binary import does not read the `CPAP_Apnea` or `CPAP_AllApnea` channels yet (#432). RERAs are not an AHI channel.
+SNORE's `AHI_EVENT_TYPES` (`constants.py`) counts the event types these channels map to, `OA`, `H`, `CA`/`CAA` and `UA`, and adds `MA`. OSCAR-binary import maps `CPAP_ClearAirway` to `CA` and both `CPAP_Apnea` and `CPAP_AllApnea` to `UA`. Only the ResMed EDF parser produces `CAA`, and no parser emits `MA`. RERAs are not an AHI channel; OSCAR adds `CPAP_RERA` to the count only when its RDI option is on (`calcs.cpp:996-998`).
 
 ### Leak Calculation
 
-**File:** `oscar/SleepLib/calcs.cpp` (lines 1288-1405)
+**File:** `oscar/SleepLib/calcs.cpp` (lines 1177-1405), run from `Session::UpdateSummaries()` (`session.cpp:1340-1343`)
 
 **Classes:**
 - `LeakCalculator` - Abstract base (line 1177)
-- `LinearInterpolateLeak` - Linear interpolation between 4 and 20 cmH2O mask leak specs
-- `ProfileLeakCalculator` - Uses user-configured leak rates
+- `LinearInterpolateLeak` - Linear interpolation between 4 and 20 cmH2O mask leak specs (line 1184)
+- `ProfileLeakCalculator` - Uses user-configured leak rates (line 1208)
 
-**Algorithm:**
-```
-Unintentional Leak = Total Leak - Mask Intentional Leak(pressure)
-```
+**When it runs:** `calcLeaks()` (line 1288) derives unintentional leak only when the profile option `calculateUnintentionalLeaks` is on (line 1290, default on per `profiles.h:653`), the session is CPAP (line 1292), the session has no `CPAP_Leak` yet (line 1294, `if (session->eventlist.contains(CPAP_Leak)) { return 0; } // abort if already there`), and it has `CPAP_LeakTotal` (line 1296). So it applies only to machines that report total leak without unintentional leak. ResMed records unintentional leak directly (`Leak.2s` maps to `CPAP_Leak`, `resmed_loader.cpp:4525`), so this calculation never runs on ResMed data.
 
-**Large leak flagging:** Threshold-based (redline setting, default 24 L/min)
+**Algorithm** (lines 1302-1331):
+```
+Unintentional Leak = max(0, Total Leak - Mask Intentional Leak(pressure))
+```
+Pressure comes from `CPAP_IPAPSet`, `CPAP_IPAP` or `CPAP_PressureSet` when present, otherwise `CPAP_Pressure`.
+
+**Large leak flagging:** `flagLargeLeaks()` (line 1342) adds `CPAP_LargeLeak` spans where `CPAP_Leak` is at or above the leak redline (profile `leakRedline`, default 24 L/min, `profiles.h:641`), unless the device already supplied `CPAP_LargeLeak` (line 1345). It runs on device-reported leak too, so ResMed large-leak spans come from here.
 
 ### SpO2 Drop Detection
 

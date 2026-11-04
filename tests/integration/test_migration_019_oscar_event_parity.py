@@ -37,8 +37,8 @@ _RESMED_CA = (6, _RESMED_SESSION, "CA", _RAW_START, 15.0)
 _RESMED_CAA = (7, _RESMED_SESSION, "CAA", _RAW_START, 15.0)
 _RESMED_MA = (8, _RESMED_SESSION, "MA", _RAW_START, 15.0)
 _OSCAR_H = (9, _OSCAR_SESSION, "H", _RAW_START, 10.0)
-# The OSCAR parser cannot produce UA; this row pins that the recount keys on
-# ``events`` alone, not on the import source.
+# This row pins that the recount keys on ``events`` alone, not on the import
+# source.
 _OSCAR_UA = (10, _OSCAR_SESSION, "UA", _RAW_START, 10.0)
 _UNAFFECTED_H = (11, _UNAFFECTED_SESSION, "H", _RAW_START, 10.0)
 _ZERO_USAGE_UA = (12, _ZERO_USAGE_SESSION, "UA", _RAW_START, 10.0)

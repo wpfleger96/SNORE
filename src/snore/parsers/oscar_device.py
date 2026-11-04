@@ -6,6 +6,7 @@ Supports importing data from OSCAR Profiles directory structure.
 """
 
 import logging
+import math
 import xml.etree.ElementTree as ET
 
 from collections.abc import Callable
@@ -19,7 +20,6 @@ import numpy as np
 from snore.constants import (
     CPAP_CLEAR_AIRWAY,
     CPAP_EPAP,
-    CPAP_EPR_LEVEL,
     CPAP_FLOW_LIMIT,
     CPAP_HYPOPNEA,
     CPAP_LEAK,
@@ -38,6 +38,7 @@ from snore.constants import (
     OXI_PULSE,
     OXI_SPO2,
     PARSER_MAX_SEARCH_DEPTH,
+    RMS9_EPR_LEVEL,
 )
 from snore.parsers.base import (
     DeviceParser,
@@ -51,6 +52,7 @@ from snore.parsers.oscar_events import parse_events_file
 from snore.parsers.oscar_mappings import (
     OSCAR_EVENT_CHANNEL_IDS,
     OSCAR_EVENT_TYPE_MAP,
+    OSCAR_MODE_MAP,
     OSCAR_WAVEFORM_CHANNEL_IDS,
     OSCAR_WAVEFORM_TYPE_MAP,
     OSCAR_WAVEFORM_UNITS,
@@ -81,6 +83,18 @@ def _epoch_to_wall_clock(epoch_seconds: float, timezone_name: str | None) -> dat
     """
     tz = ZoneInfo(timezone_name) if timezone_name else UTC
     return datetime.fromtimestamp(epoch_seconds, tz=tz).replace(tzinfo=None)
+
+
+def _finite(value: Any) -> float | None:
+    """Return ``value`` as a float when it is a finite real number, else None.
+
+    OSCAR session settings are arbitrary QVariants: a value can be a string,
+    a bool, a list or a non-finite float.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
 
 
 def _oscar_parse_session_worker(
@@ -130,7 +144,7 @@ class OscarDeviceParser(DeviceParser):
         """Return OSCAR parser metadata."""
         return ParserMetadata(
             parser_id=OSCAR_BINARY_PARSER_ID,
-            parser_version="1.0.0",
+            parser_version="1.1.0",
             manufacturer="OSCAR",
             supported_formats=["OSCAR Binary Cache"],
             supported_models=[
@@ -595,39 +609,35 @@ class OscarDeviceParser(DeviceParser):
         if not summary.settings:
             return None
 
-        mode_value = summary.settings.get(CPAP_MODE)
-        mode_map = {
-            0: TherapyMode.CPAP,
-            1: TherapyMode.APAP,
-            2: TherapyMode.BIPAP,
-            3: TherapyMode.BIPAP_AUTO,
-            4: TherapyMode.ASV,
-            5: TherapyMode.ASV,
-        }
-        if mode_value is not None:
-            mode_int = int(mode_value)
-            mode = mode_map.get(mode_int)
-            if mode is None:
+        raw_mode = summary.settings.get(CPAP_MODE)
+        mode_number = _finite(raw_mode)
+        mode = OSCAR_MODE_MAP.get(int(mode_number)) if mode_number is not None else None
+        if mode is None:
+            if raw_mode is not None:
                 logger.warning(
-                    "Unknown OSCAR therapy mode value %d, defaulting to CPAP", mode_int
+                    "Unknown OSCAR therapy mode value %r, defaulting to CPAP", raw_mode
                 )
-                mode = TherapyMode.CPAP
-        else:
             mode = TherapyMode.CPAP
 
         settings = TherapySettings(mode=mode)
 
-        epr_level = summary.settings.get(CPAP_EPR_LEVEL)
+        epr_level = _finite(summary.settings.get(RMS9_EPR_LEVEL))
         if epr_level is not None:
             settings.epr_level = int(epr_level)
 
-        pressure_min = summary.settings.get(CPAP_PRESSURE_MIN)
-        if pressure_min is not None:
-            settings.pressure_min = float(pressure_min)
+        # Only positive pressures are real: OSCAR's Yuwell loader stores -1 as a
+        # "fill in later" marker.
+        pressure_min = _finite(summary.settings.get(CPAP_PRESSURE_MIN))
+        if pressure_min is not None and pressure_min > 0:
+            settings.pressure_min = pressure_min
 
-        pressure_max = summary.settings.get(CPAP_PRESSURE_MAX)
-        if pressure_max is not None:
-            settings.pressure_max = float(pressure_max)
+        pressure_max = _finite(summary.settings.get(CPAP_PRESSURE_MAX))
+        if pressure_max is not None and pressure_max > 0:
+            settings.pressure_max = pressure_max
+
+        pressure_fixed = _finite(summary.settings.get(CPAP_PRESSURE))
+        if pressure_fixed is not None and pressure_fixed > 0:
+            settings.pressure_fixed = pressure_fixed
 
         return settings
 

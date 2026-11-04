@@ -1,6 +1,8 @@
 """OSCAR channel ID to SNORE unified model mappings."""
 
 from snore.constants import (
+    CPAP_ALL_APNEA,
+    CPAP_APNEA,
     CPAP_CLEAR_AIRWAY,
     CPAP_CSR,
     CPAP_EPAP,
@@ -24,10 +26,11 @@ from snore.constants import (
     UNIT_PERCENT,
     UNIT_PRESSURE_DISPLAY,
 )
-from snore.parsers.unified import RespiratoryEventType, WaveformType
+from snore.parsers.unified import RespiratoryEventType, TherapyMode, WaveformType
 
 __all__ = [
     "OSCAR_EVENT_TYPE_MAP",
+    "OSCAR_MODE_MAP",
     "OSCAR_WAVEFORM_TYPE_MAP",
     "OSCAR_WAVEFORM_UNITS",
     "OSCAR_EVENT_CHANNEL_IDS",
@@ -38,10 +41,25 @@ OSCAR_EVENT_TYPE_MAP: dict[int, RespiratoryEventType] = {
     CPAP_OBSTRUCTIVE: RespiratoryEventType.OBSTRUCTIVE_APNEA,
     CPAP_HYPOPNEA: RespiratoryEventType.HYPOPNEA,
     CPAP_CLEAR_AIRWAY: RespiratoryEventType.CENTRAL_APNEA,
+    CPAP_APNEA: RespiratoryEventType.UNCLASSIFIED_APNEA,
+    CPAP_ALL_APNEA: RespiratoryEventType.UNCLASSIFIED_APNEA,
     CPAP_RERA: RespiratoryEventType.RERA,
     CPAP_FLOW_LIMIT: RespiratoryEventType.FLOW_LIMITATION,
     CPAP_CSR: RespiratoryEventType.PERIODIC_BREATHING,
     CPAP_PERIODIC_BREATHING: RespiratoryEventType.PERIODIC_BREATHING,
+}
+
+# OSCAR's CPAPMode enum (machine_common.h); 0 (MODE_UNKNOWN) and 9 (trilevel)
+# are unmapped.
+OSCAR_MODE_MAP: dict[int, TherapyMode] = {
+    1: TherapyMode.CPAP,  # MODE_CPAP
+    2: TherapyMode.APAP,  # MODE_APAP
+    3: TherapyMode.BIPAP,  # MODE_BILEVEL_FIXED
+    4: TherapyMode.BIPAP_AUTO,  # MODE_BILEVEL_AUTO_FIXED_PS
+    5: TherapyMode.BIPAP_AUTO,  # MODE_BILEVEL_AUTO_VARIABLE_PS
+    6: TherapyMode.ASV,  # MODE_ASV
+    7: TherapyMode.ASV_AUTO,  # MODE_ASV_VARIABLE_EPAP
+    8: TherapyMode.IVAPS,  # MODE_AVAPS (OSCAR's ResMed loader stores iVAPS here)
 }
 
 OSCAR_WAVEFORM_TYPE_MAP: dict[int, WaveformType] = {
