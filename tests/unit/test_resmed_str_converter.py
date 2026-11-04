@@ -735,6 +735,39 @@ class TestIVAPS:
         assert settings.other_settings.get("max_epap") == "12.0"
         assert settings.other_settings.get("epap_auto") == "True"
 
+    def test_s10_mode9_ivaps_reads_shared_bilevel_timing(self, parser):
+        """iVAPS reads rise/cycle/trigger/Ti from the bare S.* signals (OSCAR :2413-2441)."""
+        record = {
+            "mode": 9.0,
+            "iv_epap": 6.0,
+            "iv_epap_auto": 0.0,
+            "s10_ti_max": 1.2,
+            "s10_ti_min": 0.4,
+            "s10_trigger": 2.0,
+            "s10_cycle": 3.0,
+            "s10_rise_enable": 1.0,
+            "s10_rise_time": 300.0,
+            "s10_easy_breathe": 1.0,
+        }
+        settings = parser._convert_str_to_therapy_settings(record)
+        assert settings is not None
+        assert settings.other_settings == {
+            "min_epap": "6.0",
+            "max_epap": "6.0",
+            "epap_auto": "False",
+            "ti_max": "1.2",
+            "ti_min": "0.4",
+            "trigger": "Med",
+            "cycle": "High",
+            "rise_time": "300",
+        }
+
+    def test_s10_mode9_ivaps_rise_time_requires_rise_enable(self, parser):
+        record = {"mode": 9.0, "s10_rise_enable": 0.0, "s10_rise_time": 300.0}
+        settings = parser._convert_str_to_therapy_settings(record)
+        assert settings is not None
+        assert "rise_time" not in settings.other_settings
+
 
 # ---------------------------------------------------------------------------
 # F8 — EPR type off-by-one for S10

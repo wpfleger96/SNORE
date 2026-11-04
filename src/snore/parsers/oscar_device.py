@@ -55,6 +55,7 @@ from snore.constants import (
     RMAS1X_TRIGGER,
     RMS9_EPR,
     RMS9_EPR_LEVEL,
+    RMS9_RAMP_ENABLE,
     RMVENT_AUTO_EPAP,
     RMVENT_START_EPAP,
 )
@@ -76,7 +77,7 @@ from snore.parsers.oscar_mappings import (
     OSCAR_WAVEFORM_UNITS,
 )
 from snore.parsers.oscar_summary import parse_summary_file
-from snore.parsers.resmed_edf import ResmedEDFParser
+from snore.parsers.settings_labels import CYCLE_MAP, EPR_TYPE_MAP, TRIGGER_MAP
 from snore.parsers.types import EventListType, SessionEvents, SessionSummary
 from snore.parsers.unified import (
     DeviceInfo,
@@ -122,6 +123,16 @@ def _non_negative(settings: dict[int, Any], channel: int) -> float | None:
     return value if value is not None and value >= 0 else None
 
 
+def _code(settings: dict[int, Any], channel: int) -> int | None:
+    """Return an integer setting (enum code, minutes, milliseconds), or None.
+
+    OSCAR stores settings as float32 ``gain * raw + offset``, so the value is
+    rounded rather than truncated.
+    """
+    value = _non_negative(settings, channel)
+    return round(value) if value is not None else None
+
+
 def _pressure(settings: dict[int, Any], channel: int) -> float | None:
     """Return a pressure setting when it is a finite number > 0, else None.
 
@@ -132,69 +143,155 @@ def _pressure(settings: dict[int, Any], channel: int) -> float | None:
     return value if value is not None and value > 0 else None
 
 
-def _apply_bilevel_pressures(
-    therapy: TherapySettings, settings: dict[int, Any]
-) -> None:
-    """Set IPAP, EPAP and pressure support the way the ResMed SD-card parser does.
+def _first(*values: float | None) -> float | None:
+    """Return the first value that is not None."""
+    return next((value for value in values if value is not None), None)
+
+
+def _added(base: float | None, support: float | None) -> float | None:
+    """Return ``base + support`` rounded to 0.01; None if unknown or overflowing."""
+    if base is None or support is None:
+        return None
+    return _finite(round(base + support, 2))
+
+
+def _pressure_ranges(
+    min_epap: float | None,
+    max_epap: float | None,
+    min_ps: float | None,
+    max_ps: float | None,
+) -> dict[str, str]:
+    """Format the known EPAP and PS bounds as ``other_settings`` entries."""
+    bounds = {
+        "min_epap": min_epap,
+        "max_epap": max_epap,
+        "min_ps": min_ps,
+        "max_ps": max_ps,
+    }
+    return {key: f"{value:.1f}" for key, value in bounds.items() if value is not None}
+
+
+class _Pressures(NamedTuple):
+    """Resolved bilevel pressures plus their ``other_settings`` entries."""
+
+    ipap: float | None
+    epap: float | None
+    ps: float | None
+    other_settings: dict[str, str]
+
+
+def _pressure_settings(settings: dict[int, Any], mode: TherapyMode) -> _Pressures:
+    """Resolve IPAP, EPAP and PS the way the ResMed SD-card parser does.
 
     OSCAR loaders store different channel combinations per mode and manufacturer,
     so each value prefers its exact channel and falls back to what is stored.
     The headline EPAP is the minimum EPAP in variable-EPAP modes.
     """
+    if mode == TherapyMode.IVAPS:
+        return _ivaps_pressures(settings)
+
     fixed_ipap = _pressure(settings, CPAP_IPAP)
     fixed_epap = _pressure(settings, CPAP_EPAP)
-    min_ps = _pressure(settings, CPAP_PS_MIN)
-    max_ps = _pressure(settings, CPAP_PS_MAX)
-
-    therapy.epap = _pressure(settings, CPAP_EPAP_LO) or fixed_epap
-    therapy.ipap = fixed_ipap or _pressure(settings, CPAP_IPAP_HI)
-    if therapy.ipap is None and therapy.epap is not None and max_ps is not None:
-        # OSCAR stores no IPAP for iVAPS; the SD-card parser derives EPAP + max PS.
-        therapy.ipap = round(therapy.epap + max_ps, 2)
+    epap = _first(_pressure(settings, CPAP_EPAP_LO), fixed_epap)
+    # A pressure-support range can start at 0 (ResMed ASV).
+    min_ps = _non_negative(settings, CPAP_PS_MIN)
+    max_ps = _non_negative(settings, CPAP_PS_MAX)
+    ipap = _first(fixed_ipap, _pressure(settings, CPAP_IPAP_HI), _added(epap, max_ps))
 
     if min_ps is None and max_ps is None:
-        therapy.ps = _pressure(settings, CPAP_PS)
-        if therapy.ps is None and fixed_ipap is not None and fixed_epap is not None:
-            therapy.ps = round(fixed_ipap - fixed_epap, 2)
-        return
+        ps = _pressure(settings, CPAP_PS)
+        # Only a fixed IPAP/EPAP pair defines PS; IPAPHi - EPAPLo spans a range.
+        if ps is None and fixed_ipap is not None and fixed_epap is not None:
+            ps = round(fixed_ipap - fixed_epap, 2) if fixed_ipap > fixed_epap else None
+        return _Pressures(ipap, epap, ps, {})
 
-    # Variable pressure support (ASV, iVAPS): the range replaces a single PS.
-    ranges = {
-        "min_epap": therapy.epap,
-        "max_epap": _pressure(settings, CPAP_EPAP_HI) or fixed_epap,
-        "min_ps": min_ps,
-        "max_ps": max_ps,
-    }
-    therapy.other_settings.update(
-        {key: f"{value:.1f}" for key, value in ranges.items() if value is not None}
-    )
+    # Pressure support varies within the range, so a stored single CPAP_PS
+    # (Prisma writes PSMin there) is not reported, as on the SD-card path.
+    max_epap = _first(_pressure(settings, CPAP_EPAP_HI), fixed_epap)
+    ranges = _pressure_ranges(epap, max_epap, min_ps, max_ps)
+    return _Pressures(ipap, epap, None, ranges)
 
 
-def _bilevel_timing_settings(settings: dict[int, Any]) -> dict[str, str]:
-    """Read ResMed bilevel timing and iVAPS auto EPAP into ``other_settings`` form."""
-    timing: dict[str, str] = {}
+def _ivaps_pressures(settings: dict[int, Any]) -> _Pressures:
+    """Resolve iVAPS pressures from either OSCAR storage layout.
+
+    Since OSCAR commit e26b095a (2026-06-28) the ResMed loader stores EPAP
+    (auto EPAP off) or EPAPLo/EPAPHi (on), plus RMVENT_AutoEPAP and no IPAP.
+    Older OSCAR used its generic branch: EPAP and EPAPLo/EPAPHi together (the
+    latter read from the inactive S.i.MinEPAP/MaxEPAP), IPAPHi = active EPAP +
+    max PS, and no auto EPAP flag. Both fill CPAP_PS from the VAuto signal bank,
+    which does not apply to iVAPS, so PS is left unset.
+    """
+    fixed_epap = _pressure(settings, CPAP_EPAP)
+    min_epap = _pressure(settings, CPAP_EPAP_LO)
+    max_epap = _pressure(settings, CPAP_EPAP_HI)
+    min_ps = _non_negative(settings, CPAP_PS_MIN)
+    max_ps = _non_negative(settings, CPAP_PS_MAX)
+    ipap_hi = _pressure(settings, CPAP_IPAP_HI)
+
+    auto_code = _code(settings, RMVENT_AUTO_EPAP)
+    auto: bool | None
+    if auto_code is not None:
+        auto = auto_code >= 1
+    elif fixed_epap is not None and ipap_hi is not None and max_ps is not None:
+        # Older OSCAR: IPAPHi was built from the active EPAP.
+        auto = not math.isclose(ipap_hi - max_ps, fixed_epap, abs_tol=0.05)
+    elif fixed_epap is not None or min_epap is not None:
+        auto = fixed_epap is None
+    else:
+        auto = None
+
+    if auto:
+        epap = min_epap
+    else:
+        epap = min_epap = max_epap = fixed_epap
+
+    ranges = _pressure_ranges(min_epap, max_epap, min_ps, max_ps)
+    if auto is not None:
+        ranges["epap_auto"] = str(auto)
+    # IPAP is EPAP + max PS, as the SD-card parser derives it.
+    return _Pressures(_added(epap, max_ps), epap, None, ranges)
+
+
+def _epr_settings(settings: dict[int, Any]) -> tuple[int | None, str | None]:
+    """Return ``(epr_level, epr_mode)`` as the SD-card parser's EPR decode does."""
+    code = _code(settings, RMS9_EPR)
+    level = _code(settings, RMS9_EPR_LEVEL)
+    if level is None and code == 0:
+        # OSCAR stores the EPR level only while EPR is on.
+        level = 0
+    mode = EPR_TYPE_MAP.get(code, "Unknown") if code is not None else None
+    return (level if level is not None and level <= 3 else None), mode
+
+
+def _resmed_other_settings(settings: dict[int, Any]) -> dict[str, str]:
+    """Read ResMed bilevel timing and SmartRamp into ``other_settings`` form.
+
+    These are ResMed-loader channels (0xE2xx) that other manufacturers'
+    loaders never store.
+    """
+    other: dict[str, str] = {}
     for key, channel in (("ti_max", RMAS1X_TI_MAX), ("ti_min", RMAS1X_TI_MIN)):
         seconds = _non_negative(settings, channel)
         if seconds is not None:
-            timing[key] = f"{seconds:.1f}"
+            other[key] = f"{seconds:.1f}"
 
     for key, channel, labels in (
-        ("trigger", RMAS1X_TRIGGER, ResmedEDFParser.TRIGGER_MAP),
-        ("cycle", RMAS1X_CYCLE, ResmedEDFParser.CYCLE_MAP),
+        ("trigger", RMAS1X_TRIGGER, TRIGGER_MAP),
+        ("cycle", RMAS1X_CYCLE, CYCLE_MAP),
     ):
-        code = _non_negative(settings, channel)
+        code = _code(settings, channel)
         if code is not None:
-            timing[key] = labels.get(int(code), str(int(code)))
+            other[key] = labels.get(code, str(code))
 
-    rise_enable = _non_negative(settings, RMAS1X_RISE_ENABLE)
-    rise_time = _non_negative(settings, RMAS1X_RISE_TIME)
+    rise_enable = _code(settings, RMAS1X_RISE_ENABLE)
+    rise_time = _code(settings, RMAS1X_RISE_TIME)
     if rise_enable is not None and rise_enable >= 1 and rise_time is not None:
-        timing["rise_time"] = str(int(rise_time))
+        other["rise_time"] = str(rise_time)
 
-    auto_epap = _non_negative(settings, RMVENT_AUTO_EPAP)
-    if auto_epap is not None:
-        timing["epap_auto"] = str(auto_epap >= 1)
-    return timing
+    if _code(settings, RMS9_RAMP_ENABLE) == 2:
+        other["smart_ramp"] = "True"
+    return other
 
 
 def _oscar_parse_session_worker(
@@ -720,36 +817,31 @@ class OscarDeviceParser(DeviceParser):
                 )
             mode = TherapyMode.CPAP
 
-        epr_code = _non_negative(settings, RMS9_EPR)
-        epr_level = _non_negative(settings, RMS9_EPR_LEVEL)
-        if epr_level is None and epr_code == 0:
-            # OSCAR stores the EPR level only while EPR is on.
-            epr_level = 0
-        ramp_time = _non_negative(settings, CPAP_RAMP_TIME)
-
-        therapy = TherapySettings(
+        epr_level, epr_mode = _epr_settings(settings)
+        ramp_code = _code(settings, RMS9_RAMP_ENABLE)
+        pressures = _pressure_settings(settings, mode)
+        return TherapySettings(
             mode=mode,
             pressure_min=_pressure(settings, CPAP_PRESSURE_MIN),
             pressure_max=_pressure(settings, CPAP_PRESSURE_MAX),
             pressure_fixed=_pressure(settings, CPAP_PRESSURE),
-            epr_mode=(
-                ResmedEDFParser.EPR_TYPE_MAP.get(int(epr_code), "Unknown")
-                if epr_code is not None
-                else None
-            ),
-            epr_level=(
-                int(epr_level) if epr_level is not None and epr_level <= 3 else None
-            ),
-            ramp_time=int(ramp_time) if ramp_time is not None else None,
+            ipap=pressures.ipap,
+            epap=pressures.epap,
+            ps=pressures.ps,
+            epr_level=epr_level,
+            epr_mode=epr_mode,
+            ramp_enabled=ramp_code == 1 if ramp_code is not None else None,
+            ramp_time=_code(settings, CPAP_RAMP_TIME),
             # Bilevel, ASV and iVAPS sessions store the ramp start as a start EPAP.
-            ramp_start_pressure=(
-                _pressure(settings, CPAP_RAMP_PRESSURE)
-                or _pressure(settings, RMVENT_START_EPAP)
+            ramp_start_pressure=_first(
+                _pressure(settings, CPAP_RAMP_PRESSURE),
+                _pressure(settings, RMVENT_START_EPAP),
             ),
-            other_settings=_bilevel_timing_settings(settings),
+            other_settings={
+                **_resmed_other_settings(settings),
+                **pressures.other_settings,
+            },
         )
-        _apply_bilevel_pressures(therapy, settings)
-        return therapy
 
     def _populate_waveforms_from_events(
         self, events: SessionEvents, session: UnifiedSession
