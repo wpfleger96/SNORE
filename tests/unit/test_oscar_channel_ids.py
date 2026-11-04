@@ -1,7 +1,7 @@
 """OSCAR-binary import against OSCAR's real on-disk channel IDs (issue #432).
 
 Channel IDs are written here as literal hex, copied from OSCAR's
-``oscar/SleepLib/schema.cpp`` (and ``resmed_loader.cpp`` for 0xE202), so these
+``oscar/SleepLib/schema.cpp`` (and ``resmed_loader.cpp`` for 0xE2xx), so these
 tests fail if SNORE's constants drift from what OSCAR stores in .000/.001 files.
 """
 
@@ -27,6 +27,14 @@ pytestmark = pytest.mark.unit
 
 START_MS = 1_705_278_600_000  # 2024-01-15 00:30 UTC
 END_MS = START_MS + 6 * 3600 * 1000
+
+# schema.cpp: CPAP_Mode, CPAP_PressureMin/Max, CPAP_Pressure, CPAP_RampTime/Pressure.
+CORE_SETTINGS = (0x1200, 0x1020, 0x1021, 0x110C, 0x1022, 0x1023)
+# schema.cpp: CPAP_IPAP, EPAP, PS, IPAPHi, PSMin, PSMax, EPAPLo, EPAPHi.
+BILEVEL_PRESSURES = (0x110D, 0x110E, 0x110F, 0x1111, 0x111A, 0x111B, 0x111C, 0x111D)
+# resmed_loader.cpp: RMS9_EPR/EPRLevel, RMAS1x_RiseEnable/RiseTime/Cycle/Trigger/
+# TiMax/TiMin, RMVENT_AutoEPAP/StartEPAP.
+RESMED_SETTINGS = (0xE201, 0xE202, *range(0xE212, 0xE218), 0xE22F, 0xE231)
 
 
 def _hex_or_name(value: Any) -> str:
@@ -178,7 +186,7 @@ def test_placeholder_pressures_are_not_stored(tmp_path):
     ids=["nan", "inf", "string", "bool", "list"],
 )
 def test_non_numeric_settings_are_not_stored(tmp_path, value):
-    channels = (0x1200, 0x1020, 0x1021, 0x110C, 0xE202)
+    channels = (*CORE_SETTINGS, *BILEVEL_PRESSURES, *RESMED_SETTINGS)
     summary = _summary(settings=dict.fromkeys(channels, value))
 
     settings = parse_oscar_session(tmp_path, summary).settings
@@ -188,6 +196,236 @@ def test_non_numeric_settings_are_not_stored(tmp_path, value):
     assert settings.pressure_min is None
     assert settings.pressure_max is None
     assert settings.pressure_fixed is None
+    assert (settings.ipap, settings.epap, settings.ps) == (None, None, None)
+    assert settings.ramp_time is None
+    assert settings.ramp_start_pressure is None
+    assert settings.epr_mode is None
+    assert settings.epr_level is None
+    assert settings.other_settings == {}
+
+
+# OSCAR's ResMed loader (resmed_loader.cpp StoreSettings) stores these per mode.
+# schema.cpp: CPAP_IPAP=0x110D, CPAP_EPAP=0x110E, CPAP_PS=0x110F,
+# CPAP_IPAPLo=0x1110, CPAP_IPAPHi=0x1111, CPAP_PSMin=0x111A, CPAP_PSMax=0x111B,
+# CPAP_EPAPLo=0x111C, CPAP_EPAPHi=0x111D. resmed_loader.cpp: RMAS1x_RiseEnable
+# =0xE212, RiseTime=0xE213, Cycle=0xE214, Trigger=0xE215, TiMax=0xE216,
+# TiMin=0xE217, RMVENT_AutoEPAP=0xE22F.
+@pytest.mark.parametrize(
+    ("stored", "expected_pressures", "expected_other"),
+    [
+        pytest.param(
+            {
+                0x1200: 3,
+                0x110E: 6.0,
+                0x110D: 12.0,
+                0x110F: 6.0,
+                0xE214: 2,
+                0xE215: 1,
+                0xE216: 1.5,
+                0xE217: 0.3,
+                0xE212: 1,
+                0xE213: 200,
+            },
+            (TherapyMode.BIPAP, 12.0, 6.0, 6.0),
+            {
+                "cycle": "Med",
+                "trigger": "Low",
+                "ti_max": "1.5",
+                "ti_min": "0.3",
+                "rise_time": "200",
+            },
+            id="bipap",
+        ),
+        pytest.param(
+            {
+                0x1200: 4,
+                0x111C: 5.0,
+                0x1111: 15.0,
+                0x110F: 4.0,
+                0xE214: 0,
+                0xE215: 4,
+                0xE216: 2.0,
+                0xE217: 0.5,
+            },
+            (TherapyMode.BIPAP_AUTO, 15.0, 5.0, 4.0),
+            {
+                "cycle": "Very Low",
+                "trigger": "Very High",
+                "ti_max": "2.0",
+                "ti_min": "0.5",
+            },
+            id="bipap_auto",
+        ),
+        pytest.param(
+            {0x1200: 6, 0x110E: 7.0, 0x111A: 3.0, 0x111B: 10.0, 0x1111: 17.0},
+            (TherapyMode.ASV, 17.0, 7.0, None),
+            {"min_epap": "7.0", "max_epap": "7.0", "min_ps": "3.0", "max_ps": "10.0"},
+            id="asv",
+        ),
+        pytest.param(
+            {
+                0x1200: 7,
+                0x111C: 5.0,
+                0x111D: 9.0,
+                0x1110: 8.0,
+                0x1111: 19.0,
+                0x111A: 3.0,
+                0x111B: 10.0,
+            },
+            (TherapyMode.ASV_AUTO, 19.0, 5.0, None),
+            {"min_epap": "5.0", "max_epap": "9.0", "min_ps": "3.0", "max_ps": "10.0"},
+            id="asv_auto",
+        ),
+        pytest.param(
+            {
+                0x1200: 8,
+                0x110E: 6.0,
+                0x111A: 4.0,
+                0x111B: 12.0,
+                0x110F: 5.0,  # Superseded by the PS range, as on the SD card
+                0xE22F: 0,
+                0xE216: 1.2,
+                0xE212: 1,
+                0xE213: 300,
+            },
+            (TherapyMode.IVAPS, 18.0, 6.0, None),
+            {
+                "min_epap": "6.0",
+                "max_epap": "6.0",
+                "min_ps": "4.0",
+                "max_ps": "12.0",
+                "ti_max": "1.2",
+                "rise_time": "300",
+                "epap_auto": "False",
+            },
+            id="ivaps_fixed_epap",
+        ),
+        pytest.param(
+            {
+                0x1200: 8,
+                0x111C: 5.0,
+                0x111D: 10.0,
+                0x111A: 4.0,
+                0x111B: 12.0,
+                0xE22F: 1,
+            },
+            (TherapyMode.IVAPS, 17.0, 5.0, None),
+            {
+                "min_epap": "5.0",
+                "max_epap": "10.0",
+                "min_ps": "4.0",
+                "max_ps": "12.0",
+                "epap_auto": "True",
+            },
+            id="ivaps_auto_epap",
+        ),
+    ],
+)
+def test_bilevel_settings_match_sd_card_import(
+    tmp_path, stored, expected_pressures, expected_other
+):
+    settings = parse_oscar_session(tmp_path, _summary(settings=stored)).settings
+
+    assert settings is not None
+    assert (settings.mode, settings.ipap, settings.epap, settings.ps) == (
+        expected_pressures
+    )
+    assert settings.other_settings == expected_other
+
+
+def test_bipap_without_stored_ps_derives_ps_from_ipap_and_epap(tmp_path):
+    # bmc_loader.cpp stores CPAP_PS=0x110F as 0 next to IPAP and EPAP.
+    summary = _summary(settings={0x1200: 3, 0x110D: 14.0, 0x110E: 8.5, 0x110F: 0})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.ps == 5.5
+
+
+def test_bilevel_rise_time_without_rise_enable_is_not_stored(tmp_path):
+    # RMAS1x_RiseEnable=0xE212 off; RMAS1x_RiseTime=0xE213 is then not a setting.
+    summary = _summary(settings={0x1200: 3, 0xE212: 0, 0xE213: 200})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert "rise_time" not in settings.other_settings
+
+
+@pytest.mark.parametrize("value", [0, -1], ids=["zero", "negative"])
+def test_non_positive_bilevel_pressures_are_not_stored(tmp_path, value):
+    ramp_starts = (0x1023, 0xE231)  # CPAP_RampPressure, RMVENT_StartEPAP
+    summary = _summary(
+        settings={0x1200: 6, **dict.fromkeys((*BILEVEL_PRESSURES, *ramp_starts), value)}
+    )
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert (settings.ipap, settings.epap, settings.ps) == (None, None, None)
+    assert settings.ramp_start_pressure is None
+    assert settings.other_settings == {}
+
+
+def test_cpap_ramp_settings_read_time_and_start_pressure(tmp_path):
+    # schema.cpp: CPAP_RampTime=0x1022 (minutes), CPAP_RampPressure=0x1023.
+    summary = _summary(settings={0x1200: 1, 0x110C: 9.0, 0x1022: 20, 0x1023: 4.0})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.ramp_time == 20
+    assert settings.ramp_start_pressure == 4.0
+
+
+def test_bilevel_ramp_start_reads_start_epap(tmp_path):
+    # resmed_loader.cpp stores a bilevel ramp start as RMVENT_StartEPAP=0xE231.
+    summary = _summary(
+        settings={0x1200: 3, 0x110E: 6.0, 0x110D: 12.0, 0x1022: 15, 0xE231: 4.5}
+    )
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.ramp_time == 15
+    assert settings.ramp_start_pressure == 4.5
+
+
+def test_epr_off_reads_mode_off_and_level_zero(tmp_path):
+    # resmed_loader.cpp: RMS9_EPR=0xE201 is 0 (Off); RMS9_EPRLevel is then not stored.
+    summary = _summary(settings={0x1200: 1, 0xE201: 0})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.epr_mode == "Off"
+    assert settings.epr_level == 0
+
+
+@pytest.mark.parametrize(
+    ("epr_code", "expected_mode"),
+    [(1, "Ramp Only"), (2, "Full Time"), (3, "Unknown")],
+    ids=str,
+)
+def test_epr_on_reads_mode_and_level(tmp_path, epr_code, expected_mode):
+    summary = _summary(settings={0x1200: 2, 0xE201: epr_code, 0xE202: 2})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.epr_mode == expected_mode
+    assert settings.epr_level == 2
+
+
+@pytest.mark.parametrize("level", [4, -1], ids=str)
+def test_out_of_range_epr_level_is_not_stored(tmp_path, level):
+    summary = _summary(settings={0x1200: 2, 0xE201: 2, 0xE202: level})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.epr_mode == "Full Time"
     assert settings.epr_level is None
 
 
