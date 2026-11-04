@@ -9,8 +9,6 @@ pin both behaviors and the noon-cutoff therapy-date off-by-one regression.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from pathlib import Path
-from unittest.mock import patch
 from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
@@ -18,13 +16,12 @@ import pytest
 from snore.constants import CPAP_OBSTRUCTIVE
 from snore.database.day_manager import DayManager
 from snore.parsers.oscar_device import OscarDeviceParser, _epoch_to_wall_clock
-from snore.parsers.types import (
-    EventList,
-    EventListType,
-    SessionEvents,
-    SessionSummary,
+from tests.helpers.oscar_builders import (
+    make_event_list,
+    make_events,
+    make_summary,
+    parse_oscar_session,
 )
-from snore.parsers.unified import DeviceInfo, UnifiedSession
 
 pytestmark = pytest.mark.unit
 
@@ -34,89 +31,12 @@ WINTER_START_MS = int(datetime(2024, 1, 15, 0, 30, tzinfo=UTC).timestamp() * 100
 WINTER_END_MS = WINTER_START_MS + 6 * 3600 * 1000  # 06:30 UTC == 01:30 EST
 
 
-def _make_summary(first_ms: int, last_ms: int) -> SessionSummary:
-    return SessionSummary(
-        magic=0xC73216AB,
-        version=10,
-        file_type=0,
-        machine_id=1,
-        session_id=first_ms // 1000,
-        first_timestamp=first_ms,
-        last_timestamp=last_ms,
-    )
-
-
-def _make_events(first_ms: int, last_ms: int, event_at_ms: int) -> SessionEvents:
-    event_list = EventList(
-        channel_id=CPAP_OBSTRUCTIVE,
-        first_timestamp=event_at_ms,
-        last_timestamp=event_at_ms,
-        count=1,
-        event_type=EventListType.EVENT,
-        sample_rate=0.0,
-        gain=1.0,
-        offset=0.0,
-        min_value=0.0,
-        max_value=30.0,
-        dimension="s",
-        data=[15],
-        time_deltas=[0],
-    )
-    return SessionEvents(
-        magic=0xC73216AB,
-        version=10,
-        file_type=1,
-        machine_id=1,
-        session_id=first_ms // 1000,
-        first_timestamp=first_ms,
-        last_timestamp=last_ms,
-        event_lists={CPAP_OBSTRUCTIVE: [event_list]},
-    )
-
-
-def _parse_session(
-    tmp_path: Path,
-    first_ms: int,
-    last_ms: int,
-    timezone_name: str | None,
-    events: SessionEvents | None = None,
-) -> UnifiedSession:
-    """Run _parse_single_session against synthetic summary/events data."""
-    summary_path = tmp_path / "1.000"
-    summary_path.touch()
-    events_path = None
-    if events is not None:
-        events_path = tmp_path / "1.001"
-        events_path.touch()
-
-    device_info = DeviceInfo(
-        manufacturer="OSCAR", model="Test", serial_number="TEST123"
-    )
-
-    with (
-        patch(
-            "snore.parsers.oscar_device.parse_summary_file",
-            return_value=_make_summary(first_ms, last_ms),
-        ),
-        patch(
-            "snore.parsers.oscar_device.parse_events_file",
-            return_value=events,
-        ),
-    ):
-        return OscarDeviceParser()._parse_single_session(
-            session_id=first_ms // 1000,
-            summary_path=summary_path,
-            events_path=events_path,
-            device_info=device_info,
-            base_path=tmp_path,
-            timezone_name=timezone_name,
-        )
-
-
 class TestDeclaredTimezoneConversion:
     def test_declared_timezone_yields_local_wall_clock(self, tmp_path):
-        session = _parse_session(
-            tmp_path, WINTER_START_MS, WINTER_END_MS, "America/New_York"
+        session = parse_oscar_session(
+            tmp_path,
+            make_summary(WINTER_START_MS, WINTER_END_MS),
+            timezone_name="America/New_York",
         )
 
         # 00:30 UTC Jan 15 == 19:30 EST Jan 14 — naive, matching ResMed semantics
@@ -129,7 +49,9 @@ class TestDeclaredTimezoneConversion:
         assert DayManager.get_day_for_session(session.start_time) == date(2024, 1, 14)
 
     def test_no_timezone_keeps_utc_wall_clock(self, tmp_path):
-        session = _parse_session(tmp_path, WINTER_START_MS, WINTER_END_MS, None)
+        session = parse_oscar_session(
+            tmp_path, make_summary(WINTER_START_MS, WINTER_END_MS)
+        )
 
         assert session.start_time == datetime(2024, 1, 15, 0, 30)
         assert session.start_time.tzinfo is None
@@ -141,10 +63,17 @@ class TestDeclaredTimezoneConversion:
 
     def test_event_times_use_declared_timezone(self, tmp_path):
         event_at_ms = WINTER_START_MS + 3600 * 1000  # 01:30 UTC == 20:30 EST Jan 14
-        events = _make_events(WINTER_START_MS, WINTER_END_MS, event_at_ms)
+        events = make_events(
+            WINTER_START_MS,
+            WINTER_END_MS,
+            make_event_list(CPAP_OBSTRUCTIVE, event_at_ms, [15]),
+        )
 
-        session = _parse_session(
-            tmp_path, WINTER_START_MS, WINTER_END_MS, "America/New_York", events
+        session = parse_oscar_session(
+            tmp_path,
+            make_summary(WINTER_START_MS, WINTER_END_MS),
+            events,
+            timezone_name="America/New_York",
         )
 
         assert len(session.events) == 1
@@ -164,8 +93,10 @@ class TestDeclaredTimezoneConversion:
         start_ms = int(datetime(2024, 1, 15, 16, 30, tzinfo=UTC).timestamp() * 1000)
         end_ms = start_ms + 2 * 3600 * 1000
 
-        utc_session = _parse_session(tmp_path, start_ms, end_ms, None)
-        local_session = _parse_session(tmp_path, start_ms, end_ms, "America/New_York")
+        utc_session = parse_oscar_session(tmp_path, make_summary(start_ms, end_ms))
+        local_session = parse_oscar_session(
+            tmp_path, make_summary(start_ms, end_ms), timezone_name="America/New_York"
+        )
 
         assert DayManager.get_day_for_session(utc_session.start_time) == date(
             2024, 1, 15
@@ -192,10 +123,17 @@ class TestDstTransitionNight:
     def test_each_instant_converts_with_its_own_offset(self, tmp_path):
         # Event at 06:30 UTC == 01:30 EST — the repeated wall-clock hour.
         event_at_ms = int(datetime(2024, 11, 3, 6, 30, tzinfo=UTC).timestamp() * 1000)
-        events = _make_events(self.START_MS, self.END_MS, event_at_ms)
+        events = make_events(
+            self.START_MS,
+            self.END_MS,
+            make_event_list(CPAP_OBSTRUCTIVE, event_at_ms, [15]),
+        )
 
-        session = _parse_session(
-            tmp_path, self.START_MS, self.END_MS, "America/New_York", events
+        session = parse_oscar_session(
+            tmp_path,
+            make_summary(self.START_MS, self.END_MS),
+            events,
+            timezone_name="America/New_York",
         )
 
         # Start converts with the pre-transition EDT offset (UTC-4).
@@ -212,8 +150,10 @@ class TestDstTransitionNight:
         assert session.events[0].start_time == datetime(2024, 11, 3, 1, 29, 45)
 
     def test_therapy_date_stays_correct_across_transition(self, tmp_path):
-        session = _parse_session(
-            tmp_path, self.START_MS, self.END_MS, "America/New_York"
+        session = parse_oscar_session(
+            tmp_path,
+            make_summary(self.START_MS, self.END_MS),
+            timezone_name="America/New_York",
         )
 
         # Both endpoints are pre-noon local → therapy night of Nov 2 on both

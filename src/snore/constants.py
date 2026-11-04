@@ -14,10 +14,10 @@ CPAP_CSR = 0x1000  # Cheyne-Stokes Respiration (span)
 CPAP_CLEAR_AIRWAY = 0x1001
 CPAP_OBSTRUCTIVE = 0x1002
 CPAP_HYPOPNEA = 0x1003
-CPAP_APNEA = 0x1004  # Unclassified apnea
+CPAP_APNEA = 0x1004  # UA: apnea not classified as central or obstructive
 CPAP_FLOW_LIMIT = 0x1005
 CPAP_RERA = 0x1006  # Respiratory effort related arousal
-CPAP_ALL_APNEA = 0x1010  # Device-reported apnea, unclassified
+CPAP_ALL_APNEA = 0x1010  # A: apnea from a device that does not classify apneas
 CPAP_PERIODIC_BREATHING = 0x1028  # OSCAR's CPAP_PB (span)
 
 # CPAP Waveforms

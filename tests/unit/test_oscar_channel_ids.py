@@ -7,20 +7,20 @@ tests fail if SNORE's constants drift from what OSCAR stores in .000/.001 files.
 
 from __future__ import annotations
 
-from pathlib import Path
+import logging
+
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
-from snore.parsers.oscar_device import OscarDeviceParser
-from snore.parsers.types import EventList, EventListType, SessionEvents, SessionSummary
-from snore.parsers.unified import (
-    DeviceInfo,
-    RespiratoryEventType,
-    TherapyMode,
-    UnifiedSession,
-    WaveformType,
+from snore.parsers.types import SessionEvents, SessionSummary
+from snore.parsers.unified import RespiratoryEventType, TherapyMode, WaveformType
+from tests.helpers.oscar_builders import (
+    make_event_list,
+    make_events,
+    make_summary,
+    make_waveform_list,
+    parse_oscar_session,
 )
 
 pytestmark = pytest.mark.unit
@@ -29,97 +29,47 @@ START_MS = 1_705_278_600_000  # 2024-01-15 00:30 UTC
 END_MS = START_MS + 6 * 3600 * 1000
 
 
+def _hex_or_name(value: Any) -> str:
+    return hex(value) if isinstance(value, int) else value.name
+
+
 def _summary(**fields: Any) -> SessionSummary:
-    return SessionSummary(
-        magic=0xC73216AB,
-        version=10,
-        file_type=0,
-        machine_id=1,
-        session_id=START_MS // 1000,
-        first_timestamp=START_MS,
-        last_timestamp=END_MS,
-        **fields,
+    return make_summary(START_MS, END_MS, **fields)
+
+
+def _waveform_events(channel_id: int) -> SessionEvents:
+    return make_events(
+        START_MS, END_MS, make_waveform_list(channel_id, START_MS, [10, 11, 12, 13])
     )
 
 
-def _waveform(channel_id: int) -> EventList:
-    return EventList(
-        channel_id=channel_id,
-        first_timestamp=START_MS,
-        last_timestamp=START_MS + 1000,
-        count=4,
-        event_type=EventListType.WAVEFORM,
-        sample_rate=4.0,
-        gain=1.0,
-        offset=0.0,
-        min_value=0.0,
-        max_value=30.0,
-        dimension="",
-        data=[10, 11, 12, 13],
-    )
+@pytest.mark.parametrize(
+    ("channel_id", "expected"),
+    [
+        (0x1100, WaveformType.FLOW_RATE),  # CPAP_FlowRate
+        (0x1101, WaveformType.MASK_PRESSURE),  # CPAP_MaskPressure
+        (0x1103, WaveformType.TIDAL_VOLUME),  # CPAP_TidalVolume
+        (0x1105, WaveformType.MINUTE_VENTILATION),  # CPAP_MinuteVent
+        (0x1106, WaveformType.RESPIRATORY_RATE),  # CPAP_RespRate
+        (0x1108, WaveformType.LEAK_RATE),  # CPAP_Leak
+        (0x110C, WaveformType.THERAPY_PRESSURE),  # CPAP_Pressure
+        (0x110E, WaveformType.EPAP),  # CPAP_EPAP
+        (0x1800, WaveformType.PULSE),  # OXI_Pulse
+        (0x1801, WaveformType.SPO2),  # OXI_SPO2
+    ],
+    ids=_hex_or_name,
+)
+def test_waveform_channel_maps_to_waveform_type(tmp_path, channel_id, expected):
+    session = parse_oscar_session(tmp_path, _summary(), _waveform_events(channel_id))
+
+    assert set(session.waveforms) == {expected}
 
 
-def _event(channel_id: int) -> EventList:
-    return EventList(
-        channel_id=channel_id,
-        first_timestamp=START_MS + 60_000,
-        last_timestamp=START_MS + 60_000,
-        count=1,
-        event_type=EventListType.EVENT,
-        sample_rate=0.0,
-        gain=1.0,
-        offset=0.0,
-        min_value=0.0,
-        max_value=30.0,
-        dimension="s",
-        data=[12],
-        time_deltas=[0],
-    )
+def test_csr_channel_is_not_a_waveform(tmp_path):
+    # schema.cpp: CPAP_CSR=0x1000 is a span flag, not a sampled channel.
+    session = parse_oscar_session(tmp_path, _summary(), _waveform_events(0x1000))
 
-
-def _events(*event_lists: EventList) -> SessionEvents:
-    return SessionEvents(
-        magic=0xC73216AB,
-        version=10,
-        file_type=1,
-        machine_id=1,
-        session_id=START_MS // 1000,
-        first_timestamp=START_MS,
-        last_timestamp=END_MS,
-        event_lists={el.channel_id: [el] for el in event_lists},
-    )
-
-
-def _parse(
-    tmp_path: Path, summary: SessionSummary, events: SessionEvents | None = None
-) -> UnifiedSession:
-    summary_path = tmp_path / "1.000"
-    summary_path.touch()
-    events_path = tmp_path / "1.001"
-    events_path.touch()
-
-    with (
-        patch("snore.parsers.oscar_device.parse_summary_file", return_value=summary),
-        patch("snore.parsers.oscar_device.parse_events_file", return_value=events),
-    ):
-        return OscarDeviceParser()._parse_single_session(
-            session_id=START_MS // 1000,
-            summary_path=summary_path,
-            events_path=events_path,
-            device_info=DeviceInfo(
-                manufacturer="OSCAR", model="Test", serial_number="TEST123"
-            ),
-            base_path=tmp_path,
-        )
-
-
-def test_flow_and_leak_channels_become_waveforms_csr_does_not(tmp_path):
-    # schema.cpp: CPAP_FlowRate=0x1100, CPAP_Leak=0x1108, CPAP_CSR=0x1000 (span).
-    events = _events(_waveform(0x1100), _waveform(0x1108), _waveform(0x1000))
-
-    session = _parse(tmp_path, _summary(), events)
-
-    assert set(session.waveforms) == {WaveformType.FLOW_RATE, WaveformType.LEAK_RATE}
+    assert not session.waveforms
 
 
 @pytest.mark.parametrize(
@@ -132,12 +82,56 @@ def test_flow_and_leak_channels_become_waveforms_csr_does_not(tmp_path):
         (0x1004, RespiratoryEventType.UNCLASSIFIED_APNEA),  # CPAP_Apnea
         (0x1010, RespiratoryEventType.UNCLASSIFIED_APNEA),  # CPAP_AllApnea
         (0x1006, RespiratoryEventType.RERA),  # CPAP_RERA
+        (0x1005, RespiratoryEventType.FLOW_LIMITATION),  # CPAP_FlowLimit
+        (0x1028, RespiratoryEventType.PERIODIC_BREATHING),  # CPAP_PB
+        (0x1000, RespiratoryEventType.PERIODIC_BREATHING),  # CPAP_CSR
     ],
+    ids=_hex_or_name,
 )
 def test_event_channel_maps_to_event_type(tmp_path, channel_id, expected):
-    session = _parse(tmp_path, _summary(), _events(_event(channel_id)))
+    events = make_events(
+        START_MS, END_MS, make_event_list(channel_id, START_MS + 60_000, [12])
+    )
+
+    session = parse_oscar_session(tmp_path, _summary(), events)
 
     assert [event.event_type for event in session.events] == [expected]
+
+
+@pytest.mark.parametrize(
+    ("mode_value", "expected"),
+    [
+        # machine_common.h CPAPMode values.
+        (1, TherapyMode.CPAP),  # MODE_CPAP
+        (2, TherapyMode.APAP),  # MODE_APAP
+        (3, TherapyMode.BIPAP),  # MODE_BILEVEL_FIXED
+        (4, TherapyMode.BIPAP_AUTO),  # MODE_BILEVEL_AUTO_FIXED_PS
+        (5, TherapyMode.BIPAP_AUTO),  # MODE_BILEVEL_AUTO_VARIABLE_PS
+        (6, TherapyMode.ASV),  # MODE_ASV
+        (7, TherapyMode.ASV_AUTO),  # MODE_ASV_VARIABLE_EPAP
+        (8, TherapyMode.IVAPS),  # MODE_AVAPS (ResMed iVAPS)
+    ],
+    ids=str,
+)
+def test_mode_setting_maps_to_therapy_mode(tmp_path, mode_value, expected):
+    settings = parse_oscar_session(
+        tmp_path, _summary(settings={0x1200: mode_value})
+    ).settings
+
+    assert settings is not None
+    assert settings.mode == expected
+
+
+def test_unknown_mode_defaults_to_cpap_with_warning(tmp_path, caplog):
+    # machine_common.h: MODE_UNKNOWN=0 has no TherapyMode.
+    with caplog.at_level(logging.WARNING, logger="snore.parsers.oscar_device"):
+        settings = parse_oscar_session(
+            tmp_path, _summary(settings={0x1200: 0})
+        ).settings
+
+    assert settings is not None
+    assert settings.mode == TherapyMode.CPAP
+    assert "Unknown OSCAR therapy mode value 0" in caplog.text
 
 
 def test_apap_settings_read_mode_pressure_range_and_epr(tmp_path):
@@ -145,7 +139,7 @@ def test_apap_settings_read_mode_pressure_range_and_epr(tmp_path):
     # CPAP_PressureMax=0x1021; resmed_loader.cpp: RMS9_EPRLevel=0xE202.
     summary = _summary(settings={0x1200: 2, 0x1020: 6.0, 0x1021: 12.0, 0xE202: 3})
 
-    settings = _parse(tmp_path, summary).settings
+    settings = parse_oscar_session(tmp_path, summary).settings
 
     assert settings is not None
     assert settings.mode == TherapyMode.APAP
@@ -158,18 +152,50 @@ def test_fixed_cpap_settings_read_set_pressure(tmp_path):
     # schema.cpp: CPAP_Mode=0x1200 (1 = MODE_CPAP), CPAP_Pressure=0x110C.
     summary = _summary(settings={0x1200: 1, 0x110C: 9.0})
 
-    settings = _parse(tmp_path, summary).settings
+    settings = parse_oscar_session(tmp_path, summary).settings
 
     assert settings is not None
     assert settings.mode == TherapyMode.CPAP
     assert settings.pressure_fixed == 9.0
 
 
+def test_placeholder_pressures_are_not_stored(tmp_path):
+    # yuwell_loader.cpp writes -1 to the pressure settings as a "fill in later" marker.
+    summary = _summary(settings={0x1200: 2, 0x1020: -1, 0x1021: -1, 0x110C: -1})
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.mode == TherapyMode.APAP
+    assert settings.pressure_min is None
+    assert settings.pressure_max is None
+    assert settings.pressure_fixed is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), "9", True, [1]],
+    ids=["nan", "inf", "string", "bool", "list"],
+)
+def test_non_numeric_settings_are_not_stored(tmp_path, value):
+    channels = (0x1200, 0x1020, 0x1021, 0x110C, 0xE202)
+    summary = _summary(settings=dict.fromkeys(channels, value))
+
+    settings = parse_oscar_session(tmp_path, summary).settings
+
+    assert settings is not None
+    assert settings.mode == TherapyMode.CPAP
+    assert settings.pressure_min is None
+    assert settings.pressure_max is None
+    assert settings.pressure_fixed is None
+    assert settings.epr_level is None
+
+
 def test_summary_averages_populate_pressure_leak_and_spo2_means(tmp_path):
     # schema.cpp: CPAP_Pressure=0x110C, CPAP_Leak=0x1108, OXI_SPO2=0x1801.
     summary = _summary(averages={0x110C: 8.5, 0x1108: 4.2, 0x1801: 95.0})
 
-    stats = _parse(tmp_path, summary).statistics
+    stats = parse_oscar_session(tmp_path, summary).statistics
 
     assert stats.pressure_mean == 8.5
     assert stats.leak_mean == 4.2

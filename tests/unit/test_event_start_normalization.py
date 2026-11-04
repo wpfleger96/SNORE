@@ -17,19 +17,22 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from snore.constants import CPAP_OBSTRUCTIVE
-from snore.parsers.oscar_device import OscarDeviceParser
 from snore.parsers.resmed_edf import ResmedEDFParser
-from snore.parsers.types import EventList, EventListType, SessionEvents, SessionSummary
 from snore.parsers.unified import (
     DeviceInfo,
     RespiratoryEvent,
     RespiratoryEventType,
     UnifiedSession,
+)
+from tests.helpers.oscar_builders import (
+    make_event_list,
+    make_events,
+    make_summary,
+    parse_oscar_session,
 )
 
 pytestmark = pytest.mark.unit
@@ -76,52 +79,6 @@ def _write_annotation_edf(
             dur = duration if duration is not None else -1.0
             f.writeAnnotation(onset, dur, text)
     return edf_path
-
-
-def _make_oscar_summary(first_ms: int, last_ms: int) -> SessionSummary:
-    return SessionSummary(
-        magic=0xC73216AB,
-        version=10,
-        file_type=0,
-        machine_id=1,
-        session_id=first_ms // 1000,
-        first_timestamp=first_ms,
-        last_timestamp=last_ms,
-    )
-
-
-def _make_oscar_events(
-    first_ms: int, last_ms: int, event_at_ms: int, duration_s: int | None
-) -> SessionEvents:
-    """Build a SessionEvents with one OA event at event_at_ms.
-
-    ``duration_s=None`` leaves the event list without a value for the event.
-    """
-    event_list = EventList(
-        channel_id=CPAP_OBSTRUCTIVE,
-        first_timestamp=event_at_ms,
-        last_timestamp=event_at_ms,
-        count=1,
-        event_type=EventListType.EVENT,
-        sample_rate=0.0,
-        gain=1.0,
-        offset=0.0,
-        min_value=0.0,
-        max_value=60.0,
-        dimension="s",
-        data=[] if duration_s is None else [duration_s],
-        time_deltas=[0],
-    )
-    return SessionEvents(
-        magic=0xC73216AB,
-        version=10,
-        file_type=1,
-        machine_id=1,
-        session_id=first_ms // 1000,
-        first_timestamp=first_ms,
-        last_timestamp=last_ms,
-        event_lists={CPAP_OBSTRUCTIVE: [event_list]},
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -231,34 +188,14 @@ class TestOSCAREventStartNormalization:
         # Event flagged 1 hour into the session.
         event_at_ms = first_ms + 3600 * 1000
 
-        summary = _make_oscar_summary(first_ms, last_ms)
-        events_data = _make_oscar_events(first_ms, last_ms, event_at_ms, duration_s)
-
-        summary_path = tmp_path / "1.000"
-        summary_path.touch()
-        events_path = tmp_path / "1.001"
-        events_path.touch()
-
-        device_info = DeviceInfo(
-            manufacturer="OSCAR", model="Test", serial_number="TESTNORM"
+        # No duration recorded leaves the event list without a value.
+        data = [] if duration_s is None else [duration_s]
+        events = make_events(
+            first_ms, last_ms, make_event_list(CPAP_OBSTRUCTIVE, event_at_ms, data)
         )
 
-        with (
-            patch(
-                "snore.parsers.oscar_device.parse_summary_file", return_value=summary
-            ),
-            patch(
-                "snore.parsers.oscar_device.parse_events_file", return_value=events_data
-            ),
-        ):
-            session = OscarDeviceParser()._parse_single_session(
-                session_id=first_ms // 1000,
-                summary_path=summary_path,
-                events_path=events_path,
-                device_info=device_info,
-                base_path=tmp_path,
-                timezone_name=None,  # UTC wall clock
-            )
+        # No timezone: UTC wall clock.
+        session = parse_oscar_session(tmp_path, make_summary(first_ms, last_ms), events)
 
         assert len(session.events) == 1
         return session.events[0]
