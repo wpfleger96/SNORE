@@ -66,15 +66,15 @@ Backup/
 - **Note**: File may be empty if oximeter not attached
 
 ### EVE - Events
-- **Contains**: EDF+ annotations for:
-  - OA (Obstructive Apnea)
-  - CA (Central Apnea)
-  - H (Hypopnea)
-  - RERA (Arousal)
-  - FL (Flow Limitation)
-  - LL (Large Leak)
-  - VS (Vibratory Snore)
-  - PB (Periodic Breathing)
+- **Contains**: EDF+ annotations. OSCAR's `LoadEVE` matches only these texts (`resmed_loader.cpp:3802-3823`, strings at `:4537-4541`):
+  - "Obstructive apnea" → OA (`CPAP_Obstructive`)
+  - "Central apnea" → CA (`CPAP_ClearAirway`)
+  - "Hypopnea" → H (`CPAP_Hypopnea`)
+  - "Apnea" → UA (`CPAP_Apnea`)
+  - "Arousal" → RERA (`CPAP_RERA`)
+- **Ignored**: "SpO2 Desaturation" and "Recording starts"; any other text is logged as unobserved (`resmed_loader.cpp:3824-3829`)
+- **Not EVE annotations**: CSR comes from the CSL file's "CSR Start"/"CSR End" pairs (`resmed_loader.cpp:3714-3722`), which SNORE stores as PB events. Flow limitation is the PLD `FlowLim.2s` waveform (`CPAP_FLG`), and snore is the PLD `Snore.2s` waveform (`CPAP_Snore`; both at `resmed_loader.cpp:4530-4531`). Large leak is derived by OSCAR from the leak signal and the leak redline (`calcs.cpp:1342`)
+- **SNORE labels**: SNORE looks EVE text up in `EVENT_TYPE_MAP` (`src/snore/parsers/event_labels.py`), which also has flow limitation, large leak, vibratory snore and periodic breathing entries; OSCAR knows no EVE text for any of them, so they are not expected to match ResMed data
 - **Format**: EDF+C (continuous) or EDF+D (discontinuous)
 - **Important**: Stores all-day events; filter by session time range after parsing
 - **Timing**: Annotations mark the end of an event. Apneas carry a real duration, so SNORE subtracts it to store the start. Hypopneas carry none (`resmed_loader.cpp:3808`), nor did any arousal in the #434 tally of real EVE files, so both keep the annotation time and a null duration

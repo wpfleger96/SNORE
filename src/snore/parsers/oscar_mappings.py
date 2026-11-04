@@ -1,6 +1,8 @@
 """OSCAR channel ID to SNORE unified model mappings."""
 
 from snore.constants import (
+    CPAP_ALL_APNEA,
+    CPAP_APNEA,
     CPAP_CLEAR_AIRWAY,
     CPAP_CSR,
     CPAP_EPAP,
@@ -38,6 +40,8 @@ OSCAR_EVENT_TYPE_MAP: dict[int, RespiratoryEventType] = {
     CPAP_OBSTRUCTIVE: RespiratoryEventType.OBSTRUCTIVE_APNEA,
     CPAP_HYPOPNEA: RespiratoryEventType.HYPOPNEA,
     CPAP_CLEAR_AIRWAY: RespiratoryEventType.CENTRAL_APNEA,
+    CPAP_APNEA: RespiratoryEventType.UNCLASSIFIED_APNEA,
+    CPAP_ALL_APNEA: RespiratoryEventType.UNCLASSIFIED_APNEA,
     CPAP_RERA: RespiratoryEventType.RERA,
     CPAP_FLOW_LIMIT: RespiratoryEventType.FLOW_LIMITATION,
     CPAP_CSR: RespiratoryEventType.PERIODIC_BREATHING,

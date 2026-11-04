@@ -17,9 +17,10 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from snore.constants import (
+    CPAP_ALL_APNEA,
+    CPAP_APNEA,
     CPAP_CLEAR_AIRWAY,
     CPAP_EPAP,
-    CPAP_EPR_LEVEL,
     CPAP_FLOW_LIMIT,
     CPAP_HYPOPNEA,
     CPAP_LEAK,
@@ -38,6 +39,7 @@ from snore.constants import (
     OXI_PULSE,
     OXI_SPO2,
     PARSER_MAX_SEARCH_DEPTH,
+    RMS9_EPR_LEVEL,
 )
 from snore.parsers.base import (
     DeviceParser,
@@ -130,7 +132,7 @@ class OscarDeviceParser(DeviceParser):
         """Return OSCAR parser metadata."""
         return ParserMetadata(
             parser_id=OSCAR_BINARY_PARSER_ID,
-            parser_version="1.0.0",
+            parser_version="1.1.0",
             manufacturer="OSCAR",
             supported_formats=["OSCAR Binary Cache"],
             supported_models=[
@@ -523,6 +525,9 @@ class OscarDeviceParser(DeviceParser):
         stats.obstructive_apneas = int(summary.counts.get(CPAP_OBSTRUCTIVE, 0))
         stats.hypopneas = int(summary.counts.get(CPAP_HYPOPNEA, 0))
         stats.central_apneas = int(summary.counts.get(CPAP_CLEAR_AIRWAY, 0))
+        stats.unclassified_apneas = int(
+            summary.counts.get(CPAP_APNEA, 0) + summary.counts.get(CPAP_ALL_APNEA, 0)
+        )
         stats.reras = int(summary.counts.get(CPAP_RERA, 0))
         stats.flow_limitations = int(summary.counts.get(CPAP_FLOW_LIMIT, 0))
 
@@ -596,13 +601,15 @@ class OscarDeviceParser(DeviceParser):
             return None
 
         mode_value = summary.settings.get(CPAP_MODE)
+        # OSCAR's CPAPMode enum (machine_common.h); 0, 8 and 9 have no TherapyMode.
         mode_map = {
-            0: TherapyMode.CPAP,
-            1: TherapyMode.APAP,
-            2: TherapyMode.BIPAP,
-            3: TherapyMode.BIPAP_AUTO,
-            4: TherapyMode.ASV,
-            5: TherapyMode.ASV,
+            1: TherapyMode.CPAP,
+            2: TherapyMode.APAP,
+            3: TherapyMode.BIPAP,
+            4: TherapyMode.BIPAP_AUTO,
+            5: TherapyMode.BIPAP_AUTO,
+            6: TherapyMode.ASV,
+            7: TherapyMode.ASV_AUTO,
         }
         if mode_value is not None:
             mode_int = int(mode_value)
@@ -617,7 +624,7 @@ class OscarDeviceParser(DeviceParser):
 
         settings = TherapySettings(mode=mode)
 
-        epr_level = summary.settings.get(CPAP_EPR_LEVEL)
+        epr_level = summary.settings.get(RMS9_EPR_LEVEL)
         if epr_level is not None:
             settings.epr_level = int(epr_level)
 
@@ -628,6 +635,10 @@ class OscarDeviceParser(DeviceParser):
         pressure_max = summary.settings.get(CPAP_PRESSURE_MAX)
         if pressure_max is not None:
             settings.pressure_max = float(pressure_max)
+
+        pressure_fixed = summary.settings.get(CPAP_PRESSURE)
+        if pressure_fixed is not None:
+            settings.pressure_fixed = float(pressure_fixed)
 
         return settings
 
