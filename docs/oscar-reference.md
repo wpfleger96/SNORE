@@ -41,7 +41,7 @@ Profile (user account)
 
 ### Channel System
 
-Channels are 32-bit `ChannelID` values for every data type. The core channels are registered in `oscar/SleepLib/schema.cpp` (lines 140-365); loaders register device-specific ones, such as ResMed's `RMS9_*` settings in `oscar/SleepLib/loader_plugins/resmed_loader.cpp` (lines 148-175). IDs are only loosely grouped by kind: the `0x10xx` block mixes flags with settings, `CPAP_Mode` sits at `0x1200`, and the `CPAP_LargeLeak` span sits among the waveforms at `0x1158`. SNORE mirrors the IDs its OSCAR import reads in `src/snore/constants.py`.
+Channels are 32-bit `ChannelID` values for every data type. The core channels are registered in `oscar/SleepLib/schema.cpp` (lines 140-365); loaders register device-specific ones, such as ResMed's `RMS9_*`, `RMAS1x_*` and `RMVENT_*` settings in `oscar/SleepLib/loader_plugins/resmed_loader.cpp` (lines 148-347). IDs are only loosely grouped by kind: the `0x10xx` block mixes flags with settings, loaders also store the bilevel pressure waveform channels (`0x110D`-`0x111D`) as session settings, `CPAP_Mode` sits at `0x1200`, and the `CPAP_LargeLeak` span sits among the waveforms at `0x1158`. SNORE mirrors the IDs its OSCAR import reads in `src/snore/constants.py`.
 
 | Kind | Channel | ID | Meaning | Source |
 |------|---------|----|---------|--------|
@@ -60,10 +60,21 @@ Channels are 32-bit `ChannelID` values for every data type. The core channels ar
 | | `CPAP_PressureMax` | `0x1021` | Maximum therapy pressure | `schema.cpp:154` |
 | | `CPAP_RampTime` | `0x1022` | Ramp time (min) | `schema.cpp:155` |
 | | `CPAP_RampPressure` | `0x1023` | Starting ramp pressure | `schema.cpp:156` |
+| | `CPAP_PSMin` | `0x111A` | Minimum pressure support | `schema.cpp:151` |
+| | `CPAP_PSMax` | `0x111B` | Maximum pressure support | `schema.cpp:152` |
 | | `CPAP_Mode` | `0x1200` | PAP mode (lookup) | `schema.cpp:311` |
 | | `RMS9_EPR` | `0xE201` | ResMed EPR type | `resmed_loader.cpp:167` |
 | | `RMS9_EPRLevel` | `0xE202` | ResMed EPR level | `resmed_loader.cpp:175` |
 | | `RMS9_Mode` | `0xE203` | ResMed device mode | `resmed_loader.cpp:148` |
+| | `RMS9_RampEnable` | `0xE20D` | ResMed ramp: off, on, auto (SmartRamp) | `resmed_loader.cpp:244` |
+| | `RMAS1x_RiseEnable` | `0xE212` | ResMed bilevel rise time enabled | `resmed_loader.cpp:272` |
+| | `RMAS1x_RiseTime` | `0xE213` | ResMed bilevel rise time (ms) | `resmed_loader.cpp:277` |
+| | `RMAS1x_Cycle` | `0xE214` | ResMed bilevel cycle sensitivity | `resmed_loader.cpp:280` |
+| | `RMAS1x_Trigger` | `0xE215` | ResMed bilevel trigger sensitivity | `resmed_loader.cpp:288` |
+| | `RMAS1x_TiMax` | `0xE216` | ResMed bilevel maximum inspiratory time (s) | `resmed_loader.cpp:296` |
+| | `RMAS1x_TiMin` | `0xE217` | ResMed bilevel minimum inspiratory time (s) | `resmed_loader.cpp:300` |
+| | `RMVENT_AutoEPAP` | `0xE22F` | ResMed iVAPS auto EPAP | `resmed_loader.cpp:332` |
+| | `RMVENT_StartEPAP` | `0xE231` | ResMed bilevel/ASV/iVAPS ramp start EPAP | `resmed_loader.cpp:344` |
 | Waveforms | `CPAP_FlowRate` | `0x1100` | Flow rate (L/min) | `schema.cpp:234` |
 | | `CPAP_MaskPressure` | `0x1101` | Mask pressure (cmH2O) | `schema.cpp:237` |
 | | `CPAP_TidalVolume` | `0x1103` | Tidal volume (mL) | `schema.cpp:243` |
@@ -72,7 +83,12 @@ Channels are 32-bit `ChannelID` values for every data type. The core channels ar
 | | `CPAP_RespRate` | `0x1106` | Respiratory rate (breaths/min) | `schema.cpp:252` |
 | | `CPAP_Leak` | `0x1108` | Unintentional leak rate (L/min) | `schema.cpp:258` |
 | | `CPAP_Pressure` | `0x110C` | Therapy pressure (cmH2O) | `schema.cpp:140` |
-| | `CPAP_EPAP` | `0x110E` | Expiratory pressure (cmH2O) | `schema.cpp:144` |
+| | `CPAP_IPAP` | `0x110D` | Inspiratory pressure (cmH2O); also the fixed IPAP setting | `schema.cpp:141` |
+| | `CPAP_EPAP` | `0x110E` | Expiratory pressure (cmH2O); also the fixed EPAP setting | `schema.cpp:144` |
+| | `CPAP_PS` | `0x110F` | Pressure support (cmH2O); also the fixed PS setting | `schema.cpp:150` |
+| | `CPAP_IPAPHi` | `0x1111` | Higher inspiratory pressure; also the maximum IPAP setting | `schema.cpp:143` |
+| | `CPAP_EPAPLo` | `0x111C` | Lower expiratory pressure; also the minimum EPAP setting | `schema.cpp:145` |
+| | `CPAP_EPAPHi` | `0x111D` | Higher expiratory pressure; also the maximum EPAP setting | `schema.cpp:146` |
 | | `CPAP_FLG` | `0x1113` | Flow limitation severity | `schema.cpp:274` |
 | | `CPAP_LeakTotal` | `0x1117` | Total leak rate (L/min) | `schema.cpp:286` |
 | Oximetry | `OXI_Pulse` | `0x1800` | Pulse rate (BPM) | `schema.cpp:212` |

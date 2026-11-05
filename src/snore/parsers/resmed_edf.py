@@ -36,6 +36,7 @@ from snore.constants import (
     UNIT_PRESSURE,
     UNIT_SECONDS,
 )
+from snore.parsers import settings_labels
 from snore.parsers.base import (
     DeviceParser,
     ParserDetectionResult,
@@ -318,7 +319,7 @@ class ResmedEDFParser(DeviceParser):
 
     # S9/10-basis EPR type map — keyed on the post-normalization value that both
     # families resolve to: S10 raw+1 and S11 raw+1−1 = raw (OSCAR :2195-2215).
-    EPR_TYPE_MAP = {0: "Off", 1: "Ramp Only", 2: "Full Time"}
+    EPR_TYPE_MAP = settings_labels.EPR_TYPE_MAP
     # S9/10-series mask codes per OSCAR resmed_loader.cpp (S.Mask signal).
     # 11-series devices emit raw 2–4; normalize by −2 before lookup.
     MASK_TYPE_MAP = {0: "Pillows", 1: "Full Face", 2: "Nasal"}
@@ -328,9 +329,8 @@ class ResmedEDFParser(DeviceParser):
     CLIMATE_CONTROL_MAP = {0: "Auto", 1: "Manual"}
     AB_FILTER_MAP = {0: "Standard", 1: "Antibacterial"}
     # Trigger/cycle sensitivity maps — S10 basis (S11 raw−1 before lookup).
-    # OSCAR :288-294 (Trigger), :280-286 (Cycle). "Med" spelling matches OSCAR.
-    TRIGGER_MAP = {0: "Very Low", 1: "Low", 2: "Med", 3: "High", 4: "Very High"}
-    CYCLE_MAP = {0: "Very Low", 1: "Low", 2: "Med", 3: "High", 4: "Very High"}
+    TRIGGER_MAP = settings_labels.TRIGGER_MAP
+    CYCLE_MAP = settings_labels.CYCLE_MAP
     # APAP response (S.AS.Comfort) labels — S10 basis (OSCAR :251-255).
     RESPONSE_MAP = {0: "Standard", 1: "Soft"}
     # Patient access: S10 (OSCAR :224-228); S11 uses PT_VIEW_MAP instead (OSCAR :263-267).
@@ -2692,6 +2692,14 @@ class ResmedEDFParser(DeviceParser):
                 code = int(cycle_v)
                 other_settings["cycle"] = self.CYCLE_MAP.get(code, str(code))
 
+        def _apply_rise_time(
+            rise_enable_norm: float | None, rise_time_v: float | None
+        ) -> None:
+            """Write rise_time into other_settings when rise is enabled."""
+            if rise_enable_norm is not None and rise_enable_norm >= 1:
+                if rise_time_v is not None and rise_time_v >= 0:
+                    other_settings["rise_time"] = str(int(rise_time_v))
+
         # ------------------------------------------------------------------
         # Universal fields (all modes)
         # ------------------------------------------------------------------
@@ -2936,9 +2944,7 @@ class ResmedEDFParser(DeviceParser):
             if ipap is not None and epap is not None:
                 ps = round(ipap - epap, 2)
             _apply_timing(ti_max_v, ti_min_v, trigger_v, cycle_v)
-            if rise_enable_norm is not None and rise_enable_norm >= 1:
-                if rise_time_v is not None and rise_time_v >= 0:
-                    other_settings["rise_time"] = str(int(rise_time_v))
+            _apply_rise_time(rise_enable_norm, rise_time_v)
             if easy_breathe_v is not None and easy_breathe_v >= 0:
                 other_settings["easy_breathe"] = str(int(easy_breathe_v) == 1)
 
@@ -3006,6 +3012,17 @@ class ResmedEDFParser(DeviceParser):
                 other_settings["max_ps"] = f"{iv_max_ps:.1f}"
                 ipap = round((epap or 0) + iv_max_ps, 2) if epap is not None else None
             other_settings["epap_auto"] = str(epap_auto)
+
+            # iVAPS shares the bilevel rise/cycle/trigger/Ti signals (OSCAR
+            # :2413-2441). Only S10 devices run iVAPS (no S11 mode maps to it),
+            # so these are the bare "S.*" signals.
+            _apply_timing(
+                values.get("s10_ti_max"),
+                values.get("s10_ti_min"),
+                _nn("s10_trigger"),
+                _nn("s10_cycle"),
+            )
+            _apply_rise_time(_nn("s10_rise_enable"), values.get("s10_rise_time"))
 
         # Accumulate universal other_settings after mode-specific handling.
         if smart_stop is not None:

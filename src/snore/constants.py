@@ -2,8 +2,8 @@
 Constants and mappings for OSCAR CPAP data analysis.
 
 OSCAR channel IDs are the values registered in OSCAR's
-``oscar/SleepLib/schema.cpp``; ``RMS9_*`` IDs come from
-``oscar/SleepLib/loader_plugins/resmed_loader.cpp``.
+``oscar/SleepLib/schema.cpp``; ``RMS9_*``, ``RMAS1X_*`` and ``RMVENT_*`` IDs
+come from ``oscar/SleepLib/loader_plugins/resmed_loader.cpp``.
 """
 
 from pathlib import Path
@@ -28,14 +28,39 @@ CPAP_MINUTE_VENT = 0x1105
 CPAP_RESPRATE = 0x1106
 CPAP_LEAK = 0x1108
 CPAP_PRESSURE = 0x110C  # Also the fixed-CPAP set pressure in session settings
+
+# Bilevel pressure channels (waveform and setting). schema.cpp registers these
+# as waveform channels; loaders also store them as session settings.
+CPAP_IPAP = 0x110D
 CPAP_EPAP = 0x110E
+CPAP_PS = 0x110F
+CPAP_IPAP_HI = 0x1111
+CPAP_PS_MIN = 0x111A
+CPAP_PS_MAX = 0x111B
+CPAP_EPAP_LO = 0x111C
+CPAP_EPAP_HI = 0x111D
 
 # CPAP Settings
 CPAP_PRESSURE_MIN = 0x1020
 CPAP_PRESSURE_MAX = 0x1021
+CPAP_RAMP_TIME = 0x1022  # Minutes
+CPAP_RAMP_PRESSURE = 0x1023
 CPAP_MODE = 0x1200
-# Expiratory pressure relief; registered by OSCAR's ResMed loader, not schema.cpp.
+
+# ResMed settings; registered by OSCAR's ResMed loader, not schema.cpp.
+# Enum codes are on the S9/AirSense 10 basis (OSCAR normalizes AirSense 11).
+# EPR mode: 0 Off, 1 Ramp Only, 2 Full Time, 3 Patient (unlabelled in OSCAR).
+RMS9_EPR = 0xE201
 RMS9_EPR_LEVEL = 0xE202
+RMS9_RAMP_ENABLE = 0xE20D  # 0 Off, 1 On, 2 Auto (SmartRamp)
+RMAS1X_RISE_ENABLE = 0xE212
+RMAS1X_RISE_TIME = 0xE213  # Milliseconds
+RMAS1X_CYCLE = 0xE214  # 0 Very Low .. 4 Very High
+RMAS1X_TRIGGER = 0xE215  # 0 Very Low .. 4 Very High
+RMAS1X_TI_MAX = 0xE216  # Seconds
+RMAS1X_TI_MIN = 0xE217  # Seconds
+RMVENT_AUTO_EPAP = 0xE22F  # iVAPS auto EPAP: 0 off, 1 on
+RMVENT_START_EPAP = 0xE231  # Ramp start pressure in bilevel, ASV and iVAPS modes
 
 # Oximetry Channels
 OXI_PULSE = 0x1800
