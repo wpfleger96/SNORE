@@ -50,6 +50,18 @@ def _decode_json_extract(value: object) -> object:
     return decoded
 
 
+def _group_by_day(
+    rows: Sequence[Any],
+) -> tuple[dict[date, list[Any]], dict[date, models.Day]]:
+    """``(sessions_by_date, day_by_date)`` from ordered ``(Session, Day)`` rows."""
+    sessions_by_date: dict[date, list[Any]] = {}
+    day_by_date: dict[date, models.Day] = {}
+    for r in rows:
+        sessions_by_date.setdefault(r.Day.date, []).append(r.Session)
+        day_by_date[r.Day.date] = r.Day
+    return sessions_by_date, day_by_date
+
+
 async def _resolve_timezone(
     db: AsyncSession, profile_id: int
 ) -> tuple[TimezoneStatus, str | None]:
@@ -226,6 +238,22 @@ class _BreathServiceCore:
 
         For a single-date point query call: _resolve_range(d, d, device_id).
         """
+        resolved_device_id, sessions_by_date, _ = await self._resolve_range_with_days(
+            date_start, date_end, device_id
+        )
+        return resolved_device_id, sessions_by_date
+
+    async def _resolve_range_with_days(
+        self,
+        date_start: date,
+        date_end: date,
+        device_id: int | None,
+    ) -> tuple[int, dict[date, list[Any]], dict[date, models.Day]]:
+        """``_resolve_range`` plus the Day row of every date in ``sessions_by_date``.
+
+        The Day rows come from the same query as the sessions, so callers that
+        need them issue no second ``days`` read.  Raises as ``_resolve_range``.
+        """
         if device_id is not None:
             # Validate ownership independent of data presence
             owned = (
@@ -253,13 +281,7 @@ class _BreathServiceCore:
                 .order_by(models.Day.date, models.Session.start_time)
             )
             rows = (await self._db.execute(stmt)).all()
-            sessions_by_date: dict[date, list[Any]] = {}
-            for r in rows:
-                d = r.Day.date
-                if d not in sessions_by_date:
-                    sessions_by_date[d] = []
-                sessions_by_date[d].append(r.Session)
-            return device_id, sessions_by_date
+            return device_id, *_group_by_day(rows)
 
         # device_id is None — auto-select from owned sessions in range
         stmt = (
@@ -296,14 +318,7 @@ class _BreathServiceCore:
                 owned_device_ids=device_ids_seen,
                 device_serials=device_serials,
             )
-        resolved_device_id = device_ids_seen[0]
-        sessions_by_date = {}
-        for r in rows:
-            d = r.Day.date
-            if d not in sessions_by_date:
-                sessions_by_date[d] = []
-            sessions_by_date[d].append(r.Session)
-        return resolved_device_id, sessions_by_date
+        return device_ids_seen[0], *_group_by_day(rows)
 
     @staticmethod
     def _reduce_day_status(

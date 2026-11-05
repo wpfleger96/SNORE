@@ -253,29 +253,29 @@ class DayService(ProfileScopedService):
             .all()
         )
         return await self._nightly_fl_rera(
-            day_date,
-            day.device_id,
+            day,
             all_sessions_disabled=bool(enabled_flags) and not any(enabled_flags),
         )
 
     async def _nightly_fl_rera(
-        self, day_date: date, device_id: int, *, all_sessions_disabled: bool
+        self, day: models.Day, *, all_sessions_disabled: bool
     ) -> DayExperimentalMetrics:
         """Read-time flow-limitation / RERA-proxy metrics for one night.
 
-        Sourced from BreathService.get_experimental_nightly_summary — the same
+        Sourced from BreathService.get_experimental_day_summary — the same
         latest-run aggregation the experimental MCP nightly tool uses — so this
-        never recomputes breath logic.
+        never recomputes breath logic.  The Day row is passed through, so the
+        night's Day is read once.
 
         Two distinct null-with-reason outcomes are possible:
 
         * An ordinary un-analyzed night (sessions exist, none with an OK
           analysis) returns a valid summary whose FL/RERA reasons are
           ``not_available`` — this is the success path, not an error.
-        * A genuine lookup failure (the device has no sessions on the date, a
-          breath-table DB error, or device resolution declining) degrades to
-          null values with an ``analysis_not_run`` reason, so this never fails
-          on missing breath analysis.
+        * A genuine lookup failure (the Day has no enabled sessions, or a
+          breath-table DB error) degrades to null values with an
+          ``analysis_not_run`` reason, so this never fails on missing breath
+          analysis.
 
         A night whose sessions are all disabled (``all_sessions_disabled``) is
         a normal user choice the breath service skips, so it short-circuits to
@@ -285,12 +285,9 @@ class DayService(ProfileScopedService):
         from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415
 
         from snore.analysis.shared.versioning import NullReason  # noqa: PLC0415
-        from snore.services.breath_service import (  # noqa: PLC0415
-            BreathService,
-            DeviceAmbiguityError,
-            DeviceNotOwnedError,
-        )
+        from snore.services.breath_service import BreathService  # noqa: PLC0415
 
+        day_date = day.date
         not_run = _null_fl_rera(day_date, NullReason.ANALYSIS_NOT_RUN.value)
         if all_sessions_disabled:
             return not_run
@@ -298,10 +295,7 @@ class DayService(ProfileScopedService):
         try:
             night = await BreathService(
                 self.db_session, self.profile_id
-            ).get_experimental_nightly_summary(day_date, device_id=device_id)
-        except (DeviceAmbiguityError, DeviceNotOwnedError):
-            # Device resolution declined — degrade quietly (expected edge case).
-            return not_run
+            ).get_experimental_day_summary(day)
         except SQLAlchemyError:
             logger.warning(
                 "FL/RERA nightly lookup for %s hit a breath-table DB error; "

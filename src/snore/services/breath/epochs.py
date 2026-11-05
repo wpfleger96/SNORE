@@ -8,15 +8,17 @@ not a code path, because they gate sessions differently.
 
 from __future__ import annotations
 
-import math
-import statistics
+import asyncio
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable, Sequence
 from datetime import date
 from itertools import pairwise
 from typing import Any
 
-from sqlalchemy import select
+import numpy as np
+
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import Row, select
 
 from snore.analysis.rx_tracker import RX_KEYS, changed_setting_keys
 from snore.analysis.shared.versioning import (
@@ -29,9 +31,16 @@ from snore.analysis.shared.versioning import (
 )
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
-from snore.services.channel_stats import CHANNEL_FLOORS
+from snore.services.channel_stats import (
+    ChannelHistogram,
+    channel_histogram,
+    decode_channel_blobs,
+    pool_histograms,
+    pooled_count,
+    value_at_rank,
+)
 from snore.utils.db_chunk import iter_id_chunks
-from snore.utils.stats import percentile_nearest_rank
+from snore.utils.stats import nearest_rank_index
 
 from ._core import _BreathServiceCore
 from .algorithms import _count_fl_run_reras
@@ -49,46 +58,151 @@ from .dtos import (
     NoSessionsInRangeError,
 )
 
+# Breath column holding each distribution metric.
+_METRIC_COLUMNS = {
+    DistributionMetric.MID_INSP_FLATTENING: models.Breath.mid_insp_flattening,
+    DistributionMetric.FLATNESS_INDEX: models.Breath.flatness_index,
+    DistributionMetric.TIDAL_VOLUME_ML: models.Breath.tidal_volume_ml,
+    DistributionMetric.IE_RATIO: models.Breath.i_e_ratio,
+}
+# Every breath column the experimental epoch stats read, including the ones the
+# RERA proxy (``iter_fl_run_recoveries``) reads by attribute.
+_BREATH_COLUMNS = (
+    models.Breath.analysis_result_id,
+    models.Breath.leak_valid,
+    models.Breath.flow_class,
+    models.Breath.flow_confidence,
+    models.Breath.is_recovery_breath,
+    models.Breath.peak_flow_lpm,
+    *_METRIC_COLUMNS.values(),
+)
+# Breath rows fetched from the cursor at a time.  Only one analysis run's rows
+# are held at once, so this bounds the fetch buffer, not the run.
+_BREATH_FETCH_ROWS = 4096
 
-def _distrib(vals: list[float]) -> dict[str, float | None]:
-    """Median, IQR and P95 of ``vals`` as distribution-stats fields (all None when empty)."""
-    if not vals:
+
+def _distrib(n: int, at_rank: Callable[[int], float]) -> dict[str, float | None]:
+    """Median, IQR and P95 of ``n`` values read by ascending 0-based rank.
+
+    Exactly what sorting the values gives: ``median`` is ``statistics.median``,
+    ``iqr`` is ``sorted[3n // 4] - sorted[n // 4]`` (upper rank clamped) and
+    ``p95`` is the nearest rank.  All None when ``n`` is 0.
+    """
+    if n == 0:
         return {"median": None, "iqr": None, "p95": None}
-    sorted_v = sorted(vals)
-    p25 = sorted_v[len(sorted_v) // 4]
-    p75 = sorted_v[min(len(sorted_v) * 3 // 4, len(sorted_v) - 1)]
+    mid = n // 2
+    median = at_rank(mid) if n % 2 else (at_rank(mid - 1) + at_rank(mid)) / 2
     return {
-        "median": statistics.median(sorted_v),
-        "iqr": p75 - p25,
-        "p95": percentile_nearest_rank(sorted_v, 0.95),
+        "median": median,
+        "iqr": at_rank(min(n * 3 // 4, n - 1)) - at_rank(n // 4),
+        "p95": at_rank(nearest_rank_index(n, 0.95)),
     }
 
 
 def _breath_distrib(
-    vals: list[float], n_breaths: int, n_nights: int
+    arrays: Sequence[np.ndarray], n_breaths: int, n_nights: int
 ) -> DistributionStats:
-    return DistributionStats(**_distrib(vals), n_breaths=n_breaths, n_nights=n_nights)
+    """Stats over the concatenated ``arrays``; the stable sort matches ``sorted``."""
+    ordered = np.sort(np.concatenate(arrays) if arrays else np.empty(0), kind="stable")
+    return DistributionStats(
+        **_distrib(ordered.size, lambda rank: float(ordered[rank])),
+        n_breaths=n_breaths,
+        n_nights=n_nights,
+    )
 
 
 def _device_distrib(
-    vals_by_session: dict[int, list[float]],
-    night_by_session: dict[int, date],
-    is_valid: Callable[[float], bool],
+    histograms: dict[int, ChannelHistogram], night_by_session: dict[int, date]
 ) -> DeviceDistributionStats:
-    """Stats over the valid samples of ``night_by_session``'s sessions.
+    """Stats over the usable samples of ``night_by_session``'s sessions.
 
-    Two sessions on one therapy date count as one night.
+    ``histograms`` maps a session id to its ``channel_histogram``.  Two sessions
+    on one therapy date count as one night.
     """
-    samples: list[float] = []
-    nights: set[date] = set()
-    for session_id, night in night_by_session.items():
-        valid = [v for v in vals_by_session.get(session_id, []) if is_valid(v)]
-        samples.extend(valid)
-        if valid:
-            nights.add(night)
+    with_samples = [
+        sid for sid in night_by_session if sid in histograms and histograms[sid][0].size
+    ]
+    pooled = pool_histograms([histograms[sid] for sid in with_samples])
+    n = pooled_count(pooled)
     return DeviceDistributionStats(
-        **_distrib(samples), n_samples=len(samples), n_nights=len(nights)
+        **_distrib(n, lambda rank: value_at_rank(pooled, rank)),
+        n_samples=n,
+        n_nights=len({night_by_session[sid] for sid in with_samples}),
     )
+
+
+class _RunBreaths(BaseModel):
+    """One analysis run's breaths, reduced to what its epoch's stats need."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # Leak-valid non-null values of each requested metric, in breath order.
+    features: dict[DistributionMetric, np.ndarray]
+    # flow_class -> leak-valid breath count, keyed in first-seen order.
+    flow_classes: dict[int, int]
+    fallback_flow_classes: dict[int, int]
+    leak_valid_breaths: int
+    # RERA-proxy events over every breath of the run, leak-valid or not.
+    reras: int
+
+
+def _reduce_run_breaths(
+    rows: Sequence[_BreathRow], metrics: Collection[DistributionMetric]
+) -> _RunBreaths:
+    """Reduce one run's breath rows, ordered by breath_number.
+
+    Runs on a worker thread, so ``rows`` are plain rows, never ORM objects.
+    """
+    leak_valid = [b for b in rows if b.leak_valid is True]
+    # Split FL classifications by the same confidence gate nightly uses:
+    # rule-matched (flow_confidence > FL_DEFAULT_CONFIDENCE) go in flow_classes
+    # so the class>=4 fraction reconciles with nightly fl_class_ge4_pct; low-
+    # confidence fallback flatness-triage guesses (confidence exactly at the
+    # default) go in fallback_flow_classes so they don't inflate FL rates.  Rows
+    # with missing or below-default confidence are excluded from both.
+    flow_classes: dict[int, int] = {}
+    fallback: dict[int, int] = {}
+    for b in leak_valid:
+        if b.flow_class is None:
+            continue
+        if (
+            b.flow_confidence is not None
+            and b.flow_confidence > FLC.FL_DEFAULT_CONFIDENCE
+        ):
+            flow_classes[b.flow_class] = flow_classes.get(b.flow_class, 0) + 1
+        elif b.flow_confidence == FLC.FL_DEFAULT_CONFIDENCE:
+            fallback[b.flow_class] = fallback.get(b.flow_class, 0) + 1
+    return _RunBreaths(
+        features={
+            metric: np.array(
+                [v for b in leak_valid if (v := getattr(b, column.key)) is not None],
+                dtype=np.float64,
+            )
+            for metric, column in _METRIC_COLUMNS.items()
+            if metric in metrics
+        },
+        flow_classes=flow_classes,
+        fallback_flow_classes=fallback,
+        leak_valid_breaths=len(leak_valid),
+        # RERA proxy: FL runs ending in a recovery breath.  Scans every breath,
+        # not just leak-valid ones, because runs need sequence contiguity.
+        reras=_count_fl_run_reras(rows),
+    )
+
+
+def _merge_counts(into: dict[int, int], counts: dict[int, int]) -> None:
+    for key, count in counts.items():
+        into[key] = into.get(key, 0) + count
+
+
+def _contributing_ar_ids(resolved_epoch: dict[str, Any]) -> list[int]:
+    """Analysis run ids of a resolved epoch's contributing sessions, in order."""
+    ar_ids = resolved_epoch["ar_ids"]
+    return [
+        ar_ids[sid]
+        for sid, _ in resolved_epoch["contributing_sessions"]
+        if ar_ids.get(sid) is not None
+    ]
 
 
 def _epoch_rx_violation(
@@ -219,6 +333,43 @@ class EpochsMixin(_BreathServiceCore):
                     rx_by_session[row.session_id][row.key] = row.value
         return [(night, rx_by_session[sid]) for sid, night in night_by_session.items()]
 
+    async def _load_run_breaths(
+        self, ar_ids: list[int], metrics: Collection[DistributionMetric]
+    ) -> dict[int, _RunBreaths]:
+        """Each run's reduced breaths by analysis run id; runs without breaths are absent.
+
+        One pass ordered by breath number serves both the leak-valid
+        distributions and the RERA proxy.  Rows stream from the cursor and only
+        one run's rows are held at a time, each reduced on a worker thread.
+        """
+        runs: dict[int, _RunBreaths] = {}
+
+        async def reduce_run(rows: list[_BreathRow]) -> None:
+            runs[rows[0].analysis_result_id] = await asyncio.to_thread(
+                _reduce_run_breaths, rows, metrics
+            )
+
+        breath = models.Breath
+        for chunk in iter_id_chunks(ar_ids):
+            result = await self._db.stream(
+                select(*_BREATH_COLUMNS)
+                .where(breath.analysis_result_id.in_(chunk))
+                .order_by(breath.analysis_result_id, breath.breath_number)
+            )
+            run_rows: list[_BreathRow] = []
+            async for fetched in result.partitions(_BREATH_FETCH_ROWS):
+                for row in fetched:
+                    if (
+                        run_rows
+                        and row.analysis_result_id != run_rows[0].analysis_result_id
+                    ):
+                        await reduce_run(run_rows)
+                        run_rows = []
+                    run_rows.append(row)
+            if run_rows:
+                await reduce_run(run_rows)
+        return runs
+
     async def compare_device_epochs(
         self, epochs: list[EpochRequest]
     ) -> DeviceCompareEpochsResult:
@@ -245,8 +396,11 @@ class EpochsMixin(_BreathServiceCore):
                 null_reason=union_device,
             )
 
+        # Resolve every epoch first, so the waveforms are decoded once for all of
+        # them, overlapping epochs included.
         epoch_stats: list[DeviceEpochStats] = []
         rx_violations: list[EpochRxViolation] = []
+        to_compute: list[tuple[DeviceEpochStats, dict[int, date]]] = []
         for epoch in epochs:
             _, sessions_by_date = await self._resolve_range(
                 epoch.date_start, epoch.date_end, union_device
@@ -272,19 +426,20 @@ class EpochsMixin(_BreathServiceCore):
             elif not night_by_session:
                 stats.null_reason = NullReason.NO_DATA_IN_RANGE
             else:
-                channel_vals, _ = await self._fetch_channel_vals(
-                    self._db, list(night_by_session), ["fl", "snore"]
-                )
-                # FLG uses negative sentinels; a snore value of 0 is real data.
-                stats.device_flg = _device_distrib(
-                    channel_vals["fl"],
-                    night_by_session,
-                    lambda v: v >= CHANNEL_FLOORS["fl"] and math.isfinite(v),
-                )
-                stats.snore_dist = _device_distrib(
-                    channel_vals["snore"], night_by_session, math.isfinite
-                )
+                to_compute.append((stats, night_by_session))
             epoch_stats.append(stats)
+
+        # channel_histogram drops FLG's negative sentinels; a snore value of 0 is
+        # real data.  A corrupt blob counts as an absent channel.
+        histograms, _ = await decode_channel_blobs(
+            self._db,
+            list(dict.fromkeys(sid for _, nights in to_compute for sid in nights)),
+            ["fl", "snore"],
+            channel_histogram,
+        )
+        for stats, night_by_session in to_compute:
+            stats.device_flg = _device_distrib(histograms["fl"], night_by_session)
+            stats.snore_dist = _device_distrib(histograms["snore"], night_by_session)
 
         all_rx_changed = all(
             e.null_reason == NullReason.RX_CHANGED_WITHIN_EPOCH for e in epoch_stats
@@ -360,13 +515,14 @@ class EpochsMixin(_BreathServiceCore):
             nights_with_data = 0
             nights_missing_analysis = 0
             ar_ids_for_epoch: dict[int, int | None] = {}
+            classification, _ = await self._latest_analysis_bulk(
+                [sess.id for sessions in sessions_by_date.values() for sess in sessions]
+            )
 
             for therapy_date, sessions in sessions_by_date.items():
                 ok_on_date: list[tuple[int, AlgoVersions]] = []
                 for sess in sessions:
-                    status, algo, ar_id = await self._latest_analysis_for_session(
-                        sess.id
-                    )
+                    status, algo, ar_id = classification[sess.id]
                     if status == AnalysisStatus.OK and algo is not None:
                         ok_on_date.append((sess.id, algo))
                         ar_ids_for_epoch[sess.id] = ar_id
@@ -453,6 +609,19 @@ class EpochsMixin(_BreathServiceCore):
         # -----------------------------------------------------------------------
 
         requested = set(metrics) if metrics is not None else set(DistributionMetric)
+        # One pass over the breaths of every computable epoch, overlapping ones
+        # included.
+        runs = await self._load_run_breaths(
+            list(
+                dict.fromkeys(
+                    ar_id
+                    for ed in epoch_resolved
+                    if ed["null_reason"] is None
+                    for ar_id in _contributing_ar_ids(ed)
+                )
+            ),
+            requested,
+        )
         epoch_stats: list[EpochBreathStats] = []
 
         for ed in epoch_resolved:
@@ -498,86 +667,34 @@ class EpochsMixin(_BreathServiceCore):
                 uniform_primary_mode = None
                 rera_reason = NullReason.PRIMARY_MODE_MISMATCH
 
-            ar_ids = ed["ar_ids"]
-            contributing_ar_ids: list[tuple[int, int]] = [
-                (sid, ar_ids[sid])
-                for sid, _ in contributing_sessions
-                if ar_ids.get(sid) is not None
+            # Runs in contributing order, so the flow-class keys keep their
+            # first-seen order.
+            epoch_runs = [
+                runs[ar_id]
+                for ar_id in _contributing_ar_ids(ed)
+                if ar_id in runs  # a run without breaths contributes nothing
             ]
-
-            all_breath_rows: list[Any] = []
-            for _sid, ar_id in contributing_ar_ids:
-                brows = (
-                    (
-                        await self._db.execute(
-                            select(models.Breath).where(
-                                models.Breath.analysis_result_id == ar_id,
-                                models.Breath.leak_valid.is_(True),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
+            n_lv = sum(run.leak_valid_breaths for run in epoch_runs)
+            distributions = {
+                metric: _breath_distrib(
+                    [run.features[metric] for run in epoch_runs],
+                    n_lv,
+                    nights_with_data,
                 )
-                all_breath_rows.extend(brows)
-
-            n_lv = len(all_breath_rows)
-            n_nights_contrib = nights_with_data
-
-            mif_vals = [
-                b.mid_insp_flattening
-                for b in all_breath_rows
-                if b.mid_insp_flattening is not None
-            ]
-            fi_vals = [
-                b.flatness_index
-                for b in all_breath_rows
-                if b.flatness_index is not None
-            ]
-            tv_vals = [
-                b.tidal_volume_ml
-                for b in all_breath_rows
-                if b.tidal_volume_ml is not None
-            ]
-            ie_vals = [b.i_e_ratio for b in all_breath_rows if b.i_e_ratio is not None]
-            # Split FL classifications by the same confidence gate nightly uses:
-            # rule-matched (flow_confidence > FL_DEFAULT_CONFIDENCE) go in fc_dist so
-            # the class>=4 fraction reconciles with nightly fl_class_ge4_pct; low-
-            # confidence fallback flatness-triage guesses (confidence exactly at the
-            # default) go in fc_dist_fallback so they don't inflate FL rates.  Rows
-            # with missing or below-default confidence are excluded from both.
+                if metric in requested
+                else _null_dist
+                for metric in DistributionMetric
+            }
             fc_dist: dict[int, int] = {}
             fc_dist_fallback: dict[int, int] = {}
-            for b in all_breath_rows:
-                if b.flow_class is None:
-                    continue
-                if (
-                    b.flow_confidence is not None
-                    and b.flow_confidence > FLC.FL_DEFAULT_CONFIDENCE
-                ):
-                    fc_dist[b.flow_class] = fc_dist.get(b.flow_class, 0) + 1
-                elif b.flow_confidence == FLC.FL_DEFAULT_CONFIDENCE:
-                    fc_dist_fallback[b.flow_class] = (
-                        fc_dist_fallback.get(b.flow_class, 0) + 1
-                    )
-
-            # RERA proxy: FL runs ending in recovery breath
-            rera_count: int | None = None
-            if uniform_primary_mode is not None:
-                rera_count = 0
-                for _sid, ar_id in contributing_ar_ids:
-                    brows_all = (
-                        (
-                            await self._db.execute(
-                                select(models.Breath)
-                                .where(models.Breath.analysis_result_id == ar_id)
-                                .order_by(models.Breath.breath_number)
-                            )
-                        )
-                        .scalars()
-                        .all()
-                    )
-                    rera_count += _count_fl_run_reras(brows_all)
+            for run in epoch_runs:
+                _merge_counts(fc_dist, run.flow_classes)
+                _merge_counts(fc_dist_fallback, run.fallback_flow_classes)
+            rera_count = (
+                sum(run.reras for run in epoch_runs)
+                if uniform_primary_mode is not None
+                else None
+            )
 
             epoch_stats.append(
                 EpochBreathStats(
@@ -589,22 +706,14 @@ class EpochsMixin(_BreathServiceCore):
                     algorithm_identity=all_identities[0],
                     null_reason=None,
                     primary_mode=uniform_primary_mode,
-                    mid_insp_flattening=_breath_distrib(
-                        mif_vals, n_lv, n_nights_contrib
-                    )
-                    if DistributionMetric.MID_INSP_FLATTENING in requested
-                    else _null_dist,
-                    flatness_index=_breath_distrib(fi_vals, n_lv, n_nights_contrib)
-                    if DistributionMetric.FLATNESS_INDEX in requested
-                    else _null_dist,
+                    mid_insp_flattening=distributions[
+                        DistributionMetric.MID_INSP_FLATTENING
+                    ],
+                    flatness_index=distributions[DistributionMetric.FLATNESS_INDEX],
                     flow_class_distribution=fc_dist,
                     flow_class_distribution_fallback=fc_dist_fallback,
-                    tidal_volume_ml=_breath_distrib(tv_vals, n_lv, n_nights_contrib)
-                    if DistributionMetric.TIDAL_VOLUME_ML in requested
-                    else _null_dist,
-                    ie_ratio=_breath_distrib(ie_vals, n_lv, n_nights_contrib)
-                    if DistributionMetric.IE_RATIO in requested
-                    else _null_dist,
+                    tidal_volume_ml=distributions[DistributionMetric.TIDAL_VOLUME_ML],
+                    ie_ratio=distributions[DistributionMetric.IE_RATIO],
                     rera_proxy_count=rera_count,
                     rera_reason=rera_reason,
                     rera_proxy_version=(
