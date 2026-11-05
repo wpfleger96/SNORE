@@ -1047,6 +1047,15 @@ class AnalysisResult(Base):
         lazy="raise",
     )
 
+    __table_args__ = (
+        Index(
+            "ix_analysis_results_session_id_created_at",
+            "session_id",
+            "created_at",
+            "id",
+        ),
+    )
+
     def __repr__(self) -> str:
         return f"<AnalysisResult(id={self.id}, session_id={self.session_id})>"
 

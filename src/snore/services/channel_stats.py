@@ -45,6 +45,11 @@ __all__ = [
     "load_channel_histograms",
     "mask_on_spans",
     "pool_channel_stats",
+    "pool_histograms",
+    "pooled_count",
+    "pooled_median",
+    "samples_histogram",
+    "value_at_rank",
 ]
 
 # Lowest valid sample per channel: ``fl`` blobs keep the raw -0.01 mask-off
@@ -67,11 +72,49 @@ type ChannelHistogram = tuple[np.ndarray, np.ndarray]
 type ChannelHistograms = dict[str, dict[int, ChannelHistogram]]
 
 
-def channel_histogram(channel: str, values: np.ndarray) -> ChannelHistogram:
-    """Histogram of the finite ``values`` at or above the channel's floor."""
-    usable = values[np.isfinite(values) & (values >= CHANNEL_FLOORS[channel])]
+def samples_histogram(values: np.ndarray, floor: float = -math.inf) -> ChannelHistogram:
+    """Histogram of the finite ``values`` at or above ``floor``."""
+    usable = values[np.isfinite(values) & (values >= floor)]
     unique_values, counts = np.unique(usable, return_counts=True)
     return unique_values, counts
+
+
+def channel_histogram(channel: str, values: np.ndarray) -> ChannelHistogram:
+    """Histogram of the finite ``values`` at or above the channel's floor."""
+    return samples_histogram(values, CHANNEL_FLOORS[channel])
+
+
+def pool_histograms(histograms: Sequence[ChannelHistogram]) -> ChannelHistogram:
+    """Pooled samples as ascending distinct values and their cumulative counts.
+
+    The last cumulative count is the pooled sample count; both arrays are empty
+    when there are no samples.  Index the result with ``value_at_rank``.
+    """
+    if not histograms:
+        return np.empty(0), np.empty(0, dtype=np.int64)
+    values, merged_index = np.unique(
+        np.concatenate([v for v, _ in histograms]), return_inverse=True
+    )
+    counts = np.zeros(values.size, dtype=np.int64)
+    np.add.at(counts, merged_index, np.concatenate([c for _, c in histograms]))
+    return values, np.cumsum(counts)
+
+
+def pooled_count(pooled: ChannelHistogram) -> int:
+    """Number of samples in a ``pool_histograms`` result."""
+    return int(pooled[1][-1]) if pooled[1].size else 0
+
+
+def value_at_rank(pooled: ChannelHistogram, rank: int) -> float:
+    """The ``rank``-th (0-based) smallest pooled sample: ``sorted(samples)[rank]``."""
+    values, cumulative = pooled
+    return float(values[np.searchsorted(cumulative, rank, side="right")])
+
+
+def pooled_median(pooled: ChannelHistogram) -> float:
+    """``statistics.median`` of the pooled samples (middle pair averaged as floats)."""
+    n = pooled_count(pooled)
+    return (value_at_rank(pooled, (n - 1) // 2) + value_at_rank(pooled, n // 2)) / 2
 
 
 def histogram_distribution(
@@ -83,23 +126,15 @@ def histogram_distribution(
     ``statistics.median``-equivalent, so the middle pair is averaged as Python
     floats rather than float32; the 95th is nearest rank.
     """
-    if not histograms:
-        return None
-    values, merged_index = np.unique(
-        np.concatenate([v for v, _ in histograms]), return_inverse=True
-    )
-    counts = np.zeros(values.size, dtype=np.int64)
-    np.add.at(counts, merged_index, np.concatenate([c for _, c in histograms]))
-    n = int(counts.sum())
+    pooled = pool_histograms(histograms)
+    n = pooled_count(pooled)
     if n == 0:
         return None
-    cumulative = np.cumsum(counts)
-
-    def at_rank(rank: int) -> float:
-        return float(values[np.searchsorted(cumulative, rank, side="right")])
-
-    median = (at_rank((n - 1) // 2) + at_rank(n // 2)) / 2
-    return median, at_rank(nearest_rank_index(n, 0.95)), float(values[-1])
+    return (
+        pooled_median(pooled),
+        value_at_rank(pooled, nearest_rank_index(n, 0.95)),
+        float(pooled[0][-1]),
+    )
 
 
 def _decode_rows[T](
