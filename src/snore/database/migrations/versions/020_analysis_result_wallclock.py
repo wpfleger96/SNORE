@@ -2,25 +2,36 @@
 
 ``analysis_results.timestamp_start``/``timestamp_end`` are documented as device
 wall-clock, but analysis wrote them as ``datetime.fromtimestamp(offset, tz=UTC)``
-with ``offset`` in seconds from session start, so every stored value is
-``1970-01-01 00:00:00 + offset``.  The offset is therefore recoverable, and the
-upgrade rewrites each such row as ``sessions.start_time + offset``.  No
-re-analysis is needed.
+with ``offset`` in seconds from session start (of the first/last flow sample),
+so a stored value is ``1970-01-01 00:00:00 + offset``.  ``snore db scrub-demo``
+then copies rows into a demo profile shifted by a whole number of days ``D``
+(positive or negative), giving ``1970-01-01 + offset + D`` against a demo
+session that starts at ``start_time + D``.
 
-Only rows whose ``timestamp_start`` falls before 1971 are touched, so rows
-already written as wall-clock are left alone.  The arithmetic runs in Python
-rather than SQLite ``datetime()``, which drops microseconds; the lightweight
-tables below let SQLAlchemy read and write the same storage format the ORM
-uses.  A fresh install has no rows, so this works on any dialect.
+In both cases the start offset is ``(timestamp_start - 1970-01-01) mod 1 day``:
+the first flow sample sits well under a day after session start, and a
+whole-day shift leaves the remainder unchanged (Python's ``timedelta`` modulo
+is non-negative, so shifts back into 1969 work too).  The upgrade rewrites each
+window as ``sessions.start_time + start_offset`` and keeps its duration, which
+neither the bug nor the demo shift changes.  No re-analysis is needed.
 
-Downgrade turns every wall-clock row back into ``1970-01-01 + offset``.
+The upgrade touches only rows whose ``timestamp_start`` is before their
+session's ``start_time``: buggy rows of either kind are years earlier, while
+correct wall-clock rows are at or after it because offsets are non-negative.
+Rows whose session has no ``start_time`` are skipped.  The arithmetic runs in
+Python rather than SQLite ``datetime()``, which drops microseconds, through
+dialect-neutral Core statements that read and write the ORM's storage format.
+
+Downgrade is lossy: it turns every row at or after its session's start back
+into ``1970-01-01 + offset``, including rows written correctly after the
+upgrade, and demo rows lose their day shift.
 
 Revision ID: 020_analysis_result_wallclock
 Revises: 019_oscar_event_parity
 """
 
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Callable, Sequence
+from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 
@@ -32,7 +43,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _EPOCH = datetime(1970, 1, 1)
-_CUTOFF = datetime(1971, 1, 1)
+_ONE_DAY = timedelta(days=1)
 
 _analysis_results = sa.table(
     "analysis_results",
@@ -48,10 +59,13 @@ _sessions = sa.table(
 )
 
 
-def _shift(where: sa.ColumnElement[bool], direction: int) -> None:
-    """Move matching windows by ``direction * (sessions.start_time - 1970-01-01)``.
+def _move_windows(
+    where: sa.ColumnElement[bool],
+    new_start: Callable[[datetime, datetime], datetime],
+) -> None:
+    """Move each matching window to ``new_start(timestamp_start, session_start)``.
 
-    ``+1`` turns epoch-based offsets into wall-clock times, ``-1`` reverses it.
+    The window's duration is kept.
     """
     bind = op.get_bind()
     rows = bind.execute(
@@ -69,12 +83,12 @@ def _shift(where: sa.ColumnElement[bool], direction: int) -> None:
 
     updates = []
     for row in rows:
-        delta = (row.start_time - _EPOCH) * direction
+        start = new_start(row.timestamp_start, row.start_time)
         updates.append(
             {
                 "row_id": row.id,
-                "new_start": row.timestamp_start + delta,
-                "new_end": row.timestamp_end + delta,
+                "new_start": start,
+                "new_end": start + (row.timestamp_end - row.timestamp_start),
             }
         )
     bind.execute(
@@ -89,8 +103,14 @@ def _shift(where: sa.ColumnElement[bool], direction: int) -> None:
 
 
 def upgrade() -> None:
-    _shift(_analysis_results.c.timestamp_start < _CUTOFF, 1)
+    _move_windows(
+        _analysis_results.c.timestamp_start < _sessions.c.start_time,
+        lambda start, session_start: session_start + (start - _EPOCH) % _ONE_DAY,
+    )
 
 
 def downgrade() -> None:
-    _shift(_analysis_results.c.timestamp_start >= _CUTOFF, -1)
+    _move_windows(
+        _analysis_results.c.timestamp_start >= _sessions.c.start_time,
+        lambda start, session_start: _EPOCH + (start - session_start),
+    )
