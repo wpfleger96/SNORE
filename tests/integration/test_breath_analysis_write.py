@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import uuid
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -432,8 +432,6 @@ async def _seed_flow_session(
     settings: dict[str, str],
 ) -> int:
     """Seed a Session with a synthetic flow waveform + settings. Returns its id."""
-    from datetime import timedelta
-
     start = datetime(2025, 9, 10, 22, 0)
     device = models.Device(
         profile_id=profile_id,
@@ -588,6 +586,44 @@ class TestValidityFlagsEndToEnd:
             assert rows, "analysis must still persist Breath rows"
             assert all(r.mask_off is None for r in rows)
             assert all(r.mask_off_reason == "segments_unknown" for r in rows)
+
+    async def test_analyze_session_stores_session_wallclock_window(self, temp_db):
+        """The stored window is the session's wall clock, not offsets or epoch.
+
+        analyze_session derives the DTO window from the flow timestamps (first and
+        last sample offsets); store_result anchors them to Session.start_time.
+        """
+        await init_database(str(temp_db))
+        duration_s = 300.0
+        async with session_scope() as db:
+            _, profile_id = await _make_profile(db)
+            session_id = await _seed_flow_session(
+                db,
+                profile_id,
+                duration_s=duration_s,
+                mask_on_segments=[[0.0, duration_s]],
+                settings={},
+            )
+            svc = AnalysisService(db, profile_id=profile_id)
+            await svc.analyze_session(session_id)
+
+        # Same float32 sample grid _sine_flow_blob stores.
+        last_offset_s = float(
+            np.arange(0.0, duration_s, 1.0 / 25.0, dtype=np.float32)[-1]
+        )
+        session_start = datetime(2025, 9, 10, 22, 0)
+
+        async with session_scope() as db:
+            stored = (
+                await db.execute(
+                    select(AnalysisResult_ORM).where(
+                        AnalysisResult_ORM.session_id == session_id
+                    )
+                )
+            ).scalar_one()
+            assert stored.timestamp_start == session_start
+            expected_end = session_start + timedelta(seconds=last_offset_s)
+            assert abs(stored.timestamp_end - expected_end) < timedelta(milliseconds=1)
 
 
 # ---------------------------------------------------------------------------

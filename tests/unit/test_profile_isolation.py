@@ -613,8 +613,6 @@ class TestAnalysisServiceStoreResultIsolation:
     ):
         """AnalysisService(db, profile_id=A).store_result(result_for_B) raises
         NotFoundError and leaves zero AnalysisResult rows for the foreign session."""
-        from datetime import datetime
-
         from sqlalchemy import func, select
 
         from snore.analysis.modes.types import ModeResult
@@ -641,8 +639,8 @@ class TestAnalysisServiceStoreResultIsolation:
                     mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                 )
             },
-            timestamp_start=datetime(2025, 1, 1, 22, 0, 0).timestamp(),
-            timestamp_end=datetime(2025, 1, 2, 6, 0, 0).timestamp(),
+            timestamp_start=0.0,
+            timestamp_end=8 * 3600.0,
         )
         computation = AnalysisComputation(
             summary=result_dto, breaths=[], primary_mode="aasm"
@@ -668,8 +666,6 @@ class TestAnalysisServiceStoreResultIsolation:
 
     async def test_store_result_own_session_succeeds(self, async_db_session):
         """AnalysisService.store_result() on an owned session writes exactly one row."""
-        from datetime import datetime
-
         from sqlalchemy import func, select
 
         from snore.analysis.modes.types import ModeResult
@@ -692,8 +688,8 @@ class TestAnalysisServiceStoreResultIsolation:
                     mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                 )
             },
-            timestamp_start=datetime(2025, 1, 1, 22, 0, 0).timestamp(),
-            timestamp_end=datetime(2025, 1, 2, 6, 0, 0).timestamp(),
+            timestamp_start=0.0,
+            timestamp_end=8 * 3600.0,
         )
         computation = AnalysisComputation(
             summary=result_dto, breaths=[], primary_mode="aasm"

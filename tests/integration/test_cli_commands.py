@@ -587,8 +587,8 @@ async def db_with_analysis(temp_db):
             for j in range(num_analyses):
                 analysis_json = {
                     "session_id": sess.id,
-                    "timestamp_start": start_time.timestamp(),
-                    "timestamp_end": end_time.timestamp(),
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 8 * 3600.0,
                     "session_duration_hours": 8.0,
                     "total_breaths": 1000,
                     "machine_events": [],
