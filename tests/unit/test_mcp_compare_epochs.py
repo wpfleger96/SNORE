@@ -703,3 +703,98 @@ class TestExperimentalCompareEpochsRoundtrip:
         assert service_mock.call_args.kwargs.get("metrics") == [
             DistributionMetric.IE_RATIO
         ]
+
+
+def _empty_compare_result(tool_name: str) -> Any:
+    from snore.analysis.shared.versioning import NullReason  # noqa: PLC0415
+    from snore.services.breath_service import (  # noqa: PLC0415
+        DeviceCompareEpochsResult,
+        ExperimentalCompareEpochsResult,
+    )
+
+    if tool_name == "compare_epochs":
+        return DeviceCompareEpochsResult(
+            epochs=[], null_reason=NullReason.NO_DATA_IN_RANGE
+        )
+    return ExperimentalCompareEpochsResult(
+        epochs=[], null_reason=NullReason.NO_DATA_IN_RANGE, version_warnings=[]
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "service_path"),
+    [
+        pytest.param("compare_epochs", _DEVICE_SERVICE, id="default"),
+        pytest.param(
+            "experimental_compare_epochs",
+            "snore.services.breath_service.BreathService.compare_experimental_epochs",
+            id="experimental",
+        ),
+    ],
+)
+class TestEpochSpanCap:
+    async def test_epoch_over_366_nights_raises_tool_error_naming_the_epoch(
+        self,
+        mock_db_session: Any,
+        mcp_client_factory: Any,
+        tool_name: str,
+        service_path: str,
+    ) -> None:
+        service_mock = AsyncMock()
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch(service_path, service_mock)]
+        ) as client:
+            with pytest.raises(ToolError, match=r"epochs\[1\].*367 nights.*Split"):
+                await client.call_tool(
+                    tool_name,
+                    {
+                        "epochs": [
+                            {
+                                "label": "short",
+                                "date_start": "2024-01-01",
+                                "date_end": "2024-01-31",
+                            },
+                            # 2024 is a leap year: 366 nights, plus one.
+                            {
+                                "label": "long",
+                                "date_start": "2024-01-01",
+                                "date_end": "2025-01-01",
+                            },
+                        ]
+                    },
+                )
+
+        service_mock.assert_not_called()
+
+    async def test_epoch_of_366_nights_reaches_the_service(
+        self,
+        mock_db_session: Any,
+        mcp_client_factory: Any,
+        tool_name: str,
+        service_path: str,
+    ) -> None:
+        service_mock = AsyncMock(return_value=_empty_compare_result(tool_name))
+
+        async with mcp_client_factory(
+            mock_db_session, extra_patches=[patch(service_path, service_mock)]
+        ) as client:
+            result = await client.call_tool(
+                tool_name,
+                {
+                    "epochs": [
+                        {
+                            "label": "leap year",
+                            "date_start": "2024-01-01",
+                            "date_end": "2024-12-31",
+                        }
+                    ]
+                },
+            )
+
+        assert not result.is_error
+        (epoch,) = service_mock.call_args.args[-1]
+        assert (epoch.date_start, epoch.date_end) == (
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+        )

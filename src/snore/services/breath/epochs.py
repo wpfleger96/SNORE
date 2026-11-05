@@ -76,6 +76,7 @@ _BREATH_COLUMNS = (
     models.Breath.peak_flow_lpm,
     *_METRIC_COLUMNS.values(),
 )
+type _BreathRow = Row[*tuple[Any, ...]]
 # Breath rows fetched from the cursor at a time.  Only one analysis run's rows
 # are held at once, so this bounds the fetch buffer, not the run.
 _BREATH_FETCH_ROWS = 4096

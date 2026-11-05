@@ -129,3 +129,17 @@ def validate_epoch_count(count: int) -> None:
         raise ValidationError(
             f"epochs must contain between 1 and 6 entries (got {count})"
         )
+
+
+MAX_EPOCH_NIGHTS = 366
+"""Most calendar nights one comparison epoch may span, both ends included."""
+
+
+def validate_epoch_span(start: date, end: date, param_name: str) -> None:
+    """Raise ValidationError if ``start``..``end`` spans more than MAX_EPOCH_NIGHTS."""
+    nights = (end - start).days + 1
+    if nights > MAX_EPOCH_NIGHTS:
+        raise ValidationError(
+            f"'{param_name}' spans {nights} nights; an epoch may span at most "
+            f"{MAX_EPOCH_NIGHTS}. Split the range into shorter epochs."
+        )

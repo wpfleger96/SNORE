@@ -659,7 +659,7 @@ class TestCompareEpochsDeviceWaveforms:
         """The RX check covers unanalyzed sessions; the violating epoch stays null
         and never loads its waveforms, and the clean epoch still computes."""
         from snore.mcp.tools.epochs import compare_epochs  # noqa: PLC0415
-        from snore.services.breath_service import BreathService  # noqa: PLC0415
+        from snore.services.breath import epochs as epochs_service  # noqa: PLC0415
 
         device = await _make_device(async_db_session, async_test_profile.id)
         _, clean = await _make_day_session(async_db_session, device, date(2025, 9, 1))
@@ -672,18 +672,16 @@ class TestCompareEpochsDeviceWaveforms:
         await _add_rx(async_db_session, after.id, "12.0")
         await _add_waveform(async_db_session, before.id, "fl", [0.3])
 
-        real_fetch = BreathService._fetch_channel_vals
+        real_decode = epochs_service.decode_channel_blobs
         fetched_session_ids: list[int] = []
 
-        async def _recording_fetch(
-            db: AsyncSession, session_ids: list[int], channels: Any
+        async def _recording_decode(
+            db: AsyncSession, session_ids: list[int], *args: Any
         ) -> Any:
             fetched_session_ids.extend(session_ids)
-            return await real_fetch(db, session_ids, channels)
+            return await real_decode(db, session_ids, *args)
 
-        with patch.object(
-            BreathService, "_fetch_channel_vals", staticmethod(_recording_fetch)
-        ):
+        with patch.object(epochs_service, "decode_channel_blobs", _recording_decode):
             result = await compare_epochs(
                 db_session=async_db_session,
                 profile_id=async_test_profile.id,

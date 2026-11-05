@@ -477,7 +477,7 @@ class TestDayServiceFlReraProxy:
         ``rera_count_reason`` is aliased from the DTO's ``rera_reason``.
         """
 
-        async def _fake_summary(self, therapy_date, device_id=None, **kwargs):
+        async def _fake_summary(self, day):
             return SimpleNamespace(
                 fl_class_ge4_pct=12.5,
                 fl_class_ge4_pct_reason=None,
@@ -488,7 +488,7 @@ class TestDayServiceFlReraProxy:
             )
 
         monkeypatch.setattr(
-            "snore.services.breath_service.BreathService.get_experimental_nightly_summary",
+            "snore.services.breath_service.BreathService.get_experimental_day_summary",
             _fake_summary,
         )
 
@@ -579,8 +579,8 @@ class TestDayServiceFlReraProxy:
         await async_db_session.flush()
         looked_up: list[int] = []
 
-        async def _fake_summary(self, therapy_date, device_id=None, **kwargs):
-            looked_up.append(device_id)
+        async def _fake_summary(self, day):
+            looked_up.append(day.device_id)
             return SimpleNamespace(
                 fl_class_ge4_pct=None,
                 fl_class_ge4_pct_reason=None,
@@ -591,7 +591,7 @@ class TestDayServiceFlReraProxy:
             )
 
         monkeypatch.setattr(
-            "snore.services.breath_service.BreathService.get_experimental_nightly_summary",
+            "snore.services.breath_service.BreathService.get_experimental_day_summary",
             _fake_summary,
         )
 

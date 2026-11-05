@@ -20,7 +20,6 @@ from snore.analysis.shared.versioning import (
     TimezoneStatus,
 )
 from snore.database import models
-from snore.services.channel_stats import decode_channel_blobs
 from snore.utils.db_chunk import iter_id_chunks
 
 from .dtos import (
@@ -359,26 +358,6 @@ class _BreathServiceCore:
 
         # Rule 5: any other mix → PARTIAL
         return DayAnalysisStatus.PARTIAL
-
-    @staticmethod
-    async def _fetch_channel_vals(
-        db: AsyncSession,
-        session_ids: list[int],
-        channels: Sequence[str],
-    ) -> tuple[dict[str, dict[int, list[float]]], dict[str, set[int]]]:
-        """``(vals, corrupt)`` for ``channels``.
-
-        ``vals`` is channel → session_id → deserialized samples; ``corrupt`` is
-        channel → ids of sessions whose blob could not be decoded.  Every
-        requested channel is a key of both; sessions without a usable row for a
-        channel are absent from its ``vals`` map.  Values are raw, negative
-        sentinels included, so callers apply their own filter.  This is pure
-        I/O + light compute (numpy deserialization); no analysis state is
-        consulted.
-        """
-        return await decode_channel_blobs(
-            db, session_ids, channels, lambda _channel, samples: samples.tolist()
-        )
 
     @staticmethod
     def _current_algorithm_identity() -> AlgorithmIdentity:

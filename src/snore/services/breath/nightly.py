@@ -225,9 +225,7 @@ def _device_night_stats(
     )
     leak_corrupt = any(int(s.id) in corrupt_leak_sessions for s in day_sessions)
     leak_fraction = (
-        None
-        if leak_corrupt
-        else _share_above(leak, LEAK_REDLINE_LPM, inclusive=True)
+        None if leak_corrupt else _share_above(leak, LEAK_REDLINE_LPM, inclusive=True)
     )
     leak_above_24_pct, leak_above_24_pct_reason = _stat_pair(
         round(100.0 * leak_fraction, 1) if leak_fraction is not None else None,
