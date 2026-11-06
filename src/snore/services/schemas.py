@@ -94,6 +94,16 @@ INDEX_SOURCE_DESCRIPTION = (
     "value) or 'derived' (SNORE's recount); null when the day has no index"
 )
 
+# The query-time RERA proxy scans every flow_class >= 4 breath, with no
+# confidence gate (REST experimental day metrics and the MCP experimental tools).
+RERA_PROXY_FALLBACK_NOTE = (
+    "Its FL runs include fallback flatness-triage guesses (classifier "
+    "confidence == FL_DEFAULT_CONFIDENCE), which the fl_class_ge4_pct and "
+    "flow_class_distribution confidence gate excludes, so the proxy inherits "
+    "the fallback share's sensitivity to waveform shape (e.g. across therapy "
+    "modes or pressure-support levels)."
+)
+
 # What the stored fl and snore waveform channels measure, for every statistic
 # computed over them.  Each statistic pools samples, never averages per session.
 _FL_CHANNEL = (
@@ -1228,14 +1238,14 @@ class DayExperimentalMetrics(BaseModel):
     rera_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "RERA-proxy events per mask-on hour of analyzed sessions (FL-run "
-        "proxy, not device-scored).",
+        f"proxy, not device-scored). {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
     rera_index_reason: str | None = None
     rera_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "RERA-proxy count from flow-limitation runs ending in a recovery breath; "
-        "distinct from device-scored `reras`.",
+        f"distinct from device-scored `reras`. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
     rera_count_reason: str | None = None

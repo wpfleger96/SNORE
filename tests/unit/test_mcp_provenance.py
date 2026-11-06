@@ -58,6 +58,7 @@ from snore.provenance import (
     provenance_field,
     response_provenance,
 )
+from snore.services.schemas import DayExperimentalMetrics
 
 EXPERIMENTAL_NOTE = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
 EXPERIMENTAL_TOOLS = [
@@ -139,6 +140,17 @@ class TestToolDescriptions:
         assert "RDI here adds the experimental RERA-proxy index" in description
         assert "rule-matched classified breaths" in description
         assert "confidence gate excludes fallback guesses" in description
+
+    @pytest.mark.parametrize(
+        "tool_name", ["experimental_get_nightly_metrics", "experimental_compare_epochs"]
+    )
+    async def test_rera_proxy_tool_description_names_fallback_inclusion(
+        self, tool_name: str
+    ) -> None:
+        description = " ".join((await _tool_descriptions())[tool_name].split())
+
+        assert "fallback flatness-triage guesses" in description
+        assert "sensitivity to waveform shape" in description
 
     async def test_nightly_description_explains_corrupt_leak_reason(self) -> None:
         description = (await _tool_descriptions())["get_nightly_summary"]
@@ -245,6 +257,25 @@ class TestSchemaFieldLabels:
         assert _field_description(BreathTableRow, field_name).startswith(
             "[EXPERIMENTAL]"
         )
+
+    @pytest.mark.parametrize(
+        ("model", "field_name"),
+        [
+            (ExperimentalNightlyRow, "rera_index"),
+            (ExperimentalNightlyRow, "rdi"),
+            (ExperimentalNightlyRow, "rera_proxy_count"),
+            (EpochStats, "rera_proxy_count"),
+            (DayExperimentalMetrics, "rera_index"),
+            (DayExperimentalMetrics, "rera_count"),
+        ],
+    )
+    def test_rera_proxy_field_names_fallback_inclusion(
+        self, model: type[BaseModel], field_name: str
+    ) -> None:
+        description = " ".join(_field_description(model, field_name).split())
+
+        assert "fallback" in description
+        assert "sensitivity to waveform shape" in description
 
     def test_fl_class_ge4_pct_excludes_fallback_guesses(self) -> None:
         description = " ".join(

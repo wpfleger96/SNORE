@@ -236,6 +236,8 @@ def register(mcp: FastMCP) -> None:
                 ``"rera_proxy_centered"`` — context window of ±``context_seconds``
                     centered on the recovery breath of each detected RERA-proxy event
                     (FL run → recovery breath); ranked by FL run length descending.
+                    FL runs here, as in ``fl_run_ending_in_recovery``, include
+                    fallback flatness-triage guesses (no confidence gate).
                     Accepts ``context_seconds``, ``min_fl_run_length``,
                     ``fl_class_threshold``, ``recovery_amplitude_margin``.
                     Pass ``session_id`` + ``window_start_offset`` / ``window_end_offset``

@@ -251,6 +251,11 @@ def register(mcp: FastMCP) -> None:
         session falls anywhere in the combined date range, and ``"not_available"`` for
         a device the active profile does not own.
 
+        ``rera_proxy_count`` applies no confidence gate: its FL runs include the
+        fallback flatness-triage guesses that ``flow_class_distribution`` leaves
+        out, so it inherits their sensitivity to waveform shape (e.g. across
+        therapy modes or pressure-support levels).
+
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
