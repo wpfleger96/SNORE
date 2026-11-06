@@ -2760,11 +2760,18 @@ class TestDetectEventsSpo2:
     """detect_events forwards SpO2 to hypopnea detection."""
 
     def _breaths(self) -> list[BreathMetrics]:
-        """15 normal breaths, a 4-breath 50%-reduced run (60-76 s), then normal."""
-        breaths = [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(15)]
-        breaths += [_uniform_breath(i + 1, float(i * 4), 25.0) for i in range(15, 19)]
-        breaths += [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(19, 30)]
-        return breaths
+        """15 normal breaths, a 4-breath run (60-76 s) averaging 45%, then normal.
+
+        Below 50% reduction, flow-only confidence (0.4 base) differs from the
+        SpO2-mode base (0.6), so confidence shows which one an event got. The run
+        alternates 55% and 35% breaths because region finding ends a region
+        after two consecutive breaths reduced by less than 50%.
+        """
+        amplitudes = [50.0] * 15 + [22.5, 32.5] * 2 + [50.0] * 11
+        return [
+            _uniform_breath(i + 1, float(i * 4), amplitude)
+            for i, amplitude in enumerate(amplitudes)
+        ]
 
     def _hypopneas(
         self, spo2_data: tuple[np.ndarray, np.ndarray] | None
@@ -2818,6 +2825,30 @@ class TestDetectEventsSpo2:
         hypopneas = self._hypopneas((timestamps[keep], spo2[keep]))
 
         assert hypopneas[0].has_desaturation is None
+        assert hypopneas[0].confidence == self._hypopneas(None)[0].confidence
+
+    def test_resmed_flow_only_mode_ignores_spo2(self):
+        """FLOW_ONLY detection neither checks desaturation nor adds its bonus."""
+
+        def resmed_hypopneas(
+            spo2_data: tuple[np.ndarray, np.ndarray] | None,
+        ) -> list[HypopneaEvent]:
+            # 30 normal breaths, a 120-132 s run averaging 48% reduction, normal.
+            amplitudes = [50.0] * 30 + [22.5, 32.5, 22.5] + [50.0] * 10
+            breaths = [
+                _uniform_breath(i + 1, float(i * 4), amplitude)
+                for i, amplitude in enumerate(amplitudes)
+            ]
+            return EventDetector(RESMED_CONFIG)._detect_hypopneas(
+                breaths, flow_data=None, spo2_data=spo2_data, exclude_events=[]
+            )
+
+        with_spo2 = resmed_hypopneas(self._spo2(dip_start=124.0, dip_end=132.0))
+        without_spo2 = resmed_hypopneas(None)
+
+        assert len(with_spo2) == 1
+        assert with_spo2[0].has_desaturation is None
+        assert with_spo2[0].confidence == without_spo2[0].confidence
 
 
 class TestThresholdBandValidation:

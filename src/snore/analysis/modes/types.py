@@ -20,9 +20,11 @@ class BaselineMethod(StrEnum):
 class HypopneaMode(StrEnum):
     """Method for detecting hypopnea events."""
 
-    AASM_3PCT = "aasm_3pct"  # 30% flow + 3% SpO2 drop (AASM recommended)
-    AASM_4PCT = "aasm_4pct"  # 30% flow + 4% SpO2 drop (CMS/Medicare)
-    FLOW_ONLY = "flow_only"  # 40% flow reduction (ResMed-style, no SpO2)
+    # Every mode scores hypopneas from the configured flow-reduction band; a
+    # desaturation only adds confidence.
+    AASM_3PCT = "aasm_3pct"  # checks a 3% SpO2 drop (AASM recommended)
+    AASM_4PCT = "aasm_4pct"  # checks a 4% SpO2 drop (CMS/Medicare)
+    FLOW_ONLY = "flow_only"  # flow band only, SpO2 ignored (ResMed-style)
     DISABLED = "disabled"  # Skip hypopnea detection
 
 

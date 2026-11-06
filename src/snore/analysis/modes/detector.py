@@ -359,12 +359,16 @@ class EventDetector:
         """
         Detect hypopnea events using configured mode.
 
-        Supports multiple detection modes:
-        - AASM_3PCT/4PCT: Requires SpO2 desaturation (3% or 4%)
-        - FLOW_ONLY: 40% flow reduction without SpO2
+        Every mode scores hypopneas from flow reduction alone (the band below);
+        the modes differ in how SpO2 is used:
+        - AASM_3PCT/4PCT: each event records whether SpO2 fell by 3% or 4%
+          (has_desaturation), and a desaturation adds confidence. Without SpO2
+          they fall back to FLOW_ONLY if hypopnea_flow_only_fallback is set,
+          else no hypopneas are scored.
+        - FLOW_ONLY: SpO2 is ignored (has_desaturation stays None)
         - DISABLED: Skip detection
 
-        Falls back to FLOW_ONLY if SpO2 unavailable and fallback enabled.
+        An event with no SpO2 readings of its own gets flow-only confidence.
 
         A region of consecutive breaths reduced by at least
         hypopnea_min_threshold is a hypopnea only if its average reduction is at
@@ -499,7 +503,7 @@ class EventDetector:
             end_time = breaths[end_idx - 1].end_time
 
             has_desaturation = None
-            if spo2_data is not None:
+            if spo2_data is not None and actual_mode != HypopneaMode.FLOW_ONLY:
                 spo2_timestamps, spo2_values = spo2_data
                 lo = np.searchsorted(
                     spo2_timestamps,
@@ -520,8 +524,14 @@ class EventDetector:
                     spo2_values[lo:hi], threshold=desaturation_threshold
                 )
 
+            # An event with no SpO2 readings of its own is scored as flow-only.
             confidence = _calculate_hypopnea_confidence(
-                avg_reduction, duration, has_desaturation, detection_mode=actual_mode
+                avg_reduction,
+                duration,
+                has_desaturation,
+                detection_mode=(
+                    HypopneaMode.FLOW_ONLY if has_desaturation is None else actual_mode
+                ),
             )
 
             logger.debug(
