@@ -776,6 +776,39 @@ class TestMergeTwoEvents:
 
         assert merged.confidence == 0.70
 
+    @pytest.mark.parametrize(
+        ("flag1", "flag2", "expected"),
+        [
+            (True, None, True),
+            (False, True, True),
+            (None, False, None),
+            (False, None, None),
+            (False, False, False),
+            (None, None, None),
+        ],
+    )
+    def test_hypopnea_desaturation_merges_three_valued_in_either_order(
+        self, flag1, flag2, expected
+    ):
+        """Unknown beats a known False; True beats both; order does not matter."""
+
+        def hypopnea(start: float, has_desaturation: bool | None) -> HypopneaEvent:
+            return HypopneaEvent(
+                start_time=start,
+                end_time=start + 10.0,
+                duration=10.0,
+                flow_reduction=0.5,
+                confidence=0.6,
+                baseline_flow=30.0,
+                has_desaturation=has_desaturation,
+            )
+
+        merged = _merge_two_events(hypopnea(0.0, flag1), hypopnea(11.0, flag2))
+        swapped = _merge_two_events(hypopnea(0.0, flag2), hypopnea(11.0, flag1))
+
+        assert merged.has_desaturation is expected
+        assert swapped.has_desaturation is expected
+
 
 class TestMergeAdjacentEvents:
     """Tests for _merge_adjacent_events() method."""
