@@ -87,6 +87,10 @@ __all__ = [
 
 _RAMP_KEYS: frozenset[str] = frozenset({"ramp_enabled", "ramp_time", "smart_ramp"})
 
+# A stored SpO2 sample is a reading iff low < value <= high; ResMed writes -1
+# for every sample when no oximeter is attached.
+SPO2_VALID_RANGE: tuple[float, float] = (0.0, 100.0)
+
 
 # Optional waveform channels fetched by ``load_session_inputs_raw``:
 # (waveform_type, log level on absence, log message template).
@@ -150,6 +154,9 @@ class AnalysisInputs:
     flow_values: np.ndarray
     sample_rate: float
     machine_events: list[AnalysisEvent]
+    # Valid SpO2 readings only (see SPO2_VALID_RANGE), on their own timeline;
+    # None when fewer than two remain.
+    spo2_timestamps: np.ndarray | None = None
     spo2_values: np.ndarray | None = None
     pulse_timestamps: np.ndarray | None = None
     pulse_values: np.ndarray | None = None
@@ -498,17 +505,17 @@ class AnalysisService:
 
         sample_rate = float(raw.flow_metadata.get("sample_rate", 25.0))
 
+        spo2_timestamps: np.ndarray | None = None
         spo2_values: np.ndarray | None = None
         if raw.spo2_blob is not None and raw.spo2_sample_count > 0:
             try:
-                spo2_timestamps, spo2_raw = deserialize_waveform_blob(
-                    raw.spo2_blob, raw.spo2_sample_count
-                )
-                spo2_values = _align_spo2_to_flow(
-                    spo2_timestamps, spo2_raw, flow_timestamps
-                )
-                if spo2_values is None:
-                    logger.info("SpO2 channel has no valid readings, skipping")
+                st, sv = deserialize_waveform_blob(raw.spo2_blob, raw.spo2_sample_count)
+                low, high = SPO2_VALID_RANGE
+                valid = np.isfinite(st) & (sv > low) & (sv <= high)
+                if np.count_nonzero(valid) >= 2:
+                    spo2_timestamps, spo2_values = st[valid], sv[valid]
+                else:
+                    logger.info("SpO2 channel has under two valid readings, skipping")
             except Exception as e:
                 logger.warning(f"Failed to deserialise SpO2 blob: {e}")
 
@@ -541,6 +548,7 @@ class AnalysisService:
             flow_values=flow_values.copy(),
             sample_rate=sample_rate,
             machine_events=raw.machine_events,
+            spo2_timestamps=spo2_timestamps,
             spo2_values=spo2_values,
             pulse_timestamps=pulse_timestamps,
             pulse_values=pulse_values,
@@ -686,6 +694,11 @@ class AnalysisService:
             except Exception as e:
                 logger.debug(f"Pulse detection failed: {e}")
 
+        spo2_data = (
+            None
+            if inputs.spo2_timestamps is None or inputs.spo2_values is None
+            else (inputs.spo2_timestamps, inputs.spo2_values)
+        )
         mode_results = {}
         for mode_name in inputs.modes:
             try:
@@ -695,7 +708,7 @@ class AnalysisService:
                     flow_data=(timestamps, flow_values),
                     sample_rate=sample_rate,
                     session_duration_hours=session_duration_hours,
-                    spo2_values=inputs.spo2_values,
+                    spo2_data=spo2_data,
                 )
                 mode_results[mode_name] = mode_result
                 logger.info(
@@ -989,40 +1002,6 @@ class AnalysisService:
 # ---------------------------------------------------------------------------
 # Module-level compute helpers (private to this module)
 # ---------------------------------------------------------------------------
-
-
-def _align_spo2_to_flow(
-    spo2_timestamps: np.ndarray,
-    spo2_values: np.ndarray,
-    flow_timestamps: np.ndarray,
-) -> np.ndarray | None:
-    """Resample SpO2 onto the flow timeline by holding each reading.
-
-    Oximeters record at ~1 Hz while flow runs at ~25 Hz, and hypopnea detection
-    indexes SpO2 with flow-sample masks. Each flow sample takes the latest SpO2
-    reading at or before it, held for one SpO2 sample period; flow samples no
-    reading covers (before the first, after a gap or the last) are NaN, as are
-    out-of-range readings such as ResMed's -1 "no oximeter" value.
-
-    Returns:
-        SpO2 aligned to ``flow_timestamps``, or None when there are fewer than
-        two valid readings.
-    """
-    readings = np.where(
-        np.isfinite(spo2_values) & (spo2_values > 0) & (spo2_values <= 100),
-        spo2_values,
-        np.nan,
-    ).astype(np.float64)
-    if np.count_nonzero(np.isfinite(readings)) < 2:
-        return None
-
-    period = float(np.median(np.diff(spo2_timestamps)))
-    idx = np.searchsorted(spo2_timestamps, flow_timestamps, side="right") - 1
-    held = idx >= 0
-    held[held] = flow_timestamps[held] - spo2_timestamps[idx[held]] < period
-    aligned = np.full(len(flow_timestamps), np.nan)
-    aligned[held] = readings[idx[held]]
-    return aligned
 
 
 def _collect_recovery_breath_indices(

@@ -2,11 +2,7 @@
 
 import numpy as np
 
-from snore.analysis.service import (
-    AnalysisService,
-    RawSessionBlobs,
-    _align_spo2_to_flow,
-)
+from snore.analysis.service import AnalysisInputs, AnalysisService, RawSessionBlobs
 from snore.analysis.shared.types import HypopneaEvent
 
 FLOW_RATE_HZ = 25.0
@@ -102,46 +98,32 @@ def test_oximeter_not_connected_falls_back_to_flow_only():
     assert hypopnea.has_desaturation is None
 
 
-class TestAlignSpo2ToFlow:
-    def test_holds_each_reading_until_the_next(self):
-        flow_ts = np.arange(0.0, 3.0, 0.25)
-        aligned = _align_spo2_to_flow(
-            np.array([0.0, 1.0, 2.0]), np.array([97.0, 95.0, 93.0]), flow_ts
-        )
-
-        assert aligned is not None
-        np.testing.assert_array_equal(aligned, np.repeat([97.0, 95.0, 93.0], 4))
-
-    def test_invalid_readings_and_uncovered_samples_are_nan(self):
-        aligned = _align_spo2_to_flow(
-            np.array([0.0, 1.0, 2.0, 3.0, 6.0]),
-            np.array([97.0, -1.0, 96.0, 95.0, 94.0]),
-            np.array([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 6.5, 7.5]),
-        )
-
-        # Before the first reading, the -1 reading, inside the 3-6 s gap, and
-        # after the last reading's period are NaN.
-        np.testing.assert_array_equal(
-            aligned, [np.nan, 97.0, np.nan, 96.0, 95.0, np.nan, 94.0, np.nan]
-        )
-
-    def test_no_valid_readings_returns_none(self):
-        spo2_ts = np.arange(0.0, 10.0, 1.0)
-
-        assert (
-            _align_spo2_to_flow(
-                spo2_ts, np.full_like(spo2_ts, -1.0), np.arange(0.0, 10.0, 0.04)
+class TestPrepareSpo2Inputs:
+    def _inputs(self, timestamps: np.ndarray, values: np.ndarray) -> AnalysisInputs:
+        flow_ts, flow_values = _flow()
+        return AnalysisService.prepare_inputs(
+            RawSessionBlobs(
+                session_id=1,
+                flow_blob=_blob(flow_ts, flow_values),
+                flow_sample_count=len(flow_ts),
+                flow_metadata={"sample_rate": FLOW_RATE_HZ},
+                machine_events=[],
+                spo2_blob=_blob(timestamps, values),
+                spo2_sample_count=len(timestamps),
             )
-            is None
         )
 
+    def test_invalid_readings_are_dropped_from_own_timeline(self):
+        inputs = self._inputs(
+            np.array([0.0, 1.0, 2.0, 3.0, 4.0]),
+            np.array([97.0, -1.0, 0.0, 101.0, 95.0]),
+        )
 
-def test_spo2_at_flow_rate_keeps_readings_one_to_one():
-    flow_ts, _ = _flow()
-    spo2_ts, spo2_values = _spo2_1hz(dip_to=93.0)
-    upsampled = np.interp(flow_ts, spo2_ts, spo2_values)
+        np.testing.assert_array_equal(inputs.spo2_timestamps, [0.0, 4.0])
+        np.testing.assert_array_equal(inputs.spo2_values, [97.0, 95.0])
 
-    aligned = _align_spo2_to_flow(flow_ts, upsampled, flow_ts)
+    def test_single_valid_reading_is_treated_as_absent(self):
+        inputs = self._inputs(np.array([0.0, 1.0, 2.0]), np.array([97.0, -1.0, -1.0]))
 
-    assert aligned is not None
-    np.testing.assert_allclose(aligned, upsampled)
+        assert inputs.spo2_timestamps is None
+        assert inputs.spo2_values is None

@@ -202,18 +202,17 @@ def _check_desaturation(spo2_values: np.ndarray, threshold: float = 3.0) -> bool
     Check if SpO2 desaturation occurred.
 
     Args:
-        spo2_values: SpO2 signal values; NaN marks samples without a reading
+        spo2_values: Valid SpO2 readings
         threshold: Desaturation threshold (default 3% for AASM, 4% for CMS)
 
     Returns:
-        True if desaturation >= threshold occurred, or None when fewer than two
-        samples have a reading (desaturation unknown)
+        True if desaturation >= threshold occurred, or None with fewer than two
+        readings (desaturation unknown)
     """
-    readings = spo2_values[np.isfinite(spo2_values)]
-    if len(readings) < 2:
+    if len(spo2_values) < 2:
         return None
 
-    drop = np.max(readings) - np.min(readings)
+    drop = np.max(spo2_values) - np.min(spo2_values)
 
     return bool(drop >= threshold)
 

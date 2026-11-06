@@ -959,17 +959,11 @@ class TestCheckDesaturation:
 
     def test_insufficient_data(self, aasm_detector):
         """Fewer than 2 readings leave desaturation unknown."""
-        spo2_values = np.array([96.0, np.nan])
+        spo2_values = np.array([96.0])
 
         has_desat = _check_desaturation(spo2_values)
 
         assert has_desat is None
-
-    def test_missing_readings_are_ignored(self, aasm_detector):
-        """NaN samples (no oximeter reading) do not mask a real drop."""
-        spo2_values = np.array([96.0, np.nan, 94.0, 92.0, np.nan])
-
-        assert _check_desaturation(spo2_values) is True
 
 
 # =============================================================================
@@ -1640,9 +1634,7 @@ class TestDetectHypopneasModes:
                 )
             )
 
-        hypopneas = detector._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None
-        )
+        hypopneas = detector._detect_hypopneas(breaths, flow_data=None, spo2_data=None)
         assert len(hypopneas) >= 1
         if len(hypopneas) > 0:
             assert hypopneas[0].flow_reduction >= 0.40
@@ -1684,9 +1676,7 @@ class TestDetectHypopneasModes:
             for i in range(3)
         ]
 
-        hypopneas = detector._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None
-        )
+        hypopneas = detector._detect_hypopneas(breaths, flow_data=None, spo2_data=None)
         assert len(hypopneas) == 0
 
     def test_hypopnea_fallback_to_flow_only(self, aasm_detector):
@@ -1754,9 +1744,7 @@ class TestDetectHypopneasModes:
             )
 
         # No SpO2 data - should fall back to FLOW_ONLY
-        hypopneas = detector._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None
-        )
+        hypopneas = detector._detect_hypopneas(breaths, flow_data=None, spo2_data=None)
         assert len(hypopneas) >= 1
 
 
@@ -2261,7 +2249,9 @@ class TestValidateAgainstMachineEvents:
 
         flow_data = (timestamps, np.zeros(34))
 
-        hypopneas = detector._detect_hypopneas(breaths, flow_data, spo2_signal)
+        hypopneas = detector._detect_hypopneas(
+            breaths, flow_data, (timestamps, spo2_signal)
+        )
 
         assert len(hypopneas) >= 1
         if len(hypopneas) > 0:
@@ -2340,7 +2330,9 @@ class TestValidateAgainstMachineEvents:
 
         flow_data = (timestamps, np.zeros(34))
 
-        hypopneas = detector._detect_hypopneas(breaths, flow_data, spo2_signal)
+        hypopneas = detector._detect_hypopneas(
+            breaths, flow_data, (timestamps, spo2_signal)
+        )
 
         assert len(hypopneas) >= 1
         if len(hypopneas) > 0:
@@ -2575,7 +2567,7 @@ class TestHypopneaBaselineContamination:
         breaths += [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(13, 19)]
 
         hypopneas = detector._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+            breaths, flow_data=None, spo2_data=None, exclude_events=[]
         )
 
         assert len(hypopneas) >= 1
@@ -2624,7 +2616,7 @@ class TestHypopneaMaxThreshold:
         breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
 
         hypopneas = EventDetector(RESMED_CONFIG)._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+            breaths, flow_data=None, spo2_data=None, exclude_events=[]
         )
 
         assert hypopneas == []
@@ -2638,7 +2630,7 @@ class TestHypopneaMaxThreshold:
         breaths = self._breaths_with_reduced_run([22.5, 32.5, 22.5])
 
         hypopneas = EventDetector(RESMED_CONFIG)._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+            breaths, flow_data=None, spo2_data=None, exclude_events=[]
         )
 
         assert len(hypopneas) == 1
@@ -2651,7 +2643,7 @@ class TestHypopneaMaxThreshold:
         breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
 
         hypopneas = EventDetector(config)._detect_hypopneas(
-            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+            breaths, flow_data=None, spo2_data=None, exclude_events=[]
         )
 
         assert len(hypopneas) == 1
@@ -2766,7 +2758,9 @@ class TestDetectEventsSpo2:
         breaths += [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(19, 30)]
         return breaths
 
-    def _hypopneas(self, spo2_values: np.ndarray | None) -> list[HypopneaEvent]:
+    def _hypopneas(
+        self, spo2_data: tuple[np.ndarray, np.ndarray] | None
+    ) -> list[HypopneaEvent]:
         breaths = self._breaths()
         timestamps = np.arange(0.0, breaths[-1].end_time + 1.0, 0.1)
         result = EventDetector(AASM_CONFIG).detect_events(
@@ -2774,16 +2768,17 @@ class TestDetectEventsSpo2:
             flow_data=(timestamps, np.zeros_like(timestamps)),
             sample_rate=10.0,
             session_duration_hours=1.0,
-            spo2_values=spo2_values,
+            spo2_data=spo2_data,
         )
         assert len(result.hypopneas) == 1
         return result.hypopneas
 
-    def _spo2(self) -> np.ndarray:
-        timestamps = np.arange(0.0, 30 * 4 + 1.0, 0.1)
+    def _spo2(self) -> tuple[np.ndarray, np.ndarray]:
+        """1 Hz SpO2 at 97% that falls to 93% during the hypopnea."""
+        timestamps = np.arange(0.0, 30 * 4 + 1.0, 1.0)
         spo2 = np.full_like(timestamps, 97.0)
         spo2[(timestamps >= 64.0) & (timestamps < 76.0)] = 93.0
-        return spo2
+        return timestamps, spo2
 
     def test_spo2_dip_marks_desaturation(self):
         assert self._hypopneas(self._spo2())[0].has_desaturation is True
@@ -2791,19 +2786,13 @@ class TestDetectEventsSpo2:
     def test_without_spo2_desaturation_is_unknown(self):
         assert self._hypopneas(None)[0].has_desaturation is None
 
-    def test_misaligned_spo2_is_ignored(self):
-        """SpO2 not sample-aligned to flow falls back to flow-only detection."""
-        hypopneas = self._hypopneas(self._spo2()[::10])
+    def test_no_reading_near_event_leaves_desaturation_unknown(self):
+        timestamps, spo2 = self._spo2()
+        keep = (timestamps < 10.0) | (timestamps > 115.0)
+
+        hypopneas = self._hypopneas((timestamps[keep], spo2[keep]))
 
         assert hypopneas[0].has_desaturation is None
-        assert hypopneas[0].confidence == self._hypopneas(None)[0].confidence
-
-    def test_no_reading_during_event_leaves_desaturation_unknown(self):
-        spo2 = self._spo2()
-        timestamps = np.arange(0.0, 30 * 4 + 1.0, 0.1)
-        spo2[(timestamps >= 50.0) & (timestamps < 90.0)] = np.nan
-
-        assert self._hypopneas(spo2)[0].has_desaturation is None
 
 
 class TestThresholdBandValidation:

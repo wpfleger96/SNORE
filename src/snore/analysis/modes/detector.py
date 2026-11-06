@@ -145,7 +145,7 @@ class EventDetector:
         flow_data: tuple[np.ndarray, np.ndarray],
         sample_rate: float,
         session_duration_hours: float,
-        spo2_values: np.ndarray | None = None,
+        spo2_data: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> ModeResult:
         """
         Run detection algorithm and return results.
@@ -159,8 +159,8 @@ class EventDetector:
             flow_data: Tuple of (timestamps, flow_values)
             sample_rate: Sampling rate in Hz (from waveform metadata)
             session_duration_hours: Total session duration in hours
-            spo2_values: SpO2 samples aligned to the flow timestamps (NaN where
-                no oximeter reading covers a sample), or None without oximetry
+            spo2_data: Tuple of (timestamps, values) holding only valid SpO2
+                readings, timestamps ascending, or None without oximetry
 
         Returns:
             ModeResult with detected events and metrics
@@ -180,7 +180,7 @@ class EventDetector:
             apneas = self._detect_apneas(breaths, flow_data, sample_rate)
 
         hypopneas = self._detect_hypopneas(
-            breaths, flow_data, spo2_signal=spo2_values, exclude_events=apneas
+            breaths, flow_data, spo2_data=spo2_data, exclude_events=apneas
         )
 
         reras: list[RERAEvent] = []
@@ -353,7 +353,7 @@ class EventDetector:
         self,
         breaths: list[BreathMetrics],
         flow_data: tuple[np.ndarray, np.ndarray] | None = None,
-        spo2_signal: np.ndarray | None = None,
+        spo2_data: tuple[np.ndarray, np.ndarray] | None = None,
         exclude_events: list[ApneaEvent] | None = None,
     ) -> list[HypopneaEvent]:
         """
@@ -373,9 +373,9 @@ class EventDetector:
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
-            spo2_signal: SpO2 samples aligned to the flow timestamps, for
-                desaturation detection. A signal whose length differs from the
-                flow timestamps, or that has no finite samples, is ignored.
+            spo2_data: Optional tuple of (timestamps, values) holding only
+                valid SpO2 readings, timestamps ascending, for desaturation
+                detection
             exclude_events: List of apnea events to exclude from hypopnea detection
 
         Returns:
@@ -388,20 +388,7 @@ class EventDetector:
             logger.info(f"{self.config.name}: Hypopnea detection disabled")
             return []
 
-        if spo2_signal is not None:
-            if flow_data is None or len(spo2_signal) != len(flow_data[0]):
-                logger.warning(
-                    f"{self.config.name}: SpO2 is not aligned to the flow timestamps "
-                    f"({len(spo2_signal)} vs "
-                    f"{0 if flow_data is None else len(flow_data[0])} samples); "
-                    "ignoring SpO2"
-                )
-                spo2_signal = None
-            elif not np.any(np.isfinite(spo2_signal)):
-                logger.info(f"{self.config.name}: SpO2 has no valid samples")
-                spo2_signal = None
-
-        has_spo2 = spo2_signal is not None
+        has_spo2 = spo2_data is not None
         actual_mode = self.config.hypopnea_mode
 
         if not has_spo2:
@@ -512,14 +499,15 @@ class EventDetector:
             end_time = breaths[end_idx - 1].end_time
 
             has_desaturation = None
-            if spo2_signal is not None and flow_data is not None:
-                timestamps, _ = flow_data
-                mask = (timestamps >= start_time) & (timestamps <= end_time)
+            if spo2_data is not None:
+                spo2_timestamps, spo2_values = spo2_data
+                lo = np.searchsorted(spo2_timestamps, start_time, side="left")
+                hi = np.searchsorted(spo2_timestamps, end_time, side="right")
                 desaturation_threshold = (
                     4.0 if actual_mode == HypopneaMode.AASM_4PCT else 3.0
                 )
                 has_desaturation = _check_desaturation(
-                    spo2_signal[mask], threshold=desaturation_threshold
+                    spo2_values[lo:hi], threshold=desaturation_threshold
                 )
 
             confidence = _calculate_hypopnea_confidence(
