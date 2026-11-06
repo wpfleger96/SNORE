@@ -50,7 +50,7 @@ _NON_METRIC_FIELDS = {
     "breath_number",
     "best_index",
     "worst_index",
-    # Time positions (seconds from session start / epoch), not durations
+    # Time positions (seconds from session start), not durations
     "start_time",
     "end_time",
     "timestamps",

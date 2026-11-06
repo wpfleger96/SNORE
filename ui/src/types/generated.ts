@@ -2293,13 +2293,13 @@ export interface components {
             session_id: number
             /**
              * Timestamp End
-             * @description Session end timestamp
+             * @description Offset of the last flow sample from session start (seconds)
              * @default 0
              */
             timestamp_end: number
             /**
              * Timestamp Start
-             * @description Session start timestamp
+             * @description Offset of the first flow sample from session start (seconds)
              * @default 0
              */
             timestamp_start: number
