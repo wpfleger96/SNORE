@@ -34,6 +34,15 @@ describe('deviceFilterOptions', () => {
         expect(options.map((o) => o.label)).toEqual(['A X1', 'B X1'])
     })
 
+    it('test_device_without_serial_is_skipped_and_not_counted_as_duplicate', () => {
+        const options = deviceFilterOptions([
+            device('AirSense 11', ''),
+            device('AirSense 11', 'SN1'),
+        ])
+
+        expect(options).toEqual([{ label: 'ResMed AirSense 11', value: 'SN1' }])
+    })
+
     it('test_no_devices_returns_no_options', () => {
         expect(deviceFilterOptions([])).toEqual([])
     })
