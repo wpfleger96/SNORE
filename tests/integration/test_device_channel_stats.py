@@ -747,6 +747,7 @@ async def test_session_detail_loads_only_the_two_channels(
     assert "waveform_type IN" in statement
     assert {"fl", "snore"} <= set(parameters)
     assert "flow" not in parameters
+    assert "leak" not in parameters
 
 
 async def test_list_endpoints_do_not_read_blobs(
@@ -767,7 +768,7 @@ async def test_list_endpoints_do_not_read_blobs(
 async def test_rest_day_values_equal_mcp_nightly_values(
     async_db_session: AsyncSession, profile_device: tuple[int, Device]
 ) -> None:
-    """The two implementations of the same statistics must not drift."""
+    """The REST day and the MCP nightly summary pool the same samples alike."""
     profile_id, device = profile_device
     await _seed_night_with_a_disabled_session(async_db_session, device)
 
@@ -789,7 +790,11 @@ async def test_rest_day_values_equal_mcp_nightly_values(
 async def test_compare_epochs_values_equal_day_values(
     async_db_session: AsyncSession, profile_device: tuple[int, Device]
 ) -> None:
-    """``compare_epochs`` keeps its own percentile code over the same samples."""
+    """``compare_epochs`` reads the same pooled ranks as the REST day.
+
+    It shares ``pool_histograms`` and ``value_at_rank`` but builds its own
+    distribution object, so this pins its median and 95th to the day's.
+    """
     profile_id, device = profile_device
     await _seed_night_with_a_disabled_session(async_db_session, device)
 

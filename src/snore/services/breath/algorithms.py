@@ -173,6 +173,53 @@ def _count_fl_run_reras(
     )
 
 
+def count_fl_run_reras_arrays(
+    flow_class: np.ndarray,
+    is_recovery_breath: np.ndarray,
+    peak_flow_lpm: np.ndarray,
+    *,
+    fl_class_threshold: int = RERAProxyConstants.FL_CLASS_THRESHOLD,
+    min_fl_run_length: int = RERAProxyConstants.MIN_FL_RUN_LENGTH,
+    recovery_amplitude_margin: float = RERAProxyConstants.RECOVERY_AMPLITUDE_MARGIN,
+) -> int:
+    """``_count_fl_run_reras`` over column arrays of one run's breaths, in order.
+
+    ``flow_class`` and ``peak_flow_lpm`` are float arrays with NaN for null
+    (SQLite stores NaN as NULL, so NaN never stands for a stored value);
+    ``is_recovery_breath`` is a bool array, True only where the value is True.
+    Runs and followers are found with array operations; the run mean of a
+    criterion-(b) candidate uses Python's ``sum`` over the run's non-null peaks,
+    so it rounds exactly as ``iter_fl_run_recoveries`` does (CPython sums floats
+    with compensation, which numpy's reductions do not reproduce).
+    """
+    n = flow_class.size
+    in_run = np.zeros(n + 2, dtype=np.int8)
+    in_run[1:-1] = flow_class >= fl_class_threshold  # NaN compares False
+    edges = np.diff(in_run)
+    starts = np.flatnonzero(edges == 1)
+    # A run's end (exclusive) is its follower's index.
+    ends = np.flatnonzero(edges == -1)
+    followed = (ends - starts >= min_fl_run_length) & (ends < n)
+    starts, ends = starts[followed], ends[followed]
+
+    flagged = is_recovery_breath[ends]
+    follower_peak = peak_flow_lpm[ends]
+    candidate = ~flagged & (flow_class[ends] <= 2) & ~np.isnan(follower_peak)
+    count = int(flagged.sum())
+    threshold_factor = 1.0 + recovery_amplitude_margin
+    for start, end, peak in zip(
+        starts[candidate].tolist(),
+        ends[candidate].tolist(),
+        follower_peak[candidate].tolist(),
+        strict=True,
+    ):
+        run_peaks = peak_flow_lpm[start:end]
+        known = run_peaks[~np.isnan(run_peaks)].tolist()
+        if known and peak >= threshold_factor * (sum(known) / len(known)):
+            count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # §12 — Per-event ventilatory context + periodic breathing (pure)
 # ---------------------------------------------------------------------------

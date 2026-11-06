@@ -326,6 +326,10 @@ class FindWindowsResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+MAX_EPOCH_NIGHTS = 366
+"""Most calendar nights one comparison epoch may span, both ends included."""
+
+
 class EpochRequest(BaseModel):
     """One settings epoch for comparison."""
 

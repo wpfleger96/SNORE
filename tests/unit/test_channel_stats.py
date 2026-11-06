@@ -13,6 +13,9 @@ from snore.services.channel_stats import (
     histogram_distribution,
     mask_on_spans,
     pool_channel_stats,
+    pool_histograms,
+    pooled_distribution,
+    pooled_share_above,
 )
 from snore.utils.stats import percentile_nearest_rank
 
@@ -135,6 +138,43 @@ def test_fl_histogram_drops_the_sentinel_and_keeps_zeros() -> None:
 
     assert values.tolist() == [0.0, 0.25]
     assert counts.tolist() == [2, 1]
+
+
+def test_leak_histogram_drops_negative_values_and_keeps_zeros() -> None:
+    raw = _samples(-1.0, 0.0, 30.0, float("nan"))
+
+    values, counts = channel_histogram("leak", raw)
+
+    assert values.tolist() == [0.0, 30.0]
+    assert counts.tolist() == [1, 1]
+
+
+def test_pooled_distribution_of_no_samples_is_none() -> None:
+    assert pooled_distribution(pool_histograms([])) is None
+
+
+@pytest.mark.parametrize(
+    ("threshold", "inclusive", "expected"),
+    [
+        (24.0, True, 3 / 5),
+        (24.0, False, 1 / 5),
+        (-1.0, False, 1.0),
+        (99.0, True, 0.0),
+    ],
+    ids=["at-or-above", "strictly-above", "below-every-sample", "above-every-sample"],
+)
+def test_pooled_share_above_counts_pooled_samples(
+    threshold: float, inclusive: bool, expected: float
+) -> None:
+    pooled = pool_histograms(
+        [_histogram(_samples(0.0, 24.0, 30.0)), _histogram(_samples(5.0, 24.0))]
+    )
+
+    assert pooled_share_above(pooled, threshold, inclusive=inclusive) == expected
+
+
+def test_pooled_share_above_of_no_samples_is_none() -> None:
+    assert pooled_share_above(pool_histograms([]), 0.5, inclusive=False) is None
 
 
 def test_snore_histogram_keeps_negative_values_like_mcp() -> None:

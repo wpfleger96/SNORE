@@ -373,25 +373,25 @@ class TestCompareEpochsAlgoMismatch:
         identity_stale = AlgorithmIdentity.model_validate(identity_stale_dict)
 
         run_meta = AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"])
-        results_iter = iter(
-            [
-                (
-                    AnalysisStatus.OK,
-                    AlgoVersions(identity=identity_current, run=run_meta),
-                    ar1.id,
-                ),
-                (
-                    AnalysisStatus.OK,
-                    AlgoVersions(identity=identity_stale, run=run_meta),
-                    ar2.id,
-                ),
-            ]
-        )
+        classification = {
+            sess1.id: (
+                AnalysisStatus.OK,
+                AlgoVersions(identity=identity_current, run=run_meta),
+                ar1.id,
+            ),
+            sess2.id: (
+                AnalysisStatus.OK,
+                AlgoVersions(identity=identity_stale, run=run_meta),
+                ar2.id,
+            ),
+        }
 
-        async def _mock_latest(self_svc: Any, session_id: int) -> Any:
-            return next(results_iter)
+        async def _mock_classification(self_svc: Any, session_ids: list[int]) -> Any:
+            return {sid: classification[sid] for sid in session_ids}
 
-        with patch.object(BreathService, "_latest_analysis_for_session", _mock_latest):
+        with patch.object(
+            BreathService, "_latest_analysis_classification", _mock_classification
+        ):
             result = await experimental_compare_epochs(
                 async_db_session,
                 profile_id=async_test_profile.id,
