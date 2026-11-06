@@ -262,3 +262,34 @@ class TestExportRaw:
         ):
             response = api_client.get("/api/v1/export/raw")
         assert "application/zip" in response.headers["content-type"]
+
+
+class TestExportRawDeviceSerial:
+    async def test_serial_reaching_another_profile_is_rejected(
+        self, async_db_session, tmp_path, monkeypatch
+    ):
+        profile = await _make_profile(async_db_session)
+        other = await _make_profile(async_db_session)
+        await async_db_session.commit()
+        raw_root = tmp_path / "raw"
+        monkeypatch.setattr(export_router, "DEFAULT_RAW_BACKUP_DIR", raw_root)
+        (raw_root / str(profile.id)).mkdir(parents=True)
+        victim = raw_root / str(other.id) / "SN_OTHER"
+        (victim / "DATALOG" / "20250807").mkdir(parents=True)
+        (victim / "STR.edf").write_bytes(bytes(256))
+        (victim / "DATALOG" / "20250807" / "20250807_013454_BRP.edf").write_bytes(
+            b"secret"
+        )
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        client = make_test_client(async_db_session, actor=actor)
+
+        for device in (f"../{other.id}/SN_OTHER", str(victim)):
+            response = client.get("/api/v1/export/raw", params={"device": device})
+
+            assert response.status_code == 400
+            assert response.json() == {"detail": "Invalid device serial"}
