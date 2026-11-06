@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import shutil
 import tempfile
 import zipfile
@@ -144,6 +145,43 @@ class TestExportCsv:
             api_client.get("/api/v1/export/csv")
         assert len(export_tmpdirs) == 1
         assert not export_tmpdirs[0].exists()
+
+
+class TestExportDeviceFilter:
+    """The UI sends a device's serial number as ``device``; only its sessions export."""
+
+    @staticmethod
+    def _session_ids(fmt: str, body: bytes) -> list[str]:
+        if fmt == "json":
+            return [s["device_session_id"] for s in json.loads(body)["sessions"]]
+        with zipfile.ZipFile(io.BytesIO(body)) as zf:
+            rows = csv.DictReader(io.StringIO(zf.read("sessions.csv").decode()))
+            return [row["device_session_id"] for row in rows]
+
+    @pytest.mark.parametrize("fmt", ["csv", "json"])
+    async def test_device_serial_filters_to_that_device(self, async_db_session, fmt):
+        profile = await _make_profile(async_db_session)
+        # Same model on both devices: only the serial tells them apart.
+        device = await _make_device(async_db_session, profile.id, serial_number="SN_A")
+        other = await _make_device(async_db_session, profile.id, serial_number="SN_B")
+        _, sess = await _make_day_session(async_db_session, device, date(2026, 1, 15))
+        await _make_day_session(async_db_session, other, date(2026, 1, 16))
+        await async_db_session.commit()
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        app = make_test_client(async_db_session, actor=actor).app
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(f"/api/v1/export/{fmt}?device=SN_A")
+
+        assert response.status_code == 200
+        assert self._session_ids(fmt, response.content) == [sess.device_session_id]
 
 
 class TestTempExportResponse:

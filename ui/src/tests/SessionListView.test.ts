@@ -73,9 +73,21 @@ describe('SessionListView device filter', () => {
         await flushPromises()
 
         await chooseSelectOption(wrapper, 'ResMed AirSense 11')
-        expect(vi.mocked(getSessions).mock.calls.at(-1)![0]?.device).toBe('ResMed AirSense 11')
+        expect(vi.mocked(getSessions).mock.calls.at(-1)![0]?.device).toBe('SN1')
 
         await chooseSelectOption(wrapper, 'All devices')
         expect(vi.mocked(getSessions).mock.calls.at(-1)![0]?.device).toBeUndefined()
+    })
+
+    it('test_same_model_devices_get_separate_options_filtering_by_serial', async () => {
+        vi.mocked(getDevices).mockResolvedValue([
+            DEVICE,
+            { ...DEVICE, serial_number: 'SN2' },
+        ] as never)
+        wrapper = mountView()
+        await flushPromises()
+
+        await chooseSelectOption(wrapper, 'ResMed AirSense 11 (SN2)')
+        expect(vi.mocked(getSessions).mock.calls.at(-1)![0]?.device).toBe('SN2')
     })
 })

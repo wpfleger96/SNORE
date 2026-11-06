@@ -62,7 +62,7 @@ describe('ExportView device filter', () => {
 
         await chooseSelectOption(wrapper, 'ResMed AirSense 11')
         await clickExport(wrapper)
-        expect(vi.mocked(exportCsv).mock.calls.at(-1)![0]?.device).toBe('ResMed AirSense 11')
+        expect(vi.mocked(exportCsv).mock.calls.at(-1)![0]?.device).toBe('SN1')
 
         await chooseSelectOption(wrapper, 'All Devices')
         await clickExport(wrapper)

@@ -335,6 +335,7 @@ import {
     getBulkDeletePreview,
 } from '@/api/sessions'
 import { getDevices } from '@/api/devices'
+import { deviceFilterOptions } from '@/utils/deviceOptions'
 import { ahiClass, formatDateTime, formatDateWithWeekday } from '@/utils/formatting'
 import type { SessionListItem, DeletePreview, DeviceInfo } from '@/types'
 import { useAuth } from '@/composables/useAuth'
@@ -374,12 +375,7 @@ const selectedDeviceStr = computed({
     },
 })
 
-const deviceOptions = computed(() =>
-    devices.value.map((d) => ({
-        label: `${d.manufacturer} ${d.model}`,
-        value: `${d.manufacturer} ${d.model}`,
-    })),
-)
+const deviceOptions = computed(() => deviceFilterOptions(devices.value))
 
 const hasFilters = computed(
     () => fromDate.value !== '' || toDate.value !== '' || selectedDevice.value != null,
