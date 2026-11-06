@@ -12,8 +12,8 @@ A2. Two consecutive re-analyses → two AnalysisResult rows, correct latest
 A3. Atomic rollback: AnalysisResult parent is flushed, Breath children bulk-add
     raises → both parent and children are absent from the DB.
 
-A4. Non-UTC host determinism: AnalysisResult timestamps stored in naive UTC
-    regardless of OS timezone (non-UTC host simulation via monkeypatching).
+A4. Stored timestamps anchor to the session: AnalysisResult timestamp columns
+    are the session's wall-clock start_time plus the DTO's offset seconds.
 
 A5. Validity flags end-to-end: analyze_session over a seeded session with ramp
     settings + persisted mask-on segments persists Breath rows whose
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import uuid
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -432,8 +432,6 @@ async def _seed_flow_session(
     settings: dict[str, str],
 ) -> int:
     """Seed a Session with a synthetic flow waveform + settings. Returns its id."""
-    from datetime import timedelta
-
     start = datetime(2025, 9, 10, 22, 0)
     device = models.Device(
         profile_id=profile_id,
@@ -589,6 +587,44 @@ class TestValidityFlagsEndToEnd:
             assert all(r.mask_off is None for r in rows)
             assert all(r.mask_off_reason == "segments_unknown" for r in rows)
 
+    async def test_analyze_session_stores_session_wallclock_window(self, temp_db):
+        """The stored window is the session's wall clock, not offsets or epoch.
+
+        analyze_session derives the DTO window from the flow timestamps (first and
+        last sample offsets); store_result anchors them to Session.start_time.
+        """
+        await init_database(str(temp_db))
+        duration_s = 300.0
+        async with session_scope() as db:
+            _, profile_id = await _make_profile(db)
+            session_id = await _seed_flow_session(
+                db,
+                profile_id,
+                duration_s=duration_s,
+                mask_on_segments=[[0.0, duration_s]],
+                settings={},
+            )
+            svc = AnalysisService(db, profile_id=profile_id)
+            await svc.analyze_session(session_id)
+
+        # Same float32 sample grid _sine_flow_blob stores.
+        last_offset_s = float(
+            np.arange(0.0, duration_s, 1.0 / 25.0, dtype=np.float32)[-1]
+        )
+        session_start = datetime(2025, 9, 10, 22, 0)
+
+        async with session_scope() as db:
+            stored = (
+                await db.execute(
+                    select(AnalysisResult_ORM).where(
+                        AnalysisResult_ORM.session_id == session_id
+                    )
+                )
+            ).scalar_one()
+            assert stored.timestamp_start == session_start
+            expected_end = session_start + timedelta(seconds=last_offset_s)
+            assert abs(stored.timestamp_end - expected_end) < timedelta(milliseconds=1)
+
 
 # ---------------------------------------------------------------------------
 # A6 — primary_mode threaded through analyze_session into storage
@@ -638,89 +674,45 @@ class TestAnalyzeSessionPrimaryModeThreading:
 
 
 # ---------------------------------------------------------------------------
-# A4 — Non-UTC host determinism
+# A4 — Stored timestamps are session wall-clock start plus DTO offsets
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-class TestNonUtcHostDeterminism:
-    async def test_store_result_timestamp_matches_utc_under_shifted_tz(self, temp_db):
-        """store_result stores timestamps as naive UTC regardless of OS timezone.
+class TestStoredTimestampsAnchorToSessionStart:
+    async def test_store_result_writes_session_start_plus_offsets(self, temp_db):
+        """The DTO's timestamps are offsets from session start, not epoch seconds.
 
-        Shifts the process timezone to America/New_York (UTC-5 in winter) using
-        os.environ["TZ"] + time.tzset() (POSIX only — skipped on Windows), then
-        drives the real store_result() with a known epoch.  The stored naive
-        datetime must equal datetime.utcfromtimestamp(epoch), not the local-time
-        interpretation.  If store_result used bare datetime.fromtimestamp(epoch)
-        without a tz argument, this test would fail on a UTC-5 host by 5 hours.
+        store_result must anchor them to the session's wall-clock start_time, so
+        the stored columns land on the night itself rather than 1970-01-01.
         """
-        import os
-        import time as _time
-
-        if not hasattr(_time, "tzset"):
-            pytest.skip("tzset not available on this platform (Windows)")
-
-        # 2024-01-19 02:00:00 UTC — wall-clock is 2024-01-18 21:00:00 in UTC-5.
-        epoch = 1705622400.0
-        expected_naive_utc = datetime.fromtimestamp(epoch, tz=UTC).replace(
-            tzinfo=None
-        )  # 2024-01-19 02:00:00
-
         await init_database(str(temp_db))
-
-        original_tz = os.environ.get("TZ")
-        try:
-            os.environ["TZ"] = "America/New_York"
-            _time.tzset()
-
-            async with session_scope() as db:
-                _, profile_id = await _make_profile(db)
-                session_start = expected_naive_utc
-                _, session_id = await _make_device_and_session(
-                    db, profile_id, start=session_start
-                )
-
-                result_dto = AnalysisResultDTO(
-                    session_id=session_id,
-                    session_duration_hours=7.0,
-                    total_breaths=0,
-                    machine_events=[],
-                    mode_results={
-                        "aasm": ModeResult(
-                            mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
-                        )
-                    },
-                    timestamp_start=epoch,
-                    timestamp_end=epoch + 7 * 3600.0,
-                )
-                computation = AnalysisComputation(
-                    summary=result_dto, breaths=[], primary_mode="aasm"
-                )
-                svc = AnalysisService(db, profile_id=profile_id)
-                ar_id = await svc.store_result(computation, processing_time_ms=10)
-        finally:
-            if original_tz is None:
-                os.environ.pop("TZ", None)
-            else:
-                os.environ["TZ"] = original_tz
-            _time.tzset()
+        async with session_scope() as db:
+            _, profile_id = await _make_profile(db)
+            _, session_id = await _make_device_and_session(
+                db, profile_id, start=datetime(2025, 1, 10, 22, 0)
+            )
+            result_dto = AnalysisResultDTO(
+                session_id=session_id,
+                session_duration_hours=7.0,
+                total_breaths=0,
+                machine_events=[],
+                mode_results={
+                    "aasm": ModeResult(
+                        mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
+                    )
+                },
+                timestamp_start=0.0,
+                timestamp_end=25212.5,
+            )
+            computation = AnalysisComputation(
+                summary=result_dto, breaths=[], primary_mode="aasm"
+            )
+            svc = AnalysisService(db, profile_id=profile_id)
+            ar_id = await svc.store_result(computation, processing_time_ms=10)
 
         async with session_scope() as db:
-            stored = (
-                (
-                    await db.execute(
-                        select(AnalysisResult_ORM).where(AnalysisResult_ORM.id == ar_id)
-                    )
-                )
-                .scalars()
-                .first()
-            )
+            stored = await db.get(AnalysisResult_ORM, ar_id)
             assert stored is not None
-            # Must be naive (UTC, no tzinfo).
-            assert stored.timestamp_start.tzinfo is None
-            # Must match the UTC epoch interpretation, not local-time.
-            assert stored.timestamp_start == expected_naive_utc, (
-                f"Under UTC-5 host, stored {stored.timestamp_start!r} "
-                f"but expected UTC epoch {expected_naive_utc!r} — "
-                "service.py must use fromtimestamp(ts, tz=UTC).replace(tzinfo=None)"
-            )
+            assert stored.timestamp_start == datetime(2025, 1, 10, 22, 0)
+            assert stored.timestamp_end == datetime(2025, 1, 11, 5, 0, 12, 500000)

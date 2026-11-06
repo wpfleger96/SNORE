@@ -177,10 +177,10 @@ async def _store_analysis_with_breaths(
                 mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
             )
         },
-        timestamp_start=session.start_time.timestamp(),
-        timestamp_end=session.end_time.timestamp()
+        timestamp_start=0.0,
+        timestamp_end=(session.end_time - session.start_time).total_seconds()
         if session.end_time
-        else (session.start_time + timedelta(hours=7)).timestamp(),
+        else 7 * 3600.0,
     )
 
     from snore.analysis.types import ComputedBreath  # noqa: PLC0415
@@ -613,8 +613,8 @@ class TestFindWindows:
                     mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                 )
             },
-            timestamp_start=session.start_time.timestamp(),
-            timestamp_end=(session.end_time or session.start_time).timestamp(),
+            timestamp_start=0.0,
+            timestamp_end=7 * 3600.0,
         )
         computation = AnalysisComputation(
             summary=result_dto, breaths=breaths, primary_mode="aasm"
@@ -720,8 +720,8 @@ class TestFindWindows:
                         mode_name=pm, apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                     )
                 },
-                timestamp_start=sess.start_time.timestamp(),
-                timestamp_end=(sess.end_time or sess.start_time).timestamp(),
+                timestamp_start=0.0,
+                timestamp_end=3 * 3600.0,
             )
             computation = AnalysisComputation(
                 summary=result_dto, breaths=[], primary_mode=pm
@@ -1537,10 +1537,8 @@ class TestAsuiteViaStoreResult:
                     mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                 )
             },
-            timestamp_start=session.start_time.timestamp(),
-            timestamp_end=(
-                session.end_time or session.start_time + timedelta(hours=7)
-            ).timestamp(),
+            timestamp_start=0.0,
+            timestamp_end=7 * 3600.0,
         )
         good_breath = ComputedBreath(
             breath_number=1,
@@ -3461,8 +3459,8 @@ async def _store_analysis_with_pb_episodes(
                 mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
             )
         },
-        timestamp_start=session.start_time.timestamp(),
-        timestamp_end=session.start_time.timestamp() + duration_s,
+        timestamp_start=0.0,
+        timestamp_end=duration_s,
         periodic_breathing_episodes=episodes,
     )
     await AnalysisService(db, profile_id=profile_id).store_result(
@@ -4920,8 +4918,8 @@ async def _store_night_with_breath_specs(
                 mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
             )
         },
-        timestamp_start=session.start_time.timestamp(),
-        timestamp_end=(session.start_time + timedelta(hours=7)).timestamp(),
+        timestamp_start=0.0,
+        timestamp_end=7 * 3600.0,
     )
     computation = AnalysisComputation(
         summary=result_dto, breaths=computed_breaths, primary_mode="aasm"
@@ -5310,8 +5308,8 @@ class TestNightlySummaryReraRdi:
                     mode_name="aasm", apneas=[], hypopneas=[], ahi=0.0, rdi=0.0
                 )
             },
-            timestamp_start=start.timestamp(),
-            timestamp_end=(start + timedelta(hours=8)).timestamp(),
+            timestamp_start=0.0,
+            timestamp_end=8 * 3600.0,
         )
         await AnalysisService(async_db_session, profile_id=profile_id).store_result(
             AnalysisComputation(

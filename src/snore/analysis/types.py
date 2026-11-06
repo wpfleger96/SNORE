@@ -107,8 +107,14 @@ class AnalysisResult(BaseModel):
     pulse_change_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL, "Pulse changes per hour", default=None
     )
-    timestamp_start: float = Field(default=0.0, description="Session start timestamp")
-    timestamp_end: float = Field(default=0.0, description="Session end timestamp")
+    timestamp_start: float = Field(
+        default=0.0,
+        description="Offset of the first flow sample from session start (seconds)",
+    )
+    timestamp_end: float = Field(
+        default=0.0,
+        description="Offset of the last flow sample from session start (seconds)",
+    )
 
     @classmethod
     def from_stored_json(cls, data: dict[str, Any]) -> AnalysisResult:

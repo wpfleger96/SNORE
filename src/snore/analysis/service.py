@@ -28,7 +28,7 @@ import logging
 import time
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -889,10 +889,11 @@ class AnalysisService:
 
         result = computation.summary
 
-        # Verify the target session is owned by this profile before writing.
-        owned = (
+        # Verify the target session is owned by this profile before writing; its
+        # wall-clock start anchors the DTO's offset timestamps.
+        session_start = (
             await self.db_session.execute(
-                select(models.Session.id)
+                select(models.Session.start_time)
                 .join(models.Device, models.Session.device_id == models.Device.id)
                 .where(
                     models.Session.id == result.session_id,
@@ -900,7 +901,7 @@ class AnalysisService:
                 )
             )
         ).scalar_one_or_none()
-        if owned is None:
+        if session_start is None:
             raise _NotFoundError(
                 f"Session {result.session_id} not found or not owned by profile {self.profile_id}"
             )
@@ -916,12 +917,8 @@ class AnalysisService:
 
         analysis = models.AnalysisResult(
             session_id=result.session_id,
-            timestamp_start=datetime.fromtimestamp(
-                result.timestamp_start, tz=UTC
-            ).replace(tzinfo=None),
-            timestamp_end=datetime.fromtimestamp(result.timestamp_end, tz=UTC).replace(
-                tzinfo=None
-            ),
+            timestamp_start=session_start + timedelta(seconds=result.timestamp_start),
+            timestamp_end=session_start + timedelta(seconds=result.timestamp_end),
             programmatic_result_json=result.model_dump(),
             processing_time_ms=processing_time_ms,
             engine_versions_json=algo_versions.model_dump(),
