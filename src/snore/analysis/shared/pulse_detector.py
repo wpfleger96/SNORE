@@ -20,10 +20,15 @@ class PulseChangeEvent:
     """
     Represents a detected pulse rate change event.
 
+    Like OSCAR's flag events, the event is stamped at the change and its
+    duration reaches back to the start of the scan window that saw it.
+
     Attributes:
-        start_time: Event start time in seconds from session start
-        duration: Duration of the pulse change window in seconds
-        bpm_delta: Absolute change in pulse rate (BPM)
+        start_time: Time of the change in seconds from session start (the last
+            qualifying sample in the scan window; OSCAR's ``lastt``)
+        duration: Whole seconds from the scan-window start to the change
+            (OSCAR's ``len``)
+        bpm_delta: Absolute change in pulse rate (BPM) at the change
     """
 
     start_time: float
@@ -36,8 +41,8 @@ class PulseChangeDetector:
     Detector for rapid pulse rate changes during sleep.
 
     Uses a sliding window approach matching OSCAR's algorithm: for each pulse
-    data point, scan forward within a duration threshold and detect if any point
-    differs by >= bpm_threshold.
+    data point, scan forward within a duration threshold for points that differ
+    by more than bpm_threshold, then resume scanning after the change.
 
     Pulse data is typically 1Hz (~28,800 points for an 8h session), making this
     a trivially fast operation.
@@ -52,7 +57,8 @@ class PulseChangeDetector:
         Initialize pulse change detector.
 
         Args:
-            bpm_threshold: Minimum BPM change to count as event (default 5.0)
+            bpm_threshold: BPM change that must be exceeded to count as an event
+                (default 5.0)
             duration_threshold: Maximum time window in seconds to scan forward (default 8.0)
         """
         self.bpm_threshold = bpm_threshold
@@ -68,12 +74,19 @@ class PulseChangeDetector:
 
         Algorithm (from OSCAR calcs.cpp:1407-1480):
         1. For each pulse data point at time t
-        2. Scan forward within duration_threshold seconds
-        3. If any point differs by >= bpm_threshold BPM, record pulse change event
-        4. Skip NaN/artifact values (pulse data has dropouts)
+        2. Scan forward to points at most duration_threshold seconds later
+        3. Points that differ by more than bpm_threshold BPM qualify (strict
+           ``>``, calcs.cpp:1449); the last qualifying point is the change
+        4. Record an event at the change's time (calcs.cpp:1461) and resume
+           scanning after it (``i = li``, calcs.cpp:1462), so one heart-rate
+           shift yields one event
+        5. Skip NaN/artifact values (pulse data has dropouts)
+
+        OSCAR stores the delta of the last sample scanned in the window as the
+        event value; this reports the delta at the change instead.
 
         Args:
-            timestamps: Array of timestamp offsets in seconds from session start
+            timestamps: Ascending timestamp offsets in seconds from session start
             pulse_values: Array of pulse rate values in BPM
 
         Returns:
@@ -88,48 +101,34 @@ class PulseChangeDetector:
             )
             return []
 
-        events: list[PulseChangeEvent] = []
-
         valid_mask = ~np.isnan(pulse_values)
-        valid_indices = np.where(valid_mask)[0]
-
-        if len(valid_indices) == 0:
+        if not np.any(valid_mask):
             logger.warning("No valid pulse data found (all NaN)")
             return []
 
-        for i in valid_indices:
-            current_time = timestamps[i]
-            current_bpm = pulse_values[i]
+        times = timestamps[valid_mask]
+        bpm = pulse_values[valid_mask]
+        # Exclusive end index of each point's scan window (OSCAR breaks once
+        # time2 > time + window, so the window end is inclusive).
+        window_ends = np.searchsorted(times, times + self.duration_threshold, "right")
 
-            max_time = current_time + self.duration_threshold
-
-            forward_mask = (
-                (timestamps > current_time) & (timestamps <= max_time) & valid_mask
-            )
-            forward_indices = np.where(forward_mask)[0]
-
-            if len(forward_indices) == 0:
-                continue
-
-            forward_bpm = pulse_values[forward_indices]
-            bpm_deltas = np.abs(forward_bpm - current_bpm)
-
-            max_delta_idx = np.argmax(bpm_deltas)
-            max_delta = bpm_deltas[max_delta_idx]
-
-            if max_delta >= self.bpm_threshold:
-                forward_time = timestamps[forward_indices[max_delta_idx]]
-                duration = forward_time - current_time
-
+        events: list[PulseChangeEvent] = []
+        i = 0
+        while i < len(times):
+            deltas = np.abs(bpm[i + 1 : window_ends[i]] - bpm[i])
+            qualifying = np.flatnonzero(deltas > self.bpm_threshold)
+            if len(qualifying) > 0:
+                change_idx = i + 1 + int(qualifying[-1])
+                change_time = float(times[change_idx])
                 events.append(
                     PulseChangeEvent(
-                        start_time=current_time,
-                        duration=duration,
-                        bpm_delta=max_delta,
+                        start_time=change_time,
+                        duration=float(int(change_time - float(times[i]))),
+                        bpm_delta=float(deltas[qualifying[-1]]),
                     )
                 )
-
-        events.sort(key=lambda e: e.start_time)
+                i = change_idx
+            i += 1
 
         logger.debug(f"Detected {len(events)} pulse change events")
 

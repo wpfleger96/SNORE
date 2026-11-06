@@ -310,7 +310,7 @@ These relaxed thresholds reflect the approach ResMed devices use internally, mak
 
 ### 4.4 PulseChangeDetector
 
-Detects abrupt pulse rate changes. Algorithm: identifies changes of ≥5 BPM within 8-second sliding windows across the pulse waveform. Outputs `pulse_change_count` (total changes per session) and `pulse_change_index` (changes per hour). Integrated into the analysis pipeline in `src/snore/analysis/shared/pulse_detector.py`. Mirrors the OSCAR `calcPulseChange()` algorithm (see `oscar-reference.md`).
+Detects abrupt pulse rate changes. Algorithm: from each pulse sample, scans forward up to 8 seconds for samples that differ by more than 5 BPM; the last such sample is the change, the event is stamped at its time, and the scan resumes after it, so one heart-rate shift counts once. Outputs `pulse_change_count` (total changes per session) and `pulse_change_index` (changes per hour). Integrated into the analysis pipeline in `src/snore/analysis/shared/pulse_detector.py`. Mirrors the OSCAR `calcPulseChange()` algorithm (see `oscar-reference.md`).
 
 ## 5. Common Implementation Pitfalls
 
