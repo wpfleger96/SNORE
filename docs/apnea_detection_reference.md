@@ -290,7 +290,7 @@ SNORE implements three detection modes that map to the clinical standards descri
 
 Follows the AASM Scoring Manual v2.6 definitions from section 1.1:
 - Apnea threshold: ≥90% flow reduction
-- Hypopnea threshold: ≥30% flow reduction
+- Hypopnea band: 30-89% average flow reduction (inclusive)
 - Baseline: 2-minute (120s) rolling time window
 - Hypopnea requires SpO2 desaturation (3% or 4%) per configured hypopnea mode
 
@@ -302,7 +302,7 @@ Uses AASM thresholds but replaces the time-based baseline with a **breath-based 
 
 Approximates ResMed device logic using divergent thresholds from AASM standards (`RESMED_CONFIG` in `src/snore/analysis/modes/config.py`):
 - Apnea threshold: ≥50% flow reduction (vs AASM's 90%) — uses "gap + low-flow" detection
-- Hypopnea threshold: ≥20% flow reduction (vs AASM's 30%)
+- Hypopnea band: 20-49% average flow reduction (vs AASM's 30-89%); a deeper region that was not confirmed as an apnea is not scored as a hypopnea
 - Baseline: 2-minute (120s) rolling time window, same as AASM
 - Flow-only hypopnea mode: no SpO2 required
 

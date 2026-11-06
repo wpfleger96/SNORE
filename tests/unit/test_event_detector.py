@@ -2593,6 +2593,64 @@ class TestHypopneaBaselineContamination:
         assert baseline_post_fix != baseline_pre_fix
 
 
+class TestHypopneaMaxThreshold:
+    """Hypopnea regions must average within [hypopnea_min, hypopnea_max]."""
+
+    def _breaths_with_reduced_run(self, amplitudes: list[float]) -> list[BreathMetrics]:
+        """30 normal breaths (amplitude 50), a run at ``amplitudes``, then normal."""
+        breaths = [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(30)]
+        breaths += [
+            _uniform_breath(31 + i, float((30 + i) * 4), amplitude)
+            for i, amplitude in enumerate(amplitudes)
+        ]
+        first_after = 30 + len(amplitudes)
+        breaths += [
+            _uniform_breath(i + 1, float(i * 4), 50.0)
+            for i in range(first_after, first_after + 10)
+        ]
+        return breaths
+
+    def test_resmed_region_above_max_is_not_a_hypopnea(self):
+        """A 12 s, 70%-reduced region that was not scored as an apnea stays unscored.
+
+        RESMED_CONFIG caps hypopneas at 49% (its apnea threshold is 50%).
+        """
+        breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
+
+        hypopneas = EventDetector(RESMED_CONFIG)._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+        )
+
+        assert hypopneas == []
+
+    def test_resmed_region_within_band_is_a_hypopnea(self):
+        """A 12 s region averaging 48% reduction is a resmed hypopnea.
+
+        The run alternates 55% and 35% breaths because region finding ends a
+        region after two consecutive breaths reduced by less than 50%.
+        """
+        breaths = self._breaths_with_reduced_run([22.5, 32.5, 22.5])
+
+        hypopneas = EventDetector(RESMED_CONFIG)._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+        )
+
+        assert len(hypopneas) == 1
+        assert hypopneas[0].start_time == 120.0
+        assert hypopneas[0].flow_reduction == pytest.approx((0.55 + 0.35 + 0.55) / 3)
+
+    def test_region_at_max_is_a_hypopnea(self):
+        """The upper bound is inclusive."""
+        config = RESMED_CONFIG.model_copy(update={"hypopnea_max_threshold": 0.70})
+        breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
+
+        hypopneas = EventDetector(config)._detect_hypopneas(
+            breaths, flow_data=None, spo2_signal=None, exclude_events=[]
+        )
+
+        assert len(hypopneas) == 1
+
+
 class TestReraThresholdConfig:
     """RERA detection reads its thresholds from DetectionModeConfig."""
 

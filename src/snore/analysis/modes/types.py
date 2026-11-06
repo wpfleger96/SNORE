@@ -64,13 +64,13 @@ class DetectionModeConfig(BaseModel):
         default=EDC.HYPOPNEA_MIN_REDUCTION,
         ge=0,
         le=1,
-        description="Hypopnea minimum threshold",
+        description="Hypopnea minimum flow reduction (inclusive)",
     )
     hypopnea_max_threshold: float = Field(
         default=EDC.HYPOPNEA_MAX_REDUCTION,
         ge=0,
         le=1,
-        description="Hypopnea maximum threshold",
+        description="Hypopnea maximum average flow reduction (inclusive)",
     )
 
     min_event_duration: float = Field(
@@ -121,7 +121,7 @@ class DetectionModeConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_threshold_bands(self) -> "DetectionModeConfig":
-        """Reject inverted [min, max) reduction bands at construction."""
+        """Reject inverted or empty reduction bands at construction."""
         if self.rera_reduction_min >= self.rera_reduction_max:
             raise ValueError(
                 "rera_reduction_min must be < rera_reduction_max "

@@ -363,6 +363,10 @@ class EventDetector:
 
         Falls back to FLOW_ONLY if SpO2 unavailable and fallback enabled.
 
+        A region of consecutive breaths reduced by at least
+        hypopnea_min_threshold is a hypopnea only if its average reduction is at
+        most hypopnea_max_threshold; deeper regions are left to apnea detection.
+
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
@@ -403,6 +407,7 @@ class EventDetector:
         )
 
         min_threshold = self.config.hypopnea_min_threshold
+        max_threshold = self.config.hypopnea_max_threshold
 
         baselines = np.zeros(len(breaths))
         reductions = np.zeros(len(breaths))
@@ -438,11 +443,11 @@ class EventDetector:
                 )
 
         breaths_in_range = np.sum(
-            (reductions >= min_threshold)
-            & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
+            (reductions >= min_threshold) & (reductions <= max_threshold)
         )
         logger.debug(
-            f"Breaths in hypopnea range ({min_threshold * 100:.0f}-89%): {breaths_in_range}"
+            f"Breaths in hypopnea range ({min_threshold * 100:.0f}-"
+            f"{max_threshold * 100:.0f}%): {breaths_in_range}"
         )
 
         regions = self._find_consecutive_reduced_breaths(
@@ -459,9 +464,12 @@ class EventDetector:
                 continue
             avg_reduction = float(np.mean(event_reductions))
 
-            if avg_reduction >= EDC.APNEA_FLOW_REDUCTION_THRESHOLD:
+            # Inclusive band: a region is a hypopnea iff min <= avg <= max.
+            if avg_reduction > max_threshold:
                 logger.debug(
-                    f"  Skipping region {start_idx}-{end_idx}: avg reduction {avg_reduction * 100:.1f}% >= 90% (apnea)"
+                    f"  Skipping region {start_idx}-{end_idx}: avg reduction "
+                    f"{avg_reduction * 100:.1f}% > hypopnea max "
+                    f"{max_threshold * 100:.0f}%"
                 )
                 continue
 
