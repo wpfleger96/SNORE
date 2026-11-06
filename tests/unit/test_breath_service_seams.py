@@ -9,7 +9,8 @@ Coverage:
                   populated → nights_with_data > 0
 - get_experimental_nightly_summary: ValueError no sessions, OK day with analyzed_session_count
 - get_experimental_nightly_range: empty range returns n_nights=0
-- get_nightly_device_summary: empty range, calendar compliance, range validation
+- get_nightly_device_summary: empty range, calendar compliance, range validation,
+  night_dates limiting the built nights but not compliance, decode batches
 - get_device_capabilities: no sessions → null_reason; with sessions → date range
 - get_contextual_events: no events → empty; with events → ContextualEvent list
 - get_contextual_events default context: delivered PS and device MV only, no
@@ -981,6 +982,30 @@ class TestGetNightlyDeviceSummary:
         assert summary.n_nights == 1
         assert summary.days_compliant == 1
         assert summary.compliance_pct == pytest.approx(25.0)
+
+    async def test_night_dates_limits_nights_but_not_compliance(self, async_db_session):
+        """Only the named nights are built; compliance still counts every night."""
+        _, profile_id = await _make_profile(async_db_session)
+        dev = await _make_device(async_db_session, profile_id)
+        start = date(2025, 3, 1)
+        for offset, hours in enumerate((7.0, 2.0, 7.0)):
+            day, _ = await _make_day_and_session(
+                async_db_session, dev.id, start + timedelta(days=offset)
+            )
+            day.total_therapy_hours = hours
+        await async_db_session.flush()
+        svc = BreathService(async_db_session, profile_id=profile_id)
+        middle = start + timedelta(days=1)
+
+        summary = await svc.get_nightly_device_summary(
+            start, start + timedelta(days=3), night_dates={middle}
+        )
+
+        assert [n.therapy_date for n in summary.nights] == [middle]
+        assert summary.nights[0].is_compliant is False
+        assert summary.n_nights == 3
+        assert summary.days_compliant == 2
+        assert summary.compliance_pct == pytest.approx(50.0)
 
     @pytest.mark.parametrize(
         ("date_start", "date_end", "match"),
@@ -4252,9 +4277,9 @@ class TestCompareEpochsRefusal:
     ):
         """Cross-epoch algorithm identity mismatch → version_warnings populated, NOT a hard refusal.
 
-        Because _latest_analysis_for_session only returns OK when the stored identity
+        Because _latest_analysis_classification only returns OK when the stored identity
         matches the current runtime identity, genuine cross-epoch mismatches cannot be
-        created through DB fixtures alone.  We mock _latest_analysis_for_session to
+        created through DB fixtures alone.  We mock _latest_analysis_classification to
         inject different AlgoVersions (each individually OK) for two sessions in two
         different epochs, so the cross-epoch identity check fires.
 
@@ -4336,9 +4361,12 @@ class TestCompareEpochsRefusal:
                 return (AnalysisStatus.OK, algo_b, ar_b_id)
             return (AnalysisStatus.NOT_RUN, None, None)
 
+        async def _mocked_classification(session_ids: list[int]) -> Any:
+            return {sid: await _mocked_latest(sid) for sid in session_ids}
+
         svc = BreathService(async_db_session, profile_id=profile_id)
         with patch.object(
-            svc, "_latest_analysis_for_session", side_effect=_mocked_latest
+            svc, "_latest_analysis_classification", side_effect=_mocked_classification
         ):
             result = await svc.compare_experimental_epochs(
                 epochs=[
@@ -4462,9 +4490,12 @@ class TestCompareEpochsRefusal:
                 return (AnalysisStatus.OK, algo_b, ar_b_id)
             return (AnalysisStatus.NOT_RUN, None, None)
 
+        async def _mocked_classification(session_ids: list[int]) -> Any:
+            return {sid: await _mocked_latest(sid) for sid in session_ids}
+
         svc = BreathService(async_db_session, profile_id=profile_id)
         with patch.object(
-            svc, "_latest_analysis_for_session", side_effect=_mocked_latest
+            svc, "_latest_analysis_classification", side_effect=_mocked_classification
         ):
             result = await svc.compare_experimental_epochs(
                 epochs=[
@@ -5922,97 +5953,61 @@ class TestDeriveMvFromFlow:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_channel_vals — chunked ID binding (#280)
+# get_nightly_device_summary — waveform decode batches (#280)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestFetchChannelValsChunked:
-    async def test_fetch_channel_vals_chunked(self, async_db_session, monkeypatch):
-        """fl/snore values survive the batch boundary in _fetch_channel_vals.
+class TestNightlyDeviceSummaryDecodeBatches:
+    async def test_nights_across_decode_batches_all_get_channel_stats(
+        self, async_db_session, monkeypatch
+    ):
+        """Every night keeps its fl and snore stats across the decode batch boundary.
 
-        With a batch size of 2 and three sessions each carrying an fl AND a snore
-        waveform, the session_ids span two batches.  Both per-session dicts must
-        return every session on both channels — a bug that dropped any non-final
-        batch would leave a session out.
+        With a batch size of 2, three single-session nights span two batches;
+        a dropped batch would leave a night with ``channel_absent``.
         """
         monkeypatch.setattr("snore.services.channel_stats._DECODE_BATCH_SESSIONS", 2)
 
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)
-
-        session_ids: list[int] = []
-        expected_fl: dict[int, list[float]] = {}
-        expected_snore: dict[int, list[float]] = {}
+        start = date(2025, 8, 1)
         ts = np.arange(3, dtype=np.float32)
         for i in range(3):
             _, session = await _make_day_and_session(
-                async_db_session, dev.id, date(2025, 8, 1) + timedelta(days=i)
+                async_db_session, dev.id, start + timedelta(days=i)
             )
-            fl_vals = np.array([1.0 + i, 2.0 + i, 3.0 + i], dtype=np.float32)
-            snore_vals = np.array([10.0 + i, 20.0 + i, 30.0 + i], dtype=np.float32)
             async_db_session.add_all(
                 [
                     models.Waveform(
                         session_id=session.id,
-                        waveform_type="fl",
+                        waveform_type=channel,
                         sample_rate=1.0,
                         sample_count=3,
-                        data_blob=_make_waveform_blob_from_arrays(ts, fl_vals),
-                    ),
-                    models.Waveform(
-                        session_id=session.id,
-                        waveform_type="snore",
-                        sample_rate=1.0,
-                        sample_count=3,
-                        data_blob=_make_waveform_blob_from_arrays(ts, snore_vals),
-                    ),
+                        data_blob=_make_waveform_blob_from_arrays(
+                            ts, np.array(values, dtype=np.float32)
+                        ),
+                    )
+                    for channel, values in (
+                        ("fl", [0.1 * i, 0.2, 0.9]),
+                        ("snore", [0.0, 1.0 + i, 4.0]),
+                    )
                 ]
             )
-            session_ids.append(session.id)
-            expected_fl[session.id] = [float(v) for v in fl_vals]
-            expected_snore[session.id] = [float(v) for v in snore_vals]
         await async_db_session.flush()
 
-        channel_vals, corrupt = await BreathService._fetch_channel_vals(
-            async_db_session, session_ids, ["fl", "snore", "leak"]
-        )
+        summary = await BreathService(
+            async_db_session, profile_id
+        ).get_nightly_device_summary(start, start + timedelta(days=2))
 
-        assert corrupt == {"fl": set(), "snore": set(), "leak": set()}
-        assert set(channel_vals["fl"]) == set(session_ids)
-        assert set(channel_vals["snore"]) == set(session_ids)
-        # A requested channel with no rows is still a key.
-        assert channel_vals["leak"] == {}
-        for sid in session_ids:
-            assert channel_vals["fl"][sid] == pytest.approx(expected_fl[sid])
-            assert channel_vals["snore"][sid] == pytest.approx(expected_snore[sid])
-
-    async def test_fetch_channel_vals_returns_raw_python_floats(self, async_db_session):
-        """Callers filter sentinels themselves, on plain float lists."""
-        _, profile_id = await _make_profile(async_db_session)
-        dev = await _make_device(async_db_session, profile_id)
-        _, session = await _make_day_and_session(
-            async_db_session, dev.id, date(2025, 8, 1)
-        )
-        raw = np.array([-0.01, 0.0, 0.25], dtype=np.float32)
-        async_db_session.add(
-            models.Waveform(
-                session_id=session.id,
-                waveform_type="fl",
-                sample_rate=1.0,
-                sample_count=3,
-                data_blob=_make_waveform_blob_from_arrays(np.arange(3.0), raw),
-            )
-        )
-        await async_db_session.flush()
-
-        channel_vals, _ = await BreathService._fetch_channel_vals(
-            async_db_session, [session.id], ["fl"]
-        )
-
-        vals = channel_vals["fl"][session.id]
-        assert all(type(v) is float for v in vals)
-        assert vals == [float(v) for v in raw]
+        assert [n.therapy_date for n in summary.nights] == [
+            start + timedelta(days=i) for i in range(3)
+        ]
+        for i, night in enumerate(summary.nights):
+            assert night.device_flg_median == pytest.approx(0.2)
+            assert night.device_flg_max == pytest.approx(0.9)
+            assert night.snore_median == pytest.approx(1.0 + i)
+            assert night.snore_pct_time == pytest.approx(2 / 3)
 
 
 # ---------------------------------------------------------------------------

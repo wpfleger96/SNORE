@@ -36,14 +36,14 @@ from snore.mcp.tools._service_errors import (
     MAPPED_SERVICE_ERRORS,
     raise_mapped_service_error,
 )
-from snore.mcp.validation import parse_date_range
+from snore.mcp.validation import parse_date_range, validate_epoch_span
 
 
 def _parse_epochs(epochs: list[EpochSpec]) -> list[EpochRequest]:
     """Parse and validate per-epoch date ranges.
 
-    ``parse_date_range`` raises ValidationError with the exact epoch index in the
-    parameter name so the LLM can identify which epoch is malformed.
+    Every ValidationError names the exact epoch index in the parameter name so
+    the LLM can identify which epoch is malformed or too long.
     """
     from snore.services.breath_service import EpochRequest  # noqa: PLC0415
 
@@ -55,6 +55,7 @@ def _parse_epochs(epochs: list[EpochSpec]) -> list[EpochRequest]:
             start_param=f"epochs[{i}].date_start",
             end_param=f"epochs[{i}].date_end",
         )
+        validate_epoch_span(start_date, end_date, f"epochs[{i}]")
         epoch_requests.append(
             EpochRequest(
                 label=spec.label,
@@ -175,6 +176,8 @@ def register(mcp: FastMCP) -> None:
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
                 ``device_id`` — optional; all epochs must target the same device.
+                An epoch may span at most 366 calendar nights, both ends
+                included; split a longer range into several epochs.
 
         Returns:
             CompareEpochsResponse.  Each entry in ``epochs`` carries
@@ -208,6 +211,8 @@ def register(mcp: FastMCP) -> None:
 
         Error conditions:
             - Epochs list empty or >6 entries → tool error.
+            - An epoch spanning more than 366 nights → tool error naming the
+              epoch (e.g. ``epochs[1]``); split it into shorter epochs.
             - Multiple device IDs across epoch specs → tool error.
             - Multiple devices on the date range and no ``device_id`` → tool error
               listing device IDs so the caller can re-issue with ``device_id``.
@@ -257,6 +262,8 @@ def register(mcp: FastMCP) -> None:
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
                 ``device_id`` — optional; all epochs must target the same device.
+                An epoch may span at most 366 calendar nights, both ends
+                included; split a longer range into several epochs.
             metrics: Optional subset of distribution metrics to compute.  Defaults
                 to all four: ``"mid_insp_flattening"``, ``"flatness_index"``,
                 ``"tidal_volume_ml"``, ``"ie_ratio"``.
@@ -303,6 +310,8 @@ def register(mcp: FastMCP) -> None:
 
         Error conditions:
             - Epochs list empty or >6 entries → tool error.
+            - An epoch spanning more than 366 nights → tool error naming the
+              epoch (e.g. ``epochs[1]``); split it into shorter epochs.
             - Multiple device IDs across epoch specs → tool error.
             - Multiple devices on the date range and no ``device_id`` → tool error
               listing device IDs so the caller can re-issue with ``device_id``.

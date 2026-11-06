@@ -19,6 +19,7 @@ from datetime import date
 from typing import Any
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 
@@ -39,19 +40,30 @@ def _call_build(
     corrupt_leak_sessions: frozenset[int] = frozenset(),
     day_row: Any | None = None,
 ) -> Any:
-    """Call _device_night_stats with the given per-session channel samples."""
-    from snore.services.breath.nightly import _device_night_stats  # noqa: PLC0415
+    """Call _device_night_stats with the given per-session channel samples.
 
+    Samples are reduced with the reducer the service runs on decoded blobs.
+    """
+    from snore.services.breath.nightly import _device_night_stats  # noqa: PLC0415
+    from snore.services.channel_stats import channel_histogram  # noqa: PLC0415
+
+    samples = {
+        "fl": fl_by_session or {},
+        "snore": snore_by_session or {},
+        "leak": leak_by_session or {},
+    }
     return _device_night_stats(
         therapy_date=date(2025, 6, 1),
         device_id=1,
         day_sessions=day_sessions,
         day_row=day_row,
         compliance_threshold_hours=4.0,
-        channel_vals={
-            "fl": fl_by_session or {},
-            "snore": snore_by_session or {},
-            "leak": leak_by_session or {},
+        channel_histograms={
+            channel: {
+                sid: channel_histogram(channel, np.asarray(values))
+                for sid, values in by_session.items()
+            }
+            for channel, by_session in samples.items()
         },
         corrupt_leak_sessions=corrupt_leak_sessions,
     )

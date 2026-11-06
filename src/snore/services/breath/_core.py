@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.queries import latest_analysis_ids, latest_analysis_row
@@ -20,7 +20,6 @@ from snore.analysis.shared.versioning import (
     TimezoneStatus,
 )
 from snore.database import models
-from snore.services.channel_stats import decode_channel_blobs
 from snore.utils.db_chunk import iter_id_chunks
 
 from .dtos import (
@@ -48,6 +47,18 @@ def _decode_json_extract(value: object) -> object:
     except ValueError:
         return value
     return decoded
+
+
+def _group_by_day(
+    rows: Sequence[Any],
+) -> tuple[dict[date, list[Any]], dict[date, models.Day]]:
+    """``(sessions_by_date, day_by_date)`` from ordered ``(Session, Day)`` rows."""
+    sessions_by_date: dict[date, list[Any]] = {}
+    day_by_date: dict[date, models.Day] = {}
+    for r in rows:
+        sessions_by_date.setdefault(r.Day.date, []).append(r.Session)
+        day_by_date[r.Day.date] = r.Day
+    return sessions_by_date, day_by_date
 
 
 async def _resolve_timezone(
@@ -131,59 +142,77 @@ class _BreathServiceCore:
             return AnalysisStatus.STALE_VERSION, algo
         return AnalysisStatus.OK, algo
 
-    async def _latest_analysis_bulk(
-        self, session_ids: list[int]
-    ) -> tuple[dict[int, SessionClassification], dict[int, object]]:
-        """Bulk variant of ``_latest_analysis_for_session``.
+    async def _latest_runs(
+        self, session_ids: list[int], *columns: Any
+    ) -> AsyncIterator[Row[*tuple[Any, ...]]]:
+        """``(id, session_id, engine_versions_json, *columns)`` of each session's
+        latest AnalysisResult; sessions without a run yield nothing.
 
-        Returns ``(classification, pb_episodes)``:
-
-        - ``classification``: session_id → ``SessionClassification`` for every
-          id in ``session_ids``; sessions without a run map to
-          ``(NOT_RUN, None, None)``.
-        - ``pb_episodes``: session_id → the latest run's persisted
-          ``periodic_breathing_episodes`` (decoded JSON; ``[]`` for an explicit
-          JSON null; ``None`` when the key is absent, i.e. PB never ran), for
-          sessions with a run.
-
-        Column-limited: the (large) result JSON is never loaded — SQLite's
-        ``json_extract`` pulls only the episode list.  One window-function
-        query resolves the latest AnalysisResult ids, then one chunked query
-        loads their columns.  Ownership is assumed, exactly as in
+        One window-function query resolves the latest ids, then one chunked
+        query loads the columns.  Ownership is assumed, exactly as in
         ``_latest_analysis_for_session``.
         """
-        classification: dict[int, SessionClassification] = {
-            sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids
-        }
-        pb_episodes: dict[int, object] = {}
         ar_id_by_session = await latest_analysis_ids(self._db, session_ids)
         ar = models.AnalysisResult
         # Chunk the unbounded AnalysisResult-id IN-list (SQLite bound-param cap).
         for chunk in iter_id_chunks(list(ar_id_by_session.values())):
             rows = await self._db.execute(
-                select(
-                    ar.id,
-                    ar.session_id,
-                    ar.engine_versions_json,
-                    func.json_extract(ar.programmatic_result_json, _PB_PATH).label(
-                        "pb_episodes"
-                    ),
-                    func.json_type(ar.programmatic_result_json, _PB_PATH).label(
-                        "pb_type"
-                    ),
-                ).where(ar.id.in_(chunk))
+                select(ar.id, ar.session_id, ar.engine_versions_json, *columns).where(
+                    ar.id.in_(chunk)
+                )
             )
             for row in rows:
-                status, algo = self._classify_engine_versions(row.engine_versions_json)
-                classification[row.session_id] = (status, algo, row.id)
-                # A persisted result always carries the key; an explicit JSON
-                # null means PB ran with no episodes, a missing key (e.g. an
-                # empty result JSON) means it never ran.
-                pb_episodes[row.session_id] = (
-                    []
-                    if row.pb_type == "null"
-                    else _decode_json_extract(row.pb_episodes)
-                )
+                yield row
+
+    def _classify_latest_run(self, row: Row[*tuple[Any, ...]]) -> SessionClassification:
+        status, algo = self._classify_engine_versions(row.engine_versions_json)
+        return status, algo, row.id
+
+    async def _latest_analysis_classification(
+        self, session_ids: list[int]
+    ) -> dict[int, SessionClassification]:
+        """session_id → ``SessionClassification`` for every id in ``session_ids``.
+
+        Bulk variant of ``_latest_analysis_for_session``; sessions without a run
+        map to ``(NOT_RUN, None, None)``.  Reads no result JSON.
+        """
+        classification: dict[int, SessionClassification] = {
+            sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids
+        }
+        async for row in self._latest_runs(session_ids):
+            classification[row.session_id] = self._classify_latest_run(row)
+        return classification
+
+    async def _latest_analysis_bulk(
+        self, session_ids: list[int]
+    ) -> tuple[dict[int, SessionClassification], dict[int, object]]:
+        """``_latest_analysis_classification`` plus each run's PB episodes.
+
+        Returns ``(classification, pb_episodes)``, where ``pb_episodes`` maps a
+        session with a run to the latest run's persisted
+        ``periodic_breathing_episodes`` (decoded JSON; ``[]`` for an explicit
+        JSON null; ``None`` when the key is absent, i.e. PB never ran).
+
+        Column-limited: the (large) result JSON is never loaded — SQLite's
+        ``json_extract`` pulls only the episode list.
+        """
+        classification: dict[int, SessionClassification] = {
+            sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids
+        }
+        pb_episodes: dict[int, object] = {}
+        result_json = models.AnalysisResult.programmatic_result_json
+        async for row in self._latest_runs(
+            session_ids,
+            func.json_extract(result_json, _PB_PATH).label("pb_episodes"),
+            func.json_type(result_json, _PB_PATH).label("pb_type"),
+        ):
+            classification[row.session_id] = self._classify_latest_run(row)
+            # A persisted result always carries the key; an explicit JSON
+            # null means PB ran with no episodes, a missing key (e.g. an
+            # empty result JSON) means it never ran.
+            pb_episodes[row.session_id] = (
+                [] if row.pb_type == "null" else _decode_json_extract(row.pb_episodes)
+            )
         return classification, pb_episodes
 
     async def latest_analysis_for_session(
@@ -226,6 +255,22 @@ class _BreathServiceCore:
 
         For a single-date point query call: _resolve_range(d, d, device_id).
         """
+        resolved_device_id, sessions_by_date, _ = await self._resolve_range_with_days(
+            date_start, date_end, device_id
+        )
+        return resolved_device_id, sessions_by_date
+
+    async def _resolve_range_with_days(
+        self,
+        date_start: date,
+        date_end: date,
+        device_id: int | None,
+    ) -> tuple[int, dict[date, list[Any]], dict[date, models.Day]]:
+        """``_resolve_range`` plus the Day row of every date in ``sessions_by_date``.
+
+        The Day rows come from the same query as the sessions, so callers that
+        need them issue no second ``days`` read.  Raises as ``_resolve_range``.
+        """
         if device_id is not None:
             # Validate ownership independent of data presence
             owned = (
@@ -253,13 +298,7 @@ class _BreathServiceCore:
                 .order_by(models.Day.date, models.Session.start_time)
             )
             rows = (await self._db.execute(stmt)).all()
-            sessions_by_date: dict[date, list[Any]] = {}
-            for r in rows:
-                d = r.Day.date
-                if d not in sessions_by_date:
-                    sessions_by_date[d] = []
-                sessions_by_date[d].append(r.Session)
-            return device_id, sessions_by_date
+            return device_id, *_group_by_day(rows)
 
         # device_id is None — auto-select from owned sessions in range
         stmt = (
@@ -296,14 +335,7 @@ class _BreathServiceCore:
                 owned_device_ids=device_ids_seen,
                 device_serials=device_serials,
             )
-        resolved_device_id = device_ids_seen[0]
-        sessions_by_date = {}
-        for r in rows:
-            d = r.Day.date
-            if d not in sessions_by_date:
-                sessions_by_date[d] = []
-            sessions_by_date[d].append(r.Session)
-        return resolved_device_id, sessions_by_date
+        return device_ids_seen[0], *_group_by_day(rows)
 
     @staticmethod
     def _reduce_day_status(
@@ -344,26 +376,6 @@ class _BreathServiceCore:
 
         # Rule 5: any other mix → PARTIAL
         return DayAnalysisStatus.PARTIAL
-
-    @staticmethod
-    async def _fetch_channel_vals(
-        db: AsyncSession,
-        session_ids: list[int],
-        channels: Sequence[str],
-    ) -> tuple[dict[str, dict[int, list[float]]], dict[str, set[int]]]:
-        """``(vals, corrupt)`` for ``channels``.
-
-        ``vals`` is channel → session_id → deserialized samples; ``corrupt`` is
-        channel → ids of sessions whose blob could not be decoded.  Every
-        requested channel is a key of both; sessions without a usable row for a
-        channel are absent from its ``vals`` map.  Values are raw, negative
-        sentinels included, so callers apply their own filter.  This is pure
-        I/O + light compute (numpy deserialization); no analysis state is
-        consulted.
-        """
-        return await decode_channel_blobs(
-            db, session_ids, channels, lambda _channel, samples: samples.tolist()
-        )
 
     @staticmethod
     def _current_algorithm_identity() -> AlgorithmIdentity:

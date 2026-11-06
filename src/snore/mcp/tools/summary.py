@@ -82,34 +82,16 @@ async def get_nightly_summary(
     ahi/oai/cai/hi are the Day headline: the device-reported daily value when
     trusted, otherwise SNORE's recount; index_source says which.  The recount,
     when computable, is in *_computed.  Channel statistics come from
-    BreathService.get_nightly_device_summary(); absent entries are null with
-    reason (A2).  Compliance uses n_calendar_nights as denominator.  No analysis
-    data is read, except _has_analysis for capability bookkeeping.
+    BreathService.get_nightly_device_summary(), decoded for the page's nights
+    only; absent entries are null with reason (A2).  Compliance covers the
+    whole range and uses n_calendar_nights as denominator.  No analysis data is
+    read, except _has_analysis for capability bookkeeping.
 
     Raises ValidationError when BreathService reports device ownership problems
     (DeviceAmbiguityError, DeviceNotOwnedError).  The server boundary converts
     ValidationError to a ToolError before it reaches the client.
     """
     from snore.services.breath_service import BreathService  # noqa: PLC0415
-
-    # ValueError (end < start or > 90 nights) is pre-validated/rejected upstream.
-    try:
-        bs_range = await BreathService(
-            db_session, profile_id
-        ).get_nightly_device_summary(
-            start,
-            end,
-            device_id=device_id,
-            compliance_threshold_hours=compliance_threshold_hours,
-        )
-    except MAPPED_SERVICE_ERRORS as exc:
-        raise_mapped_service_error(exc)
-
-    # Keyed by device too: without a device_id the Day rows can include another
-    # device, whose sessions on that date are all disabled.
-    bs_by_night = {
-        (night.device_id, night.therapy_date): night for night in bs_range.nights
-    }
 
     # Count total matching days for pagination — scoped via Device.profile_id
     count_q = (
@@ -141,6 +123,28 @@ async def get_nightly_summary(
     if device_id is not None:
         day_q = day_q.where(models.Day.device_id == device_id)
     day_rows = (await db_session.execute(day_q)).scalars().all()
+
+    # Compliance covers the whole range; channel statistics only this page's
+    # nights, so only their waveforms are decoded.
+    # ValueError (end < start or > 90 nights) is pre-validated/rejected upstream.
+    try:
+        bs_range = await BreathService(
+            db_session, profile_id
+        ).get_nightly_device_summary(
+            start,
+            end,
+            device_id=device_id,
+            compliance_threshold_hours=compliance_threshold_hours,
+            night_dates={day.date for day in day_rows},
+        )
+    except MAPPED_SERVICE_ERRORS as exc:
+        raise_mapped_service_error(exc)
+
+    # Keyed by device too: without a device_id the Day rows can include another
+    # device, whose sessions on that date are all disabled.
+    bs_by_night = {
+        (night.device_id, night.therapy_date): night for night in bs_range.nights
+    }
 
     if not day_rows:
         return NightlySummaryResponse(
