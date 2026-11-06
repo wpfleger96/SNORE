@@ -197,23 +197,23 @@ def _calculate_hypopnea_confidence(
     return min(1.0, confidence)
 
 
-def _check_desaturation(spo2_values: np.ndarray, threshold: float = 3.0) -> bool:
+def _check_desaturation(spo2_values: np.ndarray, threshold: float = 3.0) -> bool | None:
     """
     Check if SpO2 desaturation occurred.
 
     Args:
-        spo2_values: SpO2 signal values
+        spo2_values: SpO2 signal values; NaN marks samples without a reading
         threshold: Desaturation threshold (default 3% for AASM, 4% for CMS)
 
     Returns:
-        True if desaturation >= threshold occurred
+        True if desaturation >= threshold occurred, or None when fewer than two
+        samples have a reading (desaturation unknown)
     """
-    if len(spo2_values) < 2:
-        return False
+    readings = spo2_values[np.isfinite(spo2_values)]
+    if len(readings) < 2:
+        return None
 
-    max_spo2 = np.max(spo2_values)
-    min_spo2 = np.min(spo2_values)
-    drop = max_spo2 - min_spo2
+    drop = np.max(readings) - np.min(readings)
 
     return bool(drop >= threshold)
 

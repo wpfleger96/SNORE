@@ -145,6 +145,7 @@ class EventDetector:
         flow_data: tuple[np.ndarray, np.ndarray],
         sample_rate: float,
         session_duration_hours: float,
+        spo2_values: np.ndarray | None = None,
     ) -> ModeResult:
         """
         Run detection algorithm and return results.
@@ -158,6 +159,8 @@ class EventDetector:
             flow_data: Tuple of (timestamps, flow_values)
             sample_rate: Sampling rate in Hz (from waveform metadata)
             session_duration_hours: Total session duration in hours
+            spo2_values: SpO2 samples aligned to the flow timestamps (NaN where
+                no oximeter reading covers a sample), or None without oximetry
 
         Returns:
             ModeResult with detected events and metrics
@@ -177,7 +180,7 @@ class EventDetector:
             apneas = self._detect_apneas(breaths, flow_data, sample_rate)
 
         hypopneas = self._detect_hypopneas(
-            breaths, flow_data, spo2_signal=None, exclude_events=apneas
+            breaths, flow_data, spo2_signal=spo2_values, exclude_events=apneas
         )
 
         reras: list[RERAEvent] = []
@@ -370,7 +373,9 @@ class EventDetector:
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
-            spo2_signal: SpO2 data for desaturation detection
+            spo2_signal: SpO2 samples aligned to the flow timestamps, for
+                desaturation detection. A signal whose length differs from the
+                flow timestamps, or that has no finite samples, is ignored.
             exclude_events: List of apnea events to exclude from hypopnea detection
 
         Returns:
@@ -382,6 +387,19 @@ class EventDetector:
         if self.config.hypopnea_mode == HypopneaMode.DISABLED:
             logger.info(f"{self.config.name}: Hypopnea detection disabled")
             return []
+
+        if spo2_signal is not None:
+            if flow_data is None or len(spo2_signal) != len(flow_data[0]):
+                logger.warning(
+                    f"{self.config.name}: SpO2 is not aligned to the flow timestamps "
+                    f"({len(spo2_signal)} vs "
+                    f"{0 if flow_data is None else len(flow_data[0])} samples); "
+                    "ignoring SpO2"
+                )
+                spo2_signal = None
+            elif not np.any(np.isfinite(spo2_signal)):
+                logger.info(f"{self.config.name}: SpO2 has no valid samples")
+                spo2_signal = None
 
         has_spo2 = spo2_signal is not None
         actual_mode = self.config.hypopnea_mode
@@ -496,21 +514,13 @@ class EventDetector:
             has_desaturation = None
             if spo2_signal is not None and flow_data is not None:
                 timestamps, _ = flow_data
-                if len(spo2_signal) != len(timestamps):
-                    logger.warning(
-                        f"SpO2/flow timestamp mismatch: {len(spo2_signal)} vs {len(timestamps)} - "
-                        "skipping desaturation check"
-                    )
-                    has_desaturation = None
-                else:
-                    mask = (timestamps >= start_time) & (timestamps <= end_time)
-                    if np.any(mask):
-                        if actual_mode == HypopneaMode.AASM_4PCT:
-                            has_desaturation = _check_desaturation(
-                                spo2_signal[mask], threshold=4.0
-                            )
-                        else:
-                            has_desaturation = _check_desaturation(spo2_signal[mask])
+                mask = (timestamps >= start_time) & (timestamps <= end_time)
+                desaturation_threshold = (
+                    4.0 if actual_mode == HypopneaMode.AASM_4PCT else 3.0
+                )
+                has_desaturation = _check_desaturation(
+                    spo2_signal[mask], threshold=desaturation_threshold
+                )
 
             confidence = _calculate_hypopnea_confidence(
                 avg_reduction, duration, has_desaturation, detection_mode=actual_mode

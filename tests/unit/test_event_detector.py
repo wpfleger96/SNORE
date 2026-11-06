@@ -958,12 +958,18 @@ class TestCheckDesaturation:
         assert has_desat is False
 
     def test_insufficient_data(self, aasm_detector):
-        """Less than 2 samples should return False."""
-        spo2_values = np.array([96])
+        """Fewer than 2 readings leave desaturation unknown."""
+        spo2_values = np.array([96.0, np.nan])
 
         has_desat = _check_desaturation(spo2_values)
 
-        assert has_desat is False
+        assert has_desat is None
+
+    def test_missing_readings_are_ignored(self, aasm_detector):
+        """NaN samples (no oximeter reading) do not mask a real drop."""
+        spo2_values = np.array([96.0, np.nan, 94.0, 92.0, np.nan])
+
+        assert _check_desaturation(spo2_values) is True
 
 
 # =============================================================================
@@ -2748,6 +2754,56 @@ class TestDetectEventsModeIsolation:
         assert len(actual.reras) == len(expected.reras)
         assert actual.ahi == pytest.approx(expected.ahi)
         assert actual.rdi == pytest.approx(expected.rdi)
+
+
+class TestDetectEventsSpo2:
+    """detect_events forwards SpO2 to hypopnea detection."""
+
+    def _breaths(self) -> list[BreathMetrics]:
+        """15 normal breaths, a 4-breath 50%-reduced run (60-76 s), then normal."""
+        breaths = [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(15)]
+        breaths += [_uniform_breath(i + 1, float(i * 4), 25.0) for i in range(15, 19)]
+        breaths += [_uniform_breath(i + 1, float(i * 4), 50.0) for i in range(19, 30)]
+        return breaths
+
+    def _hypopneas(self, spo2_values: np.ndarray | None) -> list[HypopneaEvent]:
+        breaths = self._breaths()
+        timestamps = np.arange(0.0, breaths[-1].end_time + 1.0, 0.1)
+        result = EventDetector(AASM_CONFIG).detect_events(
+            breaths,
+            flow_data=(timestamps, np.zeros_like(timestamps)),
+            sample_rate=10.0,
+            session_duration_hours=1.0,
+            spo2_values=spo2_values,
+        )
+        assert len(result.hypopneas) == 1
+        return result.hypopneas
+
+    def _spo2(self) -> np.ndarray:
+        timestamps = np.arange(0.0, 30 * 4 + 1.0, 0.1)
+        spo2 = np.full_like(timestamps, 97.0)
+        spo2[(timestamps >= 64.0) & (timestamps < 76.0)] = 93.0
+        return spo2
+
+    def test_spo2_dip_marks_desaturation(self):
+        assert self._hypopneas(self._spo2())[0].has_desaturation is True
+
+    def test_without_spo2_desaturation_is_unknown(self):
+        assert self._hypopneas(None)[0].has_desaturation is None
+
+    def test_misaligned_spo2_is_ignored(self):
+        """SpO2 not sample-aligned to flow falls back to flow-only detection."""
+        hypopneas = self._hypopneas(self._spo2()[::10])
+
+        assert hypopneas[0].has_desaturation is None
+        assert hypopneas[0].confidence == self._hypopneas(None)[0].confidence
+
+    def test_no_reading_during_event_leaves_desaturation_unknown(self):
+        spo2 = self._spo2()
+        timestamps = np.arange(0.0, 30 * 4 + 1.0, 0.1)
+        spo2[(timestamps >= 50.0) & (timestamps < 90.0)] = np.nan
+
+        assert self._hypopneas(spo2)[0].has_desaturation is None
 
 
 class TestThresholdBandValidation:
