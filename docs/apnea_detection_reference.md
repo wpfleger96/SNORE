@@ -46,7 +46,7 @@ The American Academy of Sleep Medicine (AASM) defines the following criteria [1]
 | Event Type | Flow Reduction | Duration | Additional Criteria |
 |------------|---------------|----------|---------------------|
 | Apnea | ≥90% | ≥10 sec | Effort determines OA vs CA |
-| Hypopnea | 30-89% | ≥10 sec | Requires SpO2 drop or arousal |
+| Hypopnea | ≥30% and <90% | ≥10 sec | Requires SpO2 drop or arousal |
 | RERA | <30% | ≥10 sec | Flow limitation + arousal |
 
 ## 2. CPAP Device Detection Methods
@@ -290,7 +290,7 @@ SNORE implements three detection modes that map to the clinical standards descri
 
 Follows the AASM Scoring Manual v2.6 definitions from section 1.1:
 - Apnea threshold: ≥90% flow reduction
-- Hypopnea band: 30-89% average flow reduction (inclusive)
+- Hypopnea band: at least 30% and below 90% average flow reduction (`[0.30, 0.90)`), ending where apneas begin
 - Baseline: 2-minute (120s) rolling time window
 - With oximetry, each hypopnea records whether SpO2 fell by at least 3% (4% in `AASM_4PCT`) from a running peak to a later reading, over readings from 10 s before the event to 30 s after it, since finger-oximeter nadirs lag the event (`has_desaturation`); a desaturation raises its confidence. Hypopneas without a desaturation are still scored, because the alternative AASM criterion, an arousal, needs EEG. Without oximetry, or for an event with no SpO2 readings in its window, hypopneas get flow-only confidence.
 
@@ -302,7 +302,7 @@ Uses AASM thresholds but replaces the time-based baseline with a **breath-based 
 
 Approximates ResMed device logic using divergent thresholds from AASM standards (`RESMED_CONFIG` in `src/snore/analysis/modes/config.py`):
 - Apnea threshold: ≥50% flow reduction (vs AASM's 90%) — uses "gap + low-flow" detection
-- Hypopnea band: 20-49% average flow reduction (vs AASM's 30-89%); a deeper region that was not confirmed as an apnea is not scored as a hypopnea
+- Hypopnea band: at least 20% and below 50% average flow reduction (`[0.20, 0.50)`, vs AASM's `[0.30, 0.90)`); a deeper region that was not confirmed as an apnea is not scored as a hypopnea
 - Baseline: 2-minute (120s) rolling time window, same as AASM
 - Flow-only hypopnea mode: SpO2 is ignored even when present (no `has_desaturation`, no desaturation confidence bonus)
 

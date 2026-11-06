@@ -371,8 +371,9 @@ class EventDetector:
         An event with no SpO2 readings of its own gets flow-only confidence.
 
         A region of consecutive breaths reduced by at least
-        hypopnea_min_threshold is a hypopnea only if its average reduction is at
-        most hypopnea_max_threshold; deeper regions are left to apnea detection.
+        hypopnea_min_threshold is a hypopnea only if its average reduction is
+        below hypopnea_max_threshold (the band is [min, max)); deeper regions
+        are left to apnea detection.
 
         Args:
             breaths: List of BreathMetrics objects
@@ -452,7 +453,7 @@ class EventDetector:
                 )
 
         breaths_in_range = np.sum(
-            (reductions >= min_threshold) & (reductions <= max_threshold)
+            (reductions >= min_threshold) & (reductions < max_threshold)
         )
         logger.debug(
             f"Breaths in hypopnea range ({min_threshold * 100:.0f}-"
@@ -473,11 +474,11 @@ class EventDetector:
                 continue
             avg_reduction = float(np.mean(event_reductions))
 
-            # Inclusive band: a region is a hypopnea iff min <= avg <= max.
-            if avg_reduction > max_threshold:
+            # Half-open band: a region is a hypopnea iff min <= avg < max.
+            if avg_reduction >= max_threshold:
                 logger.debug(
                     f"  Skipping region {start_idx}-{end_idx}: avg reduction "
-                    f"{avg_reduction * 100:.1f}% > hypopnea max "
+                    f"{avg_reduction * 100:.1f}% >= hypopnea max "
                     f"{max_threshold * 100:.0f}%"
                 )
                 continue

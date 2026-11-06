@@ -55,11 +55,12 @@ VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
 # bonus.
 PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
 # Apnea/hypopnea event detection (EventDetector.detect_events, every mode).
-# v1: hypopnea regions must average within the mode's inclusive
-# [hypopnea_min_threshold, hypopnea_max_threshold] band (resmed caps at 49%;
-# before this key existed the cap was the hard-coded 90% apnea threshold), and
-# SpO2 reaches hypopnea detection, so oximetry sessions get has_desaturation and
-# the desaturation confidence bonus (before, has_desaturation was always null).
+# v1: hypopnea regions must average within the mode's half-open
+# [hypopnea_min_threshold, hypopnea_max_threshold) band, which ends at the
+# mode's apnea threshold (resmed below 50%; before this key existed the cap was
+# the hard-coded 90%), and SpO2 reaches AASM-mode hypopnea detection, so
+# oximetry sessions get has_desaturation and the desaturation confidence bonus
+# (before, has_desaturation was always null).
 EVENT_DETECTOR_ALGO_VERSION: str = "v1"
 # Pulse change detection (OSCAR calcPulseChange parity), feeding
 # pulse_change_count / pulse_change_index.

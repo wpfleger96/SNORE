@@ -2600,7 +2600,7 @@ class TestHypopneaBaselineContamination:
 
 
 class TestHypopneaMaxThreshold:
-    """Hypopnea regions must average within [hypopnea_min, hypopnea_max]."""
+    """Hypopnea regions must average within [hypopnea_min, hypopnea_max)."""
 
     def _breaths_with_reduced_run(self, amplitudes: list[float]) -> list[BreathMetrics]:
         """30 normal breaths (amplitude 50), a run at ``amplitudes``, then normal."""
@@ -2619,7 +2619,7 @@ class TestHypopneaMaxThreshold:
     def test_resmed_region_above_max_is_not_a_hypopnea(self):
         """A 12 s, 70%-reduced region that was not scored as an apnea stays unscored.
 
-        RESMED_CONFIG caps hypopneas at 49% (its apnea threshold is 50%).
+        RESMED_CONFIG's hypopnea band ends at its 50% apnea threshold.
         """
         breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
 
@@ -2645,16 +2645,31 @@ class TestHypopneaMaxThreshold:
         assert hypopneas[0].start_time == 120.0
         assert hypopneas[0].flow_reduction == pytest.approx((0.55 + 0.35 + 0.55) / 3)
 
-    def test_region_at_max_is_a_hypopnea(self):
-        """The upper bound is inclusive."""
-        config = RESMED_CONFIG.model_copy(update={"hypopnea_max_threshold": 0.70})
-        breaths = self._breaths_with_reduced_run([15.0, 15.0, 15.0])
-
-        hypopneas = EventDetector(config)._detect_hypopneas(
-            breaths, flow_data=None, spo2_data=None, exclude_events=[]
+    def _hypopneas_with_max(self, max_threshold: float) -> list[HypopneaEvent]:
+        """Hypopneas for a 3-breath ~70%-reduced run under a given band cap."""
+        config = RESMED_CONFIG.model_copy(
+            update={"hypopnea_max_threshold": max_threshold}
+        )
+        return EventDetector(config)._detect_hypopneas(
+            self._breaths_with_reduced_run([15.0, 15.0, 15.0]),
+            flow_data=None,
+            spo2_data=None,
+            exclude_events=[],
         )
 
-        assert len(hypopneas) == 1
+    def _region_average(self) -> float:
+        """The run's exact average reduction, as the detector computes it."""
+        (hypopnea,) = self._hypopneas_with_max(1.0)
+        return hypopnea.flow_reduction
+
+    def test_region_averaging_exactly_max_is_not_a_hypopnea(self):
+        """The upper bound is exclusive: it is where apneas begin."""
+        assert self._hypopneas_with_max(self._region_average()) == []
+
+    def test_region_just_below_max_is_a_hypopnea(self):
+        cap = float(np.nextafter(self._region_average(), 1.0))
+
+        assert len(self._hypopneas_with_max(cap)) == 1
 
 
 class TestReraThresholdConfig:

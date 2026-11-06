@@ -125,7 +125,8 @@ class EventDetectionConstants:
 
     APNEA_FLOW_REDUCTION_THRESHOLD = 0.9
     HYPOPNEA_MIN_REDUCTION = 0.3
-    HYPOPNEA_MAX_REDUCTION = 0.89
+    # Exclusive: the hypopnea band [MIN, MAX) ends where apneas begin.
+    HYPOPNEA_MAX_REDUCTION = APNEA_FLOW_REDUCTION_THRESHOLD
 
     # Flow-estimated effort thresholds for apnea typing (classification.py):
     # obstructive when strictly above OBSTRUCTIVE_THRESHOLD, central when strictly
