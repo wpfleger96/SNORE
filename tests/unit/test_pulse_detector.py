@@ -41,6 +41,18 @@ def test_two_separated_step_changes_yield_two_events(detector):
     assert [e.start_time for e in events] == [30.0, 80.0]
 
 
+def test_event_is_stamped_at_last_qualifying_delta_in_window(detector):
+    """Scanning resumes at 31 s (70 bpm), whose window sees 80 bpm at 33-39 s.
+
+    Every one of those deltas qualifies; the change is the last, at 39 s.
+    """
+    timestamps, values = _step_series([(30.0, 70.0), (33.0, 80.0)])
+
+    events = detector.detect(timestamps, values)
+
+    assert [(e.start_time, e.duration) for e in events] == [(30.0, 8.0), (39.0, 8.0)]
+
+
 def test_delta_equal_to_threshold_is_not_an_event(detector):
     timestamps, values = _step_series([(30.0, 65.0)])
 
@@ -64,6 +76,27 @@ def test_nan_samples_inside_window_are_skipped(detector):
 
     assert len(events) == 1
     assert events[0].start_time == 30.0
+
+
+@pytest.mark.parametrize("no_reading", [-1.0, 0.0])
+def test_no_reading_dropouts_on_flat_pulse_return_no_events(detector, no_reading):
+    """ResMed's -1 / 0 "no reading" samples are not heart-rate changes."""
+    timestamps, values = _step_series([], duration_s=3600.0)
+    for dropout_start in (600.0, 1800.0, 3000.0):
+        values[(timestamps >= dropout_start) & (timestamps < dropout_start + 10)] = (
+            no_reading
+        )
+
+    assert detector.detect(timestamps, values) == []
+
+
+def test_nan_timestamp_is_skipped(detector):
+    timestamps, values = _step_series([(30.0, 70.0)])
+    timestamps[10] = np.nan
+
+    events = detector.detect(timestamps, values)
+
+    assert [e.start_time for e in events] == [30.0]
 
 
 def test_all_nan_pulse_returns_no_events(detector):

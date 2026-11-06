@@ -187,7 +187,7 @@ Complete project overview showing implemented features and future development pl
   - Top 5 best/worst days for AHI (lowest/highest), leak (lowest), therapy hours (longest/shortest), SpO2 min (highest/lowest)
   - CLI: `snore stats --records`
 - [x] **Pulse change detection** - Detect pulse rate changes ≥ threshold for ≥ duration
-  - OSCAR-compatible algorithm: ≥5 BPM changes within 8-second sliding windows
+  - OSCAR-compatible algorithm: >5 BPM changes within 8-second sliding windows
   - Integrated into analysis pipeline with pulse_change_count and pulse_change_index
 - [x] **Enhanced pattern detection** - Improve CSR/periodic breathing algorithms
   - Windowed episode detection (10-min windows, 2-min steps)

@@ -64,9 +64,10 @@ PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
 EVENT_DETECTOR_ALGO_VERSION: str = "v1"
 # Pulse change detection (OSCAR calcPulseChange parity), feeding
 # pulse_change_count / pulse_change_index.
-# v1: resumes scanning after each change, uses a strict > bpm threshold, and
-# stamps the event at the change; before this key existed every sample leading
-# into one heart-rate shift was counted.
+# v1: resumes scanning after each change, uses a strict > bpm threshold,
+# stamps the event at the change, and skips samples with no reading (<= 0 bpm,
+# such as ResMed's -1); before this key existed every sample leading into one
+# heart-rate shift was counted, and dropouts to -1 counted as changes.
 PULSE_DETECTOR_ALGO_VERSION: str = "v1"
 
 # Flow-derived MV fallback used by experimental_get_event_context when a session

@@ -80,7 +80,9 @@ class PulseChangeDetector:
         4. Record an event at the change's time (calcs.cpp:1461) and resume
            scanning after it (``i = li``, calcs.cpp:1462), so one heart-rate
            shift yields one event
-        5. Skip NaN/artifact values (pulse data has dropouts)
+        5. Skip samples without a reading: non-finite or <= 0 bpm (ResMed
+           writes -1 or 0 when the oximeter has no reading), or with a
+           non-finite timestamp
 
         OSCAR stores the delta of the last sample scanned in the window as the
         event value; this reports the delta at the change instead.
@@ -101,9 +103,11 @@ class PulseChangeDetector:
             )
             return []
 
-        valid_mask = ~np.isnan(pulse_values)
+        valid_mask = (
+            np.isfinite(pulse_values) & (pulse_values > 0) & np.isfinite(timestamps)
+        )
         if not np.any(valid_mask):
-            logger.warning("No valid pulse data found (all NaN)")
+            logger.warning("No valid pulse data found (no readings)")
             return []
 
         times = timestamps[valid_mask]
