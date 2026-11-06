@@ -10,8 +10,6 @@ from collections.abc import Collection, Mapping, Sequence
 from datetime import date
 from typing import Any
 
-import numpy as np
-
 from sqlalchemy import select
 
 from snore.analysis.queries import latest_analysis_row
@@ -27,19 +25,18 @@ from snore.constants import LEAK_REDLINE_LPM
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
 from snore.services.channel_stats import (
-    CHANNEL_FLOORS,
     ChannelHistogram,
     ChannelHistograms,
+    PooledHistogram,
+    channel_histogram,
     decode_channel_blobs,
     pool_histograms,
-    pooled_count,
-    pooled_median,
-    samples_histogram,
-    value_at_rank,
+    pooled_distribution,
+    pooled_share_above,
 )
 from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
-from snore.utils.stats import nearest_rank_index, percentile_nearest_rank
+from snore.utils.stats import percentile_nearest_rank
 
 from ._core import SessionClassification, _BreathServiceCore
 from .algorithms import _count_fl_run_reras, periodic_breathing_seconds
@@ -60,9 +57,9 @@ logger = logging.getLogger(__name__)
 # Longer ranges must be paged by the caller (e.g. AppleCrossValidator).
 MAX_NIGHTS_PER_CALL = 90
 
-# Lowest usable sample per device channel: ``fl`` and ``leak`` drop the
-# negative mask-off sentinels; zeros are legitimate data on every channel.
-_NIGHT_CHANNEL_FLOORS = {**CHANNEL_FLOORS, "leak": 0.0}
+# Device channels the nightly summary decodes; ``channel_histogram`` applies
+# each one's floor.
+_NIGHT_CHANNELS = ("fl", "snore", "leak")
 
 
 def _stat_pair(
@@ -73,40 +70,17 @@ def _stat_pair(
 
 
 def _high_tail_distribution(
-    pooled: ChannelHistogram, reason: NullReason
+    pooled: PooledHistogram, reason: NullReason
 ) -> tuple[float | None, float | None, float | None, NullReason | None]:
     """``(median, p95, max, None)`` of pooled samples, or all-``None`` + reason when empty.
 
-    For direct-severity metrics where higher = worse.  Equal to sorting the
-    samples: ``statistics.median``, nearest-rank 95th, last value.
+    For direct-severity metrics where higher = worse (``pooled_distribution``).
     """
-    n = pooled_count(pooled)
-    if n == 0:
+    distribution = pooled_distribution(pooled)
+    if distribution is None:
         return None, None, None, reason
-    return (
-        pooled_median(pooled),
-        value_at_rank(pooled, nearest_rank_index(n, 0.95)),
-        float(pooled[0][-1]),
-        None,
-    )
-
-
-def _share_above(
-    pooled: ChannelHistogram, threshold: float, *, inclusive: bool
-) -> float | None:
-    """Fraction of pooled samples above ``threshold`` (or equal, when ``inclusive``).
-
-    ``None`` when there are no samples.
-    """
-    n = pooled_count(pooled)
-    if n == 0:
-        return None
-    values, cumulative = pooled
-    n_distinct_below = int(
-        np.searchsorted(values, threshold, side="left" if inclusive else "right")
-    )
-    n_below = int(cumulative[n_distinct_below - 1]) if n_distinct_below else 0
-    return (n - n_below) / n
+    median, p95, maximum = distribution
+    return median, p95, maximum, None
 
 
 def _low_tail_distribution(
@@ -180,15 +154,17 @@ def _total_therapy_hours(
     return sum(s.duration_seconds or 0.0 for s in day_sessions) / 3600.0
 
 
-def _night_channel_histogram(channel: str, samples: np.ndarray) -> ChannelHistogram:
-    """A session's usable ``channel`` samples, reduced on the decode thread."""
-    return samples_histogram(samples, _NIGHT_CHANNEL_FLOORS[channel])
+def _is_compliant(
+    day_sessions: Sequence[models.Session], day_row: Any | None, threshold: float
+) -> bool:
+    """Whether the night's therapy hours reach the compliance ``threshold``."""
+    return _total_therapy_hours(day_sessions, day_row) >= threshold
 
 
 def _pool_night(
     day_sessions: Sequence[models.Session],
     by_session: Mapping[int, ChannelHistogram],
-) -> ChannelHistogram:
+) -> PooledHistogram:
     """Pooled usable samples across all of a night's sessions."""
     return pool_histograms(
         [by_session[sid] for s in day_sessions if (sid := int(s.id)) in by_session]
@@ -207,7 +183,7 @@ def _device_night_stats(
 ) -> NightlyDeviceStats:
     """Build a NightlyDeviceStats from per-session channel histograms. No I/O.
 
-    ``channel_histograms`` holds ``_night_channel_histogram`` results, so the
+    ``channel_histograms`` holds ``channel_histogram`` results, so the
     ``fl`` and ``leak`` negative sentinels (e.g. −0.01 from digital −1 at
     mask-off) are already dropped.  The stored leak waveform is already L/min.
     A session in ``corrupt_leak_sessions`` nulls the night's leak share: the
@@ -225,26 +201,27 @@ def _device_night_stats(
     )
     leak_corrupt = any(int(s.id) in corrupt_leak_sessions for s in day_sessions)
     leak_fraction = (
-        None if leak_corrupt else _share_above(leak, LEAK_REDLINE_LPM, inclusive=True)
+        None
+        if leak_corrupt
+        else pooled_share_above(leak, LEAK_REDLINE_LPM, inclusive=True)
     )
     leak_above_24_pct, leak_above_24_pct_reason = _stat_pair(
         round(100.0 * leak_fraction, 1) if leak_fraction is not None else None,
         NullReason.CHANNEL_CORRUPT if leak_corrupt else NullReason.CHANNEL_ABSENT,
     )
 
-    total_therapy_hours = _total_therapy_hours(day_sessions, day_row)
     return NightlyDeviceStats(
         therapy_date=therapy_date,
         device_id=device_id,
-        total_therapy_hours=total_therapy_hours,
-        is_compliant=total_therapy_hours >= compliance_threshold_hours,
+        total_therapy_hours=_total_therapy_hours(day_sessions, day_row),
+        is_compliant=_is_compliant(day_sessions, day_row, compliance_threshold_hours),
         device_flg_median=device_flg_median,
         device_flg_95th=device_flg_95th,
         device_flg_max=device_flg_max,
         device_flg_reason=device_flg_reason,
         snore_median=snore_median,
         snore_95th=snore_95th,
-        snore_pct_time=_share_above(snore, 0.5, inclusive=False),
+        snore_pct_time=pooled_share_above(snore, 0.5, inclusive=False),
         snore_reason=snore_reason,
         leak_above_24_pct=leak_above_24_pct,
         leak_above_24_pct_reason=leak_above_24_pct_reason,
@@ -540,31 +517,36 @@ class NightlyMixin(_BreathServiceCore):
 
     async def get_experimental_day_summary(
         self, day: models.Day
-    ) -> NightlyAnalysisSummary:
+    ) -> NightlyAnalysisSummary | None:
         """``get_experimental_nightly_summary`` for a Day row the caller already loaded.
 
-        Reads the Day's enabled sessions by ``day_id`` instead of re-reading the
-        Day by date.  Raises ``ValueError`` when the Day has no enabled session
-        on a device of this profile.
+        Reads the Day's sessions by ``day_id`` in one query instead of re-reading
+        the Day by date, and builds the night from the enabled ones.  ``None``
+        when every session is disabled, a normal user choice; raises
+        ``ValueError`` when the Day has no session on a device of this profile.
         """
-        sessions = list(
-            (
-                await self._db.execute(
-                    select(models.Session)
-                    .join(models.Device, models.Session.device_id == models.Device.id)
-                    .where(
-                        models.Session.day_id == day.id,
-                        models.Session.enabled.is_(True),
-                        models.Device.profile_id == self._profile_id,
-                    )
-                    .order_by(models.Session.start_time)
+        # The night reads only ids and durations, so whole Session rows (and
+        # their JSON columns) are never loaded.
+        rows = (
+            await self._db.execute(
+                select(
+                    models.Session.id,
+                    models.Session.enabled,
+                    models.Session.duration_seconds,
                 )
+                .join(models.Device, models.Session.device_id == models.Device.id)
+                .where(
+                    models.Session.day_id == day.id,
+                    models.Device.profile_id == self._profile_id,
+                )
+                .order_by(models.Session.start_time)
             )
-            .scalars()
-            .all()
-        )
-        if not sessions:
+        ).all()
+        if not rows:
             raise ValueError(f"No sessions found for date {day.date}")
+        sessions = [row for row in rows if row.enabled]
+        if not sessions:
+            return None
         [night] = await self._experimental_nights(
             day.device_id, {day.date: sessions}, {day.date: day}, [day.date]
         )
@@ -621,6 +603,13 @@ class NightlyMixin(_BreathServiceCore):
         for that page alone.  ``n_nights`` and the compliance fields always
         cover the whole range: they need Day rows and sessions, not samples.
 
+        The page is the caller's, given as dates, unlike
+        ``get_experimental_nightly_range``, which pages its own nights: the
+        ``get_nightly_summary`` MCP tool pages ``Day`` rows, which this service
+        does not own.  That page can name a date with no night here (another
+        device's Day, or a Day whose sessions are all disabled); such a date
+        simply builds no night.
+
         Reads Day rows and waveform channels only, so it answers identically
         whether or not analysis has run.
         """
@@ -635,8 +624,8 @@ class NightlyMixin(_BreathServiceCore):
         channel_histograms, corrupt_sessions = await decode_channel_blobs(
             self._db,
             [s.id for d in built_dates for s in sessions_by_date[d]],
-            tuple(_NIGHT_CHANNEL_FLOORS),
-            _night_channel_histogram,
+            _NIGHT_CHANNELS,
+            channel_histogram,
         )
         nights = [
             _device_night_stats(
@@ -654,8 +643,9 @@ class NightlyMixin(_BreathServiceCore):
         days_compliant = sum(
             1
             for therapy_date, day_sessions in sessions_by_date.items()
-            if _total_therapy_hours(day_sessions, day_by_date.get(therapy_date))
-            >= compliance_threshold_hours
+            if _is_compliant(
+                day_sessions, day_by_date.get(therapy_date), compliance_threshold_hours
+            )
         )
         return NightlyDeviceRange(
             date_start=date_start,
@@ -683,6 +673,10 @@ class NightlyMixin(_BreathServiceCore):
         and only that page's nights are loaded and built; ``n_nights`` still
         counts every night with sessions in the range.  Without them every
         night is returned, oldest first.
+
+        The page is a slice of this service's own nights: the resolved device's
+        dates with enabled sessions.  ``get_nightly_device_summary`` instead
+        takes the page as dates, because its MCP caller pages ``Day`` rows.
         """
         resolved_device_id, sessions_by_date, day_by_date = await self._range_context(
             date_start, date_end, device_id

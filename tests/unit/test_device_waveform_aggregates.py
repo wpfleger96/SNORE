@@ -44,10 +44,8 @@ def _call_build(
 
     Samples are reduced with the reducer the service runs on decoded blobs.
     """
-    from snore.services.breath.nightly import (  # noqa: PLC0415
-        _device_night_stats,
-        _night_channel_histogram,
-    )
+    from snore.services.breath.nightly import _device_night_stats  # noqa: PLC0415
+    from snore.services.channel_stats import channel_histogram  # noqa: PLC0415
 
     samples = {
         "fl": fl_by_session or {},
@@ -62,7 +60,7 @@ def _call_build(
         compliance_threshold_hours=4.0,
         channel_histograms={
             channel: {
-                sid: _night_channel_histogram(channel, np.asarray(values))
+                sid: channel_histogram(channel, np.asarray(values))
                 for sid, values in by_session.items()
             }
             for channel, by_session in samples.items()

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
+from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Sequence
 from datetime import date
 from itertools import pairwise
@@ -18,7 +19,8 @@ from typing import Any
 import numpy as np
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Row, select
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncResult
 
 from snore.analysis.rx_tracker import RX_KEYS, changed_setting_keys
 from snore.analysis.shared.versioning import (
@@ -43,8 +45,9 @@ from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import nearest_rank_index
 
 from ._core import _BreathServiceCore
-from .algorithms import _count_fl_run_reras
+from .algorithms import count_fl_run_reras_arrays
 from .dtos import (
+    MAX_EPOCH_NIGHTS,
     DeviceCompareEpochsResult,
     DeviceDistributionStats,
     DeviceEpochStats,
@@ -65,8 +68,7 @@ _METRIC_COLUMNS = {
     DistributionMetric.TIDAL_VOLUME_ML: models.Breath.tidal_volume_ml,
     DistributionMetric.IE_RATIO: models.Breath.i_e_ratio,
 }
-# Every breath column the experimental epoch stats read, including the ones the
-# RERA proxy (``iter_fl_run_recoveries``) reads by attribute.
+# Every breath column the experimental epoch stats read, in breath-block order.
 _BREATH_COLUMNS = (
     models.Breath.analysis_result_id,
     models.Breath.leak_valid,
@@ -76,10 +78,31 @@ _BREATH_COLUMNS = (
     models.Breath.peak_flow_lpm,
     *_METRIC_COLUMNS.values(),
 )
-type _BreathRow = Row[*tuple[Any, ...]]
-# Breath rows fetched from the cursor at a time.  Only one analysis run's rows
-# are held at once, so this bounds the fetch buffer, not the run.
-_BREATH_FETCH_ROWS = 4096
+_AR_ID, _LEAK_VALID, _FLOW_CLASS, _FLOW_CONFIDENCE, _IS_RECOVERY, _PEAK_FLOW = range(6)
+_METRIC_INDEX = {metric: i for i, metric in enumerate(_METRIC_COLUMNS, start=6)}
+# Breath rows fetched from the cursor at a time.  Each fetch becomes a float
+# block at once, so its Row objects die young instead of piling up per run.
+# A fetch allocates a driver tuple and a Row per row; kept well under gc's
+# young-generation threshold (2000 allocations), few of a fetch's rows live
+# through a young collection, so few reach the old generation.  Larger fetches
+# set off full collections of ~100 ms each on the event loop (measured over a
+# 366-night epoch on Python 3.14: 768 rows, 7 of them; 512 rows, none).
+_BREATH_FETCH_ROWS = 512
+
+
+async def _fetch_breath_block(
+    result: AsyncResult[*tuple[object, ...]],
+) -> np.ndarray | None:
+    """The next fetched rows as a ``(len(_BREATH_COLUMNS), n)`` float block.
+
+    None once the result is exhausted.  A null becomes NaN (SQLite stores NaN
+    as NULL, so NaN never stands for a stored value), True 1.0 and False 0.0;
+    every column is an id, small int, boolean or float, so float64 is exact.
+    The rows are freed on return; ``partitions()`` would instead keep each
+    partition alive through the next fetch.
+    """
+    rows = await result.fetchmany(_BREATH_FETCH_ROWS)
+    return np.array(list(zip(*rows, strict=True)), dtype=np.float64) if rows else None
 
 
 def _distrib(n: int, at_rank: Callable[[int], float]) -> dict[str, float | None]:
@@ -91,10 +114,8 @@ def _distrib(n: int, at_rank: Callable[[int], float]) -> dict[str, float | None]
     """
     if n == 0:
         return {"median": None, "iqr": None, "p95": None}
-    mid = n // 2
-    median = at_rank(mid) if n % 2 else (at_rank(mid - 1) + at_rank(mid)) / 2
     return {
-        "median": median,
+        "median": (at_rank((n - 1) // 2) + at_rank(n // 2)) / 2,
         "iqr": at_rank(min(n * 3 // 4, n - 1)) - at_rank(n // 4),
         "p95": at_rank(nearest_rank_index(n, 0.95)),
     }
@@ -103,8 +124,8 @@ def _distrib(n: int, at_rank: Callable[[int], float]) -> dict[str, float | None]
 def _breath_distrib(
     arrays: Sequence[np.ndarray], n_breaths: int, n_nights: int
 ) -> DistributionStats:
-    """Stats over the concatenated ``arrays``; the stable sort matches ``sorted``."""
-    ordered = np.sort(np.concatenate(arrays) if arrays else np.empty(0), kind="stable")
+    """Stats over the concatenated ``arrays``."""
+    ordered = np.sort(np.concatenate(arrays) if arrays else np.empty(0))
     return DistributionStats(
         **_distrib(ordered.size, lambda rank: float(ordered[rank])),
         n_breaths=n_breaths,
@@ -147,63 +168,86 @@ class _RunBreaths(BaseModel):
     reras: int
 
 
-def _reduce_run_breaths(
-    rows: Sequence[_BreathRow], metrics: Collection[DistributionMetric]
-) -> _RunBreaths:
-    """Reduce one run's breath rows, ordered by breath_number.
+def _first_seen_counts(values: np.ndarray) -> dict[int, int]:
+    """Count of each value, keyed in the order the values first appear."""
+    keys, first_index, counts = np.unique(values, return_index=True, return_counts=True)
+    return {int(keys[i]): int(counts[i]) for i in np.argsort(first_index)}
 
-    Runs on a worker thread, so ``rows`` are plain rows, never ORM objects.
+
+def _reduce_run_breaths(
+    blocks: Sequence[np.ndarray], metrics: Collection[DistributionMetric]
+) -> _RunBreaths:
+    """Reduce one run's breath blocks (``_fetch_breath_block``), in breath order.
+
+    Runs on a worker thread.
     """
-    leak_valid = [b for b in rows if b.leak_valid is True]
+    breaths = np.concatenate(blocks, axis=1)
+    leak_valid = breaths[:, breaths[_LEAK_VALID] == 1.0]
+    flow_class = leak_valid[_FLOW_CLASS]
+    confidence = leak_valid[_FLOW_CONFIDENCE]
+    classified = ~np.isnan(flow_class)
     # Split FL classifications by the same confidence gate nightly uses:
     # rule-matched (flow_confidence > FL_DEFAULT_CONFIDENCE) go in flow_classes
     # so the class>=4 fraction reconciles with nightly fl_class_ge4_pct; low-
     # confidence fallback flatness-triage guesses (confidence exactly at the
     # default) go in fallback_flow_classes so they don't inflate FL rates.  Rows
-    # with missing or below-default confidence are excluded from both.
-    flow_classes: dict[int, int] = {}
-    fallback: dict[int, int] = {}
-    for b in leak_valid:
-        if b.flow_class is None:
-            continue
-        if (
-            b.flow_confidence is not None
-            and b.flow_confidence > FLC.FL_DEFAULT_CONFIDENCE
-        ):
-            flow_classes[b.flow_class] = flow_classes.get(b.flow_class, 0) + 1
-        elif b.flow_confidence == FLC.FL_DEFAULT_CONFIDENCE:
-            fallback[b.flow_class] = fallback.get(b.flow_class, 0) + 1
+    # with missing (NaN) or below-default confidence are excluded from both.
+    rule_matched = classified & (confidence > FLC.FL_DEFAULT_CONFIDENCE)
+    fallback = classified & (confidence == FLC.FL_DEFAULT_CONFIDENCE)
+    features: dict[DistributionMetric, np.ndarray] = {}
+    for metric in _METRIC_COLUMNS:
+        if metric in metrics:
+            values = leak_valid[_METRIC_INDEX[metric]]
+            features[metric] = values[~np.isnan(values)]
     return _RunBreaths(
-        features={
-            metric: np.array(
-                [v for b in leak_valid if (v := getattr(b, column.key)) is not None],
-                dtype=np.float64,
-            )
-            for metric, column in _METRIC_COLUMNS.items()
-            if metric in metrics
-        },
-        flow_classes=flow_classes,
-        fallback_flow_classes=fallback,
-        leak_valid_breaths=len(leak_valid),
+        features=features,
+        flow_classes=_first_seen_counts(flow_class[rule_matched]),
+        fallback_flow_classes=_first_seen_counts(flow_class[fallback]),
+        leak_valid_breaths=leak_valid.shape[1],
         # RERA proxy: FL runs ending in a recovery breath.  Scans every breath,
         # not just leak-valid ones, because runs need sequence contiguity.
-        reras=_count_fl_run_reras(rows),
+        reras=count_fl_run_reras_arrays(
+            breaths[_FLOW_CLASS], breaths[_IS_RECOVERY] == 1.0, breaths[_PEAK_FLOW]
+        ),
     )
 
 
-def _merge_counts(into: dict[int, int], counts: dict[int, int]) -> None:
-    for key, count in counts.items():
-        into[key] = into.get(key, 0) + count
+class _EpochBreaths(BaseModel):
+    """One epoch's breath distributions and flow-class counts, pooled over runs."""
+
+    distributions: dict[DistributionMetric, DistributionStats]
+    flow_classes: dict[int, int]
+    fallback_flow_classes: dict[int, int]
 
 
-def _contributing_ar_ids(resolved_epoch: dict[str, Any]) -> list[int]:
-    """Analysis run ids of a resolved epoch's contributing sessions, in order."""
-    ar_ids = resolved_epoch["ar_ids"]
-    return [
-        ar_ids[sid]
-        for sid, _ in resolved_epoch["contributing_sessions"]
-        if ar_ids.get(sid) is not None
-    ]
+def _pool_epoch_runs(
+    runs: Sequence[_RunBreaths],
+    requested: Collection[DistributionMetric],
+    n_nights: int,
+) -> _EpochBreaths:
+    """Pool an epoch's runs, given in contributing order so the flow-class keys
+    keep their first-seen order.  Runs on a worker thread: the sorts are long.
+    """
+    n_leak_valid = sum(run.leak_valid_breaths for run in runs)
+    flow_classes: Counter[int] = Counter()
+    fallback: Counter[int] = Counter()
+    for run in runs:
+        flow_classes.update(run.flow_classes)
+        fallback.update(run.fallback_flow_classes)
+    return _EpochBreaths(
+        distributions={
+            metric: _breath_distrib(
+                [run.features[metric] for run in runs], n_leak_valid, n_nights
+            )
+            if metric in requested
+            else DistributionStats(
+                median=None, iqr=None, p95=None, n_breaths=0, n_nights=0
+            )
+            for metric in DistributionMetric
+        },
+        flow_classes=dict(flow_classes),
+        fallback_flow_classes=dict(fallback),
+    )
 
 
 def _epoch_rx_violation(
@@ -281,14 +325,21 @@ class EpochsMixin(_BreathServiceCore):
         Returns the device id, or the reason the whole comparison has nothing to
         report: NOT_AVAILABLE for an explicit device this profile does not own,
         NO_DATA_IN_RANGE when no session falls in the union of the epoch ranges.
-        Raises ValueError for a reversed epoch or conflicting device_ids;
-        DeviceAmbiguityError (several owned devices, no device_id) propagates.
+        Raises ValueError for a reversed epoch, one spanning more than
+        MAX_EPOCH_NIGHTS nights, or conflicting device_ids; DeviceAmbiguityError
+        (several owned devices, no device_id) propagates.
         """
         for epoch in epochs:
             if epoch.date_start > epoch.date_end:
                 raise ValueError(
                     f"Epoch '{epoch.label}': date_start ({epoch.date_start})"
                     f" must be <= date_end ({epoch.date_end})"
+                )
+            nights = (epoch.date_end - epoch.date_start).days + 1
+            if nights > MAX_EPOCH_NIGHTS:
+                raise ValueError(
+                    f"Epoch '{epoch.label}' spans {nights} nights; an epoch may"
+                    f" span at most {MAX_EPOCH_NIGHTS}"
                 )
 
         explicit_device_ids = {e.device_id for e in epochs if e.device_id is not None}
@@ -340,14 +391,15 @@ class EpochsMixin(_BreathServiceCore):
         """Each run's reduced breaths by analysis run id; runs without breaths are absent.
 
         One pass ordered by breath number serves both the leak-valid
-        distributions and the RERA proxy.  Rows stream from the cursor and only
-        one run's rows are held at a time, each reduced on a worker thread.
+        distributions and the RERA proxy.  Rows stream from the cursor as float
+        blocks; only one run's blocks are held at a time, each run reduced on a
+        worker thread.
         """
         runs: dict[int, _RunBreaths] = {}
 
-        async def reduce_run(rows: list[_BreathRow]) -> None:
-            runs[rows[0].analysis_result_id] = await asyncio.to_thread(
-                _reduce_run_breaths, rows, metrics
+        async def reduce_run(blocks: list[np.ndarray]) -> None:
+            runs[int(blocks[0][_AR_ID, 0])] = await asyncio.to_thread(
+                _reduce_run_breaths, blocks, metrics
             )
 
         breath = models.Breath
@@ -357,18 +409,23 @@ class EpochsMixin(_BreathServiceCore):
                 .where(breath.analysis_result_id.in_(chunk))
                 .order_by(breath.analysis_result_id, breath.breath_number)
             )
-            run_rows: list[_BreathRow] = []
-            async for fetched in result.partitions(_BREATH_FETCH_ROWS):
-                for row in fetched:
-                    if (
-                        run_rows
-                        and row.analysis_result_id != run_rows[0].analysis_result_id
-                    ):
-                        await reduce_run(run_rows)
-                        run_rows = []
-                    run_rows.append(row)
-            if run_rows:
-                await reduce_run(run_rows)
+            # Close on every exit: an unfinalized statement left on the pooled
+            # connection pins a stale read snapshot (blocking WAL checkpoints
+            # and later writes).
+            try:
+                run_blocks: list[np.ndarray] = []
+                while (block := await _fetch_breath_block(result)) is not None:
+                    # A run's rows are contiguous, so split where the id changes.
+                    cuts = np.flatnonzero(np.diff(block[_AR_ID])) + 1
+                    for piece in np.split(block, cuts, axis=1):
+                        if run_blocks and run_blocks[0][_AR_ID, 0] != piece[_AR_ID, 0]:
+                            await reduce_run(run_blocks)
+                            run_blocks = []
+                        run_blocks.append(piece)
+                if run_blocks:
+                    await reduce_run(run_blocks)
+            finally:
+                await result.close()
         return runs
 
     async def compare_device_epochs(
@@ -476,10 +533,6 @@ class EpochsMixin(_BreathServiceCore):
         flow_class_distribution_fallback.  Rows with missing or below-default
         confidence values are excluded from both distributions.
         """
-        _null_dist = DistributionStats(
-            median=None, iqr=None, p95=None, n_breaths=0, n_nights=0
-        )
-
         # -----------------------------------------------------------------------
         # Phase 1: Resolve ONE device for the whole comparison, then per-epoch sessions.
         # -----------------------------------------------------------------------
@@ -501,24 +554,36 @@ class EpochsMixin(_BreathServiceCore):
                 version_warnings=[],
             )
 
-        # Each entry: dict with epoch metadata + resolved sessions + RX data
-        epoch_resolved: list[dict[str, Any]] = []
-        rx_violations: list[EpochRxViolation] = []
-
+        sessions_by_epoch: list[dict[date, list[Any]]] = []
         for epoch in epochs:
             _, sessions_by_date = await self._resolve_range(
                 epoch.date_start, epoch.date_end, union_resolved_device_id
             )
+            sessions_by_epoch.append(sessions_by_date)
+        # Classify every session once, overlapping epochs included.
+        classification = await self._latest_analysis_classification(
+            list(
+                dict.fromkeys(
+                    sess.id
+                    for sessions_by_date in sessions_by_epoch
+                    for sessions in sessions_by_date.values()
+                    for sess in sessions
+                )
+            )
+        )
 
+        # Each entry: dict with epoch metadata + resolved sessions + RX data
+        epoch_resolved: list[dict[str, Any]] = []
+        rx_violations: list[EpochRxViolation] = []
+
+        for epoch, sessions_by_date in zip(epochs, sessions_by_epoch, strict=True):
             # Collect contributing sessions (OK only) and their therapy dates
             contributing_sessions: list[tuple[int, AlgoVersions]] = []
+            # Their analysis run ids, in the same order.
+            contributing_ar_ids: list[int] = []
             night_by_ok_session: dict[int, date] = {}
             nights_with_data = 0
             nights_missing_analysis = 0
-            ar_ids_for_epoch: dict[int, int | None] = {}
-            classification, _ = await self._latest_analysis_bulk(
-                [sess.id for sessions in sessions_by_date.values() for sess in sessions]
-            )
 
             for therapy_date, sessions in sessions_by_date.items():
                 ok_on_date: list[tuple[int, AlgoVersions]] = []
@@ -526,7 +591,8 @@ class EpochsMixin(_BreathServiceCore):
                     status, algo, ar_id = classification[sess.id]
                     if status == AnalysisStatus.OK and algo is not None:
                         ok_on_date.append((sess.id, algo))
-                        ar_ids_for_epoch[sess.id] = ar_id
+                        if ar_id is not None:
+                            contributing_ar_ids.append(ar_id)
                         night_by_ok_session[sess.id] = therapy_date
 
                 if ok_on_date:
@@ -563,7 +629,7 @@ class EpochsMixin(_BreathServiceCore):
                     "nights_with_data": nights_with_data,
                     "nights_missing_analysis": nights_missing_analysis,
                     "rx_violation": rx_violation,
-                    "ar_ids": ar_ids_for_epoch,
+                    "contributing_ar_ids": contributing_ar_ids,
                 }
             )
 
@@ -618,7 +684,7 @@ class EpochsMixin(_BreathServiceCore):
                     ar_id
                     for ed in epoch_resolved
                     if ed["null_reason"] is None
-                    for ar_id in _contributing_ar_ids(ed)
+                    for ar_id in ed["contributing_ar_ids"]
                 )
             ),
             requested,
@@ -672,25 +738,13 @@ class EpochsMixin(_BreathServiceCore):
             # first-seen order.
             epoch_runs = [
                 runs[ar_id]
-                for ar_id in _contributing_ar_ids(ed)
+                for ar_id in ed["contributing_ar_ids"]
                 if ar_id in runs  # a run without breaths contributes nothing
             ]
-            n_lv = sum(run.leak_valid_breaths for run in epoch_runs)
-            distributions = {
-                metric: _breath_distrib(
-                    [run.features[metric] for run in epoch_runs],
-                    n_lv,
-                    nights_with_data,
-                )
-                if metric in requested
-                else _null_dist
-                for metric in DistributionMetric
-            }
-            fc_dist: dict[int, int] = {}
-            fc_dist_fallback: dict[int, int] = {}
-            for run in epoch_runs:
-                _merge_counts(fc_dist, run.flow_classes)
-                _merge_counts(fc_dist_fallback, run.fallback_flow_classes)
+            pooled = await asyncio.to_thread(
+                _pool_epoch_runs, epoch_runs, requested, nights_with_data
+            )
+            distributions = pooled.distributions
             rera_count = (
                 sum(run.reras for run in epoch_runs)
                 if uniform_primary_mode is not None
@@ -711,8 +765,8 @@ class EpochsMixin(_BreathServiceCore):
                         DistributionMetric.MID_INSP_FLATTENING
                     ],
                     flatness_index=distributions[DistributionMetric.FLATNESS_INDEX],
-                    flow_class_distribution=fc_dist,
-                    flow_class_distribution_fallback=fc_dist_fallback,
+                    flow_class_distribution=pooled.flow_classes,
+                    flow_class_distribution_fallback=pooled.fallback_flow_classes,
                     tidal_volume_ml=distributions[DistributionMetric.TIDAL_VOLUME_ML],
                     ie_ratio=distributions[DistributionMetric.IE_RATIO],
                     rera_proxy_count=rera_count,

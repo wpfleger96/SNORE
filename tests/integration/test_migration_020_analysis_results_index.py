@@ -13,7 +13,7 @@ from snore.database.session import (
     init_database,
 )
 
-_INDEX = "ix_analysis_results_session_id_created_at"
+_INDEX = "ix_analysis_results_session_id_created_at_id"
 
 
 def _index_columns(db_path: str) -> list[str] | None:
@@ -65,5 +65,13 @@ async def test_upgrade_is_idempotent_when_index_exists(tmp_path):
     con.close()
 
     alembic_command.upgrade(cfg, "head")
+
+    assert _index_columns(db_path) == ["session_id", "created_at", "id"]
+
+
+async def test_fresh_database_has_index(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "fresh.db")
+    await init_database(db_path)
+    await cleanup_database()
 
     assert _index_columns(db_path) == ["session_id", "created_at", "id"]

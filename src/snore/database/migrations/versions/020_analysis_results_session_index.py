@@ -6,6 +6,10 @@ an index each lookup was a full ``analysis_results`` scan, and MCP tools issue
 one per session.  The model-side ``Index`` covers fresh DBs via ``create_all``;
 this migration covers pre-existing DBs under the same name.
 
+Building the index reads every row once: ``created_at`` is stored after the
+large ``programmatic_result_json`` column, so SQLite walks each row's overflow
+chain.  The first startup after deploy is slower on a large table.
+
 Revision ID: 020_analysis_results_session_index
 Revises: 019_oscar_event_parity
 """
@@ -20,7 +24,7 @@ down_revision: str | Sequence[str] | None = "019_oscar_event_parity"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_INDEX = "ix_analysis_results_session_id_created_at"
+_INDEX = "ix_analysis_results_session_id_created_at_id"
 _TABLE = "analysis_results"
 
 

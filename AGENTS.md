@@ -327,11 +327,19 @@ FL and snore are on detail models and `/stats/periods` only, not on trends, so l
 `/stats/trends` stay blob-free; callers that do not show them pass `include_channel_stats=False`.
 The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_blobs`), and they
 also reduce each session to a histogram and read percentiles from the pooled histogram
-(`pool_histograms`, `value_at_rank`). Never pass a reducer that keeps the samples as Python lists.
+(`pool_histograms` returns a `PooledHistogram`, read with `value_at_rank`, `pooled_distribution`
+and `pooled_share_above`). Never pass a reducer that keeps the samples as Python lists.
 `tests/integration/test_device_channel_stats.py` pins these values equal. The nightly summary decodes
 only the nights on the requested page, while compliance still covers the whole range. Each
 `compare_epochs` call decodes the union of its epochs' sessions once. Both epoch tools cap an epoch
-at `MAX_EPOCH_NIGHTS`.
+at `MAX_EPOCH_NIGHTS` (`services/breath/dtos.py`), in the service and at the MCP boundary.
+
+`experimental_compare_epochs` reads breaths in one streamed pass in which each fetch becomes numpy
+columns at once. The per-run reduction and the per-epoch distributions run on worker threads, and the
+RERA proxy uses `count_fl_run_reras_arrays`, which `tests/unit/test_rera_proxy_arrays.py` pins equal
+to `_count_fl_run_reras`. Keep `Row` objects from living across an `await`: when they survive several
+young-generation collections they trigger full collections, which stall the shared event loop for
+over 100 ms each.
 
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.

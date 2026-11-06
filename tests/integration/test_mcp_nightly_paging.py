@@ -3,7 +3,7 @@
 - a page's channel statistics equal the unpaged response's, and only that
   page's sessions are decoded
 - compliance covers the whole range on every page, including past the end
-- the experimental day metrics read the ``days`` table once
+- the experimental day metrics read the ``days`` and ``sessions`` tables once
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Day
+from snore.database.models import Day, Session
 from snore.mcp.tools.summary import get_nightly_summary
 from snore.services.day_service import DayService
 from tests.integration.conftest import (
@@ -127,7 +127,7 @@ class TestNightlySummaryPaging:
 
 
 @pytest.mark.integration
-async def test_experimental_day_metrics_read_days_once(
+async def test_experimental_day_metrics_read_the_day_and_its_sessions_once(
     async_db_session: AsyncSession, async_test_profile: Any
 ) -> None:
     device = await _make_device(async_db_session, async_test_profile.id)
@@ -152,3 +152,5 @@ async def test_experimental_day_metrics_read_days_once(
     assert metrics.rera_count_reason is None
     days_table = re.compile(rf"\b{Day.__tablename__}\b", re.IGNORECASE)
     assert len([s for s in statements if days_table.search(s)]) == 1
+    sessions_table = re.compile(rf"\b{Session.__tablename__}\b", re.IGNORECASE)
+    assert len([s for s in statements if sessions_table.search(s)]) == 1

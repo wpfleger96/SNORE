@@ -23,6 +23,7 @@ import math
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from itertools import batched
+from typing import NewType
 
 import numpy as np
 
@@ -39,22 +40,29 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CHANNEL_FLOORS",
+    "ChannelHistogram",
     "ChannelHistograms",
+    "PooledHistogram",
     "channel_histogram",
     "decode_channel_blobs",
+    "histogram_distribution",
     "load_channel_histograms",
     "mask_on_spans",
     "pool_channel_stats",
     "pool_histograms",
     "pooled_count",
+    "pooled_distribution",
     "pooled_median",
-    "samples_histogram",
+    "pooled_share_above",
     "value_at_rank",
 ]
 
-# Lowest valid sample per channel: ``fl`` blobs keep the raw -0.01 mask-off
-# sentinel.  Zeros are legitimate data on both channels.
-CHANNEL_FLOORS = {"fl": 0.0, "snore": -math.inf}
+# Lowest valid sample per channel: ``fl`` and ``leak`` blobs keep their negative
+# mask-off sentinels (``fl`` the raw -0.01).  Zeros are legitimate data on every
+# channel.  REST channel statistics cover the ``_CHANNEL_FIELDS`` channels only;
+# the MCP nightly summary also reduces ``leak``.
+CHANNEL_FLOORS = {"fl": 0.0, "snore": -math.inf, "leak": 0.0}
+# The channels REST channel statistics report, and their DeviceChannelStats fields.
 _CHANNEL_FIELDS = {
     "fl": ("device_flg_median", "device_flg_95th", "device_flg_max"),
     "snore": ("snore_median", "snore_95th", "snore_max"),
@@ -70,63 +78,77 @@ _DECODE_BATCH_SESSIONS = 64
 type ChannelHistogram = tuple[np.ndarray, np.ndarray]
 # channel -> session_id -> histogram
 type ChannelHistograms = dict[str, dict[int, ChannelHistogram]]
-
-
-def samples_histogram(values: np.ndarray, floor: float = -math.inf) -> ChannelHistogram:
-    """Histogram of the finite ``values`` at or above ``floor``."""
-    usable = values[np.isfinite(values) & (values >= floor)]
-    unique_values, counts = np.unique(usable, return_counts=True)
-    return unique_values, counts
+# Samples pooled by ``pool_histograms``: ascending distinct values and their
+# cumulative counts.  A distinct type, so a per-session ``ChannelHistogram``
+# (plain counts) cannot be passed where cumulative counts are read.
+PooledHistogram = NewType("PooledHistogram", tuple[np.ndarray, np.ndarray])
 
 
 def channel_histogram(channel: str, values: np.ndarray) -> ChannelHistogram:
     """Histogram of the finite ``values`` at or above the channel's floor."""
-    return samples_histogram(values, CHANNEL_FLOORS[channel])
+    usable = values[np.isfinite(values) & (values >= CHANNEL_FLOORS[channel])]
+    unique_values, counts = np.unique(usable, return_counts=True)
+    return unique_values, counts
 
 
-def pool_histograms(histograms: Sequence[ChannelHistogram]) -> ChannelHistogram:
+def pool_histograms(histograms: Sequence[ChannelHistogram]) -> PooledHistogram:
     """Pooled samples as ascending distinct values and their cumulative counts.
 
     The last cumulative count is the pooled sample count; both arrays are empty
     when there are no samples.  Index the result with ``value_at_rank``.
     """
     if not histograms:
-        return np.empty(0), np.empty(0, dtype=np.int64)
+        return PooledHistogram((np.empty(0), np.empty(0, dtype=np.int64)))
     values, merged_index = np.unique(
         np.concatenate([v for v, _ in histograms]), return_inverse=True
     )
     counts = np.zeros(values.size, dtype=np.int64)
     np.add.at(counts, merged_index, np.concatenate([c for _, c in histograms]))
-    return values, np.cumsum(counts)
+    return PooledHistogram((values, np.cumsum(counts)))
 
 
-def pooled_count(pooled: ChannelHistogram) -> int:
+def pooled_count(pooled: PooledHistogram) -> int:
     """Number of samples in a ``pool_histograms`` result."""
     return int(pooled[1][-1]) if pooled[1].size else 0
 
 
-def value_at_rank(pooled: ChannelHistogram, rank: int) -> float:
+def value_at_rank(pooled: PooledHistogram, rank: int) -> float:
     """The ``rank``-th (0-based) smallest pooled sample: ``sorted(samples)[rank]``."""
     values, cumulative = pooled
     return float(values[np.searchsorted(cumulative, rank, side="right")])
 
 
-def pooled_median(pooled: ChannelHistogram) -> float:
+def pooled_share_above(
+    pooled: PooledHistogram, threshold: float, *, inclusive: bool
+) -> float | None:
+    """Fraction of pooled samples above ``threshold`` (or equal, when ``inclusive``).
+
+    ``None`` when there are no samples.
+    """
+    n = pooled_count(pooled)
+    if n == 0:
+        return None
+    values, cumulative = pooled
+    n_distinct_below = int(
+        np.searchsorted(values, threshold, side="left" if inclusive else "right")
+    )
+    n_below = int(cumulative[n_distinct_below - 1]) if n_distinct_below else 0
+    return (n - n_below) / n
+
+
+def pooled_median(pooled: PooledHistogram) -> float:
     """``statistics.median`` of the pooled samples (middle pair averaged as floats)."""
     n = pooled_count(pooled)
     return (value_at_rank(pooled, (n - 1) // 2) + value_at_rank(pooled, n // 2)) / 2
 
 
-def histogram_distribution(
-    histograms: Sequence[ChannelHistogram],
-) -> tuple[float, float, float] | None:
+def pooled_distribution(pooled: PooledHistogram) -> tuple[float, float, float] | None:
     """``(median, 95th, max)`` of the pooled samples, ``None`` when there are none.
 
     Exactly what sorting the samples gives.  The median is
     ``statistics.median``-equivalent, so the middle pair is averaged as Python
     floats rather than float32; the 95th is nearest rank.
     """
-    pooled = pool_histograms(histograms)
     n = pooled_count(pooled)
     if n == 0:
         return None
@@ -135,6 +157,13 @@ def histogram_distribution(
         value_at_rank(pooled, nearest_rank_index(n, 0.95)),
         float(pooled[0][-1]),
     )
+
+
+def histogram_distribution(
+    histograms: Sequence[ChannelHistogram],
+) -> tuple[float, float, float] | None:
+    """``pooled_distribution`` of the sessions' ``histograms`` pooled together."""
+    return pooled_distribution(pool_histograms(histograms))
 
 
 def _decode_rows[T](
@@ -210,7 +239,7 @@ async def load_channel_histograms(
     pass ids already scoped to the profile.
     """
     histograms, corrupt = await decode_channel_blobs(
-        db, session_ids, tuple(CHANNEL_FLOORS), channel_histogram
+        db, session_ids, tuple(_CHANNEL_FIELDS), channel_histogram
     )
     for channel, corrupt_ids in corrupt.items():
         for session_id in sorted(corrupt_ids):

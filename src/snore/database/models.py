@@ -1049,7 +1049,7 @@ class AnalysisResult(Base):
 
     __table_args__ = (
         Index(
-            "ix_analysis_results_session_id_created_at",
+            "ix_analysis_results_session_id_created_at_id",
             "session_id",
             "created_at",
             "id",

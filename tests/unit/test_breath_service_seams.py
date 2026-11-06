@@ -4279,9 +4279,9 @@ class TestCompareEpochsRefusal:
     ):
         """Cross-epoch algorithm identity mismatch → version_warnings populated, NOT a hard refusal.
 
-        Because _latest_analysis_bulk only returns OK when the stored identity
+        Because _latest_analysis_classification only returns OK when the stored identity
         matches the current runtime identity, genuine cross-epoch mismatches cannot be
-        created through DB fixtures alone.  We mock _latest_analysis_bulk to
+        created through DB fixtures alone.  We mock _latest_analysis_classification to
         inject different AlgoVersions (each individually OK) for two sessions in two
         different epochs, so the cross-epoch identity check fires.
 
@@ -4363,11 +4363,13 @@ class TestCompareEpochsRefusal:
                 return (AnalysisStatus.OK, algo_b, ar_b_id)
             return (AnalysisStatus.NOT_RUN, None, None)
 
-        async def _mocked_bulk(session_ids: list[int]) -> Any:
-            return {sid: await _mocked_latest(sid) for sid in session_ids}, {}
+        async def _mocked_classification(session_ids: list[int]) -> Any:
+            return {sid: await _mocked_latest(sid) for sid in session_ids}
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        with patch.object(svc, "_latest_analysis_bulk", side_effect=_mocked_bulk):
+        with patch.object(
+            svc, "_latest_analysis_classification", side_effect=_mocked_classification
+        ):
             result = await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(
@@ -4490,11 +4492,13 @@ class TestCompareEpochsRefusal:
                 return (AnalysisStatus.OK, algo_b, ar_b_id)
             return (AnalysisStatus.NOT_RUN, None, None)
 
-        async def _mocked_bulk(session_ids: list[int]) -> Any:
-            return {sid: await _mocked_latest(sid) for sid in session_ids}, {}
+        async def _mocked_classification(session_ids: list[int]) -> Any:
+            return {sid: await _mocked_latest(sid) for sid in session_ids}
 
         svc = BreathService(async_db_session, profile_id=profile_id)
-        with patch.object(svc, "_latest_analysis_bulk", side_effect=_mocked_bulk):
+        with patch.object(
+            svc, "_latest_analysis_classification", side_effect=_mocked_classification
+        ):
             result = await svc.compare_experimental_epochs(
                 epochs=[
                     EpochRequest(

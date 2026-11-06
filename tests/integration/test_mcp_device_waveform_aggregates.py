@@ -538,6 +538,11 @@ class TestCompareEpochsDeviceWaveforms:
                 "_latest_analysis_bulk",
                 side_effect=AssertionError("analysis read"),
             ),
+            patch.object(
+                BreathService,
+                "_latest_analysis_classification",
+                side_effect=AssertionError("analysis read"),
+            ),
         ):
             result = await BreathService(
                 async_db_session, async_test_profile.id

@@ -386,10 +386,12 @@ class TestCompareEpochsAlgoMismatch:
             ),
         }
 
-        async def _mock_latest_bulk(self_svc: Any, session_ids: list[int]) -> Any:
-            return {sid: classification[sid] for sid in session_ids}, {}
+        async def _mock_classification(self_svc: Any, session_ids: list[int]) -> Any:
+            return {sid: classification[sid] for sid in session_ids}
 
-        with patch.object(BreathService, "_latest_analysis_bulk", _mock_latest_bulk):
+        with patch.object(
+            BreathService, "_latest_analysis_classification", _mock_classification
+        ):
             result = await experimental_compare_epochs(
                 async_db_session,
                 profile_id=async_test_profile.id,

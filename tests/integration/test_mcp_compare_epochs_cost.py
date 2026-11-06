@@ -3,16 +3,21 @@ epochs and growing session counts.
 
 - overlapping epochs report the same per-epoch stats as comparing each alone
 - the default tool decodes the waveforms of overlapping epochs in one query
+- the experimental tool reads the breaths of overlapping epochs in one query
 - the experimental tool's query count does not grow with the number of sessions
+- a failure while streaming breaths still releases the breath cursor
+- the service refuses an epoch longer than MAX_EPOCH_NIGHTS
 """
 
 from __future__ import annotations
 
 import re
+import sqlite3
 
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,7 +25,8 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Profile, Setting, Waveform
+from snore.database.models import Breath, Profile, Setting, Waveform
+from snore.services.breath.dtos import MAX_EPOCH_NIGHTS, EpochRequest
 from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
@@ -178,6 +184,28 @@ class TestCompareEpochsQueryCost:
         assert [e.device_flg.n_samples for e in result.epochs] == [9, 9]
         assert len([s for s in statements if waveforms_table.search(s)]) == 1
 
+    async def test_overlapping_experimental_epochs_read_breaths_in_one_query(
+        self, async_db_session: AsyncSession, async_test_profile: Profile
+    ) -> None:
+        from snore.mcp.tools.epochs import experimental_compare_epochs  # noqa: PLC0415
+
+        await _seed_analyzed_nights(async_db_session, async_test_profile.id, 4)
+        nights = _nights(4)
+        breaths_table = re.compile(rf"\bFROM {Breath.__tablename__}\b", re.I)
+
+        with _captured_statements(async_db_session) as statements:
+            result = await experimental_compare_epochs(
+                async_db_session,
+                profile_id=async_test_profile.id,
+                epochs=[
+                    _epoch("early", nights[0], nights[2]),
+                    _epoch("late", nights[1], nights[3]),
+                ],
+            )
+
+        assert [e.rera_proxy_count for e in result.epochs] == [3, 3]
+        assert len([s for s in statements if breaths_table.search(s)]) == 1
+
     async def test_experimental_query_count_is_independent_of_session_count(
         self, async_db_session: AsyncSession
     ) -> None:
@@ -198,3 +226,93 @@ class TestCompareEpochsQueryCost:
             return len(statements)
 
         assert await statements_for(2) == await statements_for(8)
+
+
+@pytest.mark.integration
+class TestBreathStreamRelease:
+    async def test_failure_mid_stream_releases_the_breath_cursor(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Profile,
+        temp_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An open breath cursor holds a read lock that blocks other writers."""
+        from snore.services.breath import epochs as epochs_module  # noqa: PLC0415
+        from snore.services.breath_service import BreathService  # noqa: PLC0415
+
+        await _seed_analyzed_nights(async_db_session, async_test_profile.id, 3)
+        await async_db_session.commit()
+
+        def fail_reduce(*_args: Any) -> None:
+            raise RuntimeError("reduce failed")
+
+        # Two-row fetches leave the cursor mid-result when the first run fails.
+        monkeypatch.setattr(epochs_module, "_BREATH_FETCH_ROWS", 2)
+        monkeypatch.setattr(epochs_module, "_reduce_run_breaths", fail_reduce)
+
+        with pytest.raises(RuntimeError) as failure:
+            await BreathService(
+                async_db_session, async_test_profile.id
+            ).compare_experimental_epochs(
+                [
+                    EpochRequest(
+                        label="all", date_start=_FIRST_NIGHT, date_end=_nights(3)[-1]
+                    )
+                ]
+            )
+
+        # ``failure`` keeps the traceback, and with it the failed call's frames
+        # and any result they hold, alive while another connection writes.
+        writer = sqlite3.connect(temp_db, timeout=0)
+        try:
+            writer.execute("UPDATE profiles SET name = 'renamed'")
+            writer.commit()
+        finally:
+            writer.close()
+        assert str(failure.value) == "reduce failed"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "method", ["compare_device_epochs", "compare_experimental_epochs"]
+)
+class TestServiceEpochSpanCap:
+    async def test_epoch_over_the_cap_raises_value_error(
+        self, async_db_session: AsyncSession, async_test_profile: Profile, method: str
+    ) -> None:
+        from snore.services.breath_service import BreathService  # noqa: PLC0415
+
+        await _seed_analyzed_nights(async_db_session, async_test_profile.id, 1)
+        compare = getattr(
+            BreathService(async_db_session, async_test_profile.id), method
+        )
+        too_long = EpochRequest(
+            label="long",
+            date_start=_FIRST_NIGHT,
+            date_end=_FIRST_NIGHT + timedelta(days=MAX_EPOCH_NIGHTS),
+        )
+
+        with pytest.raises(
+            ValueError, match=rf"'long' spans {MAX_EPOCH_NIGHTS + 1} nights"
+        ):
+            await compare([too_long])
+
+    async def test_epoch_at_the_cap_is_compared(
+        self, async_db_session: AsyncSession, async_test_profile: Profile, method: str
+    ) -> None:
+        from snore.services.breath_service import BreathService  # noqa: PLC0415
+
+        await _seed_analyzed_nights(async_db_session, async_test_profile.id, 1)
+        compare = getattr(
+            BreathService(async_db_session, async_test_profile.id), method
+        )
+        at_cap = EpochRequest(
+            label="year",
+            date_start=_FIRST_NIGHT,
+            date_end=_FIRST_NIGHT + timedelta(days=MAX_EPOCH_NIGHTS - 1),
+        )
+
+        result = await compare([at_cap])
+
+        assert result.epochs[0].nights_with_data == 1
