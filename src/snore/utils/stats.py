@@ -27,13 +27,6 @@ def percentile_nearest_rank(sorted_vals: Sequence[float], q: float) -> float | N
     return sorted_vals[nearest_rank_index(len(sorted_vals), q)]
 
 
-def fraction_at_or_above(vals: Sequence[float], threshold: float) -> float | None:
-    """Return the fraction of ``vals`` at or above ``threshold``, ``None`` when empty."""
-    if not vals:
-        return None
-    return sum(1 for v in vals if v >= threshold) / len(vals)
-
-
 def weighted_mean(pairs: Iterable[tuple[float, float]]) -> float | None:
     """Return the weighted mean of ``(value, weight)`` pairs.
 

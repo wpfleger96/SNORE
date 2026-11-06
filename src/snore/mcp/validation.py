@@ -8,7 +8,7 @@ import re
 from datetime import date
 
 from snore.mcp.errors import ValidationError
-from snore.services.breath.dtos import MAX_PAGE
+from snore.services.breath.dtos import MAX_EPOCH_NIGHTS, MAX_PAGE
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -128,4 +128,14 @@ def validate_epoch_count(count: int) -> None:
     if count < 1 or count > 6:
         raise ValidationError(
             f"epochs must contain between 1 and 6 entries (got {count})"
+        )
+
+
+def validate_epoch_span(start: date, end: date, param_name: str) -> None:
+    """Raise ValidationError if ``start``..``end`` spans more than MAX_EPOCH_NIGHTS."""
+    nights = (end - start).days + 1
+    if nights > MAX_EPOCH_NIGHTS:
+        raise ValidationError(
+            f"'{param_name}' spans {nights} nights; an epoch may span at most "
+            f"{MAX_EPOCH_NIGHTS}. Split the range into shorter epochs."
         )
