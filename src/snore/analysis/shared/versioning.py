@@ -40,12 +40,12 @@ FLATTENING_ALGO_VERSION: str = "v2"  # mid-insp flattening
 TRIGGER_CYCLE_ALGO_VERSION: str = "v1"  # trigger/cycle heuristic (new, experimental)
 LEAK_VALID_ALGO: str = "v1"
 # v2: hypopnea-contained breaths are now excluded from downstream baselines, so
-# RERA/recovery outputs shift for sessions with hypopneas. No dedicated
-# apnea/hypopnea event-detector identity key exists; the in_event marking is
-# applied after hypopnea merging, and detect_events resets in_event at entry so
-# each mode's detection is self-contained. AHI and persisted apneas/hypopneas are
-# therefore unchanged regardless of mode order — only recovery/RERA outputs move,
-# which this key covers.
+# RERA/recovery outputs shift for sessions with hypopneas. The in_event marking
+# is applied after hypopnea merging, and detect_events resets in_event at entry
+# so each mode's detection is self-contained. AHI and persisted
+# apneas/hypopneas are therefore unchanged regardless of mode order — only
+# recovery/RERA outputs move, which this key covers. Changes to the apnea and
+# hypopnea events themselves are versioned by EVENT_DETECTOR_ALGO_VERSION.
 RECOVERY_DETECTOR_ALGO_VERSION: str = "v2"
 # ramp_active / mask_off breath validity flags: settings-driven timed ramp
 # heuristic + persisted mask-on-segment gap overlap.
@@ -54,6 +54,19 @@ VALIDITY_FLAGS_ALGO_VERSION: str = "v1"
 # strength; before this key existed, scoring had an always-earned cycle-range
 # bonus.
 PATTERN_DETECTOR_ALGO_VERSION: str = "v1"
+# Apnea/hypopnea event detection (EventDetector.detect_events, every mode).
+# v1: hypopnea regions must average within the mode's inclusive
+# [hypopnea_min_threshold, hypopnea_max_threshold] band (resmed caps at 49%;
+# before this key existed the cap was the hard-coded 90% apnea threshold), and
+# SpO2 reaches hypopnea detection, so oximetry sessions get has_desaturation and
+# the desaturation confidence bonus (before, has_desaturation was always null).
+EVENT_DETECTOR_ALGO_VERSION: str = "v1"
+# Pulse change detection (OSCAR calcPulseChange parity), feeding
+# pulse_change_count / pulse_change_index.
+# v1: resumes scanning after each change, uses a strict > bpm threshold, and
+# stamps the event at the change; before this key existed every sample leading
+# into one heart-rate shift was counted.
+PULSE_DETECTOR_ALGO_VERSION: str = "v1"
 
 # Flow-derived MV fallback used by experimental_get_event_context when a session
 # has no device MV channel. NOT part of AlgorithmIdentity — it labels query-time
@@ -89,8 +102,8 @@ class AlgorithmIdentity(BaseModel):
     AnalysisRunMetadata — not here.
     """
 
-    # 5 = pattern_detector stamped; 4 = validity_flags stamped; 3 = PR-A nested
-    # format; 2 = flat legacy rows.
+    # 6 = event_detector + pulse_detector stamped; 5 = pattern_detector stamped;
+    # 4 = validity_flags stamped; 3 = PR-A nested format; 2 = flat legacy rows.
     # Each bump is mandatory: pydantic validation back-fills missing fields from
     # defaults, so without it legacy rows lacking the new key would compare
     # equal to the current identity and silently stay OK.
@@ -98,7 +111,7 @@ class AlgorithmIdentity(BaseModel):
     # RELEASE NOTE: bumping format_version marks every stored AnalysisResult
     # STALE_VERSION — the next batch analysis re-processes all sessions.
     # Call this out explicitly in release notes whenever format_version is bumped.
-    format_version: int = 5
+    format_version: int = 6
     segmenter: str = SEGMENTER_ALGO_VERSION
     fl_classifier: str = FL_CLASSIFIER_ALGO_VERSION
     flattening: str = FLATTENING_ALGO_VERSION
@@ -107,6 +120,8 @@ class AlgorithmIdentity(BaseModel):
     recovery_detector: str = RECOVERY_DETECTOR_ALGO_VERSION
     validity_flags: str = VALIDITY_FLAGS_ALGO_VERSION
     pattern_detector: str = PATTERN_DETECTOR_ALGO_VERSION
+    event_detector: str = EVENT_DETECTOR_ALGO_VERSION
+    pulse_detector: str = PULSE_DETECTOR_ALGO_VERSION
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AlgorithmIdentity):
@@ -122,11 +137,16 @@ class AlgorithmIdentity(BaseModel):
 # Fields whose mismatch triggers different behavior per call site: experimental_find_windows
 # hard-refuses for all criteria except ca_centered; experimental_compare_epochs emits
 # non-blocking version_warnings (distributions are still computed).
-# trigger_cycle, validity_flags and pattern_detector are intentionally excluded:
-# none feeds a cross-epoch distribution (trigger/cycle labels are per-breath
-# experimental metadata; ramp_active/mask_off validity flags gate rows, not
-# aggregates; CSR/PB confidence is a per-session score), so a version bump in
-# any of them need not refuse comparisons. A solo bump of an excluded key MUST
+# event_detector is included: breaths inside the apneas/hypopneas it scores are
+# excluded from RERA detection and its baselines, so its output moves the
+# persisted per-breath is_recovery_breath flags that the FL-run and RERA-proxy
+# windows and distributions read.
+# trigger_cycle, validity_flags, pattern_detector and pulse_detector are
+# intentionally excluded: none feeds a cross-epoch distribution (trigger/cycle
+# labels are per-breath experimental metadata; ramp_active/mask_off validity
+# flags gate rows, not aggregates; CSR/PB confidence and the pulse change index
+# are per-session scores), so a version bump in any of them need not refuse
+# comparisons. A solo bump of an excluded key MUST
 # be accompanied by a format_version bump so old rows still go stale —
 # format_version is in this set and catches it.
 CROSS_VERSION_REFUSAL_KEYS: frozenset[str] = frozenset(
@@ -137,6 +157,7 @@ CROSS_VERSION_REFUSAL_KEYS: frozenset[str] = frozenset(
         "flattening",
         "leak_valid",
         "recovery_detector",
+        "event_detector",
     }
 )
 
