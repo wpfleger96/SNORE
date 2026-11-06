@@ -278,7 +278,7 @@ class TestSessionParsing:
 
         assert session.device_session_id == "20240621_013454"
         assert session.import_source == "resmed_edf"
-        assert session.parser_version == "1.2.0"
+        assert session.parser_version == "1.2.1"
 
         assert session.device_info.manufacturer == "ResMed"
         assert session.device_info.serial_number == "22231974465"
