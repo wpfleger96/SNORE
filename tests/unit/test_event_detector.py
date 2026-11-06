@@ -957,6 +957,14 @@ class TestCheckDesaturation:
 
         assert has_desat is False
 
+    def test_rise_only_is_not_a_desaturation(self, aasm_detector):
+        """A 4-point rise has no fall from an earlier peak."""
+        assert _check_desaturation(np.array([92.0, 93.0, 94.0, 95.0, 96.0])) is False
+
+    def test_fall_after_recovery_peak_is_measured_from_that_peak(self, aasm_detector):
+        """A low start followed by a rise and a 3-point fall is a desaturation."""
+        assert _check_desaturation(np.array([90.0, 97.0, 96.0, 94.0])) is True
+
     def test_insufficient_data(self, aasm_detector):
         """Fewer than 2 readings leave desaturation unknown."""
         spo2_values = np.array([96.0])
@@ -2773,15 +2781,32 @@ class TestDetectEventsSpo2:
         assert len(result.hypopneas) == 1
         return result.hypopneas
 
-    def _spo2(self) -> tuple[np.ndarray, np.ndarray]:
-        """1 Hz SpO2 at 97% that falls to 93% during the hypopnea."""
+    def _spo2(
+        self, dip_start: float = 64.0, dip_end: float = 76.0
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """1 Hz SpO2 at 97% that falls to 93% over [dip_start, dip_end).
+
+        The default dip lies inside the 60-76 s hypopnea.
+        """
         timestamps = np.arange(0.0, 30 * 4 + 1.0, 1.0)
         spo2 = np.full_like(timestamps, 97.0)
-        spo2[(timestamps >= 64.0) & (timestamps < 76.0)] = 93.0
+        spo2[(timestamps >= dip_start) & (timestamps < dip_end)] = 93.0
         return timestamps, spo2
 
     def test_spo2_dip_marks_desaturation(self):
         assert self._hypopneas(self._spo2())[0].has_desaturation is True
+
+    def test_nadir_after_event_end_marks_desaturation(self):
+        """Finger-oximeter nadirs lag the event; one 20 s after its end counts."""
+        hypopneas = self._hypopneas(self._spo2(dip_start=94.0, dip_end=98.0))
+
+        assert hypopneas[0].has_desaturation is True
+
+    def test_dip_before_pre_event_window_is_not_a_desaturation(self):
+        """A dip that recovers more than 10 s before the event is not its own."""
+        hypopneas = self._hypopneas(self._spo2(dip_start=40.0, dip_end=45.0))
+
+        assert hypopneas[0].has_desaturation is False
 
     def test_without_spo2_desaturation_is_unknown(self):
         assert self._hypopneas(None)[0].has_desaturation is None

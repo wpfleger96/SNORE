@@ -501,10 +501,20 @@ class EventDetector:
             has_desaturation = None
             if spo2_data is not None:
                 spo2_timestamps, spo2_values = spo2_data
-                lo = np.searchsorted(spo2_timestamps, start_time, side="left")
-                hi = np.searchsorted(spo2_timestamps, end_time, side="right")
+                lo = np.searchsorted(
+                    spo2_timestamps,
+                    start_time - EDC.SPO2_DESATURATION_PRE_EVENT_SECONDS,
+                    side="left",
+                )
+                hi = np.searchsorted(
+                    spo2_timestamps,
+                    end_time + EDC.SPO2_DESATURATION_POST_EVENT_SECONDS,
+                    side="right",
+                )
                 desaturation_threshold = (
-                    4.0 if actual_mode == HypopneaMode.AASM_4PCT else 3.0
+                    EDC.SPO2_DESATURATION_DROP_4PCT
+                    if actual_mode == HypopneaMode.AASM_4PCT
+                    else EDC.SPO2_DESATURATION_DROP
                 )
                 has_desaturation = _check_desaturation(
                     spo2_values[lo:hi], threshold=desaturation_threshold

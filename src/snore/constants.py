@@ -138,7 +138,14 @@ class EventDetectionConstants:
         APNEA_EFFORT_OBSTRUCTIVE_THRESHOLD + APNEA_EFFORT_CENTRAL_THRESHOLD
     ) / 2
 
+    # Hypopnea desaturation: an SpO2 fall of at least DROP (AASM_3PCT) or
+    # DROP_4PCT (AASM_4PCT) points from a running peak to a later reading, over
+    # readings from PRE seconds before the event to POST seconds after it
+    # (finger-oximeter nadirs lag the event by 10-30 s).
     SPO2_DESATURATION_DROP = 3.0
+    SPO2_DESATURATION_DROP_4PCT = 4.0
+    SPO2_DESATURATION_PRE_EVENT_SECONDS = 10.0
+    SPO2_DESATURATION_POST_EVENT_SECONDS = 30.0
 
     APNEA_BASE_CONFIDENCE = 0.7
     APNEA_HIGH_REDUCTION_BONUS = 0.1

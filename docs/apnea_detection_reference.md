@@ -292,7 +292,7 @@ Follows the AASM Scoring Manual v2.6 definitions from section 1.1:
 - Apnea threshold: ≥90% flow reduction
 - Hypopnea band: 30-89% average flow reduction (inclusive)
 - Baseline: 2-minute (120s) rolling time window
-- With oximetry, each hypopnea records whether SpO2 fell by at least 3% (4% in `AASM_4PCT`) during the event (`has_desaturation`), which raises its confidence. Hypopneas without a desaturation are still scored, because the alternative AASM criterion, an arousal, needs EEG. Without oximetry, hypopnea detection falls back to flow-only.
+- With oximetry, each hypopnea records whether SpO2 fell by at least 3% (4% in `AASM_4PCT`) from a running peak to a later reading, over readings from 10 s before the event to 30 s after it, since finger-oximeter nadirs lag the event (`has_desaturation`); a desaturation raises its confidence. Hypopneas without a desaturation are still scored, because the alternative AASM criterion, an arousal, needs EEG. Without oximetry, hypopnea detection falls back to flow-only.
 
 ### 4.2 AASM Relaxed Mode (Breath Baseline)
 
