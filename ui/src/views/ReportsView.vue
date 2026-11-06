@@ -148,7 +148,7 @@ import { Check, Download, Loader2 } from '@lucide/vue'
 import { getSummaryReport, getComparisonReport } from '@/api/reports'
 import { downloadBlob } from '@/api/export'
 import { getRxHistory } from '@/api/rx'
-import { formatBytes } from '@/utils/formatting'
+import { formatBytes, formatIso } from '@/utils/formatting'
 import type { RxPeriodResponse } from '@/types'
 import { useAvailableDates } from '@/composables/useAvailableDates'
 import DatePickerInput from '@/components/DatePickerInput.vue'
@@ -197,8 +197,8 @@ function applyPreset(days: number, range: 'a' | 'b'): void {
     const to = new Date()
     const from = new Date()
     from.setDate(from.getDate() - days)
-    const toStr = to.toISOString().slice(0, 10)
-    const fromStr = from.toISOString().slice(0, 10)
+    const toStr = formatIso(to)
+    const fromStr = formatIso(from)
     if (range === 'a') {
         fromA.value = fromStr
         toA.value = toStr

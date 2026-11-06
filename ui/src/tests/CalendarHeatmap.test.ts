@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { DayListItem } from '@/types'
 import CalendarHeatmap from '@/components/CalendarHeatmap.vue'
+import { formatIso } from '@/utils/formatting'
 
-// Same date math as the component (local clock, ISO slice) so the days land in the grid.
+// Same date math as the component (local calendar date) so the days land in the grid.
 function isoDaysAgo(n: number): string {
     const d = new Date()
     d.setDate(d.getDate() - n)
-    return d.toISOString().slice(0, 10)
+    return formatIso(d)
 }
 
 function day(date: string, overrides: Partial<DayListItem> = {}): DayListItem {
@@ -56,6 +57,41 @@ describe('CalendarHeatmap cell titles', () => {
         const days = [day(withAhi, { ahi: 1.5, index_source: null }), day(noAhi)]
         expect(titleFor(days, withAhi)).toBe(`${withAhi}: AHI 1.5`)
         expect(titleFor(days, noAhi)).toBe(`${noAhi}: AHI N/A`)
+    })
+})
+
+describe('CalendarHeatmap local calendar dates', () => {
+    // Node re-reads TZ on assignment, so each case sets a zone whose local
+    // date differs from the UTC date at the pinned instant.
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => {
+        vi.useRealTimers()
+        vi.unstubAllEnvs()
+    })
+
+    function lastCellTitle(days: DayListItem[]): string | undefined {
+        const wrapper = mount(CalendarHeatmap, { props: { days } })
+        return wrapper.findAll('.cell').at(-1)?.attributes('title')
+    }
+
+    it('test_early_morning_ahead_of_utc_labels_cells_with_local_date', () => {
+        vi.stubEnv('TZ', 'Pacific/Auckland')
+        // 05:00 NZDT on Oct 15 is still Oct 14 in UTC.
+        vi.setSystemTime(new Date(2026, 9, 15, 5))
+
+        const title = lastCellTitle([day('2026-10-15', { ahi: 2.5, index_source: 'device' })])
+
+        expect(title).toBe('2026-10-15: AHI 2.5 (device-reported)')
+    })
+
+    it('test_evening_behind_utc_labels_cells_with_local_date', () => {
+        vi.stubEnv('TZ', 'America/Los_Angeles')
+        // 20:00 PDT on Oct 15 is already Oct 16 in UTC.
+        vi.setSystemTime(new Date(2026, 9, 15, 20))
+
+        const title = lastCellTitle([day('2026-10-15', { ahi: 2.5, index_source: 'device' })])
+
+        expect(title).toBe('2026-10-15: AHI 2.5 (device-reported)')
     })
 })
 
