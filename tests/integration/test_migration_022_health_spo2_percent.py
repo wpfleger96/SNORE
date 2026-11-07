@@ -26,6 +26,10 @@ _RR_FRACTION = (5, _RR, "Watch", "2024-01-16 02:00:00.000000", 0.95)
 # The same sample from an older fraction export and a newer percent export.
 _DUP_FRACTION = (6, _SPO2, "Watch", "2024-01-16 03:00:00.000000", 0.97)
 _DUP_PERCENT = (7, _SPO2, "Watch", "2024-01-16 03:00:00.000000", 97.0)
+# The rescale range is [0.5, 1.0] inclusive, matching the parser's rule.
+_LOWER_BOUND = (8, _SPO2, "Watch", "2024-01-16 04:00:00.000000", 0.5)
+_UPPER_BOUND = (9, _SPO2, "Watch", "2024-01-16 04:05:00.000000", 1.0)
+_ABOVE_RANGE = (10, _SPO2, "Watch", "2024-01-16 04:10:00.000000", 1.5)
 
 _ROWS = (
     _FRACTION,
@@ -35,6 +39,9 @@ _ROWS = (
     _RR_FRACTION,
     _DUP_FRACTION,
     _DUP_PERCENT,
+    _LOWER_BOUND,
+    _UPPER_BOUND,
+    _ABOVE_RANGE,
 )
 
 
@@ -83,6 +90,9 @@ async def test_upgrade_rescales_spo2_fractions_only(tmp_path: Path) -> None:
         _IMPLAUSIBLE[0]: 0.2,
         _RR_FRACTION[0]: 0.95,
         _DUP_PERCENT[0]: 97.0,
+        _LOWER_BOUND[0]: 50.0,
+        _UPPER_BOUND[0]: 100.0,
+        _ABOVE_RANGE[0]: 1.5,
     }
 
 
