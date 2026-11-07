@@ -5,7 +5,7 @@ repo pattern for service unit tests that require a database, matching
 test_health_importers.py's approach.
 
 Service methods tested:
-- get_night_detail: SpO2 fraction→percent normalization, RR avg aggregation
+- get_night_detail: SpO2 plausibility filter, RR avg aggregation
 - get_night_samples: preferred-source filtering, explicit source_name override
 - list_night_dates: ascending sort order
 """
@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import HealthNightlySummary, HealthSample, Profile, User
-from snore.services.health_service import HealthService, spo2_display_pct
+from snore.services.health_service import HealthService
 
 _SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 _SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
@@ -104,43 +104,10 @@ async def night_summary(async_db_session, profile_id):
 
 
 class TestGetNightDetailAggregates:
-    async def test_fraction_spo2_normalized_to_percent(
+    async def test_spo2_avg_and_min_computed_from_samples(
         self, async_db_session, profile_id, night_summary
     ):
-        """SpO2 stored as fractions (≤ 1.5) is multiplied by 100 on read.
-
-        Fixture: 0.95 and 0.99 → avg 0.97, min 0.95 → both become × 100.
-        """
-        for val, h in [(0.95, 2), (0.99, 3)]:
-            async_db_session.add(
-                HealthSample(
-                    profile_id=profile_id,
-                    record_type=_SPO2_TYPE,
-                    source_name=_WATCH,
-                    start_time=_dt(h),
-                    end_time=_dt(h),
-                    value_num=val,
-                    unit="%",
-                    night_date=_NIGHT,
-                    ingest_channel="export_xml",
-                )
-            )
-        await async_db_session.flush()
-
-        detail = await HealthService(async_db_session, profile_id).get_night_detail(
-            _NIGHT
-        )
-
-        assert detail.avg_spo2_pct == pytest.approx(97.0, abs=0.1)
-        assert detail.min_spo2_pct == pytest.approx(95.0, abs=0.1)
-
-    async def test_percent_spo2_not_re_multiplied(
-        self, async_db_session, profile_id, night_summary
-    ):
-        """SpO2 stored as percents (> 1.5) is left unchanged (just rounded).
-
-        Fixture: 95.0 and 99.0 → avg 97.0, min 95.0 — no multiplication.
-        """
+        """SpO2 avg/min aggregate the stored percent values: 95 and 99 → 97, 95."""
         for val, h in [(95.0, 2), (99.0, 3)]:
             async_db_session.add(
                 HealthSample(
@@ -190,45 +157,11 @@ class TestGetNightDetailAggregates:
 
         assert detail.avg_rr == pytest.approx(15.0, abs=0.01)
 
-    @pytest.mark.parametrize(
-        ("values", "expected_avg", "expected_min"),
-        [
-            ((0.95, 95.0), 95.0, 95.0),
-            ((0.99, 92.0), 95.5, 92.0),
-        ],
-    )
-    async def test_mixed_unit_spo2_normalized_before_aggregating(
-        self,
-        async_db_session,
-        profile_id,
-        night_summary,
-        values,
-        expected_avg,
-        expected_min,
-    ):
-        """Mixed fraction+percent SpO2 sources: each sample is normalized first.
-
-        Aggregating raw values gives avg 47.975 for 0.95 + 95 and min 0.99 (→ 99%)
-        for 0.99 + 92 — both wrong scales.
-        """
-        _add_spo2_samples(async_db_session, profile_id, values)
-        await async_db_session.flush()
-
-        detail = await HealthService(async_db_session, profile_id).get_night_detail(
-            _NIGHT
-        )
-
-        assert detail.avg_spo2_pct == pytest.approx(expected_avg, abs=0.1)
-        assert detail.min_spo2_pct == pytest.approx(expected_min, abs=0.1)
-
     @pytest.mark.parametrize("implausible", [0.0, 1.5, -1.0, 20.0, 101.0])
     async def test_implausible_spo2_sample_ignored(
         self, async_db_session, profile_id, night_summary, implausible
     ):
-        """A sample outside 50–100% after normalization is dropped from avg/min.
-
-        Without the filter: 0.0 → 0%, 1.5 → 150%, -1 → -100%, 20 → 20%.
-        """
+        """A sample outside 50–100% is dropped from avg/min."""
         _add_spo2_samples(async_db_session, profile_id, (implausible, 95.0))
         await async_db_session.flush()
 
@@ -261,7 +194,7 @@ class TestGetNightDetailAggregates:
         An RR of 60 /min sits inside the plausible SpO2 percent range, so it would
         drag avg/min SpO2 down if it leaked into those aggregates.
         """
-        _add_spo2_samples(async_db_session, profile_id, (0.95, 97.0))
+        _add_spo2_samples(async_db_session, profile_id, (95.0, 97.0))
         for val, h in [(60.0, 4), (14.0, 5)]:
             async_db_session.add(
                 HealthSample(
@@ -452,27 +385,3 @@ class TestListNightDatesSorted:
         """list_night_dates returns [] when there are no summaries for the profile."""
         dates = await HealthService(async_db_session, profile_id).list_night_dates()
         assert dates == []
-
-
-# ---------------------------------------------------------------------------
-# spo2_display_pct
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("stored", "expected"),
-    [
-        (0.95, 95.0),  # fraction → percent
-        (95.0, 95.0),  # already percent
-        (0.5, 50.0),  # lower fraction boundary
-        (1.0, 100.0),  # upper fraction boundary
-        (50.0, 50.0),  # lower percent boundary
-        (100.0, 100.0),  # upper percent boundary
-        (20.0, 20.0),  # implausible: shown as stored
-        (1.5, 1.5),  # implausible: shown as stored
-    ],
-)
-def test_spo2_display_pct_scales_fractions_and_keeps_others(
-    stored: float, expected: float
-) -> None:
-    assert spo2_display_pct(stored) == pytest.approx(expected)
