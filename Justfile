@@ -119,8 +119,12 @@ web-format:
 web-build:
     cd ui && pnpm run build
 
-# Run all web UI quality checks
-web-check: web-type-check web-lint-check web-format-check
+# Run web UI unit tests
+web-test:
+    cd ui && pnpm run test:unit
+
+# Run all web UI quality checks and unit tests
+web-check: web-type-check web-lint-check web-format-check web-test
 
 # Run the full CI pipeline locally
 ci: sync type-check lint-check format-check test
