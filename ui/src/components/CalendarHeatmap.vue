@@ -188,15 +188,15 @@ const monthLabels = computed(() => {
     cursor: default;
 }
 .cell--good {
-    background: #22c55e;
+    background: var(--ahi-good-fill);
 }
 .cell--mild {
-    background: #eab308;
+    background: var(--ahi-mild-fill);
 }
 .cell--moderate {
-    background: #f97316;
+    background: var(--ahi-moderate-fill);
 }
 .cell--severe {
-    background: #ef4444;
+    background: var(--ahi-severe-fill);
 }
 </style>
