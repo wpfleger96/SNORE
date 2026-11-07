@@ -32,7 +32,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type { DayListItem } from '@/types'
-import { parseLocalDate } from '@/utils/formatting'
+import { formatIso, parseLocalDate } from '@/utils/formatting'
 import { ahiColorClass } from '@/utils/ahiScale'
 
 const props = defineProps<{
@@ -79,7 +79,7 @@ const cells = computed(() => {
     const result: { date: string; ahi: number | null; class: string; title: string }[] = []
     const cur = new Date(start)
     while (cur <= end) {
-        const iso = cur.toISOString().slice(0, 10)
+        const iso = formatIso(cur)
         const day = dayMap.value.get(iso)
         result.push({
             date: iso,

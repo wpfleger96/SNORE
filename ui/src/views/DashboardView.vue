@@ -228,7 +228,7 @@ import { getSessions } from '@/api/sessions'
 import { getHealthNights } from '@/api/health'
 import { useApiLoad } from '@/composables/useApiLoad'
 import { useIsMobile } from '@/composables/useIsMobile'
-import { formatDateFull } from '@/utils/formatting'
+import { formatDateFull, formatIso } from '@/utils/formatting'
 import { AHI_COLOR_SCALE } from '@/utils/ahiScale'
 import { EVENT_COLORS } from '@/types'
 import type { HealthNightSummaryRead, SessionListItem } from '@/types'
@@ -236,7 +236,7 @@ import type { HealthNightSummaryRead, SessionListItem } from '@/types'
 function thirtyDaysAgo(): string {
     const d = new Date()
     d.setDate(d.getDate() - 30)
-    return d.toISOString().split('T')[0]
+    return formatIso(d)
 }
 
 const router = useRouter()

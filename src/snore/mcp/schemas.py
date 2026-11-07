@@ -38,6 +38,7 @@ from snore.provenance import IndexSource, Provenance, provenance_field
 from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
     INDEX_SOURCE_DESCRIPTION,
+    RERA_PROXY_FALLBACK_NOTE,
     MergedSettingsChange,
 )
 
@@ -386,14 +387,16 @@ class ExperimentalNightlyRow(BaseModel):
         "RERA-proxy events per mask-on hour of analyzed sessions, from "
         "flow-limitation runs (FL-run proxy, not device-reported); "
         "rera_index_reason='duration_zero' when those sessions have zero "
-        "mask-on hours.",
+        f"mask-on hours. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
     rera_index_reason: str | None = None
     rdi: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
-        "RERA-proxy index; compare to ahi_computed, not ahi.",
+        "RERA-proxy index; compare to ahi_computed, not ahi. Inherits "
+        "rera_index's fallback FL guesses and their sensitivity to waveform "
+        "shape.",
         default=None,
     )
     rdi_reason: str | None = None
@@ -432,7 +435,8 @@ class ExperimentalNightlyRow(BaseModel):
     rera_proxy_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
-        "ending in a recovery breath, over stored breath rows.",
+        "ending in a recovery breath, over stored breath rows. "
+        f"{RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
     rera_proxy_reason: str | None = None
@@ -1021,7 +1025,7 @@ class EpochStats(BaseModel):
     rera_proxy_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
-        "ending in a recovery breath.",
+        f"ending in a recovery breath. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
     rera_reason: str | None = None

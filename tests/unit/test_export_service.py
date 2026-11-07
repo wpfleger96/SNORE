@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.metrics import EXPORT_STAT_KEYS
+from snore.services.backup_service import InvalidSerialError
 from snore.services.export_service import ExportService
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,13 @@ class TestExportRaw:
         svc = ExportService(1, backup_root=tmp_path / "nonexistent")
         with pytest.raises(FileNotFoundError):
             svc.export_raw(Path("/tmp/out"), device_serial="NOPE")
+
+    @pytest.mark.parametrize("serial", ["..", "../2/SN12345", "/etc", "SN 12345"])
+    def test_serial_escaping_backup_root_raises(
+        self, export_service: ExportService, fake_backup: Path, serial: str
+    ) -> None:
+        with pytest.raises(InvalidSerialError):
+            export_service.export_raw(Path("/tmp/out"), device_serial=serial)
 
 
 # ---------------------------------------------------------------------------

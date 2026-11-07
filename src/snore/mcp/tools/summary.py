@@ -554,7 +554,12 @@ def register(mcp: FastMCP) -> None:
         ``rera_index`` is RERA-proxy events per mask-on hour of analyzed
         sessions; ``rera_index_reason`` is ``"duration_zero"`` when a RERA
         count exists but those analyzed sessions have zero mask-on hours,
-        making the per-hour rate undefined.
+        making the per-hour rate undefined. The proxy's FL runs (and so
+        ``rera_proxy_count``, ``rera_index`` and ``rdi``) include fallback
+        flatness-triage guesses (classifier confidence ==
+        ``FL_DEFAULT_CONFIDENCE``), unlike ``fl_class_ge4_pct`` below, so they
+        inherit the fallback share's sensitivity to waveform shape (e.g. across
+        therapy modes or pressure-support levels).
 
         ``fl_class_ge4_pct`` is the percent of leak-valid, rule-matched
         classified breaths with ``flow_class >= 4``; the confidence gate

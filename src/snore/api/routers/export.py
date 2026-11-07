@@ -9,13 +9,14 @@ from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import Receive, Scope, Send
 
 from snore.api.deps import ActorDep, get_db
 from snore.constants import DEFAULT_RAW_BACKUP_DIR
+from snore.services.backup_service import InvalidSerialError
 from snore.services.export_service import ExportService
 
 router = APIRouter()
@@ -127,14 +128,19 @@ def export_raw(
     backup_root = DEFAULT_RAW_BACKUP_DIR / str(actor.profile_id)
     svc = ExportService(actor.profile_id, backup_root=backup_root)
     with _export_tmpdir() as tmpdir:
-        result = svc.export_raw(
-            tmpdir / "snore_export_raw.zip",
-            date_from=from_date,
-            date_to=to_date,
-            device_serial=device,
-            trim_str=trim_str,
-            as_zip=as_zip,
-        )
+        try:
+            result = svc.export_raw(
+                tmpdir / "snore_export_raw.zip",
+                date_from=from_date,
+                date_to=to_date,
+                device_serial=device,
+                trim_str=trim_str,
+                as_zip=as_zip,
+            )
+        except InvalidSerialError:
+            raise HTTPException(
+                status_code=400, detail="Invalid device serial"
+            ) from None
         return _TempExportResponse(
             tmpdir, result.output_path, "application/zip", "snore_export_raw.zip"
         )

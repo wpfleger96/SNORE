@@ -3150,14 +3150,14 @@ export interface components {
             fl_class_ge4_pct_reason?: string | null
             /**
              * Rera Count
-             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`.
+             * @description [EXPERIMENTAL] RERA-proxy count from flow-limitation runs ending in a recovery breath; distinct from device-scored `reras`. Its FL runs include fallback flatness-triage guesses (classifier confidence == FL_DEFAULT_CONFIDENCE), which the fl_class_ge4_pct and flow_class_distribution confidence gate excludes, so the proxy inherits the fallback share's sensitivity to waveform shape (e.g. across therapy modes or pressure-support levels).
              */
             rera_count?: number | null
             /** Rera Count Reason */
             rera_count_reason?: string | null
             /**
              * Rera Index
-             * @description [EXPERIMENTAL] RERA-proxy events per mask-on hour of analyzed sessions (FL-run proxy, not device-scored).
+             * @description [EXPERIMENTAL] RERA-proxy events per mask-on hour of analyzed sessions (FL-run proxy, not device-scored). Its FL runs include fallback flatness-triage guesses (classifier confidence == FL_DEFAULT_CONFIDENCE), which the fl_class_ge4_pct and flow_class_distribution confidence gate excludes, so the proxy inherits the fallback share's sensitivity to waveform shape (e.g. across therapy modes or pressure-support levels).
              */
             rera_index?: number | null
             /** Rera Index Reason */

@@ -33,6 +33,7 @@ from snore.database import models
 from snore.metrics import EXPORT_STAT_KEYS
 from snore.parsers.base import RawFileManifest
 from snore.provenance import Provenance, field_description, field_provenance
+from snore.services.backup_service import BackupService
 from snore.services.schemas import SessionDetail, SessionStatistics
 
 if TYPE_CHECKING:
@@ -145,7 +146,7 @@ class ExportService:
         ensure_registered_parsers()
 
         serial = self._resolve_device_serial(device_serial)
-        device_root = self.backup_root / serial
+        device_root = BackupService(self.backup_root).get_device_backup_root(serial)
 
         if not device_root.is_dir():
             raise FileNotFoundError(

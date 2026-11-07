@@ -50,11 +50,11 @@
                         <SelectContent>
                             <SelectItem value="all">All Devices</SelectItem>
                             <SelectItem
-                                v-for="d in devices ?? []"
-                                :key="`${d.manufacturer} ${d.model}`"
-                                :value="`${d.manufacturer} ${d.model}`"
+                                v-for="opt in deviceOptions"
+                                :key="opt.value"
+                                :value="opt.value"
                             >
-                                {{ d.manufacturer }} {{ d.model }}
+                                {{ opt.label }}
                             </SelectItem>
                         </SelectContent>
                     </Select>
@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Toggle } from '@/components/ui/toggle'
 import {
@@ -130,6 +130,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Download, Loader2, AlertTriangle, Check } from '@lucide/vue'
 import { getDevices } from '@/api/devices'
+import { deviceFilterOptions } from '@/utils/deviceOptions'
 import { exportCsv, exportJson, exportRaw, downloadBlob } from '@/api/export'
 import type { CsvExportParams, RawExportParams, ExportParams } from '@/api/export'
 import { useApiLoad } from '@/composables/useApiLoad'
@@ -155,6 +156,7 @@ const {
     error: devicesError,
     reload: reloadDevices,
 } = useApiLoad(() => getDevices(), 'Failed to load devices')
+const deviceOptions = computed(() => deviceFilterOptions(devices.value ?? []))
 
 onMounted(() => {
     void loadDates()

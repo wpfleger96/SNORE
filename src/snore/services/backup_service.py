@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 _SERIAL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
+class InvalidSerialError(ValueError):
+    """Device serial is unsafe to use as a backup path component."""
+
+
 @dataclass
 class BackupResult:
     """Result of a backup operation."""
@@ -169,16 +173,16 @@ class BackupService:
     def _validate_serial(self, device_serial: str) -> None:
         """Validate device serial for safe path construction."""
         if not device_serial:
-            raise ValueError("Device serial number is empty")
+            raise InvalidSerialError("Device serial number is empty")
         if not _SERIAL_PATTERN.match(device_serial):
-            raise ValueError(
+            raise InvalidSerialError(
                 f"Device serial '{device_serial}' contains invalid characters. "
                 f"Expected alphanumeric, underscore, or hyphen."
             )
         # Bounds check: resolved path must be under backup_root
         resolved = (self.backup_root / device_serial).resolve()
         if not resolved.is_relative_to(self.backup_root.resolve()):
-            raise ValueError(
+            raise InvalidSerialError(
                 f"Device serial '{device_serial}' resolves to a path "
                 f"outside the backup directory"
             )

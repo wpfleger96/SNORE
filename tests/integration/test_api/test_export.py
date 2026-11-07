@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import shutil
 import tempfile
 import zipfile
@@ -146,6 +147,43 @@ class TestExportCsv:
         assert not export_tmpdirs[0].exists()
 
 
+class TestExportDeviceFilter:
+    """The UI sends a device's serial number as ``device``; only its sessions export."""
+
+    @staticmethod
+    def _session_ids(fmt: str, body: bytes) -> list[str]:
+        if fmt == "json":
+            return [s["device_session_id"] for s in json.loads(body)["sessions"]]
+        with zipfile.ZipFile(io.BytesIO(body)) as zf:
+            rows = csv.DictReader(io.StringIO(zf.read("sessions.csv").decode()))
+            return [row["device_session_id"] for row in rows]
+
+    @pytest.mark.parametrize("fmt", ["csv", "json"])
+    async def test_device_serial_filters_to_that_device(self, async_db_session, fmt):
+        profile = await _make_profile(async_db_session)
+        # Same model on both devices: only the serial tells them apart.
+        device = await _make_device(async_db_session, profile.id, serial_number="SN_A")
+        other = await _make_device(async_db_session, profile.id, serial_number="SN_B")
+        _, sess = await _make_day_session(async_db_session, device, date(2026, 1, 15))
+        await _make_day_session(async_db_session, other, date(2026, 1, 16))
+        await async_db_session.commit()
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        app = make_test_client(async_db_session, actor=actor).app
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(f"/api/v1/export/{fmt}?device=SN_A")
+
+        assert response.status_code == 200
+        assert self._session_ids(fmt, response.content) == [sess.device_session_id]
+
+
 class TestTempExportResponse:
     async def test_temp_dir_removed_when_client_disconnects(self, tmp_path):
         tmpdir = tmp_path / "export"
@@ -224,3 +262,34 @@ class TestExportRaw:
         ):
             response = api_client.get("/api/v1/export/raw")
         assert "application/zip" in response.headers["content-type"]
+
+
+class TestExportRawDeviceSerial:
+    async def test_serial_reaching_another_profile_is_rejected(
+        self, async_db_session, tmp_path, monkeypatch
+    ):
+        profile = await _make_profile(async_db_session)
+        other = await _make_profile(async_db_session)
+        await async_db_session.commit()
+        raw_root = tmp_path / "raw"
+        monkeypatch.setattr(export_router, "DEFAULT_RAW_BACKUP_DIR", raw_root)
+        (raw_root / str(profile.id)).mkdir(parents=True)
+        victim = raw_root / str(other.id) / "SN_OTHER"
+        (victim / "DATALOG" / "20250807").mkdir(parents=True)
+        (victim / "STR.edf").write_bytes(bytes(256))
+        (victim / "DATALOG" / "20250807" / "20250807_013454_BRP.edf").write_bytes(
+            b"secret"
+        )
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        client = make_test_client(async_db_session, actor=actor)
+
+        for device in (f"../{other.id}/SN_OTHER", str(victim)):
+            response = client.get("/api/v1/export/raw", params={"device": device})
+
+            assert response.status_code == 400
+            assert response.json() == {"detail": "Invalid device serial"}
