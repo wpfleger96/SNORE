@@ -26,12 +26,12 @@ from snore.analysis.shared.versioning import (
 from snore.constants import LEAK_REDLINE_LPM
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.services.channel_stats import (
     ChannelHistogram,
     ChannelHistograms,
     PooledHistogram,
     channel_histogram,
-    decode_channel_blobs,
     pool_histograms,
     pooled_distribution,
     pooled_share_above,

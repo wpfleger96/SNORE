@@ -38,7 +38,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.data.waveform_loader import (
     WaveformLoader,
-    deserialize_waveform_blob,
     detect_and_mark_artifacts,
     fetch_waveform_blob,
 )
@@ -69,6 +68,7 @@ from snore.constants import BreathSegmentationConstants as BSC
 from snore.constants import PatternDetectionConstants as PDC
 from snore.constants import PulseChangeConstants as PCC
 from snore.database import models
+from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.therapy_hours import (
     TherapyHoursBasis,
     parse_mask_on_segments,

@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.constants import FlowLimitationConstants as FLC
+from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.validation.alignment import average_waveform_over_breaths
 from snore.validation.fl_validator import (
     FlowLimitationValidator,

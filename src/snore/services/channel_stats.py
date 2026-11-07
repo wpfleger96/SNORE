@@ -40,7 +40,6 @@ __all__ = [
     "ChannelHistograms",
     "PooledHistogram",
     "channel_histogram",
-    "decode_channel_blobs",
     "histogram_distribution",
     "load_channel_histograms",
     "mask_on_spans",

@@ -15,15 +15,17 @@ import numpy as np
 import pytest
 
 from snore.analysis.data.waveform_loader import (
-    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
     apply_noise_filter,
-    deserialize_waveform_blob,
     detect_and_mark_artifacts,
     handle_discontinuities,
     handle_sample_rate_conversion,
     load_waveform_from_db,
 )
 from snore.database.importers import serialize_waveform
+from snore.database.waveform_blobs import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
+    deserialize_waveform_blob,
+)
 from snore.parsers.unified import WaveformData, WaveformType
 
 

@@ -18,10 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.calculations import PeriodType
 from snore.database.models import Day, Device, Session, Statistics
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.mcp.schemas import EpochSpec
 from snore.mcp.tools.epochs import compare_epochs
 from snore.services.breath_service import BreathService
-from snore.services.channel_stats import decode_channel_blobs
 from snore.services.day_service import DayService
 from snore.services.report_service import ReportService
 from snore.services.session_service import SessionService

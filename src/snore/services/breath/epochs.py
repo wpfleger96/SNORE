@@ -32,10 +32,10 @@ from snore.analysis.shared.versioning import (
 )
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.services.channel_stats import (
     ChannelHistogram,
     channel_histogram,
-    decode_channel_blobs,
     pool_histograms,
     pooled_count,
     value_at_rank,
