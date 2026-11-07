@@ -712,8 +712,8 @@ class AnalysisService:
                 )
                 mode_results[mode_name] = mode_result
                 logger.info(
-                    f"Mode '{mode_name}': Detected {len(mode_result.apneas)} apneas, "
-                    f"{len(mode_result.hypopneas)} hypopneas, AHI={mode_result.ahi:.1f}"
+                    f"Mode '{mode_name}': Detected {mode_result.apnea_count} apneas, "
+                    f"{mode_result.hypopnea_count} hypopneas, AHI={mode_result.ahi:.1f}"
                 )
             except Exception as e:
                 logger.error(f"Failed to run mode '{mode_name}': {e}")
@@ -729,7 +729,7 @@ class AnalysisService:
             machine_ahi=machine_ahi,
             machine_rdi=machine_ahi,
             mode_results=mode_results,
-            flow_analysis=flow_analysis.model_dump(),
+            flow_analysis=flow_analysis,
             csr_detection=csr_detection.model_dump() if csr_detection else None,
             periodic_breathing=periodic_breathing.model_dump()
             if periodic_breathing

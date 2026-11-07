@@ -1173,4 +1173,4 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
 
 def model_to_schema(model: type[BaseModel]) -> dict[str, Any]:
     """Return the JSON schema for a Pydantic model."""
-    return model.model_json_schema()
+    return model.model_json_schema(mode="serialization")

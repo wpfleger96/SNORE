@@ -628,7 +628,7 @@ class TestFlowLimitationIndex:
                     # prove it does not affect the ordering.
                     confidence=1.0 - 0.1 * flow_class,
                     matched_features={},
-                    severity="x",
+                    severity="normal",
                 )
                 for i in range(1, 6)
             ]

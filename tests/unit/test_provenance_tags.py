@@ -18,6 +18,7 @@ import pytest
 
 from pydantic import BaseModel
 
+from snore.analysis.modes.types import ModeResult
 from snore.api.app import create_app
 from snore.api.schemas import WaveformDataResponse
 from snore.mcp.schemas import SCHEMA_MODEL_MAP
@@ -528,6 +529,12 @@ def test_response_provenance_returns_independent_copies() -> None:
     assert response_provenance(_Tree)["experimental"] == ["by_name{}.value"]
 
 
+def test_response_provenance_lists_computed_fields() -> None:
+    experimental = response_provenance(ModeResult)["experimental"]
+
+    assert {"apnea_count", "hypopnea_count", "rera_count"} <= set(experimental)
+
+
 def test_weakest_picks_least_certain_tier() -> None:
     assert _weakest(Provenance.DEVICE, Provenance.EXPERIMENTAL) == (
         Provenance.EXPERIMENTAL
@@ -540,6 +547,11 @@ def test_field_description_strips_tier_prefix() -> None:
         f"{description_prefix(Provenance.DERIVED)}Value."
     )
     assert field_description(_Leaf, "value") == "Value."
+
+
+def test_computed_field_tier_and_description_resolve() -> None:
+    assert field_provenance(ModeResult, "apnea_count") is Provenance.EXPERIMENTAL
+    assert field_description(ModeResult, "apnea_count") == "Detected apnea count"
 
 
 @pytest.mark.parametrize(

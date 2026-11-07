@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from snore.constants import ApneaEventType
+from snore.constants import ApneaEventType, FlowSeverity
 from snore.provenance import Provenance, provenance_field
 
 
@@ -285,11 +285,19 @@ class FlowPattern(BaseModel):
     """
 
     breath_number: int = Field(description="Sequential breath number")
-    flow_class: int = Field(ge=1, le=7, description="Flow limitation class (1-7)")
+    flow_class: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Flow limitation class (1-7)", ge=1, le=7
+    )
     class_name: str = Field(description="Human-readable class name")
-    confidence: float = Field(ge=0, le=1, description="Classification confidence")
-    matched_features: dict[str, Any] = Field(description="Supporting features")
-    severity: str = Field(description="Clinical severity level")
+    confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Classification confidence", ge=0, le=1
+    )
+    matched_features: dict[str, Any] = provenance_field(
+        Provenance.EXPERIMENTAL, "Supporting features"
+    )
+    severity: FlowSeverity = provenance_field(
+        Provenance.EXPERIMENTAL, "Clinical severity level"
+    )
 
 
 class SessionFlowAnalysis(BaseModel):
@@ -304,10 +312,18 @@ class SessionFlowAnalysis(BaseModel):
         patterns: Individual breath classifications
     """
 
-    total_breaths: int = Field(ge=0, description="Total breaths analyzed")
-    class_distribution: dict[int, int] = Field(description="Breaths per class")
-    flow_limitation_index: float = Field(ge=0, le=1, description="Overall FL index")
-    average_confidence: float = Field(ge=0, le=1, description="Mean confidence")
+    total_breaths: int = provenance_field(
+        Provenance.EXPERIMENTAL, "Total breaths analyzed", ge=0
+    )
+    class_distribution: dict[int, int] = provenance_field(
+        Provenance.EXPERIMENTAL, "Breaths per class"
+    )
+    flow_limitation_index: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Overall FL index", ge=0, le=1
+    )
+    average_confidence: float = provenance_field(
+        Provenance.EXPERIMENTAL, "Mean confidence", ge=0, le=1
+    )
     patterns: list[FlowPattern] = Field(description="Individual breath classifications")
 
 

@@ -196,8 +196,8 @@ class BatchValidator:
             date=session.start_time.strftime("%Y-%m-%d"),
             duration_hours=analysis_result.session_duration_hours,
             machine_event_count=len(machine_events),
-            programmatic_event_count=len(mode_result.apneas)
-            + len(mode_result.hypopneas),
+            programmatic_event_count=mode_result.apnea_count
+            + mode_result.hypopnea_count,
             apnea_sensitivity=apnea_val.sensitivity,
             apnea_precision=apnea_val.precision,
             apnea_f1=apnea_val.f1_score,

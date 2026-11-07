@@ -21,7 +21,16 @@ const ANALYSIS = {
     machine_events: [],
     pulse_change_count: null,
     mode_results: {
-        aasm: { ahi: 4.2, rdi: 6.1, apneas: [], hypopneas: [], reras: [] },
+        aasm: {
+            ahi: 4.2,
+            rdi: 6.1,
+            apneas: [],
+            hypopneas: [],
+            reras: [],
+            apnea_count: 0,
+            hypopnea_count: 0,
+            rera_count: 0,
+        },
     },
     flow_analysis: null,
     csr_detection: null,
@@ -32,7 +41,16 @@ const TWO_MODE_ANALYSIS = {
     ...ANALYSIS,
     mode_results: {
         ...ANALYSIS.mode_results,
-        resmed: { ahi: 3.1, rdi: 3.1, apneas: [], hypopneas: [], reras: [] },
+        resmed: {
+            ahi: 3.1,
+            rdi: 3.1,
+            apneas: [],
+            hypopneas: [],
+            reras: [],
+            apnea_count: 0,
+            hypopnea_count: 0,
+            rera_count: 0,
+        },
     },
 }
 
@@ -97,6 +115,33 @@ describe('AnalysisView', () => {
             .findAll('.data-card .data-card-label')
             .find((l) => l.text().startsWith('AHI'))!
         expect(ahiLabel.find(MODE_AHI_HINT).exists()).toBe(true)
+    })
+
+    it('test_mode_table_and_flow_section_read_typed_counts', async () => {
+        vi.mocked(getAnalysis).mockResolvedValue({
+            ...ANALYSIS,
+            mode_results: {
+                aasm: {
+                    ...ANALYSIS.mode_results.aasm,
+                    apnea_count: 12,
+                    hypopnea_count: 34,
+                    rera_count: 56,
+                },
+            },
+            flow_analysis: {
+                total_breaths: 4321,
+                class_distribution: { '1': 4000, '4': 321 },
+                flow_limitation_index: 0.25,
+                average_confidence: 0.8,
+                patterns: [],
+            },
+        } as never)
+        const wrapper = await mountView()
+        const rows = wrapper.findAll('tr').map((r) => r.findAll('td').map((c) => c.text()))
+        const modeRow = rows.find((cells) => cells[0] === 'aasm')
+        expect(modeRow?.slice(3)).toEqual(['12', '34', '56'])
+        const class4 = rows.find((cells) => cells[1] === '4')
+        expect(class4?.slice(4)).toEqual(['321', '7.4%'])
     })
 
     it('test_event_comparison_names_device_scored_and_snore_detected', async () => {
