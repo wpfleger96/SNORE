@@ -20,7 +20,6 @@ import numpy as np
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncResult
 
 from snore.analysis.rx_tracker import RX_KEYS, changed_setting_keys
 from snore.analysis.shared.versioning import (
@@ -46,6 +45,7 @@ from snore.utils.stats import nearest_rank_index
 
 from ._core import _BreathServiceCore
 from .algorithms import count_fl_run_reras_arrays
+from .breath_stream import stream_run_reductions
 from .dtos import (
     MAX_EPOCH_NIGHTS,
     DeviceCompareEpochsResult,
@@ -68,9 +68,9 @@ _METRIC_COLUMNS = {
     DistributionMetric.TIDAL_VOLUME_ML: models.Breath.tidal_volume_ml,
     DistributionMetric.IE_RATIO: models.Breath.i_e_ratio,
 }
-# Every breath column the experimental epoch stats read, in breath-block order.
+# Every breath column the experimental epoch stats read, in the row order of
+# the arrays ``_reduce_run_breaths`` reduces.
 _BREATH_COLUMNS = (
-    models.Breath.analysis_result_id,
     models.Breath.leak_valid,
     models.Breath.flow_class,
     models.Breath.flow_confidence,
@@ -78,31 +78,8 @@ _BREATH_COLUMNS = (
     models.Breath.peak_flow_lpm,
     *_METRIC_COLUMNS.values(),
 )
-_AR_ID, _LEAK_VALID, _FLOW_CLASS, _FLOW_CONFIDENCE, _IS_RECOVERY, _PEAK_FLOW = range(6)
-_METRIC_INDEX = {metric: i for i, metric in enumerate(_METRIC_COLUMNS, start=6)}
-# Breath rows fetched from the cursor at a time.  Each fetch becomes a float
-# block at once, so its Row objects die young instead of piling up per run.
-# A fetch allocates a driver tuple and a Row per row; kept well under gc's
-# young-generation threshold (2000 allocations), few of a fetch's rows live
-# through a young collection, so few reach the old generation.  Larger fetches
-# set off full collections of ~100 ms each on the event loop (measured over a
-# 366-night epoch on Python 3.14: 768 rows, 7 of them; 512 rows, none).
-_BREATH_FETCH_ROWS = 512
-
-
-async def _fetch_breath_block(
-    result: AsyncResult[*tuple[object, ...]],
-) -> np.ndarray | None:
-    """The next fetched rows as a ``(len(_BREATH_COLUMNS), n)`` float block.
-
-    None once the result is exhausted.  A null becomes NaN (SQLite stores NaN
-    as NULL, so NaN never stands for a stored value), True 1.0 and False 0.0;
-    every column is an id, small int, boolean or float, so float64 is exact.
-    The rows are freed on return; ``partitions()`` would instead keep each
-    partition alive through the next fetch.
-    """
-    rows = await result.fetchmany(_BREATH_FETCH_ROWS)
-    return np.array(list(zip(*rows, strict=True)), dtype=np.float64) if rows else None
+_LEAK_VALID, _FLOW_CLASS, _FLOW_CONFIDENCE, _IS_RECOVERY, _PEAK_FLOW = range(5)
+_METRIC_INDEX = {metric: i for i, metric in enumerate(_METRIC_COLUMNS, start=5)}
 
 
 def _distrib(n: int, at_rank: Callable[[int], float]) -> dict[str, float | None]:
@@ -175,13 +152,12 @@ def _first_seen_counts(values: np.ndarray) -> dict[int, int]:
 
 
 def _reduce_run_breaths(
-    blocks: Sequence[np.ndarray], metrics: Collection[DistributionMetric]
+    breaths: np.ndarray, metrics: Collection[DistributionMetric]
 ) -> _RunBreaths:
-    """Reduce one run's breath blocks (``_fetch_breath_block``), in breath order.
+    """Reduce one run's breaths (``_BREATH_COLUMNS`` rows, in breath order).
 
     Runs on a worker thread.
     """
-    breaths = np.concatenate(blocks, axis=1)
     leak_valid = breaths[:, breaths[_LEAK_VALID] == 1.0]
     flow_class = leak_valid[_FLOW_CLASS]
     confidence = leak_valid[_FLOW_CONFIDENCE]
@@ -384,49 +360,6 @@ class EpochsMixin(_BreathServiceCore):
                 if row.value:
                     rx_by_session[row.session_id][row.key] = row.value
         return [(night, rx_by_session[sid]) for sid, night in night_by_session.items()]
-
-    async def _load_run_breaths(
-        self, ar_ids: list[int], metrics: Collection[DistributionMetric]
-    ) -> dict[int, _RunBreaths]:
-        """Each run's reduced breaths by analysis run id; runs without breaths are absent.
-
-        One pass ordered by breath number serves both the leak-valid
-        distributions and the RERA proxy.  Rows stream from the cursor as float
-        blocks; only one run's blocks are held at a time, each run reduced on a
-        worker thread.
-        """
-        runs: dict[int, _RunBreaths] = {}
-
-        async def reduce_run(blocks: list[np.ndarray]) -> None:
-            runs[int(blocks[0][_AR_ID, 0])] = await asyncio.to_thread(
-                _reduce_run_breaths, blocks, metrics
-            )
-
-        breath = models.Breath
-        for chunk in iter_id_chunks(ar_ids):
-            result = await self._db.stream(
-                select(*_BREATH_COLUMNS)
-                .where(breath.analysis_result_id.in_(chunk))
-                .order_by(breath.analysis_result_id, breath.breath_number)
-            )
-            # Close on every exit: an unfinalized statement left on the pooled
-            # connection pins a stale read snapshot (blocking WAL checkpoints
-            # and later writes).
-            try:
-                run_blocks: list[np.ndarray] = []
-                while (block := await _fetch_breath_block(result)) is not None:
-                    # A run's rows are contiguous, so split where the id changes.
-                    cuts = np.flatnonzero(np.diff(block[_AR_ID])) + 1
-                    for piece in np.split(block, cuts, axis=1):
-                        if run_blocks and run_blocks[0][_AR_ID, 0] != piece[_AR_ID, 0]:
-                            await reduce_run(run_blocks)
-                            run_blocks = []
-                        run_blocks.append(piece)
-                if run_blocks:
-                    await reduce_run(run_blocks)
-            finally:
-                await result.close()
-        return runs
 
     async def compare_device_epochs(
         self, epochs: list[EpochRequest]
@@ -676,9 +609,11 @@ class EpochsMixin(_BreathServiceCore):
         # -----------------------------------------------------------------------
 
         requested = set(metrics) if metrics is not None else set(DistributionMetric)
-        # One pass over the breaths of every computable epoch, overlapping ones
-        # included.
-        runs = await self._load_run_breaths(
+        # One pass ordered by breath number over the breaths of every computable
+        # epoch, overlapping ones included, serves both the leak-valid
+        # distributions and the RERA proxy.
+        runs = await stream_run_reductions(
+            self._db,
             list(
                 dict.fromkeys(
                     ar_id
@@ -687,7 +622,8 @@ class EpochsMixin(_BreathServiceCore):
                     for ar_id in ed["contributing_ar_ids"]
                 )
             ),
-            requested,
+            _BREATH_COLUMNS,
+            lambda breaths: _reduce_run_breaths(breaths, requested),
         )
         epoch_stats: list[EpochBreathStats] = []
 
