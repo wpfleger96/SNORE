@@ -14,7 +14,6 @@ export interface CsvExportParams extends ExportParams {
 
 export interface RawExportParams extends ExportParams {
     trim_str?: boolean
-    as_zip?: boolean
 }
 
 export async function exportCsv(params?: CsvExportParams): Promise<Blob> {

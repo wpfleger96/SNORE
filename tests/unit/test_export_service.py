@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.metrics import EXPORT_STAT_KEYS
 from snore.services.backup_service import InvalidSerialError
 from snore.services.export_service import ExportService
+from tests.helpers.str_edf import read_str_header, write_synthetic_str_edf
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -152,6 +153,40 @@ class TestExportRaw:
             date_to=date(2025, 8, 9),
         )
         assert any("outside" in w.lower() for w in result.warnings)
+
+    @pytest.mark.parametrize("out_name", ["export", "export.zip"])
+    def test_trim_str_limits_exported_str_to_range(
+        self,
+        export_service: ExportService,
+        fake_backup: Path,
+        tmp_path: Path,
+        out_name: str,
+    ) -> None:
+        write_synthetic_str_edf(fake_backup / "STR.edf", "01.08.25", num_records=30)
+        out = tmp_path / out_name
+
+        result = export_service.export_raw(
+            out,
+            device_serial="SN12345",
+            date_from=date(2025, 8, 9),
+            date_to=date(2025, 8, 10),
+            trim_str=True,
+        )
+
+        if zipfile.is_zipfile(out):
+            with zipfile.ZipFile(out) as zf:
+                exported_str = zf.read("STR.edf")
+                assert result.files_written == len(zf.namelist())
+        else:
+            exported_str = (out / "STR.edf").read_bytes()
+        assert read_str_header(exported_str) == ("09.08.25", 2)
+        assert read_str_header((fake_backup / "STR.edf").read_bytes()) == (
+            "01.08.25",
+            30,
+        )
+        assert result.output_path == out
+        assert result.nights_exported == 1
+        assert not any("outside" in w.lower() for w in result.warnings)
 
     def test_auto_resolves_single_device(
         self, export_service: ExportService, fake_backup: Path, tmp_path: Path
@@ -465,56 +500,12 @@ class TestExportJson:
 # ---------------------------------------------------------------------------
 
 
-def _make_synthetic_str_edf(
-    path: Path,
-    start_date: str = "01.01.25",
-    num_records: int = 30,
-    num_signals: int = 2,
-) -> None:
-    """Create a minimal valid STR.edf for slicing tests.
-
-    Each signal has 1 sample per record (int16), so record_size = num_signals * 2.
-    Total file = 256 (header) + num_signals*256 (signal headers) + num_records * record_size.
-    """
-    header = bytearray(256)
-    header[0:8] = b"0       "
-    header[168:176] = f"{start_date:<8}".encode("ascii")
-    header[176:184] = b"12.00.00"
-    header_size = 256 + num_signals * 256
-    header[184:192] = f"{header_size:<8}".encode("ascii")
-    header[236:244] = f"{num_records:<8}".encode("ascii")
-    header[244:252] = b"86400   "
-    header[252:256] = f"{num_signals:<4}".encode("ascii")
-
-    sig_headers = bytearray(num_signals * 256)
-    # samples_per_record at offset num_signals * 216 within signal headers
-    spr_offset = num_signals * 216
-    for i in range(num_signals):
-        sig_headers[spr_offset + i * 8 : spr_offset + (i + 1) * 8] = b"1       "
-    # signal labels (16 bytes each, at the start)
-    for i in range(num_signals):
-        label = f"Signal{i:<10}".encode("ascii")[:16]
-        sig_headers[i * 16 : (i + 1) * 16] = label
-
-    record_size = num_signals * 2
-    data = bytearray(num_records * record_size)
-    for rec in range(num_records):
-        for sig in range(num_signals):
-            offset = rec * record_size + sig * 2
-            data[offset : offset + 2] = (rec + sig).to_bytes(2, "little", signed=True)
-
-    with open(path, "wb") as f:
-        f.write(bytes(header))
-        f.write(bytes(sig_headers))
-        f.write(bytes(data))
-
-
 class TestSliceStrEdf:
     def test_full_range_preserves_file(self, tmp_path: Path) -> None:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         src = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
         original_size = src.stat().st_size
 
         dest = tmp_path / "out.edf"
@@ -526,7 +517,7 @@ class TestSliceStrEdf:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         src = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
 
         dest = tmp_path / "out.edf"
         ResmedEDFParser._slice_str_edf(src, dest, date(2025, 1, 10), date(2025, 1, 19))
@@ -545,7 +536,7 @@ class TestSliceStrEdf:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         src = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
 
         dest = tmp_path / "out.edf"
         ResmedEDFParser._slice_str_edf(src, dest, date(2024, 12, 1), date(2025, 1, 10))
@@ -559,7 +550,7 @@ class TestSliceStrEdf:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         src = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
 
         dest = tmp_path / "out.edf"
         ResmedEDFParser._slice_str_edf(src, dest, date(2025, 1, 20), date(2025, 12, 31))
@@ -572,7 +563,7 @@ class TestSliceStrEdf:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         src = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(src, "01.01.25", num_records=30, num_signals=2)
 
         dest = tmp_path / "out.edf"
         ResmedEDFParser._slice_str_edf(src, dest, date(2026, 1, 1), date(2026, 12, 31))
@@ -587,7 +578,7 @@ class TestSliceStrEdf:
         from snore.parsers.resmed_edf import ResmedEDFParser
 
         f = tmp_path / "STR.edf"
-        _make_synthetic_str_edf(f, "01.01.25", num_records=30, num_signals=2)
+        write_synthetic_str_edf(f, "01.01.25", num_records=30, num_signals=2)
         original_size = f.stat().st_size
 
         ResmedEDFParser._slice_str_edf(f, f, date(2025, 1, 5), date(2025, 1, 14))

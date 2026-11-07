@@ -67,12 +67,10 @@ def export_raw(
     Examples:
         snore export raw --from 2025-08-01 --to 2025-08-14
         snore export raw -o ~/Desktop/export.zip --zip
+        snore export raw --from 2025-08-01 --to 2025-08-14 --trim-str -o export.zip
     """
     if trim_str and not (date_from and date_to):
         raise click.ClickException("--trim-str requires both --from and --to")
-
-    if trim_str and (as_zip or (output and str(output).endswith(".zip"))):
-        raise click.ClickException("--trim-str is not supported with zip output")
 
     if output is None:
         output = "snore_export_raw.zip" if as_zip else "snore_export_raw"
