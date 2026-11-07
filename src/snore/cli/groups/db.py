@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from datetime import date, timedelta
+from itertools import batched
 from pathlib import Path
 from typing import Any
 
@@ -167,6 +168,11 @@ def cleanup_orphans(db: str | None) -> None:
     asyncio.run(_run())
 
 
+# Days recomputed per write transaction.  Each day decodes its sessions'
+# waveform blobs while holding the SQLite write lock, so chunks stay small.
+RECOMPUTE_DAYS_CHUNK_SIZE = 100
+
+
 @db.command("recompute-days")
 @db_option
 @click.confirmation_option(
@@ -181,9 +187,9 @@ def recompute_days(db: str | None) -> None:
     No reparse: re-runs day aggregation over the ``Statistics`` and waveforms
     already stored for each session, refreshing every Day row across all
     devices and profiles.  Use after an aggregation-formula change (e.g. a
-    new weighting) to update
-    historical Day rows without re-importing raw device data.  Day rows that
-    no session references are deleted rather than recomputed.
+    new weighting) to update historical Day rows without re-importing raw
+    device data.  Day rows that no session references are deleted rather than
+    recomputed.
 
     Days are processed in chunks, each committed in its own gated write
     transaction (like ``cleanup-orphans``), so the SQLite write lock is
@@ -224,7 +230,7 @@ def recompute_days(db: str | None) -> None:
         ) as progress:
             task = progress.add_task("Recomputing days", total=len(day_ids))
             pruned = 0
-            for chunk in iter_id_chunks(day_ids):
+            for chunk in batched(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE, strict=False):
                 async with write_gate(), session_scope(immediate=True) as session:
                     days = (
                         (await session.execute(select(Day).where(Day.id.in_(chunk))))
@@ -236,7 +242,9 @@ def recompute_days(db: str | None) -> None:
                             pruned += 1
                 progress.update(task, advance=len(chunk))
 
-        summary = f"Recomputed {len(day_ids) - pruned} day(s) from session statistics"
+        summary = (
+            f"Recomputed {len(day_ids) - pruned} day(s) from statistics and waveforms"
+        )
         if pruned:
             summary += f"; pruned {pruned} orphaned day(s)"
         print_success(summary)

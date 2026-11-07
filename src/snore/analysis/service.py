@@ -529,7 +529,7 @@ class AnalysisService:
                 pulse_timestamps = pt.copy()
                 pulse_values = pv.copy()
             except Exception as e:
-                logger.debug(f"Failed to deserialise pulse blob: {e}")
+                logger.warning(f"Failed to deserialise pulse blob: {e}")
 
         # Leak waveform for quality-flag derivation.
         leak_timestamps: np.ndarray | None = None
@@ -540,7 +540,7 @@ class AnalysisService:
                 leak_timestamps = lt.copy()
                 leak_values = lv.copy()
             except Exception as e:
-                logger.debug(f"Failed to deserialise leak blob: {e}")
+                logger.warning(f"Failed to deserialise leak blob: {e}")
 
         return AnalysisInputs(
             session_id=raw.session_id,

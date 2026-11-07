@@ -17,11 +17,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Waveform
+from snore.database.waveform_blobs import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
+    deserialize_waveform_blob,
+)
 
 logger = logging.getLogger(__name__)
 
-# Blob layout: float32 (timestamp, value) pairs; see deserialize_waveform_blob.
-WAVEFORM_BLOB_BYTES_PER_SAMPLE = 2 * np.dtype(np.float32).itemsize
+__all__ = [
+    "WAVEFORM_BLOB_BYTES_PER_SAMPLE",
+    "WaveformLoader",
+    "apply_noise_filter",
+    "deserialize_waveform_blob",
+    "detect_and_mark_artifacts",
+    "fetch_waveform_blob",
+    "handle_discontinuities",
+    "handle_sample_rate_conversion",
+    "load_waveform_from_db",
+]
 
 
 class WaveformLoader:
@@ -113,64 +126,6 @@ class WaveformLoader:
             )
 
         return timestamps, values, metadata
-
-
-def deserialize_waveform_blob(
-    blob_data: bytes, sample_count: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Deserialize waveform blob data into timestamps and values arrays.
-
-    This reverses the serialization performed by serialize_waveform() in
-    database/importers.py. The blob format is:
-    - Float32 numpy array stored as raw bytes
-    - Shape: (sample_count, 2) where columns are [timestamp, value]
-
-    Args:
-        blob_data: Raw bytes from database BLOB column
-        sample_count: Number of samples (for validation and reshaping)
-
-    Returns:
-        Tuple of (timestamps, values) as 1D float32 numpy arrays
-
-    Raises:
-        ValueError: If blob data is invalid or corrupted
-
-    Example:
-        >>> timestamps, values = deserialize_waveform_blob(
-        ...     waveform_record.data_blob,
-        ...     waveform_record.sample_count
-        ... )
-    """
-    try:
-        expected_bytes = sample_count * WAVEFORM_BLOB_BYTES_PER_SAMPLE
-        if len(blob_data) != expected_bytes:
-            raise ValueError(
-                f"Blob size mismatch: expected {expected_bytes} bytes "
-                f"({sample_count} samples × {WAVEFORM_BLOB_BYTES_PER_SAMPLE} bytes), "
-                f"got {len(blob_data)}"
-            )
-
-        if sample_count == 0:
-            raise ValueError("Blob has no samples")
-
-        data = np.frombuffer(blob_data, dtype=np.float32).reshape((sample_count, 2))
-
-        timestamps = data[:, 0]  # Seconds from session start
-        values = data[:, 1]  # Signal values
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Deserialized {sample_count} samples: "
-                f"time range [{timestamps[0]:.2f}, {timestamps[-1]:.2f}]s, "
-                f"value range [{values.min():.2f}, {values.max():.2f}]"
-            )
-
-        return timestamps, values
-
-    except Exception as e:
-        logger.error(f"Failed to deserialize waveform blob: {e}")
-        raise ValueError(f"Invalid waveform blob data: {e}") from e
 
 
 async def fetch_waveform_blob(

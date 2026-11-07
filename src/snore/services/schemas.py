@@ -9,7 +9,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from snore.constants import AhiTrendDirection, TherapyEffectiveness
-from snore.metrics import COVERAGE_TOLERANCE_FRACTION, COVERAGE_TOLERANCE_HOURS
+from snore.metrics import (
+    COVERAGE_TOLERANCE_FRACTION,
+    COVERAGE_TOLERANCE_HOURS,
+    pooled_percentile_description,
+)
 from snore.provenance import IndexSource, Provenance, provenance_field
 
 __all__ = [
@@ -139,10 +143,14 @@ class PeriodStatistics(BaseModel):
         default=None,
     )
     avg_pressure: float | None = provenance_field(
-        Provenance.DERIVED, "Average pressure (cmH₂O)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted mean of the daily median pressure (cmH₂O)",
+        default=None,
     )
     avg_leak: float | None = provenance_field(
-        Provenance.DERIVED, "Average leak rate (L/min)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted mean of the daily median leak (L/min)",
+        default=None,
     )
 
     avg_spo2: float | None = provenance_field(
@@ -830,19 +838,23 @@ class TherapySummary(BaseModel):
         Provenance.DERIVED, "Average REI", default=None
     )
     avg_pressure: float | None = provenance_field(
-        Provenance.DERIVED, "Average pressure (cmH2O)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted mean of the daily median pressure (cmH2O)",
+        default=None,
     )
     min_pressure: float | None = provenance_field(
-        Provenance.DERIVED, "Minimum pressure (cmH2O)", default=None
+        Provenance.DERIVED, "Lowest daily median pressure (cmH2O)", default=None
     )
     max_pressure: float | None = provenance_field(
-        Provenance.DERIVED, "Maximum pressure (cmH2O)", default=None
+        Provenance.DERIVED, "Highest daily median pressure (cmH2O)", default=None
     )
     avg_epap: float | None = provenance_field(
         Provenance.DERIVED, "Average EPAP (cmH2O)", default=None
     )
     avg_leak: float | None = provenance_field(
-        Provenance.DERIVED, "Average leak (L/min)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted mean of the daily median leak (L/min)",
+        default=None,
     )
     avg_spo2: float | None = provenance_field(
         Provenance.DERIVED, "Average SpO2 (%)", default=None
@@ -1118,16 +1130,12 @@ class DayDetail(DayListItem):
     )
     avg_pressure: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median pressure over the night's pooled samples (cmH2O); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform",
+        pooled_percentile_description("Median", "pressure", "cmH2O"),
         default=None,
     )
     avg_leak: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median leak over the night's pooled samples (L/min); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform",
+        pooled_percentile_description("Median", "leak", "L/min"),
         default=None,
     )
     avg_spo2: float | None = provenance_field(
@@ -1142,16 +1150,12 @@ class DayDetail(DayListItem):
     )
     pressure_median: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median pressure over the night's pooled samples (cmH2O); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform",
+        pooled_percentile_description("Median", "pressure", "cmH2O"),
         default=None,
     )
     pressure_95th: float | None = provenance_field(
         Provenance.DERIVED,
-        "95th percentile pressure over the night's pooled samples (cmH2O); "
-        "a usage-weighted mean of session 95th percentiles when a session "
-        "has no stored waveform",
+        pooled_percentile_description("95th percentile", "pressure", "cmH2O"),
         default=None,
     )
     # EPAP detail
@@ -1163,9 +1167,7 @@ class DayDetail(DayListItem):
     )
     epap_median: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median EPAP over the night's pooled samples (cmH2O); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform",
+        pooled_percentile_description("Median", "EPAP", "cmH2O"),
         default=None,
     )
     epap_mean: float | None = provenance_field(
@@ -1173,9 +1175,7 @@ class DayDetail(DayListItem):
     )
     epap_95th: float | None = provenance_field(
         Provenance.DERIVED,
-        "95th percentile EPAP over the night's pooled samples (cmH2O); "
-        "a usage-weighted mean of session 95th percentiles when a session "
-        "has no stored waveform",
+        pooled_percentile_description("95th percentile", "EPAP", "cmH2O"),
         default=None,
     )
     # Leak detail
@@ -1190,9 +1190,7 @@ class DayDetail(DayListItem):
     )
     leak_95th: float | None = provenance_field(
         Provenance.DERIVED,
-        "95th percentile leak over the night's pooled samples (L/min); "
-        "a usage-weighted mean of session 95th percentiles when a session "
-        "has no stored waveform",
+        pooled_percentile_description("95th percentile", "leak", "L/min"),
         default=None,
     )
     # SpO2 detail
@@ -1306,7 +1304,9 @@ class RxPeriodResponse(BaseModel):
         Provenance.DERIVED, "Total therapy hours", default=0.0
     )
     avg_leak: float | None = provenance_field(
-        Provenance.DERIVED, "Usage-hours-weighted average leak (L/min)", default=None
+        Provenance.DERIVED,
+        "Usage-weighted mean of the daily median leak over the period (L/min)",
+        default=None,
     )
     device_id: int | None = None
     device_name: str | None = None

@@ -191,7 +191,7 @@ async def test_corrupt_blob_skips_that_channel_and_warns(
     await _make_channel_waveform(async_db_session, session, "snore", [2.0])
     await async_db_session.flush()
 
-    with caplog.at_level(logging.WARNING, logger="snore.services.channel_stats"):
+    with caplog.at_level(logging.WARNING):
         detail = await SessionService(async_db_session, profile_id).get_session_detail(
             session.id
         )
@@ -199,6 +199,7 @@ async def test_corrupt_blob_skips_that_channel_and_warns(
     assert detail.channel_stats.device_flg_max is None
     assert detail.channel_stats.snore_max == 2.0
     assert f"session {session.id}" in caplog.text
+    assert sum(r.levelno >= logging.WARNING for r in caplog.records) == 1
 
 
 async def test_empty_blob_is_skipped(
@@ -714,7 +715,7 @@ async def test_loader_fetches_blobs_in_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, device = profile_device
-    monkeypatch.setattr("snore.services.channel_stats._DECODE_BATCH_SESSIONS", 2)
+    monkeypatch.setattr("snore.database.waveform_blobs._DECODE_BATCH_SESSIONS", 2)
     session_ids = []
     for offset in range(5):
         _, session = await _make_day_session(

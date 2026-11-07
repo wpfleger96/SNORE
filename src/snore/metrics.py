@@ -14,6 +14,7 @@ genuine single-source wins: they are declared only here.
 from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 
 class DayAgg(StrEnum):
@@ -25,8 +26,19 @@ class DayAgg(StrEnum):
     USAGE_WEIGHTED_MEAN = "usage_weighted_mean"
     # Percentile of the day's pooled waveform samples, falling back to a
     # usage-weighted mean of the session values when a contributing session
-    # has no usable waveform.
+    # has no usable stored waveform.
     POOLED_PERCENTILE = "pooled_percentile"
+
+
+def pooled_percentile_description(
+    stat: Literal["Median", "95th percentile"], channel: str, unit: str
+) -> str:
+    """Field description for a ``DayAgg.POOLED_PERCENTILE`` day-level value."""
+    return (
+        f"{stat} {channel} over the night's pooled samples ({unit}); "
+        f"a usage-weighted mean of session {stat.lower()}s when a session has "
+        "no usable stored waveform"
+    )
 
 
 @dataclass(frozen=True)

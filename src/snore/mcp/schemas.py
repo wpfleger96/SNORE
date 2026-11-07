@@ -34,6 +34,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from snore.metrics import pooled_percentile_description
 from snore.provenance import IndexSource, Provenance, provenance_field
 from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
@@ -309,38 +310,28 @@ class NightlyRow(NightlyChannelFields):
 
     pressure_median_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median pressure over the night's pooled samples (cmH₂O); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform.",
+        pooled_percentile_description("Median", "pressure", "cmH₂O"),
         default=None,
     )
     pressure_95th_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
-        "95th percentile pressure over the night's pooled samples (cmH₂O); "
-        "a usage-weighted mean of session 95th percentiles when a session "
-        "has no stored waveform.",
+        pooled_percentile_description("95th percentile", "pressure", "cmH₂O"),
         default=None,
     )
     epap_median_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median EPAP over the night's pooled samples (cmH₂O); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform.",
+        pooled_percentile_description("Median", "EPAP", "cmH₂O"),
         default=None,
     )
 
     leak_median_lpm: float | None = provenance_field(
         Provenance.DERIVED,
-        "Median leak over the night's pooled samples (L/min); "
-        "a usage-weighted mean of session medians when a session has no "
-        "stored waveform.",
+        pooled_percentile_description("Median", "leak", "L/min"),
         default=None,
     )
     leak_95th_lpm: float | None = provenance_field(
         Provenance.DERIVED,
-        "95th percentile leak over the night's pooled samples (L/min); "
-        "a usage-weighted mean of session 95th percentiles when a session "
-        "has no stored waveform.",
+        pooled_percentile_description("95th percentile", "leak", "L/min"),
         default=None,
     )
     rr_mean_bpm: float | None = provenance_field(

@@ -79,6 +79,15 @@ class WaveformType(Enum):
     )
 
 
+# Waveform channels behind each session pressure/EPAP/leak statistic, most
+# preferred first.  A session uses the first channel it has, even an empty one.
+SUMMARY_CHANNELS: dict[str, tuple[WaveformType, ...]] = {
+    "pressure": (WaveformType.THERAPY_PRESSURE, WaveformType.MASK_PRESSURE),
+    "epap": (WaveformType.EPAP,),
+    "leak": (WaveformType.LEAK_RATE,),
+}
+
+
 class TherapyMode(Enum):
     """Universal therapy mode types."""
 
@@ -634,33 +643,17 @@ class UnifiedSession(BaseModel):
             # Explicitly empty segments: known-zero mask-on time; rates undefined.
             self.statistics.usage_hours = 0.0
 
-        therapy_wf = self.waveforms.get(WaveformType.THERAPY_PRESSURE)
-        if therapy_wf is None:
-            therapy_wf = self.waveforms.get(WaveformType.MASK_PRESSURE)
-        if therapy_wf and therapy_wf.values is not None and len(therapy_wf.values) > 0:
-            data = therapy_wf.values
-            self.statistics.pressure_min = therapy_wf.min_value
-            self.statistics.pressure_max = therapy_wf.max_value
-            self.statistics.pressure_mean = therapy_wf.mean_value
-            self.statistics.pressure_median = float(np.median(data))
-            self.statistics.pressure_95th = float(np.percentile(data, 95))
-
-        epap_wf = self.waveforms.get(WaveformType.EPAP)
-        if epap_wf and epap_wf.values is not None and len(epap_wf.values) > 0:
-            data = epap_wf.values
-            self.statistics.epap_min = epap_wf.min_value
-            self.statistics.epap_max = epap_wf.max_value
-            self.statistics.epap_mean = epap_wf.mean_value
-            self.statistics.epap_median = float(np.median(data))
-            self.statistics.epap_95th = float(np.percentile(data, 95))
-
-        leak_wf = self.waveforms.get(WaveformType.LEAK_RATE)
-        if leak_wf and leak_wf.values is not None and len(leak_wf.values) > 0:
-            data = leak_wf.values
-            self.statistics.leak_min = leak_wf.min_value
-            self.statistics.leak_max = leak_wf.max_value
-            self.statistics.leak_mean = leak_wf.mean_value
-            self.statistics.leak_median = float(np.median(data))
-            self.statistics.leak_95th = float(np.percentile(data, 95))
+        for prefix, channels in SUMMARY_CHANNELS.items():
+            waveform = next(
+                (self.waveforms[c] for c in channels if c in self.waveforms), None
+            )
+            if waveform is None or waveform.values is None or not len(waveform.values):
+                continue
+            data = waveform.values
+            setattr(self.statistics, f"{prefix}_min", waveform.min_value)
+            setattr(self.statistics, f"{prefix}_max", waveform.max_value)
+            setattr(self.statistics, f"{prefix}_mean", waveform.mean_value)
+            setattr(self.statistics, f"{prefix}_median", float(np.median(data)))
+            setattr(self.statistics, f"{prefix}_95th", float(np.percentile(data, 95)))
 
         self.has_statistics = True

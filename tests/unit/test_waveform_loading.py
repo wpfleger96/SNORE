@@ -51,9 +51,7 @@ class TestWaveformDeserialization:
         """The debug message survives being skipped when debug logging is off."""
         blob = np.array([[0.0, 10.0], [1.0, 20.0]], dtype=np.float32).tobytes()
 
-        with caplog.at_level(
-            logging.DEBUG, logger="snore.analysis.data.waveform_loader"
-        ):
+        with caplog.at_level(logging.DEBUG, logger="snore.database.waveform_blobs"):
             deserialize_waveform_blob(blob, sample_count=2)
 
         assert "value range [10.00, 20.00]" in caplog.text

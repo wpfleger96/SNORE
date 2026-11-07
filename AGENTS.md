@@ -330,6 +330,12 @@ The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_b
 also reduce each session to a histogram and read percentiles from the pooled histogram
 (`pool_histograms` returns a `PooledHistogram`, read with `value_at_rank`, `pooled_distribution`
 and `pooled_share_above`). Never pass a reducer that keeps the samples as Python lists.
+Day-level pressure, EPAP and leak median and 95th (`DayAgg.POOLED_PERCENTILE` in `metrics.py`) are a
+second, deliberately different pooled path: `DayManager.aggregate_day_statistics` computes them at
+write time with linear `np.percentile` over the day's raw waveform samples, the same method as
+session-level `finalize_statistics`, so a one-session day equals its session value; do not move
+them onto nearest-rank histograms. When a contributing session has no usable stored waveform, the
+day falls back to a usage-weighted mean of the session values.
 `tests/integration/test_device_channel_stats.py` pins these values equal. The nightly summary decodes
 only the nights on the requested page, while compliance still covers the whole range. Each
 `compare_epochs` call decodes the union of its epochs' sessions once. Both epoch tools cap an epoch
