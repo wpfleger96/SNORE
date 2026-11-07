@@ -126,7 +126,7 @@ def create_machine_events_table(
 
 
 def create_mode_comparison_table(
-    mode_results: dict[str, Any], plain: bool = False
+    mode_results: dict[str, ModeResult], plain: bool = False
 ) -> Table:
     title = mark_provenance("MODE COMPARISON", Provenance.EXPERIMENTAL)
     table = Table(
@@ -154,7 +154,7 @@ def create_mode_comparison_table(
         str(mode_results[mode].apnea_count + mode_results[mode].hypopnea_count)
         for mode in mode_results
     ]
-    table.add_row("Total Events", *total_events)
+    table.add_row(mark_field("Total Events", ModeResult, "apnea_count"), *total_events)
 
     table.add_section()
 
@@ -302,8 +302,12 @@ def create_flow_limitation_panel(
     )
     table.add_column("Class", justify="center", style="cyan")
     table.add_column("Name")
-    table.add_column("Count", justify="right")
-    table.add_column("%", justify="right")
+    table.add_column(
+        mark_field("Count", SessionFlowAnalysis, "class_distribution"), justify="right"
+    )
+    table.add_column(
+        mark_field("%", SessionFlowAnalysis, "class_distribution"), justify="right"
+    )
     table.add_column("Severity")
 
     class_distribution = flow_analysis.class_distribution

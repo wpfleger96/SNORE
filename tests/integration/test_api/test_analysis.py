@@ -66,6 +66,78 @@ class TestAnalysisSessionsRouter:
         response = api_client.get(f"/api/v1/sessions/{session.id}/analysis")
         assert response.status_code == 404
 
+    def test_get_analysis_pre_count_payload_returns_derived_counts(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        from snore.database.models import AnalysisResult
+
+        session = test_session_factory(
+            test_device.id, start_time=datetime(2025, 1, 10, 22, 0)
+        )
+
+        def apnea(start: float) -> dict[str, object]:
+            return {
+                "start_time": start,
+                "end_time": start + 12.0,
+                "duration": 12.0,
+                "event_type": "OA",
+                "flow_reduction": 0.95,
+                "confidence": 0.9,
+                "baseline_flow": 30.0,
+            }
+
+        # Stored before the count fields existed: no count keys, no ``reras``,
+        # a stale ``apnea_count``, and JSON's string keys in class_distribution.
+        db_session.add(
+            AnalysisResult(
+                session_id=session.id,
+                timestamp_start=datetime(2025, 1, 10, 22, 0),
+                timestamp_end=datetime(2025, 1, 11, 6, 0),
+                programmatic_result_json={
+                    "session_id": session.id,
+                    "session_duration_hours": 8.0,
+                    "total_breaths": 10,
+                    "machine_events": [],
+                    "mode_results": {
+                        "aasm": {
+                            "mode_name": "aasm",
+                            "apneas": [apnea(100.0), apnea(400.0)],
+                            "hypopneas": [],
+                            "ahi": 0.25,
+                            "rdi": 0.25,
+                            "apnea_count": 99,
+                        }
+                    },
+                    "flow_analysis": {
+                        "total_breaths": 10,
+                        "class_distribution": {"1": 7, "4": 3},
+                        "flow_limitation_index": 0.3,
+                        "average_confidence": 0.8,
+                        "patterns": [],
+                    },
+                },
+            )
+        )
+        db_session.flush()
+
+        response = api_client.get(f"/api/v1/sessions/{session.id}/analysis")
+
+        assert response.status_code == 200
+        data = response.json()
+        aasm = data["mode_results"]["aasm"]
+        assert (aasm["apnea_count"], aasm["hypopnea_count"], aasm["rera_count"]) == (
+            2,
+            0,
+            0,
+        )
+        assert data["flow_analysis"] == {
+            "total_breaths": 10,
+            "class_distribution": {"1": 7, "4": 3},
+            "flow_limitation_index": 0.3,
+            "average_confidence": 0.8,
+            "patterns": [],
+        }
+
     def test_delete_analysis_empty(self, api_client):
         # Use request() since TestClient.delete() doesn't support body
         response = api_client.request(

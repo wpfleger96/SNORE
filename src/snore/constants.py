@@ -290,6 +290,11 @@ class PulseChangeConstants:
 # ============================================================================
 
 
+type FlowSeverity = Literal[
+    "normal", "mild", "mild-moderate", "moderate", "moderate-severe", "severe"
+]
+
+
 class FlowLimitationClassInfo(TypedDict):
     """Type definition for flow limitation class information."""
 
@@ -297,7 +302,7 @@ class FlowLimitationClassInfo(TypedDict):
     description: str
     visual_characteristics: str
     clinical_significance: str
-    severity: str
+    severity: FlowSeverity
     weight: float
 
 

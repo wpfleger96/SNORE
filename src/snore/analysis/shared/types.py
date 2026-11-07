@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from snore.constants import ApneaEventType
+from snore.constants import ApneaEventType, FlowSeverity
 from snore.provenance import Provenance, provenance_field
 
 
@@ -292,8 +292,12 @@ class FlowPattern(BaseModel):
     confidence: float = provenance_field(
         Provenance.EXPERIMENTAL, "Classification confidence", ge=0, le=1
     )
-    matched_features: dict[str, Any] = Field(description="Supporting features")
-    severity: str = Field(description="Clinical severity level")
+    matched_features: dict[str, Any] = provenance_field(
+        Provenance.EXPERIMENTAL, "Supporting features"
+    )
+    severity: FlowSeverity = provenance_field(
+        Provenance.EXPERIMENTAL, "Clinical severity level"
+    )
 
 
 class SessionFlowAnalysis(BaseModel):

@@ -190,7 +190,7 @@ class TestDefaultToolGate:
         block = response_provenance(model)
 
         assert not block.get("experimental")
-        assert not _has_experimental_tag(model.model_json_schema())
+        assert not _has_experimental_tag(model.model_json_schema(mode="serialization"))
         assert set(block.get("source_dependent", {}).values()) <= {
             "nights[].index_source"
         }

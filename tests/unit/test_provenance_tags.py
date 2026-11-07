@@ -529,6 +529,12 @@ def test_response_provenance_returns_independent_copies() -> None:
     assert response_provenance(_Tree)["experimental"] == ["by_name{}.value"]
 
 
+def test_response_provenance_lists_computed_fields() -> None:
+    experimental = response_provenance(ModeResult)["experimental"]
+
+    assert {"apnea_count", "hypopnea_count", "rera_count"} <= set(experimental)
+
+
 def test_weakest_picks_least_certain_tier() -> None:
     assert _weakest(Provenance.DEVICE, Provenance.EXPERIMENTAL) == (
         Provenance.EXPERIMENTAL

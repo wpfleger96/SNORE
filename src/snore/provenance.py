@@ -178,7 +178,7 @@ _Object = tuple[dict[str, Any], str, frozenset[str]]
 def _provenance_paths(
     model: type[BaseModel],
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[tuple[str, str], ...]]:
-    schema = model.model_json_schema()
+    schema = model.model_json_schema(mode="serialization")
     defs: dict[str, Any] = schema.get("$defs", {})
     paths: dict[Provenance, list[str]] = {p: [] for p in Provenance}
     source_dependent: list[tuple[str, str]] = []

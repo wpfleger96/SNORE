@@ -3791,17 +3791,17 @@ export interface components {
             flow_class: number
             /**
              * Matched Features
-             * @description Supporting features
+             * @description [EXPERIMENTAL] Supporting features
              */
             matched_features: {
                 [key: string]: unknown
             }
-            /**
-             * Severity
-             * @description Clinical severity level
-             */
-            severity: string
+            /** @description [EXPERIMENTAL] Clinical severity level */
+            severity: components['schemas']['FlowSeverity']
         }
+        /** @enum {string} */
+        FlowSeverity:
+            'normal' | 'mild' | 'mild-moderate' | 'moderate' | 'moderate-severe' | 'severe'
         /** GoogleBindingItem */
         GoogleBindingItem: {
             /** Display Name */

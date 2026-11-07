@@ -336,6 +336,7 @@ class TestAnalysisProvenanceLegend:
         assert "RDI*" in output
         assert "Apneas*" in output
         assert "Hypopneas*" in output
+        assert "Total Events*" in output
 
     def test_flow_limitation_panel_marks_labels_and_counts_classes(self):
         flow = SessionFlowAnalysis(
@@ -350,5 +351,7 @@ class TestAnalysisProvenanceLegend:
 
         assert "Flow Limitation Index*: 0.30" in panel_out
         assert "Total Breaths*: 10" in panel_out
+        assert "Count*" in table_out
+        assert "%*" in table_out
         assert "70.0%" in table_out
         assert "30.0%" in table_out
