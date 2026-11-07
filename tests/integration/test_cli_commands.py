@@ -11,6 +11,7 @@ These tests verify the command-line interface functionality including:
 import asyncio
 import re
 import sys
+import zipfile
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,7 @@ from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
 from snore.provenance import PROVENANCE_NOTES, Provenance
+from tests.helpers.str_edf import read_str_header, write_synthetic_str_edf
 from tests.helpers.terminal_charts import has_drawn_braille
 from tests.integration.conftest import _make_channel_waveform
 
@@ -2295,3 +2297,61 @@ class TestDbCleanupOrphansCommand:
         db_session.expire_all()
         events_after = db_session.execute(text("SELECT COUNT(*) FROM events")).scalar()
         assert events_after == 1
+
+
+class TestExportRawCommand:
+    """Test export raw command against a synthetic on-disk backup."""
+
+    @pytest.fixture
+    async def raw_backup(self, temp_db, tmp_path, monkeypatch):
+        """Profile DB plus a ResMed backup with a 30-day STR.edf from 2025-08-01."""
+        await init_database(str(temp_db))
+        async with session_scope() as sess:
+            profile_id = (await _create_test_user_and_profile(sess)).id
+
+        raw_root = tmp_path / "raw"
+        monkeypatch.setattr(
+            "snore.services.export_service.DEFAULT_RAW_BACKUP_DIR", raw_root
+        )
+        device = raw_root / str(profile_id) / "SN12345"
+        for night in ("20250805", "20250809", "20250812"):
+            folder = device / "DATALOG" / night
+            folder.mkdir(parents=True)
+            (folder / f"{night}_230000_BRP.edf").write_bytes(b"brp")
+        write_synthetic_str_edf(device / "STR.edf", "01.08.25", num_records=30)
+        (device / "Identification.json").write_text('{"serial": "SN12345"}')
+        return temp_db
+
+    @pytest.mark.parametrize(
+        ("output_name", "extra_args"),
+        [("x.zip", []), ("x", ["--zip"])],
+        ids=["zip-extension", "zip-flag"],
+    )
+    def test_trim_str_with_zip_output_trims_zipped_str(
+        self, cli_runner, raw_backup, tmp_path, output_name, extra_args
+    ):
+        out = tmp_path / output_name
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "export",
+                "raw",
+                "--db",
+                str(raw_backup),
+                "--from",
+                "2025-08-09",
+                "--to",
+                "2025-08-10",
+                "--trim-str",
+                "-o",
+                str(out),
+                *extra_args,
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        with zipfile.ZipFile(out) as zf:
+            assert read_str_header(zf.read("STR.edf")) == ("09.08.25", 2)
+            nights = {n for n in zf.namelist() if n.startswith("DATALOG/")}
+        assert nights == {"DATALOG/20250809/20250809_230000_BRP.edf"}
