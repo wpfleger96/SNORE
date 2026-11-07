@@ -7,7 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.constants import EventDetectionConstants as EDC
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import (
+    Provenance,
+    provenance_computed_field,
+    provenance_field,
+)
 
 
 class BaselineMethod(StrEnum):
@@ -164,3 +168,18 @@ class ModeResult(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Mode-specific debug info"
     )
+
+    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected apnea count")  # type: ignore[prop-decorator]
+    @property
+    def apnea_count(self) -> int:
+        return len(self.apneas)
+
+    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected hypopnea count")  # type: ignore[prop-decorator]
+    @property
+    def hypopnea_count(self) -> int:
+        return len(self.hypopneas)
+
+    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected RERA count")  # type: ignore[prop-decorator]
+    @property
+    def rera_count(self) -> int:
+        return len(self.reras)

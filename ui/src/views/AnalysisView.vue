@@ -612,14 +612,7 @@ import { usePagedRows } from '@/composables/usePagedRows'
 import { formatDuration, formatTimeOffset } from '@/utils/formatting'
 import { EVENT_COLORS } from '@/types'
 import { FLOW_LIMITATION_CLASSES } from '@/utils/flowLimitation'
-import type { AnalysisResult, EventComparisonResult } from '@/types'
-
-interface FlowAnalysis {
-    total_breaths: number
-    class_distribution: Record<string, number>
-    flow_limitation_index: number
-    average_confidence: number
-}
+import type { AnalysisResult, EventComparisonResult, SessionFlowAnalysis } from '@/types'
 
 const { canWrite } = useAuth()
 const { isMobile } = useIsMobile()
@@ -701,9 +694,9 @@ const modeRows = computed<ModeRow[]>(() => {
         mode: name,
         ahi: r.ahi,
         rdi: r.rdi,
-        apneas: r.apneas.length,
-        hypopneas: r.hypopneas.length,
-        reras: r.reras?.length ?? 0,
+        apneas: r.apnea_count,
+        hypopneas: r.hypopnea_count,
+        reras: r.rera_count,
     }))
 })
 
@@ -764,10 +757,9 @@ interface FlDistRow {
     pct: number
 }
 
-const flowAnalysis = computed<FlowAnalysis | null>(() => {
-    const fa = analysis.value?.flow_analysis as FlowAnalysis | null | undefined
-    return fa ?? null
-})
+const flowAnalysis = computed<SessionFlowAnalysis | null>(
+    () => analysis.value?.flow_analysis ?? null,
+)
 
 const flDistributionRows = computed<FlDistRow[]>(() => {
     const fa = flowAnalysis.value

@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from snore.analysis.modes.types import ModeResult
+from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import console, mark_field, mark_provenance, print_kv
 from snore.constants import FLOW_LIMITATION_CLASSES
@@ -150,15 +151,15 @@ def create_mode_comparison_table(
     table.add_row(mark_field("RDI", ModeResult, "rdi"), *rdi_values)
 
     total_events = [
-        str(len(mode_results[mode].apneas) + len(mode_results[mode].hypopneas))
+        str(mode_results[mode].apnea_count + mode_results[mode].hypopnea_count)
         for mode in mode_results
     ]
     table.add_row("Total Events", *total_events)
 
     table.add_section()
 
-    apnea_counts = [str(len(mode_results[mode].apneas)) for mode in mode_results]
-    table.add_row("Apneas", *apnea_counts)
+    apnea_counts = [str(mode_results[mode].apnea_count) for mode in mode_results]
+    table.add_row(mark_field("Apneas", ModeResult, "apnea_count"), *apnea_counts)
 
     for apnea_type in ["OA", "CA", "MA", "UA"]:
         type_counts = []
@@ -173,8 +174,10 @@ def create_mode_comparison_table(
         if has_any:
             table.add_row(f"  └─ {apnea_type}", *type_counts, style="dim")
 
-    hypopnea_counts = [str(len(mode_results[mode].hypopneas)) for mode in mode_results]
-    table.add_row("Hypopneas", *hypopnea_counts)
+    hypopnea_counts = [str(mode_results[mode].hypopnea_count) for mode in mode_results]
+    table.add_row(
+        mark_field("Hypopneas", ModeResult, "hypopnea_count"), *hypopnea_counts
+    )
 
     return table
 
@@ -270,14 +273,18 @@ def format_event_list(
 
 
 def create_flow_limitation_panel(
-    flow_analysis: dict[str, Any], plain: bool = False
+    flow_analysis: SessionFlowAnalysis, plain: bool = False
 ) -> tuple[Panel, Table]:
-    fli = flow_analysis["flow_limitation_index"]
-    total_breaths = flow_analysis["total_breaths"]
+    fli = flow_analysis.flow_limitation_index
+    total_breaths = flow_analysis.total_breaths
+    fli_label = mark_field(
+        "Flow Limitation Index", SessionFlowAnalysis, "flow_limitation_index"
+    )
+    breaths_label = mark_field("Total Breaths", SessionFlowAnalysis, "total_breaths")
 
     content = Text()
-    content.append(f"Flow Limitation Index: {fli:.2f}       ", style="bold")
-    content.append(f"Total Breaths: {total_breaths:,}", style="bold")
+    content.append(f"{fli_label}: {fli:.2f}       ", style="bold")
+    content.append(f"{breaths_label}: {total_breaths:,}", style="bold")
 
     title = mark_provenance("FLOW LIMITATION ANALYSIS", Provenance.EXPERIMENTAL)
     panel = Panel(
@@ -299,13 +306,11 @@ def create_flow_limitation_panel(
     table.add_column("%", justify="right")
     table.add_column("Severity")
 
-    class_distribution = flow_analysis["class_distribution"]
+    class_distribution = flow_analysis.class_distribution
 
     for class_num in range(1, 8):
         class_info = FLOW_LIMITATION_CLASSES[class_num]
-        count = class_distribution.get(class_num, 0) or class_distribution.get(
-            str(class_num), 0
-        )
+        count = class_distribution.get(class_num, 0)
         percentage = (count / total_breaths * 100) if total_breaths > 0 else 0.0
 
         severity = class_info["severity"]

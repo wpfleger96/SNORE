@@ -18,6 +18,7 @@ import pytest
 
 from pydantic import BaseModel
 
+from snore.analysis.modes.types import ModeResult
 from snore.api.app import create_app
 from snore.api.schemas import WaveformDataResponse
 from snore.mcp.schemas import SCHEMA_MODEL_MAP
@@ -540,6 +541,11 @@ def test_field_description_strips_tier_prefix() -> None:
         f"{description_prefix(Provenance.DERIVED)}Value."
     )
     assert field_description(_Leaf, "value") == "Value."
+
+
+def test_computed_field_tier_and_description_resolve() -> None:
+    assert field_provenance(ModeResult, "apnea_count") is Provenance.EXPERIMENTAL
+    assert field_description(ModeResult, "apnea_count") == "Detected apnea count"
 
 
 @pytest.mark.parametrize(

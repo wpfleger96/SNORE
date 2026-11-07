@@ -26,7 +26,8 @@ to the device's summary value; ``respiratory_rate_mean/max`` and tidal volume /
 minute ventilation mean/max prefer the device STR value (Device) and fall back
 to the OSCAR session summary.
 
-Response fields declare their tier with :func:`provenance_field`, which both
+Response fields declare their tier with :func:`provenance_field` (computed
+fields with :func:`provenance_computed_field`), which both
 prefixes the description (visible to LLMs and in generated TS JSDoc) and adds a
 machine-readable ``x-provenance`` JSON-schema key (``docs://schemas``, OpenAPI).
 Presentation layers read a field's tier back with :func:`field_provenance` (and
@@ -34,11 +35,13 @@ the untagged description with :func:`field_description`), and
 :func:`response_provenance` lists a whole response model's non-device paths.
 """
 
+from collections.abc import Callable
 from enum import StrEnum
 from functools import cache
 from typing import Any, NotRequired, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+from pydantic.fields import ComputedFieldInfo, FieldInfo
 
 
 class Provenance(StrEnum):
@@ -109,9 +112,26 @@ def provenance_field(
     )
 
 
+def provenance_computed_field[T](
+    provenance: Provenance, description: str
+) -> Callable[[T], T]:
+    """Pydantic ``computed_field`` decorator tagged like :func:`provenance_field`."""
+    return computed_field(
+        description=f"{description_prefix(provenance)}{description}",
+        json_schema_extra={"x-provenance": provenance.value},
+    )
+
+
+def _field_info(model: type[BaseModel], name: str) -> FieldInfo | ComputedFieldInfo:
+    """A stored or computed field's info (raises ``KeyError`` if neither)."""
+    if name in model.model_computed_fields:
+        return model.model_computed_fields[name]
+    return model.model_fields[name]
+
+
 def field_provenance(model: type[BaseModel], name: str) -> Provenance:
     """Declared tier of ``model.name`` (raises ``KeyError`` if untagged)."""
-    extra = model.model_fields[name].json_schema_extra
+    extra = _field_info(model, name).json_schema_extra
     if not isinstance(extra, dict) or "x-provenance" not in extra:
         raise KeyError(f"{model.__name__}.{name} has no provenance tag")
     return Provenance(str(extra["x-provenance"]))
@@ -119,7 +139,7 @@ def field_provenance(model: type[BaseModel], name: str) -> Provenance:
 
 def field_description(model: type[BaseModel], name: str) -> str:
     """Description of ``model.name`` without its ``[TIER] `` prefix."""
-    description = model.model_fields[name].description or ""
+    description = _field_info(model, name).description or ""
     for tier in Provenance:
         description = description.removeprefix(description_prefix(tier))
     return description

@@ -79,6 +79,7 @@ export type ModeResult = Schemas['ModeResult']
 export type ApneaEvent = Schemas['ApneaEvent']
 export type HypopneaEvent = Schemas['HypopneaEvent']
 export type RERAEvent = Schemas['RERAEvent']
+export type SessionFlowAnalysis = Schemas['SessionFlowAnalysis']
 
 // Apple Health
 export type HealthNightSummaryRead = Schemas['HealthNightSummaryRead']

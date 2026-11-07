@@ -2225,13 +2225,8 @@ export interface components {
                       [key: string]: unknown
                   }[]
                 | null
-            /**
-             * Flow Analysis
-             * @description Flow limitation analysis
-             */
-            flow_analysis?: {
-                [key: string]: unknown
-            } | null
+            /** @description Flow limitation analysis */
+            flow_analysis?: components['schemas']['SessionFlowAnalysis'] | null
             /**
              * Machine Ahi
              * @description [DERIVED] Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, not the device-reported AHI (None if no events)
@@ -3761,6 +3756,52 @@ export interface components {
              */
             to_date: string
         }
+        /**
+         * FlowPattern
+         * @description Classification result for a single breath.
+         *
+         *     Attributes:
+         *         breath_number: Sequential breath number
+         *         flow_class: Class number (1-7)
+         *         class_name: Human-readable class name
+         *         confidence: Confidence score (0-1)
+         *         matched_features: Features that supported this classification
+         *         severity: Clinical severity level
+         */
+        FlowPattern: {
+            /**
+             * Breath Number
+             * @description Sequential breath number
+             */
+            breath_number: number
+            /**
+             * Class Name
+             * @description Human-readable class name
+             */
+            class_name: string
+            /**
+             * Confidence
+             * @description [EXPERIMENTAL] Classification confidence
+             */
+            confidence: number
+            /**
+             * Flow Class
+             * @description [EXPERIMENTAL] Flow limitation class (1-7)
+             */
+            flow_class: number
+            /**
+             * Matched Features
+             * @description Supporting features
+             */
+            matched_features: {
+                [key: string]: unknown
+            }
+            /**
+             * Severity
+             * @description Clinical severity level
+             */
+            severity: string
+        }
         /** GoogleBindingItem */
         GoogleBindingItem: {
             /** Display Name */
@@ -4366,10 +4407,20 @@ export interface components {
              */
             ahi: number
             /**
+             * Apnea Count
+             * @description [EXPERIMENTAL] Detected apnea count
+             */
+            readonly apnea_count: number
+            /**
              * Apneas
              * @description Detected apnea events
              */
             apneas: components['schemas']['ApneaEvent'][]
+            /**
+             * Hypopnea Count
+             * @description [EXPERIMENTAL] Detected hypopnea count
+             */
+            readonly hypopnea_count: number
             /**
              * Hypopneas
              * @description Detected hypopnea events
@@ -4392,6 +4443,11 @@ export interface components {
              * @description [EXPERIMENTAL] Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come from the analysis-time amplitude-crescendo detector (detector.py::_detect_reras). This is a DIFFERENT RERA definition from the nightly rdi in NightlyAnalysisSummary, which uses the query-time FL-run proxy over stored breath rows; the two indices disagree by construction.
              */
             rdi: number
+            /**
+             * Rera Count
+             * @description [EXPERIMENTAL] Detected RERA count
+             */
+            readonly rera_count: number
             /**
              * Reras
              * @description Detected RERA events
@@ -5400,6 +5456,46 @@ export interface components {
         SessionEnabledRequest: {
             /** Enabled */
             enabled: boolean
+        }
+        /**
+         * SessionFlowAnalysis
+         * @description Flow limitation analysis for an entire session.
+         *
+         *     Attributes:
+         *         total_breaths: Total number of breaths analyzed
+         *         class_distribution: Count of breaths in each class
+         *         flow_limitation_index: Overall FL index (0-1)
+         *         average_confidence: Mean confidence across all classifications
+         *         patterns: Individual breath classifications
+         */
+        SessionFlowAnalysis: {
+            /**
+             * Average Confidence
+             * @description [EXPERIMENTAL] Mean confidence
+             */
+            average_confidence: number
+            /**
+             * Class Distribution
+             * @description [EXPERIMENTAL] Breaths per class
+             */
+            class_distribution: {
+                [key: string]: number
+            }
+            /**
+             * Flow Limitation Index
+             * @description [EXPERIMENTAL] Overall FL index
+             */
+            flow_limitation_index: number
+            /**
+             * Patterns
+             * @description Individual breath classifications
+             */
+            patterns: components['schemas']['FlowPattern'][]
+            /**
+             * Total Breaths
+             * @description [EXPERIMENTAL] Total breaths analyzed
+             */
+            total_breaths: number
         }
         /**
          * SessionListItem

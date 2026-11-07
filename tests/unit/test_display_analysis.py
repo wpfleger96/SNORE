@@ -1,5 +1,6 @@
 """Unit tests for cli/display/analysis rendering helpers."""
 
+import json
 import re
 
 from io import StringIO
@@ -11,10 +12,16 @@ import pytest
 from rich.console import Console, RenderableType
 
 from snore.analysis.modes.types import ModeResult
-from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
+from snore.analysis.shared.types import (
+    ApneaEvent,
+    HypopneaEvent,
+    RERAEvent,
+    SessionFlowAnalysis,
+)
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import provenance_legend
 from snore.cli.display.analysis import (
+    create_flow_limitation_panel,
     create_header_panel,
     create_machine_events_table,
     create_mode_comparison_table,
@@ -160,6 +167,43 @@ class TestAnalysisResultFromStoredJson:
         assert result.machine_ahi == pytest.approx(42.0)
         assert result.model_dump()["machine_rdi"] == pytest.approx(42.0)
 
+    def test_mode_counts_survive_json_round_trip(self):
+        mode = ModeResult(
+            mode_name="aasm",
+            apneas=[_apnea(0.0), _apnea(60.0)],
+            hypopneas=[_hypopnea(120.0)],
+            reras=[_rera(180.0)],
+            ahi=1.0,
+            rdi=1.5,
+        )
+        payload = self._stored([])
+        payload["mode_results"] = {"aasm": mode.model_dump()}
+
+        stored = json.loads(json.dumps(payload))
+        reloaded = AnalysisResult.from_stored_json(stored).mode_results["aasm"]
+
+        assert stored["mode_results"]["aasm"]["apnea_count"] == 2
+        assert (reloaded.apnea_count, reloaded.hypopnea_count, reloaded.rera_count) == (
+            2,
+            1,
+            1,
+        )
+
+    def test_string_keyed_class_distribution_loads(self):
+        payload = self._stored([])
+        payload["flow_analysis"] = {
+            "total_breaths": 10,
+            "class_distribution": {"1": 7, "4": 3},
+            "flow_limitation_index": 0.3,
+            "average_confidence": 0.8,
+            "patterns": [],
+        }
+
+        result = AnalysisResult.from_stored_json(payload)
+
+        assert result.flow_analysis is not None
+        assert result.flow_analysis.class_distribution == {1: 7, 4: 3}
+
 
 class TestFormatEventList:
     def test_rera_event_renders_re_label(self):
@@ -290,3 +334,21 @@ class TestAnalysisProvenanceLegend:
         output = _render(create_mode_comparison_table({"aasm": mode}))
         assert "AHI*" in output
         assert "RDI*" in output
+        assert "Apneas*" in output
+        assert "Hypopneas*" in output
+
+    def test_flow_limitation_panel_marks_labels_and_counts_classes(self):
+        flow = SessionFlowAnalysis(
+            total_breaths=10,
+            class_distribution={1: 7, 4: 3},
+            flow_limitation_index=0.3,
+            average_confidence=0.8,
+            patterns=[],
+        )
+        panel, table = create_flow_limitation_panel(flow)
+        panel_out, table_out = _render(panel), _render(table)
+
+        assert "Flow Limitation Index*: 0.30" in panel_out
+        assert "Total Breaths*: 10" in panel_out
+        assert "70.0%" in table_out
+        assert "30.0%" in table_out

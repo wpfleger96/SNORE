@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from snore.analysis.modes.types import ModeResult
+from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.constants import AHI_EVENT_TYPES
 from snore.provenance import Provenance, provenance_field
 
@@ -86,7 +87,7 @@ class AnalysisResult(BaseModel):
         deprecated="machine_rdi mirrors machine_ahi; read machine_ahi instead",
     )
     mode_results: dict[str, ModeResult] = Field(description="Results by detection mode")
-    flow_analysis: dict[str, Any] | None = Field(
+    flow_analysis: SessionFlowAnalysis | None = Field(
         default=None, description="Flow limitation analysis"
     )
     csr_detection: dict[str, Any] | None = Field(
