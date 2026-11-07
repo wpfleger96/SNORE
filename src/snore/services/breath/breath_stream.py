@@ -36,7 +36,10 @@ _BREATH_FETCH_ROWS = 512
 async def _fetch_breath_block(
     result: AsyncResult[*tuple[object, ...]],
 ) -> np.ndarray | None:
-    """The next fetched rows as a ``(columns, n)`` float block.
+    """The next fetched rows as a ``(1 + len(columns), n)`` float block.
+
+    Row 0 is the run id (an autoincrement id, exact in float64) and rows 1..
+    the columns.
 
     None once the result is exhausted.  A null becomes NaN (SQLite stores NaN
     as NULL, so NaN never stands for a stored value), True 1.0 and False 0.0.

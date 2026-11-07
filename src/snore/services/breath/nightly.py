@@ -814,12 +814,8 @@ class NightlyMixin(_BreathServiceCore):
             for (_status, _algo, ar_id) in ar_classification.values()
             if _status == AnalysisStatus.OK and ar_id is not None
         ]
-        # Resolved per run, so a patched ``_reduce_night_run`` takes effect.
         runs = await stream_run_reductions(
-            self._db,
-            ok_ar_ids,
-            _NIGHT_BREATH_COLUMNS,
-            lambda breaths: _reduce_night_run(breaths),
+            self._db, ok_ar_ids, _NIGHT_BREATH_COLUMNS, _reduce_night_run
         )
 
         def build_nights() -> list[NightlyAnalysisSummary]:

@@ -7,6 +7,8 @@ epochs and growing session counts.
 - the experimental tool's query count does not grow with the number of sessions
 - a failure while streaming breaths, for experimental epochs or experimental
   nightly metrics, still releases the breath cursor
+- experimental epochs and experimental nightly metrics come out the same when
+  every run's breaths span several fetches
 - the service refuses an epoch longer than MAX_EPOCH_NIGHTS
 """
 
@@ -28,7 +30,12 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Breath, Profile, Setting, Waveform
-from snore.services.breath.dtos import MAX_EPOCH_NIGHTS, EpochRequest
+from snore.services.breath.dtos import (
+    MAX_EPOCH_NIGHTS,
+    EpochRequest,
+    ExperimentalCompareEpochsResult,
+    ExperimentalNightlyRange,
+)
 from tests.integration.conftest import (
     _make_analysis_result,
     _make_day_session,
@@ -304,6 +311,67 @@ class TestBreathStreamRelease:
         finally:
             writer.close()
         assert str(failure.value) == "reduce failed"
+
+
+def _epoch_rera_counts(result: object) -> list[int | None]:
+    assert isinstance(result, ExperimentalCompareEpochsResult)
+    return [e.rera_proxy_count for e in result.epochs]
+
+
+def _night_rera_counts(result: object) -> list[int | None]:
+    assert isinstance(result, ExperimentalNightlyRange)
+    return [n.rera_count for n in result.nights]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("call", "rera_counts", "expected_rera_counts"),
+    [
+        pytest.param(
+            _compare_all_three_nights,
+            _epoch_rera_counts,
+            [3],
+            id="experimental-epochs",
+        ),
+        pytest.param(
+            _nightly_all_three_nights,
+            _night_rera_counts,
+            [1, 1, 1],
+            id="experimental-nightly",
+        ),
+    ],
+)
+class TestBreathStreamFetchBoundaries:
+    async def test_runs_split_across_fetches_match_whole_fetch(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Profile,
+        monkeypatch: pytest.MonkeyPatch,
+        call: ServiceCall,
+        rera_counts: Callable[[object], list[int | None]],
+        expected_rera_counts: list[int | None],
+    ) -> None:
+        """Each run's reduction sees all its breaths, not just one fetch's."""
+        from snore.services.breath import breath_stream  # noqa: PLC0415
+        from snore.services.breath_service import BreathService  # noqa: PLC0415
+
+        await _seed_analyzed_nights(async_db_session, async_test_profile.id, 3)
+        service = BreathService(async_db_session, async_test_profile.id)
+
+        whole = await call(service)
+        # Two-row fetches over three breaths per run: every run spans two
+        # fetches, and fetches straddle runs.
+        monkeypatch.setattr(breath_stream, "_BREATH_FETCH_ROWS", 2)
+        split = await call(service)
+
+        # The RERA-proxy run needs breaths from both of a run's fetches.
+        assert rera_counts(whole) == expected_rera_counts
+        assert rera_counts(split) == expected_rera_counts
+        assert isinstance(
+            whole, ExperimentalCompareEpochsResult | ExperimentalNightlyRange
+        )
+        assert isinstance(split, type(whole))
+        assert split.model_dump() == whole.model_dump()
 
 
 @pytest.mark.integration
