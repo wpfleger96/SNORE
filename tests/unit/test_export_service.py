@@ -173,10 +173,15 @@ class TestExportRaw:
             trim_str=True,
         )
 
+        assert zipfile.is_zipfile(out) == out_name.endswith(".zip")
         if zipfile.is_zipfile(out):
             with zipfile.ZipFile(out) as zf:
                 exported_str = zf.read("STR.edf")
                 assert result.files_written == len(zf.namelist())
+                assert (
+                    zf.read("Identification.json")
+                    == (fake_backup / "Identification.json").read_bytes()
+                )
         else:
             exported_str = (out / "STR.edf").read_bytes()
         assert read_str_header(exported_str) == ("09.08.25", 2)
