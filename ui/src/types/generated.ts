@@ -3972,7 +3972,7 @@ export interface components {
             unit?: string | null
             /**
              * Value Num
-             * @description [DEVICE] Numeric sample value as recorded
+             * @description [DEVICE] Numeric sample value as recorded; SpO2 recorded as a fraction is stored on the percent scale
              */
             value_num?: number | null
             /** Value Text */

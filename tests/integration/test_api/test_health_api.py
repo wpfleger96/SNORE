@@ -122,10 +122,8 @@ class TestGetNightDetail:
         assert data["min_spo2_pct"] is None
         assert data["avg_rr"] is None
 
-    def test_spo2_fraction_normalized_to_percent(
-        self, api_client, db_session, test_profile
-    ):
-        """SpO2 values stored as fractions (≤ 1.5) are multiplied by 100 on read."""
+    def test_spo2_avg_and_min_returned(self, api_client, db_session, test_profile):
+        """SpO2 avg/min aggregate the stored percent values."""
         db_session.add(
             HealthNightlySummary(
                 profile_id=test_profile.id,
@@ -134,41 +132,7 @@ class TestGetNightDetail:
                 computed_at=datetime.now(UTC),
             )
         )
-        # Fraction values: 0.95 and 0.99 → avg 0.97 → 97.0%
-        for val, h in [(0.95, 2), (0.99, 3)]:
-            db_session.add(
-                HealthSample(
-                    profile_id=test_profile.id,
-                    record_type=_SPO2_TYPE,
-                    source_name=_WATCH,
-                    start_time=datetime(2024, 1, 16, h),
-                    end_time=datetime(2024, 1, 16, h),
-                    value_num=val,
-                    unit="%",
-                    night_date=date(2024, 1, 15),
-                    ingest_channel="export_xml",
-                )
-            )
-        db_session.flush()
-
-        resp = api_client.get("/api/v1/health/nights/2024-01-15")
-        assert resp.status_code == 200
-        data = resp.json()
-        # each sample ≤ 1.5 → multiply by 100
-        assert data["avg_spo2_pct"] == pytest.approx(97.0, abs=0.1)
-        assert data["min_spo2_pct"] == pytest.approx(95.0, abs=0.1)
-
-    def test_spo2_percent_stored_unchanged(self, api_client, db_session, test_profile):
-        """SpO2 values already in percent (> 1.5) are not re-multiplied."""
-        db_session.add(
-            HealthNightlySummary(
-                profile_id=test_profile.id,
-                night_date=date(2024, 1, 15),
-                total_sleep_seconds=7 * 3600,
-                computed_at=datetime.now(UTC),
-            )
-        )
-        # Percent values: 95.0 and 99.0 → avg 97.0 (no multiplication)
+        # 95.0 and 99.0 → avg 97.0, min 95.0
         for val, h in [(95.0, 2), (99.0, 3)]:
             db_session.add(
                 HealthSample(
@@ -188,7 +152,6 @@ class TestGetNightDetail:
         resp = api_client.get("/api/v1/health/nights/2024-01-15")
         assert resp.status_code == 200
         data = resp.json()
-        # each sample > 1.5 → left as-is (just rounded)
         assert data["avg_spo2_pct"] == pytest.approx(97.0, abs=0.1)
         assert data["min_spo2_pct"] == pytest.approx(95.0, abs=0.1)
 

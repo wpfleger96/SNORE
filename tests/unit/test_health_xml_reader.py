@@ -9,10 +9,12 @@ import zipfile
 
 from datetime import date, datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
 from snore.parsers.apple_health.models import RawHealthRecord, apply_noon_split
+from snore.parsers.apple_health.type_handlers import parse_xml_record
 from snore.parsers.apple_health.xml_reader import iter_records
 
 FIXTURE_XML = Path(__file__).parent.parent / "fixtures" / "health_data" / "export.xml"
@@ -151,7 +153,7 @@ class TestQuantityRecords:
     """Quantity record (SpO2, respiratory rate) parsing."""
 
     def test_spo2_value_and_unit(self) -> None:
-        """SpO2 record stores value as-arrived (fraction 0-1) and unit as-arrived."""
+        """SpO2 recorded as a fraction (0.962) is stored as percent; unit as-arrived."""
         spo2 = [
             r
             for r in _all_records(FIXTURE_XML)
@@ -159,9 +161,51 @@ class TestQuantityRecords:
         ]
         assert len(spo2) == 1
         rec = spo2[0]
-        assert rec.value_num == pytest.approx(0.962, abs=1e-6)
+        assert rec.value_num == pytest.approx(96.2, abs=1e-6)
         assert rec.unit == "%"
         assert rec.value_text is None
+
+    @pytest.mark.parametrize(
+        ("recorded", "stored"),
+        [
+            ("0.95", 95.0),  # fraction → percent
+            ("0.93", 93.0),  # no float residue (0.93 * 100 != 93.0)
+            ("0.9512", 95.12),
+            ("0.5", 50.0),  # fraction range boundaries
+            ("1", 100.0),
+            ("95", 95.0),  # already percent
+            ("100", 100.0),
+            ("0.2", 0.2),  # implausible on either scale: kept as recorded
+            ("1.5", 1.5),
+            ("20", 20.0),
+        ],
+    )
+    def test_spo2_stored_on_percent_scale(self, recorded: str, stored: float) -> None:
+        """SpO2 fractions in [0.5, 1] are scaled to percent; other values are kept."""
+        elem = ElementTree.fromstring(
+            '<Record type="HKQuantityTypeIdentifierOxygenSaturation" '
+            'sourceName="Watch" startDate="2024-01-16 02:00:00 -0500" '
+            f'endDate="2024-01-16 02:00:00 -0500" value="{recorded}" unit="%"/>'
+        )
+
+        rec = parse_xml_record(elem)
+
+        assert rec is not None
+        assert rec.value_num == stored
+        assert rec.unit == "%"
+
+    def test_non_spo2_fraction_not_scaled(self) -> None:
+        """Only SpO2 is rescaled: a fractional respiratory rate is kept as recorded."""
+        elem = ElementTree.fromstring(
+            '<Record type="HKQuantityTypeIdentifierRespiratoryRate" '
+            'sourceName="Watch" startDate="2024-01-16 02:00:00 -0500" '
+            'endDate="2024-01-16 02:00:00 -0500" value="0.95" unit="count/min"/>'
+        )
+
+        rec = parse_xml_record(elem)
+
+        assert rec is not None
+        assert rec.value_num == 0.95
 
     def test_respiratory_rate_value_and_unit(self) -> None:
         """Respiratory rate record parses numeric value and unit correctly."""

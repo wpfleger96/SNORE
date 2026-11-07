@@ -1046,7 +1046,10 @@ class HealthSampleRead(BaseModel):
     end_time: datetime
     value_text: str | None = None
     value_num: float | None = provenance_field(
-        Provenance.DEVICE, "Numeric sample value as recorded", default=None
+        Provenance.DEVICE,
+        "Numeric sample value as recorded; SpO2 recorded as a fraction is "
+        "stored on the percent scale",
+        default=None,
     )
     unit: str | None = None
     night_date: date

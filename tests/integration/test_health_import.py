@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from snore.database.models import HealthNightlySummary, HealthSample, Profile, User
 from snore.database.session import init_database, session_scope
 from snore.services.health_import_service import HealthImportService
+from snore.services.health_service import HealthService
 
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "health_data"
 # Pass the directory to import_file — AppleHealthParser.detect() requires a directory
@@ -344,3 +345,50 @@ class TestNightsRecomputed:
         assert date(2024, 3, 12) not in nights, (
             "SpO2-only night must not produce a nightly summary"
         )
+
+
+# ---------------------------------------------------------------------------
+# SpO2 scale normalisation through to the night aggregate
+# ---------------------------------------------------------------------------
+
+
+def _spo2_record(source: str, start: str, value: str) -> str:
+    return (
+        ' <Record type="HKQuantityTypeIdentifierOxygenSaturation"'
+        f' sourceName="{source}" sourceVersion="1.0" device=""'
+        f' creationDate="{start}" startDate="{start}" endDate="{start}"'
+        f' value="{value}" unit="%"/>'
+    )
+
+
+class TestSpo2Scale:
+    async def test_fraction_and_percent_sources_same_night_aggregate_in_percent(
+        self, temp_db, tmp_path
+    ):
+        """A fraction source and a percent source on one night average on one scale."""
+        (tmp_path / "export.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<HealthData>"
+            ' <ExportDate value="2024-03-15 09:00:00 +0000"/>'
+            " <Me/>"
+            ' <Record type="HKCategoryTypeIdentifierSleepAnalysis"'
+            ' sourceName="Watch A" sourceVersion="1.0" device=""'
+            ' creationDate="2024-03-11 06:00:00 +0000"'
+            ' startDate="2024-03-10 22:00:00 +0000"'
+            ' endDate="2024-03-11 06:00:00 +0000"'
+            ' value="HKCategoryValueSleepAnalysisAsleepCore" unit=""/>'
+            + _spo2_record("Watch A", "2024-03-11 02:00:00 +0000", "0.95")
+            + _spo2_record("Oximeter B", "2024-03-11 02:05:00 +0000", "92")
+            + "</HealthData>"
+        )
+        await init_database(str(temp_db))
+        profile_id = await _create_profile_id()
+
+        await HealthImportService().import_file(tmp_path, profile_id)
+        async with session_scope() as db:
+            detail = await HealthService(db, profile_id).get_night_detail(
+                date(2024, 3, 10)
+            )
+
+        assert detail.avg_spo2_pct == pytest.approx(93.5)
+        assert detail.min_spo2_pct == pytest.approx(92)

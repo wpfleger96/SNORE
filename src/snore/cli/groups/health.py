@@ -96,18 +96,8 @@ def _metric_label(record_type: str) -> str:
 
 
 def _fmt_sample_value(sample: HealthSample) -> str:
-    from snore.services.health_service import (  # noqa: PLC0415
-        SPO2_RECORD_TYPE,
-        spo2_display_pct,
-    )
-
     if sample.value_num is None:
         return str(sample.value_text or "")
-    if sample.record_type == SPO2_RECORD_TYPE:
-        pct = spo2_display_pct(sample.value_num)
-        # Round only values scaled from a fraction; others print as stored.
-        shown = f"{pct:.1f}" if pct != sample.value_num else f"{pct}"
-        return f"{shown} %"
     return f"{sample.value_num} {sample.unit}"
 
 
