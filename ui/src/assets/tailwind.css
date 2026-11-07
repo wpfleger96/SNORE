@@ -48,7 +48,19 @@
     --sidebar-ring: oklch(0.708 0 0);
     --success: oklch(0.627 0.194 149.214);
     --warning: oklch(0.769 0.188 70.08);
-    --moderate: oklch(0.655 0.17 49);
+    /* AHI severity tiers (see utils/ahiScale.ts). `--ahi-*` is the `ahi-*` text
+       colour, tuned per theme to >=4.5:1 (WCAG AA) on --card and --muted;
+       `--ahi-*-fill` is the heatmap cell / legend swatch, shared by both themes.
+       Each tier's text keeps its fill's hue, except light-mode mild, which sits a
+       little warmer (75 vs 86) because dark yellow turns olive. */
+    --ahi-good: oklch(0.52 0.14 150);
+    --ahi-mild: oklch(0.54 0.11 75);
+    --ahi-moderate: oklch(0.55 0.15 47);
+    --ahi-severe: oklch(0.54 0.215 25);
+    --ahi-good-fill: #22c55e;
+    --ahi-mild-fill: #eab308;
+    --ahi-moderate-fill: #f97316;
+    --ahi-severe-fill: #ef4444;
 }
 
 .dark {
@@ -85,7 +97,10 @@
     --sidebar-ring: oklch(0.556 0 0);
     --success: oklch(0.792 0.209 151.711);
     --warning: oklch(0.828 0.189 84.429);
-    --moderate: oklch(0.66 0.18 46);
+    --ahi-good: oklch(0.79 0.2 150);
+    --ahi-mild: oklch(0.84 0.17 86);
+    --ahi-moderate: oklch(0.7 0.17 47);
+    --ahi-severe: oklch(0.7 0.18 25);
 }
 
 @theme inline {
@@ -124,7 +139,6 @@
     --color-background: var(--background);
     --color-success: var(--success);
     --color-warning: var(--warning);
-    --color-moderate: var(--moderate);
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
     --radius-lg: var(--radius);

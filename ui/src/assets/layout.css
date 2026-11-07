@@ -77,25 +77,22 @@
 }
 
 .ahi-good {
-    color: var(--color-success);
+    color: var(--ahi-good);
     font-weight: 600;
 }
 
 .ahi-mild {
-    color: var(--color-warning);
+    color: var(--ahi-mild);
     font-weight: 600;
 }
 
-/* --moderate is tuned as a text colour per theme: hue between the mild amber
-   and severe red so all four tiers stay distinct, at >=3:1 contrast. Heatmap
-   cells keep the brighter fill palette (#f97316) shared with the other tiers. */
 .ahi-moderate {
-    color: var(--color-moderate);
+    color: var(--ahi-moderate);
     font-weight: 600;
 }
 
 .ahi-severe {
-    color: var(--color-destructive);
+    color: var(--ahi-severe);
     font-weight: 600;
 }
 
