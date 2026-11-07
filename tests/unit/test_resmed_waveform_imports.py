@@ -444,14 +444,14 @@ class TestTCVParsing:
 
 
 class TestParserVersion:
-    def test_parser_version_is_1_2_0(self):
+    def test_parser_version_is_1_2_1(self):
         parser = ResmedEDFParser()
-        assert parser.get_metadata().parser_version == "1.2.0"
+        assert parser.get_metadata().parser_version == "1.2.1"
 
-    def test_session_carries_version_1_2_0(self):
+    def test_session_carries_version_1_2_1(self):
         parser = ResmedEDFParser()
         session = list(parser.parse_sessions(FIXTURE_ROOT))[0]
-        assert session.parser_version == "1.2.0"
+        assert session.parser_version == "1.2.1"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -574,6 +574,50 @@ class TestMultiSegmentMergeStats:
         n1, n2 = len(seg1_values), len(seg2_values)
         expected_mean = (float(np.mean(seg1_values)) * n1 + 0.15 * n2) / (n1 + n2)
         assert fl.mean_value == pytest.approx(expected_mean, rel=1e-3)
+
+    def test_waveform_first_seen_in_later_segment_is_offset_to_that_segment(self):
+        """A channel absent from segment 1 keeps segment 2's place on the timeline.
+
+        Typical case: the oximeter is not reading during segment 1, so only
+        segment 2 has an SpO2 waveform; its samples must start at segment 2's
+        offset, not at the night's start.
+        """
+        t0 = datetime(2026, 8, 9, 22, 0, 0)
+        t1 = t0 + timedelta(hours=4)
+        t2 = t1 + timedelta(minutes=5)
+        t3 = t2 + timedelta(hours=2)
+        seg1 = self._make_segment(
+            "20260809_220000", t0, t1, np.array([0.1, 0.2]), 0.1, 0.2, 0.15
+        )
+        seg2 = self._make_segment(
+            "20260810_020500", t2, t3, np.array([0.1, 0.2]), 0.1, 0.2, 0.15
+        )
+        seg2.add_waveform(
+            WaveformData(
+                waveform_type=WaveformType.SPO2,
+                sample_rate=1.0,
+                unit="%",
+                values=np.array([96.0, 95.0, 94.0], dtype=np.float32),
+                timestamps=np.array([0.0, 1.0, 2.0], dtype=np.float32),
+            )
+        )
+        segments = {
+            "20260809_220000": {"BRP": Path("/fake/seg1_BRP.edf")},
+            "20260810_020500": {"BRP": Path("/fake/seg2_BRP.edf")},
+        }
+
+        parser = ResmedEDFParser()
+        with patch.object(parser, "_parse_session_group", side_effect=[seg1, seg2]):
+            merged = parser._parse_night_session(
+                "20260809", min(segments), segments, _DEVICE, Path("/fake")
+            )
+
+        assert merged is not None
+        offset = (t2 - t0).total_seconds()
+        np.testing.assert_allclose(
+            merged.waveforms[WaveformType.SPO2].timestamps,
+            [offset, offset + 1.0, offset + 2.0],
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

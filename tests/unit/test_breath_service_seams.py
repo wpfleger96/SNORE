@@ -307,8 +307,17 @@ class TestGetAnalysisStatus:
     @pytest.mark.parametrize(
         ("format_version", "missing_keys"),
         [
-            (3, ("validity_flags", "pattern_detector")),
-            (4, ("pattern_detector",)),
+            (
+                3,
+                (
+                    "validity_flags",
+                    "pattern_detector",
+                    "event_detector",
+                    "pulse_detector",
+                ),
+            ),
+            (4, ("pattern_detector", "event_detector", "pulse_detector")),
+            (5, ("event_detector", "pulse_detector")),
         ],
     )
     async def test_stale_version_for_legacy_format_version_identity(
@@ -317,7 +326,8 @@ class TestGetAnalysisStatus:
         """A stored identity from before a key was stamped classifies STALE.
 
         Legacy rows lack the later keys (``validity_flags`` from 4,
-        ``pattern_detector`` from 5); pydantic back-fills them from defaults, so
+        ``pattern_detector`` from 5, ``event_detector`` and ``pulse_detector``
+        from 6); pydantic back-fills them from defaults, so
         the ``format_version`` bump is what makes the comparison fail — this
         test pins that behavior.
         """
