@@ -188,7 +188,7 @@ async function handleExport(): Promise<void> {
             blob = await exportJson(baseParams)
             filename = 'snore-export.json'
         } else {
-            const params: RawExportParams = { ...baseParams, as_zip: true }
+            const params: RawExportParams = { ...baseParams }
             if (trimStr.value && fromDate.value && toDate.value) params.trim_str = true
             blob = await exportRaw(params)
             filename = 'snore-export-raw.zip'

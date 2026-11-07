@@ -12,9 +12,13 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from snore.api.routers import export as export_router
 from snore.auth.actor import ActorContext, AuthMode, Role
 from tests.helpers.api_client import make_test_client
+from tests.helpers.str_edf import read_str_header, write_synthetic_str_edf
 from tests.integration.conftest import _make_day_session, _make_device, _make_profile
 
 
@@ -262,6 +266,75 @@ class TestExportRaw:
         ):
             response = api_client.get("/api/v1/export/raw")
         assert "application/zip" in response.headers["content-type"]
+
+
+class TestExportRawTrimStr:
+    @staticmethod
+    async def _client_with_backup(
+        async_db_session: AsyncSession,
+        raw_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> TestClient:
+        profile = await _make_profile(async_db_session)
+        await async_db_session.commit()
+        monkeypatch.setattr(export_router, "DEFAULT_RAW_BACKUP_DIR", raw_root)
+        device = raw_root / str(profile.id) / "SN12345"
+        datalog = device / "DATALOG"
+        for night in ("20250805", "20250809", "20250812"):
+            folder = datalog / night
+            folder.mkdir(parents=True)
+            (folder / f"{night}_230000_BRP.edf").write_bytes(b"brp")
+        write_synthetic_str_edf(device / "STR.edf", "01.08.25", num_records=30)
+        (device / "Identification.json").write_text('{"serial": "SN12345"}')
+        actor = ActorContext(
+            user_id=profile.user_id,
+            profile_id=profile.id,
+            role=Role.MEMBER,
+            mode=AuthMode.LOCAL,
+        )
+        return make_test_client(async_db_session, actor=actor)
+
+    async def test_zip_contains_str_trimmed_to_requested_days(
+        self, async_db_session, tmp_path, monkeypatch
+    ):
+        client = await self._client_with_backup(
+            async_db_session, tmp_path / "raw", monkeypatch
+        )
+
+        response = client.get(
+            "/api/v1/export/raw",
+            params={
+                "trim_str": "true",
+                "from_date": "2025-08-09",
+                "to_date": "2025-08-10",
+            },
+        )
+
+        assert response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            assert read_str_header(zf.read("STR.edf")) == ("09.08.25", 2)
+            nights = {n for n in zf.namelist() if n.startswith("DATALOG/")}
+        assert nights == {"DATALOG/20250809/20250809_230000_BRP.edf"}
+
+    @pytest.mark.parametrize(
+        "dates",
+        [{}, {"from_date": "2025-08-09"}, {"to_date": "2025-08-10"}],
+    )
+    async def test_trim_without_both_dates_is_rejected(
+        self, async_db_session, tmp_path, monkeypatch, dates
+    ):
+        client = await self._client_with_backup(
+            async_db_session, tmp_path / "raw", monkeypatch
+        )
+
+        response = client.get(
+            "/api/v1/export/raw", params={"trim_str": "true", **dates}
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "detail": "trim_str requires both from_date and to_date"
+        }
 
 
 class TestExportRawDeviceSerial:

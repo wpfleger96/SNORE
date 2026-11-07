@@ -8175,7 +8175,6 @@ export interface operations {
                 to_date?: string | null
                 device?: string | null
                 trim_str?: boolean
-                as_zip?: boolean
             }
             header?: never
             path?: never

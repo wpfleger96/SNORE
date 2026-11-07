@@ -121,8 +121,11 @@ def export_raw(
     to_date: date | None = Query(default=None),
     device: str | None = Query(default=None),
     trim_str: bool = Query(default=False),
-    as_zip: bool = Query(default=True),
 ) -> FileResponse:
+    if trim_str and not (from_date and to_date):
+        raise HTTPException(
+            status_code=400, detail="trim_str requires both from_date and to_date"
+        )
     # Backup root is always the actor's profile-scoped directory — never
     # client-supplied, to prevent cross-profile file access.
     backup_root = DEFAULT_RAW_BACKUP_DIR / str(actor.profile_id)
@@ -135,7 +138,6 @@ def export_raw(
                 date_to=to_date,
                 device_serial=device,
                 trim_str=trim_str,
-                as_zip=as_zip,
             )
         except InvalidSerialError:
             raise HTTPException(
