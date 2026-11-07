@@ -20,9 +20,11 @@ class BaselineMethod(StrEnum):
 class HypopneaMode(StrEnum):
     """Method for detecting hypopnea events."""
 
-    AASM_3PCT = "aasm_3pct"  # 30% flow + 3% SpO2 drop (AASM recommended)
-    AASM_4PCT = "aasm_4pct"  # 30% flow + 4% SpO2 drop (CMS/Medicare)
-    FLOW_ONLY = "flow_only"  # 40% flow reduction (ResMed-style, no SpO2)
+    # Every mode scores hypopneas from the configured flow-reduction band; a
+    # desaturation only adds confidence.
+    AASM_3PCT = "aasm_3pct"  # checks a 3% SpO2 drop (AASM recommended)
+    AASM_4PCT = "aasm_4pct"  # checks a 4% SpO2 drop (CMS/Medicare)
+    FLOW_ONLY = "flow_only"  # flow band only, SpO2 ignored (ResMed-style)
     DISABLED = "disabled"  # Skip hypopnea detection
 
 
@@ -64,13 +66,13 @@ class DetectionModeConfig(BaseModel):
         default=EDC.HYPOPNEA_MIN_REDUCTION,
         ge=0,
         le=1,
-        description="Hypopnea minimum threshold",
+        description="Hypopnea minimum flow reduction (inclusive)",
     )
     hypopnea_max_threshold: float = Field(
         default=EDC.HYPOPNEA_MAX_REDUCTION,
         ge=0,
         le=1,
-        description="Hypopnea maximum threshold",
+        description="Hypopnea maximum average flow reduction (exclusive)",
     )
 
     min_event_duration: float = Field(
@@ -121,7 +123,7 @@ class DetectionModeConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_threshold_bands(self) -> "DetectionModeConfig":
-        """Reject inverted [min, max) reduction bands at construction."""
+        """Reject empty half-open [min, max) reduction bands (min >= max)."""
         if self.rera_reduction_min >= self.rera_reduction_max:
             raise ValueError(
                 "rera_reduction_min must be < rera_reduction_max "

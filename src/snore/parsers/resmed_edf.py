@@ -477,7 +477,7 @@ class ResmedEDFParser(DeviceParser):
         """Return ResMed parser metadata."""
         return ParserMetadata(
             parser_id="resmed_edf",
-            parser_version="1.2.0",
+            parser_version="1.2.1",
             manufacturer="ResMed",
             supported_formats=["EDF+", "EDF"],
             supported_models=[
@@ -1485,13 +1485,11 @@ class ResmedEDFParser(DeviceParser):
                     )
 
                 for waveform_type, segment_waveform in segment.waveforms.items():
+                    adjusted_timestamps = (
+                        np.asarray(segment_waveform.timestamps) + segment_start_offset
+                    )
                     if waveform_type in merged_session.waveforms:
                         merged_waveform = merged_session.waveforms[waveform_type]
-
-                        adjusted_timestamps = (
-                            np.asarray(segment_waveform.timestamps)
-                            + segment_start_offset
-                        )
 
                         # Capture sample counts before concatenation for the
                         # weighted-mean calculation below.
@@ -1548,6 +1546,10 @@ class ResmedEDFParser(DeviceParser):
                         elif segment_waveform.mean_value is not None:
                             merged_waveform.mean_value = segment_waveform.mean_value
                     else:
+                        # First seen in this segment (e.g. the oximeter only
+                        # started reading after a mask-off gap): it still sits
+                        # at this segment's offset on the night timeline.
+                        segment_waveform.timestamps = adjusted_timestamps
                         merged_session.add_waveform(segment_waveform)
 
                 for event in segment.events:

@@ -288,7 +288,7 @@ Pressure comes from `CPAP_IPAPSet`, `CPAP_IPAP` or `CPAP_PressureSet` when prese
 
 **File:** `oscar/SleepLib/calcs.cpp:1407`
 
-Similar to SpO2 drop but for pulse rate changes (default: ≥5 BPM for ≥8 seconds).
+For each pulse sample, scans forward up to `pulseChangeDuration` (default 8 s) for samples that differ by more than `pulseChangeBPM` (default 5 BPM, strict `>` at line 1449). The last qualifying sample in that window is the change: the event is stamped at its time with a duration back to the window start (line 1461), and the scan resumes after it (`i = li`, line 1462), so one heart-rate shift yields one event. SNORE mirrors this in `src/snore/analysis/shared/pulse_detector.py`.
 
 ### User Event Flagging
 

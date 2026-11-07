@@ -87,6 +87,10 @@ __all__ = [
 
 _RAMP_KEYS: frozenset[str] = frozenset({"ramp_enabled", "ramp_time", "smart_ramp"})
 
+# A stored SpO2 sample is a reading iff low < value <= high; ResMed writes -1
+# for every sample when no oximeter is attached.
+SPO2_VALID_RANGE: tuple[float, float] = (0.0, 100.0)
+
 
 # Optional waveform channels fetched by ``load_session_inputs_raw``:
 # (waveform_type, log level on absence, log message template).
@@ -150,6 +154,9 @@ class AnalysisInputs:
     flow_values: np.ndarray
     sample_rate: float
     machine_events: list[AnalysisEvent]
+    # Valid SpO2 readings only (see SPO2_VALID_RANGE), on their own timeline;
+    # None when fewer than two remain.
+    spo2_timestamps: np.ndarray | None = None
     spo2_values: np.ndarray | None = None
     pulse_timestamps: np.ndarray | None = None
     pulse_values: np.ndarray | None = None
@@ -498,18 +505,17 @@ class AnalysisService:
 
         sample_rate = float(raw.flow_metadata.get("sample_rate", 25.0))
 
+        spo2_timestamps: np.ndarray | None = None
         spo2_values: np.ndarray | None = None
         if raw.spo2_blob is not None and raw.spo2_sample_count > 0:
             try:
-                _, spo2_raw = deserialize_waveform_blob(
-                    raw.spo2_blob, raw.spo2_sample_count
-                )
-                if len(spo2_raw) > 0 and len(spo2_raw) == len(flow_timestamps):
-                    spo2_values = spo2_raw.copy()
-                elif len(spo2_raw) > 0:
-                    logger.warning(
-                        f"SpO2 length mismatch ({len(spo2_raw)} vs {len(flow_timestamps)}), skipping"
-                    )
+                st, sv = deserialize_waveform_blob(raw.spo2_blob, raw.spo2_sample_count)
+                low, high = SPO2_VALID_RANGE
+                valid = np.isfinite(st) & (sv > low) & (sv <= high)
+                if np.count_nonzero(valid) >= 2:
+                    spo2_timestamps, spo2_values = st[valid], sv[valid]
+                else:
+                    logger.info("SpO2 channel has under two valid readings, skipping")
             except Exception as e:
                 logger.warning(f"Failed to deserialise SpO2 blob: {e}")
 
@@ -542,6 +548,7 @@ class AnalysisService:
             flow_values=flow_values.copy(),
             sample_rate=sample_rate,
             machine_events=raw.machine_events,
+            spo2_timestamps=spo2_timestamps,
             spo2_values=spo2_values,
             pulse_timestamps=pulse_timestamps,
             pulse_values=pulse_values,
@@ -687,6 +694,11 @@ class AnalysisService:
             except Exception as e:
                 logger.debug(f"Pulse detection failed: {e}")
 
+        spo2_data = (
+            None
+            if inputs.spo2_timestamps is None or inputs.spo2_values is None
+            else (inputs.spo2_timestamps, inputs.spo2_values)
+        )
         mode_results = {}
         for mode_name in inputs.modes:
             try:
@@ -696,6 +708,7 @@ class AnalysisService:
                     flow_data=(timestamps, flow_values),
                     sample_rate=sample_rate,
                     session_duration_hours=session_duration_hours,
+                    spo2_data=spo2_data,
                 )
                 mode_results[mode_name] = mode_result
                 logger.info(

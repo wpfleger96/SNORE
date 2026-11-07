@@ -145,6 +145,7 @@ class EventDetector:
         flow_data: tuple[np.ndarray, np.ndarray],
         sample_rate: float,
         session_duration_hours: float,
+        spo2_data: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> ModeResult:
         """
         Run detection algorithm and return results.
@@ -158,6 +159,8 @@ class EventDetector:
             flow_data: Tuple of (timestamps, flow_values)
             sample_rate: Sampling rate in Hz (from waveform metadata)
             session_duration_hours: Total session duration in hours
+            spo2_data: Tuple of (timestamps, values) holding only valid SpO2
+                readings, timestamps ascending, or None without oximetry
 
         Returns:
             ModeResult with detected events and metrics
@@ -177,7 +180,7 @@ class EventDetector:
             apneas = self._detect_apneas(breaths, flow_data, sample_rate)
 
         hypopneas = self._detect_hypopneas(
-            breaths, flow_data, spo2_signal=None, exclude_events=apneas
+            breaths, flow_data, spo2_data=spo2_data, exclude_events=apneas
         )
 
         reras: list[RERAEvent] = []
@@ -350,23 +353,34 @@ class EventDetector:
         self,
         breaths: list[BreathMetrics],
         flow_data: tuple[np.ndarray, np.ndarray] | None = None,
-        spo2_signal: np.ndarray | None = None,
+        spo2_data: tuple[np.ndarray, np.ndarray] | None = None,
         exclude_events: list[ApneaEvent] | None = None,
     ) -> list[HypopneaEvent]:
         """
         Detect hypopnea events using configured mode.
 
-        Supports multiple detection modes:
-        - AASM_3PCT/4PCT: Requires SpO2 desaturation (3% or 4%)
-        - FLOW_ONLY: 40% flow reduction without SpO2
+        Every mode scores hypopneas from flow reduction alone (the band below);
+        the modes differ in how SpO2 is used:
+        - AASM_3PCT/4PCT: each event records whether SpO2 fell by 3% or 4%
+          (has_desaturation), and a desaturation adds confidence. Without SpO2
+          they fall back to FLOW_ONLY if hypopnea_flow_only_fallback is set,
+          else no hypopneas are scored.
+        - FLOW_ONLY: SpO2 is ignored (has_desaturation stays None)
         - DISABLED: Skip detection
 
-        Falls back to FLOW_ONLY if SpO2 unavailable and fallback enabled.
+        An event with no SpO2 readings of its own gets flow-only confidence.
+
+        A region of consecutive breaths reduced by at least
+        hypopnea_min_threshold is a hypopnea only if its average reduction is
+        below hypopnea_max_threshold (the band is [min, max)); deeper regions
+        are left to apnea detection.
 
         Args:
             breaths: List of BreathMetrics objects
             flow_data: Optional tuple of (timestamps, flow_values)
-            spo2_signal: SpO2 data for desaturation detection
+            spo2_data: Optional tuple of (timestamps, values) holding only
+                valid SpO2 readings, timestamps ascending, for desaturation
+                detection
             exclude_events: List of apnea events to exclude from hypopnea detection
 
         Returns:
@@ -379,7 +393,7 @@ class EventDetector:
             logger.info(f"{self.config.name}: Hypopnea detection disabled")
             return []
 
-        has_spo2 = spo2_signal is not None
+        has_spo2 = spo2_data is not None
         actual_mode = self.config.hypopnea_mode
 
         if not has_spo2:
@@ -403,6 +417,7 @@ class EventDetector:
         )
 
         min_threshold = self.config.hypopnea_min_threshold
+        max_threshold = self.config.hypopnea_max_threshold
 
         baselines = np.zeros(len(breaths))
         reductions = np.zeros(len(breaths))
@@ -438,11 +453,11 @@ class EventDetector:
                 )
 
         breaths_in_range = np.sum(
-            (reductions >= min_threshold)
-            & (reductions < EDC.APNEA_FLOW_REDUCTION_THRESHOLD)
+            (reductions >= min_threshold) & (reductions < max_threshold)
         )
         logger.debug(
-            f"Breaths in hypopnea range ({min_threshold * 100:.0f}-89%): {breaths_in_range}"
+            f"Breaths in hypopnea range ({min_threshold * 100:.0f}-"
+            f"{max_threshold * 100:.0f}%): {breaths_in_range}"
         )
 
         regions = self._find_consecutive_reduced_breaths(
@@ -459,9 +474,12 @@ class EventDetector:
                 continue
             avg_reduction = float(np.mean(event_reductions))
 
-            if avg_reduction >= EDC.APNEA_FLOW_REDUCTION_THRESHOLD:
+            # Half-open band: a region is a hypopnea iff min <= avg < max.
+            if avg_reduction >= max_threshold:
                 logger.debug(
-                    f"  Skipping region {start_idx}-{end_idx}: avg reduction {avg_reduction * 100:.1f}% >= 90% (apnea)"
+                    f"  Skipping region {start_idx}-{end_idx}: avg reduction "
+                    f"{avg_reduction * 100:.1f}% >= hypopnea max "
+                    f"{max_threshold * 100:.0f}%"
                 )
                 continue
 
@@ -486,26 +504,35 @@ class EventDetector:
             end_time = breaths[end_idx - 1].end_time
 
             has_desaturation = None
-            if spo2_signal is not None and flow_data is not None:
-                timestamps, _ = flow_data
-                if len(spo2_signal) != len(timestamps):
-                    logger.warning(
-                        f"SpO2/flow timestamp mismatch: {len(spo2_signal)} vs {len(timestamps)} - "
-                        "skipping desaturation check"
-                    )
-                    has_desaturation = None
-                else:
-                    mask = (timestamps >= start_time) & (timestamps <= end_time)
-                    if np.any(mask):
-                        if actual_mode == HypopneaMode.AASM_4PCT:
-                            has_desaturation = _check_desaturation(
-                                spo2_signal[mask], threshold=4.0
-                            )
-                        else:
-                            has_desaturation = _check_desaturation(spo2_signal[mask])
+            if spo2_data is not None and actual_mode != HypopneaMode.FLOW_ONLY:
+                spo2_timestamps, spo2_values = spo2_data
+                lo = np.searchsorted(
+                    spo2_timestamps,
+                    start_time - EDC.SPO2_DESATURATION_PRE_EVENT_SECONDS,
+                    side="left",
+                )
+                hi = np.searchsorted(
+                    spo2_timestamps,
+                    end_time + EDC.SPO2_DESATURATION_POST_EVENT_SECONDS,
+                    side="right",
+                )
+                desaturation_threshold = (
+                    EDC.SPO2_DESATURATION_DROP_4PCT
+                    if actual_mode == HypopneaMode.AASM_4PCT
+                    else EDC.SPO2_DESATURATION_DROP
+                )
+                has_desaturation = _check_desaturation(
+                    spo2_values[lo:hi], threshold=desaturation_threshold
+                )
 
+            # An event with no SpO2 readings of its own is scored as flow-only.
             confidence = _calculate_hypopnea_confidence(
-                avg_reduction, duration, has_desaturation, detection_mode=actual_mode
+                avg_reduction,
+                duration,
+                has_desaturation,
+                detection_mode=(
+                    HypopneaMode.FLOW_ONLY if has_desaturation is None else actual_mode
+                ),
             )
 
             logger.debug(

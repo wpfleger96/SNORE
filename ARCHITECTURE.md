@@ -247,7 +247,7 @@ DetectionModeConfig(
     apnea_threshold=0.90,  # 90% flow reduction
     apnea_validation_threshold=0.90,
     hypopnea_min_threshold=0.30,
-    hypopnea_max_threshold=0.89,
+    hypopnea_max_threshold=0.90,  # exclusive: [min, max)
     min_event_duration=10.0,
     merge_gap=3.0,
     metric="amplitude",

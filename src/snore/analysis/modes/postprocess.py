@@ -182,6 +182,15 @@ def _merge_adjacent_events(
     return merged
 
 
+def _merge_flags(flag1: bool | None, flag2: bool | None) -> bool | None:
+    """Three-valued OR: True if either is True, else None if either is unknown."""
+    if flag1 or flag2:
+        return True
+    if flag1 is None or flag2 is None:
+        return None
+    return False
+
+
 def _merge_two_events(
     event1: ApneaEvent | HypopneaEvent,
     event2: ApneaEvent | HypopneaEvent,
@@ -224,8 +233,10 @@ def _merge_two_events(
             flow_reduction=(event1.flow_reduction + event2.flow_reduction) / 2,
             confidence=min(event1.confidence, event2.confidence),
             baseline_flow=event1.baseline_flow,
-            has_arousal=event1.has_arousal or event2.has_arousal,
-            has_desaturation=event1.has_desaturation or event2.has_desaturation,
+            has_arousal=_merge_flags(event1.has_arousal, event2.has_arousal),
+            has_desaturation=_merge_flags(
+                event1.has_desaturation, event2.has_desaturation
+            ),
         )
 
     event_typed: ApneaEvent | HypopneaEvent = event1
