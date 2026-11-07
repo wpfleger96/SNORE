@@ -23,6 +23,10 @@ class DayAgg(StrEnum):
     MIN = "min"
     MAX = "max"
     USAGE_WEIGHTED_MEAN = "usage_weighted_mean"
+    # Percentile of the day's pooled waveform samples, falling back to a
+    # usage-weighted mean of the session values when a contributing session
+    # has no usable waveform.
+    POOLED_PERCENTILE = "pooled_percentile"
 
 
 @dataclass(frozen=True)
@@ -151,19 +155,19 @@ def _day(name: str, day_agg: DayAgg) -> MetricSpec:
 DAY_METRIC_STAT_COLUMNS: tuple[MetricSpec, ...] = (
     _day("pressure_min", DayAgg.MIN),
     _day("pressure_max", DayAgg.MAX),
-    _day("pressure_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("pressure_median", DayAgg.POOLED_PERCENTILE),
     _day("pressure_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("pressure_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("pressure_95th", DayAgg.POOLED_PERCENTILE),
     _day("epap_min", DayAgg.MIN),
     _day("epap_max", DayAgg.MAX),
-    _day("epap_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("epap_median", DayAgg.POOLED_PERCENTILE),
     _day("epap_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("epap_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("epap_95th", DayAgg.POOLED_PERCENTILE),
     _day("leak_min", DayAgg.MIN),
     _day("leak_max", DayAgg.MAX),
-    _day("leak_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("leak_median", DayAgg.POOLED_PERCENTILE),
     _day("leak_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("leak_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("leak_95th", DayAgg.POOLED_PERCENTILE),
     _day("spo2_min", DayAgg.MIN),
     _day("spo2_max", DayAgg.MAX),
     _day("spo2_mean", DayAgg.USAGE_WEIGHTED_MEAN),

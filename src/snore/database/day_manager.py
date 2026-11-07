@@ -2,6 +2,9 @@
 Day aggregation and management logic (OSCAR-compatible).
 
 Handles day splitting logic and aggregation of session statistics into daily records.
+Day pressure/EPAP/leak median and 95th percentiles are read from the day's pooled
+waveform samples, since a mean of per-session percentiles is not a percentile of
+the night.
 """
 
 import logging
@@ -9,11 +12,13 @@ import logging
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 
+import numpy as np
+
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from snore.database.models import Day, Statistics
+from snore.database.models import Day, Statistics, Waveform
 from snore.database.models import Session as SessionModel
 from snore.metrics import (
     COVERAGE_TOLERANCE_FRACTION,
@@ -22,6 +27,7 @@ from snore.metrics import (
     DAY_METRIC_STAT_COLUMNS,
     DayAgg,
 )
+from snore.parsers.unified import WaveformType
 from snore.provenance import IndexSource
 from snore.therapy_hours import effective_session_hours
 from snore.utils.stats import weighted_mean
@@ -32,6 +38,22 @@ logger = logging.getLogger(__name__)
 # headlined, but logged: a gap that large suggests the sessions were stamped
 # from the wrong STR record even though the coverage check passed.
 DEVICE_RECOUNT_AHI_WARN_DELTA = 5.0
+
+# Waveform channels behind each pooled-percentile metric prefix, in the order
+# UnifiedSession.finalize_statistics prefers them for the session value.
+POOLED_CHANNELS: dict[str, tuple[str, ...]] = {
+    "pressure": (
+        WaveformType.THERAPY_PRESSURE.value,
+        WaveformType.MASK_PRESSURE.value,
+    ),
+    "epap": (WaveformType.EPAP.value,),
+    "leak": (WaveformType.LEAK_RATE.value,),
+}
+# Metric-name suffix -> percentile (0-100).
+POOLED_PERCENTILES: dict[str, float] = {"median": 50.0, "95th": 95.0}
+
+# Finite samples of one session's waveform channel, keyed (session_id, channel).
+ChannelSamples = dict[tuple[int, str], np.ndarray]
 
 
 class DayManager:
@@ -138,6 +160,85 @@ class DayManager:
             for s, sess in stat_pairs
             if getattr(s, attr) is not None
         )
+
+    @staticmethod
+    async def _load_channel_samples(
+        session_ids: list[int], db_session: AsyncSession
+    ) -> ChannelSamples:
+        """Finite samples of the sessions' pooled-percentile waveform channels.
+
+        Empty or corrupt blobs are left out, so the caller treats them as
+        missing.
+        """
+        # Deferred: waveform_loader imports snore.database, whose package init
+        # imports importers -> day_manager, so a top-level import is a cycle.
+        from snore.analysis.data.waveform_loader import (  # noqa: PLC0415
+            deserialize_waveform_blob,
+        )
+
+        channels = {c for chans in POOLED_CHANNELS.values() for c in chans}
+        rows = await db_session.execute(
+            select(
+                Waveform.session_id,
+                Waveform.waveform_type,
+                Waveform.data_blob,
+                Waveform.sample_count,
+            ).where(
+                Waveform.session_id.in_(session_ids),
+                Waveform.waveform_type.in_(channels),
+            )
+        )
+        samples: ChannelSamples = {}
+        for session_id, channel, blob, sample_count in rows:
+            if not blob or not sample_count:
+                continue
+            try:
+                _, values = deserialize_waveform_blob(blob, sample_count)
+            except ValueError:
+                logger.warning(
+                    "Skipping corrupt %s waveform of session %s in day aggregation",
+                    channel,
+                    session_id,
+                )
+                continue
+            finite = values[np.isfinite(values)]
+            if finite.size:
+                samples[(session_id, channel)] = finite
+        return samples
+
+    @classmethod
+    def _pooled_percentile(
+        cls,
+        stat_pairs: list[tuple[Statistics, SessionModel]],
+        attr: str,
+        samples: ChannelSamples,
+    ) -> float | None:
+        """Percentile ``attr`` (e.g. ``leak_95th``) of the day's pooled samples.
+
+        Pools every session that has a value for ``attr``, each through the
+        first channel in ``POOLED_CHANNELS`` order with samples.  If any such
+        session has no samples, falls back to the usage-weighted mean of the
+        session values.
+        """
+        prefix, suffix = attr.rsplit("_", 1)
+        pooled: list[np.ndarray] = []
+        for stats, session in stat_pairs:
+            if getattr(stats, attr) is None:
+                continue
+            session_samples = next(
+                (
+                    samples[(session.id, channel)]
+                    for channel in POOLED_CHANNELS[prefix]
+                    if (session.id, channel) in samples
+                ),
+                None,
+            )
+            if session_samples is None:
+                return cls._weighted_average(stat_pairs, attr)
+            pooled.append(session_samples)
+        if not pooled:
+            return None
+        return float(np.percentile(np.concatenate(pooled), POOLED_PERCENTILES[suffix]))
 
     @staticmethod
     def _trusted_device_indices(
@@ -301,6 +402,9 @@ class DayManager:
                 s.unclassified_apneas for s in stats_records if s.unclassified_apneas
             )
 
+            samples = await cls._load_channel_samples(
+                [s.id for _, s in stat_pairs], db_session
+            )
             for spec in DAY_METRIC_STAT_COLUMNS:
                 if spec.day_agg in (DayAgg.MIN, DayAgg.MAX):
                     # Truthiness filter is intentional-legacy: 0.0 values are
@@ -315,6 +419,12 @@ class DayManager:
                 elif spec.day_agg is DayAgg.USAGE_WEIGHTED_MEAN and total_hours > 0:
                     setattr(
                         day, spec.name, cls._weighted_average(stat_pairs, spec.name)
+                    )
+                elif spec.day_agg is DayAgg.POOLED_PERCENTILE:
+                    setattr(
+                        day,
+                        spec.name,
+                        cls._pooled_percentile(stat_pairs, spec.name, samples),
                     )
 
         computed = (

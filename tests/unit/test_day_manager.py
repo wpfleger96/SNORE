@@ -11,13 +11,14 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 
+import numpy as np
 import pytest
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.day_manager import DayManager
-from snore.database.models import Day, Device, Session
+from snore.database.models import Day, Device, Session, Waveform
 from snore.provenance import IndexSource
 
 
@@ -1050,3 +1051,208 @@ class TestDeviceIndexHeadline:
         assert day.index_source == IndexSource.DEVICE
         assert day.ahi == ahi_device
         assert ("differs from SNORE's recount" in caplog.text) is warns
+
+
+async def _add_waveform(
+    db: AsyncSession, session: Session, channel: str, values: np.ndarray
+) -> None:
+    """Store ``values`` as a ``channel`` waveform blob sampled every 2 seconds."""
+    timestamps = np.arange(len(values), dtype=np.float32) * 2.0
+    db.add(
+        Waveform(
+            session_id=session.id,
+            waveform_type=channel,
+            sample_rate=0.5,
+            data_blob=np.column_stack([timestamps, values])
+            .astype(np.float32)
+            .tobytes(),
+            sample_count=len(values),
+        )
+    )
+    await db.flush()
+
+
+def _samples(low: float, high: float, hours: float) -> np.ndarray:
+    """Evenly spread float32 samples at 0.5 Hz over ``hours``."""
+    return np.linspace(low, high, int(hours * 1800), dtype=np.float32)
+
+
+class TestPooledPercentiles:
+    """Day median/95th percentiles come from the day's pooled waveform samples."""
+
+    async def _leak_session(
+        self,
+        db: AsyncSession,
+        factory: Callable[..., Awaitable[Session]],
+        device: Device,
+        start: datetime,
+        leak: np.ndarray,
+        hours: float,
+    ) -> Session:
+        session = await factory(
+            device_id=device.id,
+            start_time=start,
+            duration_hours=hours,
+            usage_hours=hours,
+            leak_median=float(np.median(leak)),
+            leak_95th=float(np.percentile(leak, 95)),
+        )
+        await _add_waveform(db, session, "leak", leak)
+        return session
+
+    async def test_unequal_sessions_leak_95th_is_pooled_percentile(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        """Issue #352: a short high-leak session no longer gets 1/8 of the 95th."""
+        high = _samples(40.0, 80.0, hours=1.0)
+        low = _samples(0.0, 10.0, hours=7.0)
+        first = await self._leak_session(
+            async_db_session,
+            async_test_session_factory,
+            async_test_device,
+            datetime(2024, 11, 5, 22, 0, 0),
+            high,
+            hours=1.0,
+        )
+        second = await self._leak_session(
+            async_db_session,
+            async_test_session_factory,
+            async_test_device,
+            datetime(2024, 11, 6, 0, 0, 0),
+            low,
+            hours=7.0,
+        )
+
+        await DayManager.link_session_to_day(
+            first, async_test_device.id, async_db_session
+        )
+        day = await DayManager.link_session_to_day(
+            second, async_test_device.id, async_db_session
+        )
+
+        pooled = float(np.percentile(np.concatenate([high, low]), 95))
+        weighted = (np.percentile(high, 95) * 1.0 + np.percentile(low, 95) * 7.0) / 8.0
+        assert day.leak_95th == pytest.approx(pooled)
+        assert day.leak_95th != pytest.approx(weighted, abs=1.0)
+
+    async def test_single_session_day_matches_session_percentiles(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        rng = np.random.default_rng(352)
+        pressure = rng.uniform(6.0, 14.0, 9000).astype(np.float32)
+        epap = rng.uniform(5.0, 9.0, 9000).astype(np.float32)
+        session = await async_test_session_factory(
+            device_id=async_test_device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=5.0,
+            pressure_median=float(np.median(pressure)),
+            pressure_95th=float(np.percentile(pressure, 95)),
+            epap_median=float(np.median(epap)),
+            epap_95th=float(np.percentile(epap, 95)),
+        )
+        await _add_waveform(async_db_session, session, "pressure", pressure)
+        await _add_waveform(async_db_session, session, "epap", epap)
+
+        day = await DayManager.link_session_to_day(
+            session, async_test_device.id, async_db_session
+        )
+
+        assert day.pressure_median == pytest.approx(np.median(pressure), rel=1e-6)
+        assert day.pressure_95th == pytest.approx(np.percentile(pressure, 95), rel=1e-6)
+        assert day.epap_median == pytest.approx(np.median(epap), rel=1e-6)
+        assert day.epap_95th == pytest.approx(np.percentile(epap, 95), rel=1e-6)
+
+    async def test_therapy_pressure_preferred_over_mask_pressure(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        therapy = _samples(8.0, 10.0, hours=2.0)
+        session = await async_test_session_factory(
+            device_id=async_test_device.id,
+            start_time=datetime(2024, 11, 5, 22, 0, 0),
+            duration_hours=2.0,
+            pressure_median=9.0,
+            pressure_95th=9.9,
+        )
+        await _add_waveform(async_db_session, session, "therapy_pressure", therapy)
+        await _add_waveform(
+            async_db_session, session, "pressure", _samples(18.0, 20.0, hours=2.0)
+        )
+
+        day = await DayManager.link_session_to_day(
+            session, async_test_device.id, async_db_session
+        )
+
+        assert day.pressure_median == pytest.approx(np.median(therapy))
+        assert day.pressure_95th == pytest.approx(np.percentile(therapy, 95))
+
+    async def test_session_without_waveform_falls_back_to_weighted_mean(
+        self, async_db_session, async_test_device, async_test_session_factory
+    ):
+        first = await self._leak_session(
+            async_db_session,
+            async_test_session_factory,
+            async_test_device,
+            datetime(2024, 11, 5, 22, 0, 0),
+            _samples(40.0, 80.0, hours=1.0),
+            hours=1.0,
+        )
+        second = await async_test_session_factory(
+            device_id=async_test_device.id,
+            start_time=datetime(2024, 11, 6, 0, 0, 0),
+            duration_hours=3.0,
+            usage_hours=3.0,
+            leak_95th=8.0,
+        )
+
+        await DayManager.link_session_to_day(
+            first, async_test_device.id, async_db_session
+        )
+        day = await DayManager.link_session_to_day(
+            second, async_test_device.id, async_db_session
+        )
+
+        assert day.leak_95th == pytest.approx(
+            (first.statistics.leak_95th + 8.0 * 3) / 4
+        )
+
+    async def test_corrupt_blob_falls_back_to_weighted_mean(
+        self, async_db_session, async_test_device, async_test_session_factory, caplog
+    ):
+        first = await self._leak_session(
+            async_db_session,
+            async_test_session_factory,
+            async_test_device,
+            datetime(2024, 11, 5, 22, 0, 0),
+            _samples(40.0, 80.0, hours=1.0),
+            hours=1.0,
+        )
+        second = await async_test_session_factory(
+            device_id=async_test_device.id,
+            start_time=datetime(2024, 11, 6, 0, 0, 0),
+            duration_hours=3.0,
+            usage_hours=3.0,
+            leak_95th=8.0,
+        )
+        async_db_session.add(
+            Waveform(
+                session_id=second.id,
+                waveform_type="leak",
+                sample_rate=0.5,
+                data_blob=b"\x00" * 12,
+                sample_count=5,
+            )
+        )
+        await async_db_session.flush()
+
+        await DayManager.link_session_to_day(
+            first, async_test_device.id, async_db_session
+        )
+        with caplog.at_level(logging.WARNING, logger="snore.database.day_manager"):
+            day = await DayManager.link_session_to_day(
+                second, async_test_device.id, async_db_session
+            )
+
+        assert day.leak_95th == pytest.approx(
+            (first.statistics.leak_95th + 8.0 * 3) / 4
+        )
+        assert f"session {second.id}" in caplog.text

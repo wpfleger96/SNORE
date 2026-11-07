@@ -171,16 +171,17 @@ def cleanup_orphans(db: str | None) -> None:
 @db_option
 @click.confirmation_option(
     prompt=(
-        "Re-derive every Day's metrics from stored session statistics "
-        "and delete Day rows no session references?"
+        "Re-derive every Day's metrics from stored session statistics and "
+        "waveforms and delete Day rows no session references?"
     )
 )
 def recompute_days(db: str | None) -> None:
-    """Recompute all Day aggregates from stored session statistics (no reparse).
+    """Recompute all Day aggregates from stored session statistics and waveforms.
 
-    Re-runs day aggregation over the ``Statistics`` already stored for each
-    session, refreshing every Day row across all devices and profiles.  Use
-    after an aggregation-formula change (e.g. a new weighting) to update
+    No reparse: re-runs day aggregation over the ``Statistics`` and waveforms
+    already stored for each session, refreshing every Day row across all
+    devices and profiles.  Use after an aggregation-formula change (e.g. a
+    new weighting) to update
     historical Day rows without re-importing raw device data.  Day rows that
     no session references are deleted rather than recomputed.
 
