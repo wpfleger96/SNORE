@@ -335,10 +335,13 @@ only the nights on the requested page, while compliance still covers the whole r
 `compare_epochs` call decodes the union of its epochs' sessions once. Both epoch tools cap an epoch
 at `MAX_EPOCH_NIGHTS` (`services/breath/dtos.py`), in the service and at the MCP boundary.
 
-`experimental_compare_epochs` reads breaths in one streamed pass in which each fetch becomes numpy
-columns at once. The per-run reduction and the per-epoch distributions run on worker threads, and the
-RERA proxy uses `count_fl_run_reras_arrays`, which `tests/unit/test_rera_proxy_arrays.py` pins equal
-to `_count_fl_run_reras`. Keep `Row` objects from living across an `await`: when they survive several
+`experimental_compare_epochs` and `experimental_get_nightly_metrics` (with `GET /days/{date}/experimental`,
+which shares its code) read breaths through `stream_run_reductions` (`services/breath/breath_stream.py`):
+one streamed pass in which each fetch becomes numpy columns at once, each run reduced on a worker
+thread, and the stream closed on every exit. Per-epoch distributions and per-night summaries also run
+on worker threads, and the RERA proxy uses `count_fl_run_reras_arrays`, which
+`tests/unit/test_rera_proxy_arrays.py` pins equal to `_count_fl_run_reras`;
+`tests/unit/test_nightly_breath_arrays.py` pins the nightly array reduction equal to the row-based one. Keep `Row` objects from living across an `await`: when they survive several
 young-generation collections they trigger full collections, which stall the shared event loop for
 over 100 ms each.
 

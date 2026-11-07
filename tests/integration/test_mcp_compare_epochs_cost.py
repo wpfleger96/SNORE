@@ -5,12 +5,14 @@ epochs and growing session counts.
 - the default tool decodes the waveforms of overlapping epochs in one query
 - the experimental tool reads the breaths of overlapping epochs in one query
 - the experimental tool's query count does not grow with the number of sessions
-- a failure while streaming breaths still releases the breath cursor
+- a failure while streaming breaths, for experimental epochs or experimental
+  nightly metrics, still releases the breath cursor
 - the service refuses an epoch longer than MAX_EPOCH_NIGHTS
 """
 
 from __future__ import annotations
 
+import importlib
 import re
 import sqlite3
 
@@ -18,7 +20,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -38,6 +40,9 @@ from tests.integration.test_mcp_device_waveform_aggregates import (
     _add_waveform,
     _epoch,
 )
+
+if TYPE_CHECKING:
+    from snore.services.breath_service import BreathService
 
 _FIRST_NIGHT = date(2025, 3, 1)
 
@@ -228,7 +233,37 @@ class TestCompareEpochsQueryCost:
         assert await statements_for(2) == await statements_for(8)
 
 
+type ServiceCall = Callable[[BreathService], Awaitable[object]]
+
+
+def _compare_all_three_nights(service: BreathService) -> Awaitable[object]:
+    return service.compare_experimental_epochs(
+        [EpochRequest(label="all", date_start=_FIRST_NIGHT, date_end=_nights(3)[-1])]
+    )
+
+
+def _nightly_all_three_nights(service: BreathService) -> Awaitable[object]:
+    return service.get_experimental_nightly_range(_FIRST_NIGHT, _nights(3)[-1])
+
+
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("reducer_module", "reducer", "call"),
+    [
+        pytest.param(
+            "snore.services.breath.epochs",
+            "_reduce_run_breaths",
+            _compare_all_three_nights,
+            id="experimental-epochs",
+        ),
+        pytest.param(
+            "snore.services.breath.nightly",
+            "_reduce_night_run",
+            _nightly_all_three_nights,
+            id="experimental-nightly",
+        ),
+    ],
+)
 class TestBreathStreamRelease:
     async def test_failure_mid_stream_releases_the_breath_cursor(
         self,
@@ -236,31 +271,29 @@ class TestBreathStreamRelease:
         async_test_profile: Profile,
         temp_db: Path,
         monkeypatch: pytest.MonkeyPatch,
+        reducer_module: str,
+        reducer: str,
+        call: ServiceCall,
     ) -> None:
         """An open breath cursor holds a read lock that blocks other writers."""
-        from snore.services.breath import epochs as epochs_module  # noqa: PLC0415
+        from snore.services.breath import breath_stream  # noqa: PLC0415
         from snore.services.breath_service import BreathService  # noqa: PLC0415
 
         await _seed_analyzed_nights(async_db_session, async_test_profile.id, 3)
         await async_db_session.commit()
 
-        def fail_reduce(*_args: Any) -> None:
+        def fail_reduce(*_args: object) -> None:
             raise RuntimeError("reduce failed")
 
-        # Two-row fetches leave the cursor mid-result when the first run fails.
-        monkeypatch.setattr(epochs_module, "_BREATH_FETCH_ROWS", 2)
-        monkeypatch.setattr(epochs_module, "_reduce_run_breaths", fail_reduce)
+        # Two-row fetches over three breaths per run leave the cursor
+        # mid-result when the first run's reduction fails.
+        monkeypatch.setattr(breath_stream, "_BREATH_FETCH_ROWS", 2)
+        monkeypatch.setattr(
+            importlib.import_module(reducer_module), reducer, fail_reduce
+        )
 
         with pytest.raises(RuntimeError) as failure:
-            await BreathService(
-                async_db_session, async_test_profile.id
-            ).compare_experimental_epochs(
-                [
-                    EpochRequest(
-                        label="all", date_start=_FIRST_NIGHT, date_end=_nights(3)[-1]
-                    )
-                ]
-            )
+            await call(BreathService(async_db_session, async_test_profile.id))
 
         # ``failure`` keeps the traceback, and with it the failed call's frames
         # and any result they hold, alive while another connection writes.

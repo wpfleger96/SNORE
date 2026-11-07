@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import statistics
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
+import numpy as np
+
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from snore.analysis.queries import latest_analysis_row
@@ -36,10 +38,11 @@ from snore.services.channel_stats import (
 )
 from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
-from snore.utils.stats import percentile_nearest_rank
+from snore.utils.stats import nearest_rank_index
 
 from ._core import SessionClassification, _BreathServiceCore
-from .algorithms import _count_fl_run_reras, periodic_breathing_seconds
+from .algorithms import count_fl_run_reras_arrays, periodic_breathing_seconds
+from .breath_stream import stream_run_reductions
 from .dtos import (
     DeviceAmbiguityError,
     DeviceNotOwnedError,
@@ -60,6 +63,29 @@ MAX_NIGHTS_PER_CALL = 90
 # Device channels the nightly summary decodes; ``channel_histogram`` applies
 # each one's floor.
 _NIGHT_CHANNELS = ("fl", "snore", "leak")
+
+# Every breath column the experimental night reads, in the row order of the
+# arrays ``_reduce_night_run`` reduces.
+_NIGHT_BREATH_COLUMNS = (
+    models.Breath.leak_valid,
+    models.Breath.mid_insp_flattening,
+    models.Breath.inspiration_time_s,
+    models.Breath.i_e_ratio,
+    models.Breath.flow_class,
+    models.Breath.flow_confidence,
+    models.Breath.is_recovery_breath,
+    models.Breath.peak_flow_lpm,
+)
+(
+    _LEAK_VALID,
+    _MID_INSP_FLATTENING,
+    _INSPIRATION_TIME,
+    _IE_RATIO,
+    _FLOW_CLASS,
+    _FLOW_CONFIDENCE,
+    _IS_RECOVERY,
+    _PEAK_FLOW,
+) = range(8)
 
 
 def _stat_pair(
@@ -83,21 +109,82 @@ def _high_tail_distribution(
     return median, p95, maximum, None
 
 
+def _median(ordered: np.ndarray) -> float:
+    """``statistics.median`` of non-empty ascending values, rounding as it does."""
+    mid = ordered.size // 2
+    if ordered.size % 2:
+        return float(ordered[mid])
+    return (float(ordered[mid - 1]) + float(ordered[mid])) / 2
+
+
 def _low_tail_distribution(
-    vals: list[float], reason: NullReason
+    vals: np.ndarray, reason: NullReason
 ) -> tuple[float | None, float | None, float | None, NullReason | None]:
     """``(median, p5, min, None)`` over ``vals``, or all-``None`` + reason when empty.
 
     For inverse-severity metrics where lower = worse.
     """
-    if not vals:
+    if not vals.size:
         return None, None, None, reason
-    sorted_v = sorted(vals)
+    ordered = np.sort(vals)
     return (
-        float(statistics.median(sorted_v)),
-        percentile_nearest_rank(sorted_v, 0.05),
-        sorted_v[0],
+        _median(ordered),
+        float(ordered[nearest_rank_index(ordered.size, 0.05)]),
+        float(ordered[0]),
         None,
+    )
+
+
+class _NightRunBreaths(BaseModel):
+    """One analysis run's breaths, reduced to what its night's stats need."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # Leak-valid non-null values, in breath order.
+    mid_insp_flattening: np.ndarray
+    inspiration_time_s: np.ndarray
+    i_e_ratio: np.ndarray
+    # Leak-valid rule-matched FL classifications, and those of class >= 4.
+    fl_classified: int
+    fl_class_ge4: int
+    # RERA-proxy events over every breath of the run, leak-valid or not.
+    reras: int
+
+
+def _non_null(values: np.ndarray) -> np.ndarray:
+    return values[~np.isnan(values)]
+
+
+def _concat(arrays: Iterable[np.ndarray]) -> np.ndarray:
+    """``arrays`` end to end; empty when there are none."""
+    return np.concatenate([np.empty(0), *arrays])
+
+
+def _reduce_night_run(breaths: np.ndarray) -> _NightRunBreaths:
+    """Reduce one run's breaths (``_NIGHT_BREATH_COLUMNS`` rows, in breath order).
+
+    Runs on a worker thread.
+    """
+    leak_valid = breaths[:, breaths[_LEAK_VALID] == 1.0]
+    flow_class = leak_valid[_FLOW_CLASS]
+    # Count only rule-matched classifications.  Fallback guesses sit at exactly
+    # FL_DEFAULT_CONFIDENCE and would otherwise inflate the FL rate with
+    # class-4 guesses.
+    rule_matched = flow_class[
+        ~np.isnan(flow_class)
+        & (leak_valid[_FLOW_CONFIDENCE] > FLC.FL_DEFAULT_CONFIDENCE)
+    ]
+    return _NightRunBreaths(
+        mid_insp_flattening=_non_null(leak_valid[_MID_INSP_FLATTENING]),
+        inspiration_time_s=_non_null(leak_valid[_INSPIRATION_TIME]),
+        i_e_ratio=_non_null(leak_valid[_IE_RATIO]),
+        fl_classified=rule_matched.size,
+        fl_class_ge4=int((rule_matched >= 4).sum()),
+        # RERA proxy: FL runs ending in a recovery breath.  Scans every breath,
+        # not just leak-valid ones, because runs need sequence contiguity.
+        reras=count_fl_run_reras_arrays(
+            breaths[_FLOW_CLASS], breaths[_IS_RECOVERY] == 1.0, breaths[_PEAK_FLOW]
+        ),
     )
 
 
@@ -266,12 +353,14 @@ class NightlyMixin(_BreathServiceCore):
         day_sessions: Sequence[models.Session],
         day_row: Any | None,
         ar_classification: Mapping[int, SessionClassification],
-        breath_rows_by_ar_id: dict[int, list[Any]],
+        runs: Mapping[int, _NightRunBreaths],
         pb_seconds_by_session: Mapping[int, float | None] | None = None,
         usage_hours_by_session: Mapping[int, float | None] | None = None,
     ) -> NightlyAnalysisSummary:
         """Build a NightlyAnalysisSummary from pre-fetched data. No I/O.
 
+        ``runs`` maps an analysis run id to its ``_reduce_night_run`` result;
+        a run without breaths is absent and contributes nothing.
         ``pb_seconds_by_session`` maps a session id to its latest run's
         persisted periodic-breathing seconds (None when PB detection never ran
         or its episodes were malformed); only OK sessions are consulted.
@@ -361,41 +450,18 @@ class NightlyMixin(_BreathServiceCore):
         modes_seen = {algo.run.primary_mode for _, algo in ok_sessions}
         uniform_primary_mode = next(iter(modes_seen)) if len(modes_seen) == 1 else None
 
-        fl_vals: list[float] = []
-        ti_vals: list[float] = []
-        ie_vals: list[float] = []
-        fl_class_ge4_num = 0
-        fl_class_den = 0
-        rera_count = 0
-
-        for sid, _algo in ok_sessions:
-            _status, _a, ar_id = ar_classification.get(sid, (None, None, None))
-            if ar_id is None:
-                continue
-            breath_rows = breath_rows_by_ar_id.get(ar_id, [])
-            for b in breath_rows:
-                if b.leak_valid is True:
-                    if b.mid_insp_flattening is not None:
-                        fl_vals.append(b.mid_insp_flattening)
-                    if b.inspiration_time_s is not None:
-                        ti_vals.append(b.inspiration_time_s)
-                    if b.i_e_ratio is not None:
-                        ie_vals.append(b.i_e_ratio)
-                    # Count only rule-matched classifications. Fallback guesses
-                    # sit at exactly FL_DEFAULT_CONFIDENCE and would otherwise
-                    # inflate the FL rate with class-4 guesses.
-                    if (
-                        b.flow_class is not None
-                        and b.flow_confidence is not None
-                        and b.flow_confidence > FLC.FL_DEFAULT_CONFIDENCE
-                    ):
-                        fl_class_den += 1
-                        if b.flow_class >= 4:
-                            fl_class_ge4_num += 1
-            # RERA proxy: FL runs ending in recovery breath.  Intentionally
-            # scans ALL breaths (not just leak-valid) — runs need sequence
-            # contiguity.
-            rera_count += _count_fl_run_reras(breath_rows)
+        # The OK sessions' runs, in session order.
+        ok_runs = [
+            runs[ar_id]
+            for sid, _algo in ok_sessions
+            if (ar_id := ar_classification[sid][2]) is not None and ar_id in runs
+        ]
+        fl_vals = _concat(r.mid_insp_flattening for r in ok_runs)
+        ti_vals = _concat(r.inspiration_time_s for r in ok_runs)
+        ie_vals = _concat(r.i_e_ratio for r in ok_runs)
+        fl_class_den = sum(r.fl_classified for r in ok_runs)
+        fl_class_ge4_num = sum(r.fl_class_ge4 for r in ok_runs)
+        rera_count = sum(r.reras for r in ok_runs)
 
         fl_median, fl_5th, fl_min, fl_reason = _low_tail_distribution(
             fl_vals, NullReason.NOT_AVAILABLE
@@ -407,12 +473,12 @@ class NightlyMixin(_BreathServiceCore):
         )
 
         ti_median_s, ti_median_reason = _stat_pair(
-            float(statistics.median(ti_vals)) if ti_vals else None,
+            _median(np.sort(ti_vals)) if ti_vals.size else None,
             NullReason.NOT_AVAILABLE,
         )
 
         ie_ratio_median, ie_ratio_reason = _stat_pair(
-            float(statistics.median(ie_vals)) if ie_vals else None,
+            _median(np.sort(ie_vals)) if ie_vals.size else None,
             NullReason.NOT_AVAILABLE,
         )
 
@@ -743,41 +809,18 @@ class NightlyMixin(_BreathServiceCore):
                 {row.session_id: row.usage_hours for row in usage_rows}
             )
 
-        # Bulk Breath query for all OK ar_ids (10 columns only)
         ok_ar_ids = [
             ar_id
             for (_status, _algo, ar_id) in ar_classification.values()
             if _status == AnalysisStatus.OK and ar_id is not None
         ]
-        breath_rows_by_ar_id: dict[int, list[Any]] = {ar_id: [] for ar_id in ok_ar_ids}
-
-        if ok_ar_ids:
-            breath_cols = (
-                models.Breath.analysis_result_id,
-                models.Breath.breath_number,
-                models.Breath.leak_valid,
-                models.Breath.mid_insp_flattening,
-                models.Breath.inspiration_time_s,
-                models.Breath.i_e_ratio,
-                models.Breath.flow_class,
-                models.Breath.flow_confidence,
-                models.Breath.is_recovery_breath,
-                models.Breath.peak_flow_lpm,
-            )
-            # Chunk the unbounded ar_id IN-list (SQLite bound-param cap).  Each
-            # ar_id lands in exactly one chunk, so the per-ar_id breath ordering
-            # (analysis_result_id, breath_number) is preserved within its chunk.
-            for ar_id_chunk in iter_id_chunks(ok_ar_ids):
-                breath_result = await self._db.execute(
-                    select(*breath_cols)
-                    .where(models.Breath.analysis_result_id.in_(ar_id_chunk))
-                    .order_by(
-                        models.Breath.analysis_result_id,
-                        models.Breath.breath_number,
-                    )
-                )
-                for row in breath_result:
-                    breath_rows_by_ar_id[row.analysis_result_id].append(row)
+        # Resolved per run, so a patched ``_reduce_night_run`` takes effect.
+        runs = await stream_run_reductions(
+            self._db,
+            ok_ar_ids,
+            _NIGHT_BREATH_COLUMNS,
+            lambda breaths: _reduce_night_run(breaths),
+        )
 
         def build_nights() -> list[NightlyAnalysisSummary]:
             return [
@@ -787,7 +830,7 @@ class NightlyMixin(_BreathServiceCore):
                     day_sessions=sessions_by_date[therapy_date],
                     day_row=day_by_date.get(therapy_date),
                     ar_classification=ar_classification,
-                    breath_rows_by_ar_id=breath_rows_by_ar_id,
+                    runs=runs,
                     pb_seconds_by_session=pb_seconds_by_session,
                     usage_hours_by_session=usage_hours_by_session,
                 )
