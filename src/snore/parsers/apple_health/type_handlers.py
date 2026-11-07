@@ -13,9 +13,10 @@ from xml.etree.ElementTree import Element
 from snore.parsers.apple_health.models import RawHealthRecord, apply_noon_split
 
 SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
+SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
 
 QUANTITY_TYPES: dict[str, str | None] = {
-    "HKQuantityTypeIdentifierOxygenSaturation": "%",
+    SPO2_TYPE: "%",
     "HKQuantityTypeIdentifierRespiratoryRate": "count/min",
     # Unit is unconfirmed against real export data; accept whatever arrives.
     "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances": None,
@@ -48,6 +49,18 @@ def _parse_hk_timestamp(s: str) -> tuple[datetime, int]:
     return dt.replace(tzinfo=None), offset_secs
 
 
+def _spo2_percent(value: float) -> float:
+    """Return an SpO2 value on the percent scale.
+
+    Sources write SpO2 as a fraction (0.95) or a percent (95), both with unit
+    ``%``.  The plausible ranges are disjoint, so a value in [0.5, 1.0] is a
+    fraction and is scaled.  Anything else is kept as recorded; night aggregates
+    drop values outside 50-100 %.  Migration 022 applies the same rule to rows
+    imported before this conversion existed.
+    """
+    return round(value * 100, 4) if 0.5 <= value <= 1.0 else value
+
+
 def parse_xml_record(elem: Element) -> RawHealthRecord | None:
     """Parse a ``<Record>`` Element into a ``RawHealthRecord``.
 
@@ -77,6 +90,8 @@ def parse_xml_record(elem: Element) -> RawHealthRecord | None:
             value_num = round(float(raw_value), 4)
         except ValueError:
             return None
+        if hk_type == SPO2_TYPE:
+            value_num = _spo2_percent(value_num)
         # Unit is stored as-is even if it mismatches the expected unit —
         # preserving data fidelity over silent coercion.
 

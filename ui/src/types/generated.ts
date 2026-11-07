@@ -3972,7 +3972,7 @@ export interface components {
             unit?: string | null
             /**
              * Value Num
-             * @description [DEVICE] Numeric sample value as recorded
+             * @description [DEVICE] Numeric sample value as recorded; SpO2 recorded as a fraction is stored on the percent scale
              */
             value_num?: number | null
             /** Value Text */
@@ -8175,7 +8175,6 @@ export interface operations {
                 to_date?: string | null
                 device?: string | null
                 trim_str?: boolean
-                as_zip?: boolean
             }
             header?: never
             path?: never

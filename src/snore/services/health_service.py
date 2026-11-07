@@ -9,7 +9,7 @@ from sqlalchemy import case, func, select
 
 from snore.database import models
 from snore.exceptions import NotFoundError
-from snore.parsers.apple_health.type_handlers import SLEEP_TYPE
+from snore.parsers.apple_health.type_handlers import SLEEP_TYPE, SPO2_TYPE
 from snore.services._base import ProfileScopedService
 from snore.services.schemas import (
     HealthNightDetailRead,
@@ -18,10 +18,8 @@ from snore.services.schemas import (
 )
 
 __all__ = [
-    "SPO2_RECORD_TYPE",
     "HealthService",
     "NightFragmentation",
-    "spo2_display_pct",
 ]
 
 
@@ -35,30 +33,16 @@ class NightFragmentation(NamedTuple):
     sleep_efficiency_pct: float | None
 
 
-SPO2_RECORD_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
 _RR_RECORD_TYPE = "HKQuantityTypeIdentifierRespiratoryRate"
 _BREATHING_DISTURBANCE_RECORD_TYPE = (
     "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances"
 )
 
 
-# Plausible SpO₂ range in percent. A stored value is a fraction when value*100
-# lands in it, a percent when the value itself does. Night aggregates in
-# ``get_night_detail`` drop samples outside it as sensor or encoding errors;
-# ``spo2_display_pct`` keeps them visible as stored.
+# Plausible SpO₂ range in percent. Night aggregates in ``get_night_detail``
+# drop stored samples outside it as sensor or encoding errors.
 _SPO2_MIN_PCT = 50.0
 _SPO2_MAX_PCT = 100.0
-
-
-def spo2_display_pct(value: float) -> float:
-    """Return a stored SpO2 value on the percent scale for display.
-
-    Apple Health sources store SpO2 as either a fraction (0.95) or a percent
-    (95). Fractions are scaled to percent; anything else is returned as stored
-    so implausible samples stay visible rather than hidden. The fraction test
-    mirrors the first branch of the ``spo2_pct`` case in ``get_night_detail``.
-    """
-    return value * 100 if _SPO2_MIN_PCT <= value * 100 <= _SPO2_MAX_PCT else value
 
 
 class HealthService(ProfileScopedService):
@@ -106,9 +90,8 @@ class HealthService(ProfileScopedService):
     async def get_night_detail(self, night_date: date) -> HealthNightDetailRead:
         """Return nightly sleep summary with aggregated SpO2 and respiratory rate.
 
-        SpO2 sources disagree on encoding (fraction 0.95 vs percent 95), so each
-        sample is normalized to percent before aggregating; samples outside
-        50–100% after normalization are ignored.
+        SpO2 is stored on the percent scale (the parser scales fractions);
+        samples outside 50–100% are ignored.
 
         Raises NotFoundError when no summary exists for this night.
         """
@@ -125,15 +108,12 @@ class HealthService(ProfileScopedService):
             raise NotFoundError(f"No health data found for night {night_date}")
 
         value = models.HealthSample.value_num
-        is_spo2 = models.HealthSample.record_type == SPO2_RECORD_TYPE
-        # Value ranges are disjoint: [0.5, 1] is a fraction, [50, 100] a percent.
-        # Python twin: ``spo2_display_pct`` — keep the two in sync.
         spo2_pct = case(
             (
-                is_spo2 & (value * 100).between(_SPO2_MIN_PCT, _SPO2_MAX_PCT),
-                value * 100,
-            ),
-            (is_spo2 & value.between(_SPO2_MIN_PCT, _SPO2_MAX_PCT), value),
+                (models.HealthSample.record_type == SPO2_TYPE)
+                & value.between(_SPO2_MIN_PCT, _SPO2_MAX_PCT),
+                value,
+            )
         )
         rr = case((models.HealthSample.record_type == _RR_RECORD_TYPE, value))
 
@@ -147,9 +127,7 @@ class HealthService(ProfileScopedService):
                 ).where(
                     models.HealthSample.profile_id == self.profile_id,
                     models.HealthSample.night_date == night_date,
-                    models.HealthSample.record_type.in_(
-                        [SPO2_RECORD_TYPE, _RR_RECORD_TYPE]
-                    ),
+                    models.HealthSample.record_type.in_([SPO2_TYPE, _RR_RECORD_TYPE]),
                 )
             )
         ).one()

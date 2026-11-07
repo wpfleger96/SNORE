@@ -14,10 +14,11 @@ import csv
 import json
 import logging
 import shutil
+import tempfile
 import zipfile
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -175,20 +176,29 @@ class ExportService:
                 "Use --trim-str to trim STR.edf to the date range."
             )
 
-        if as_zip or str(output).endswith(".zip"):
-            result = self._export_raw_zip(manifest, output, warnings)
-        else:
+        trim_range = (
+            (date_from, date_to) if trim_str and date_from and date_to else None
+        )
+
+        if not (as_zip or str(output).endswith(".zip")):
             result = self._export_raw_dir(manifest, output, warnings)
+            if trim_range:
+                parser.trim_device_summary(output, *trim_range)
+            return result
 
-        if (
-            trim_str
-            and date_from
-            and date_to
-            and not (as_zip or str(output).endswith(".zip"))
-        ):
-            parser.trim_device_summary(output, date_from, date_to)
+        if not trim_range:
+            return self._export_raw_zip(manifest, output, warnings)
 
-        return result
+        # Trim needs a real file to rewrite: stage only the (small) device
+        # files, trim them there, and zip nights straight from the backup.
+        with tempfile.TemporaryDirectory() as staging:
+            staging_root = Path(staging)
+            device_only = replace(manifest, nights={})
+            self._export_raw_dir(device_only, staging_root, [])
+            parser.trim_device_summary(staging_root, *trim_range)
+            return self._export_raw_zip(
+                manifest, output, warnings, device_files_root=staging_root
+            )
 
     def _dry_run_raw(
         self,
@@ -242,15 +252,22 @@ class ExportService:
         manifest: RawFileManifest,
         output: Path,
         warnings: list[str],
+        device_files_root: Path | None = None,
     ) -> ExportResult:
-        """Write raw files to a zip archive."""
+        """Write raw files to a zip archive.
+
+        Device files are read from ``device_files_root`` (at their paths
+        relative to the backup) when given, e.g. a staging dir holding a
+        trimmed STR.edf; otherwise from the backup itself.
+        """
         output.parent.mkdir(parents=True, exist_ok=True)
+        device_root = device_files_root or manifest.source_root
         files_written = 0
 
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
             for src in manifest.device_files:
-                arcname = str(src.relative_to(manifest.source_root))
-                zf.write(src, arcname)
+                rel = src.relative_to(manifest.source_root)
+                zf.write(device_root / rel, str(rel))
                 files_written += 1
 
             for _night_date, files in sorted(manifest.nights.items()):
