@@ -321,47 +321,25 @@ class TestSchemaFieldLabels:
 
 
 class TestInstructions:
-    def test_instructions_explain_provenance_tiers(self) -> None:
+    def test_instructions_state_experimental_rule(self) -> None:
         instructions = _build_instructions(get_profile("neutral"))
 
-        assert "PROVENANCE:" in instructions
-        for marker in ("[DEVICE]", "[DERIVED]", "[EXPERIMENTAL]", "`provenance`"):
-            assert marker in instructions
-        for note in PROVENANCE_NOTES.values():
-            assert note in instructions
+        for text in (
+            EXPERIMENTAL_NOTE,
+            "reference standard",
+            "never present them as device-scored or clinically validated",
+            "docs://schemas",
+            "docs://capabilities",
+        ):
+            assert text in instructions
 
-    def test_instructions_explain_source_dependent_map(self) -> None:
-        instructions = " ".join(_build_instructions(get_profile("neutral")).split())
+    @pytest.mark.parametrize("tool", [*DEFAULT_TOOLS, *EXPERIMENTAL_TOOLS])
+    def test_instructions_name_no_tool(self, tool: str) -> None:
+        """Only profile text may name tools; the server's own text never does."""
+        assert tool not in _build_instructions(get_profile("neutral"))
 
-        assert "`source_dependent`" in instructions
-        assert "mv_source" not in instructions
-        for source_field in INDEX_SOURCE_FIELDS.values():
-            assert source_field in instructions
-        assert "coverage counts" in instructions
-
-    def test_instructions_run_device_workflow_before_experimental_step(self) -> None:
-        instructions = _build_instructions(get_profile("neutral"))
-        experimental_step = instructions.index("OPTIONAL EXPERIMENTAL STEP")
-
-        for tool in DEFAULT_TOOLS:
-            assert instructions.index(tool) < experimental_step
-        for tool in EXPERIMENTAL_TOOLS:
-            assert instructions.index(tool) > experimental_step
-
-    def test_instructions_treat_waveforms_as_primary_evidence(self) -> None:
-        instructions = _build_instructions(get_profile("neutral"))
-
-        assert "PRIMARY EVIDENCE" in instructions
-        assert "Tier 1" not in instructions
-        assert "escape hatch" not in instructions
-        assert "≤15 min" in instructions
-        assert "≤2 min window / ≤1000 pts" in instructions
-
-    def test_instructions_null_example_names_a_default_field(self) -> None:
-        instructions = _build_instructions(get_profile("neutral"))
-
-        assert "leak_above_24_pct_reason" in instructions
-        assert "rera_index_reason" not in instructions
+    def test_neutral_instructions_stay_under_1k_chars(self) -> None:
+        assert len(_build_instructions(get_profile("neutral"))) < 1000
 
     def test_uars_profile_flags_rera_proxy_as_experimental(self) -> None:
         hint = get_profile("uars").priority_hint
@@ -586,3 +564,43 @@ class TestCapabilitiesResource:
         )
 
         assert set(SCHEMA_MODEL_MAP) <= set(re.findall(r"\w+", description or ""))
+
+
+class TestSchemasResource:
+    async def _read_schema(self) -> dict[str, Any]:
+        mcp = make_server()
+        with patch("snore.mcp.server._lifespan", _fake_lifespan):
+            async with fastmcp.Client(mcp) as client:
+                contents = await client.read_resource("docs://schemas/nightly_summary")
+        return json.loads(contents[0].text)
+
+    async def test_legend_tiers_match_provenance_notes(self) -> None:
+        legend = (await self._read_schema())["x-provenance-legend"]
+
+        assert legend["tiers"] == {str(t): n for t, n in PROVENANCE_NOTES.items()}
+
+    async def test_legend_explains_tags_and_response_block(self) -> None:
+        legend = (await self._read_schema())["x-provenance-legend"]
+        text = " ".join(f"{legend['field_tags']} {legend['response_block']}".split())
+
+        for expected in (
+            "[DEVICE]",
+            "[DERIVED]",
+            "[EXPERIMENTAL]",
+            "`provenance`",
+            "`source_dependent`",
+            "coverage counts",
+            *INDEX_SOURCE_FIELDS.values(),
+        ):
+            assert expected in text
+        assert "mv_source" not in text
+
+    async def test_schema_properties_still_present(self) -> None:
+        schema = await self._read_schema()
+
+        assert (
+            schema["properties"]
+            == NightlySummaryResponse.model_json_schema(mode="serialization")[
+                "properties"
+            ]
+        )

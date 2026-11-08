@@ -67,7 +67,7 @@ from snore.mcp.tools._scaffold import (  # noqa: F401  (re-exported; tests impor
     tool_error_boundary,
 )
 from snore.mcp.validation import parse_date
-from snore.provenance import PROVENANCE_NOTES, response_provenance
+from snore.provenance import PROVENANCE_NOTES, Provenance, response_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -183,19 +183,32 @@ class ActorRuntime:
         return current_actor().profile_id
 
 
-def _provenance_legend() -> str:
-    return "\n".join(
-        f"  {tier.value.upper()}: {note}" for tier, note in PROVENANCE_NOTES.items()
-    )
+_SCHEMA_PROVENANCE_LEGEND: dict[str, Any] = {
+    "tiers": {str(tier): note for tier, note in PROVENANCE_NOTES.items()},
+    "field_tags": (
+        "Each tagged field's description starts with its tier, [DEVICE], [DERIVED] "
+        "or [EXPERIMENTAL], and `x-provenance` holds the same tier. A field with "
+        "`x-provenance-source` takes its tier per value from the sibling field it "
+        "names. Experimental fields appear only in experimental_* tools."
+    ),
+    "response_block": (
+        "Tool responses carry a top-level `provenance` block listing the paths of "
+        "non-device fields by tier (`derived`, `experimental`). Metric fields it "
+        "does not list are device data; identifiers and bookkeeping fields (ids, "
+        "offsets, pagination, coverage counts) are not classified; responses with "
+        "only device data carry no block. Its `source_dependent` map takes a field "
+        "path to the sibling field whose value decides that value's tier: the "
+        "nightly headline ahi/oai/cai/hi -> `nights[].index_source` "
+        "(get_nightly_summary) or `device.index_source` (get_night_detail), where "
+        "`device` is the device-reported daily value and `derived` is SNORE's "
+        "recount; the recount, when computable, is in `*_computed`."
+    ),
+}
 
 
 def _build_instructions(profile: ClinicalProfile) -> str:
     return f"""\
-SNORE MCP Server v{version("snore")}
-Sleep eNvironment Observation & Respiratory Evaluation
-
-Each tool's description documents its parameters, refusal semantics, and error
-conditions. Use `docs://schemas/{{type}}` for full response JSON schemas.
+SNORE MCP Server v{version("snore")}: CPAP/APAP therapy data (device-scored events, device summaries, waveforms) imported from the user's devices.
 
 Active clinical profile: {profile.display_name}
 {profile.priority_hint}
@@ -203,51 +216,9 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-WORKFLOW (device data first; none of these tools needs analysis):
-1. get_data_overview  → discover devices, date ranges, channels
-2. get_period_stats → weekly/monthly/yearly averages of usage, indices, pressure, leak, SpO2, Apple Health sleep
-3. get_nightly_summary → identify nights of interest: indices, event counts, pressure, leak, device flow limitation (30 nights/page)
-4. get_night_detail (date) → one night in full: the day's device values, every session's device statistics, Apple Health sleep
-5. get_settings_timeline → understand settings epochs
-6. get_settings_changes → full audit log of device settings changes + user-logged mask equipment changes
-7. get_events (date) → device-scored events for a night, with device-channel context (pressure, leak, MV, delivered PS)
-8. compare_epochs → device flow-limitation and snore channels across settings epochs
-9. render_window → PNG chart of device waveforms for visual inspection (≤15 min window)
-10. get_waveform → raw per-sample arrays for deep inspection (≤2 min window / ≤1000 pts)
+Device-scored events are the reference standard. experimental_* tools return SNORE's own heuristics ({PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}); never present them as device-scored or clinically validated.
 
-OPTIONAL EXPERIMENTAL STEP (separate from the workflow above; call these only
-when SNORE's own heuristics are wanted as trend evidence alongside device data):
-- experimental_get_nightly_metrics → RERA proxy, RDI, FL classes, segmented breath timing, periodic-breathing %
-- experimental_get_event_context → MV slope, MV stability, flow-derived MV around device-scored events
-- experimental_compare_epochs → breath-feature distributions across settings epochs
-- experimental_get_breath_table → per-breath features for a window
-- experimental_find_windows → locate breath windows by flow-limitation criterion
-
-PRIMARY EVIDENCE: device-scored events, device summaries, and raw waveforms carry
-equal weight. Read the flow, pressure, and leak traces with render_window and
-get_waveform as evidence in their own right, not as a last resort after the
-nightly numbers.
-
-NULL FIELDS: When data is absent, fields are null + a companion *_reason field
-explains why (e.g. leak_above_24_pct_reason: "channel_absent"). Never infer from null.
-
-PROVENANCE: every metric has one provenance class:
-{_provenance_legend()}
-Field descriptions in docs://schemas start with [DEVICE] / [DERIVED] /
-[EXPERIMENTAL]. Experimental fields appear only in experimental_* tools.
-A top-level `provenance` block lists a response's non-device field paths; metric
-fields it does not list are device data, identifiers and bookkeeping fields
-(ids, offsets, pagination, coverage counts) are not classified, and responses
-with only device data carry no block. The block's `source_dependent` map takes a
-field path to the sibling field whose value decides that value's tier: the
-nightly headline ahi/oai/cai/hi -> `nights[].index_source` (get_nightly_summary)
-or `device.index_source` (get_night_detail), where `device` is the
-device-reported daily value and `derived` is SNORE's recount; the recount, when
-computable, is in `*_computed`. Device-scored events are the reference
-standard; never present experimental metrics as device-scored or clinically
-validated.
-
-See docs://capabilities for dataset-specific channel availability.
+`docs://schemas/{{type}}` gives each response's JSON schema and explains the [DEVICE]/[DERIVED]/[EXPERIMENTAL] field tiers and the per-response `provenance` block; `docs://capabilities` lists this dataset's channels and event types.
 """
 
 
@@ -481,6 +452,9 @@ def _register_resources(mcp: FastMCP) -> None:
     def get_schema(schema_type: str) -> str:
         """JSON schema for a named response type.
 
+        Each schema carries an `x-provenance-legend` explaining field tiers and
+        the response `provenance` block.
+
         Available schema_types: device_capabilities, device_info, data_overview,
         settings_epoch, settings_timeline, settings_change_entry, settings_changes,
         nightly_row, compliance_fields, nightly_summary, night_session,
@@ -501,7 +475,13 @@ def _register_resources(mcp: FastMCP) -> None:
             raise ToolError(
                 f"Unknown schema type {schema_type!r}. Available: {available}"
             )
-        return json.dumps(model_to_schema(model), indent=2)
+        return json.dumps(
+            {
+                "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
+                **model_to_schema(model),
+            },
+            indent=2,
+        )
 
     @mcp.resource("docs://capabilities")
     async def get_capabilities(ctx: Context) -> str:
