@@ -675,8 +675,18 @@ class AnalysisFacade:
 
         Returns:
             BatchAnalysisResult with per-session outcomes and aggregate counts
+
+        Raises:
+            ValueError: Up front, before any session runs, when ``modes`` or
+                ``primary_mode`` is invalid (see ``resolve_primary_mode``).
         """
+        from snore.analysis.modes import DEFAULT_MODE  # noqa: PLC0415
+        from snore.analysis.service import resolve_primary_mode  # noqa: PLC0415
         from snore.database.session import session_scope  # noqa: PLC0415
+
+        resolve_primary_mode(
+            list(modes) if modes is not None else [DEFAULT_MODE], primary_mode
+        )
 
         base_stmt = (
             select(
