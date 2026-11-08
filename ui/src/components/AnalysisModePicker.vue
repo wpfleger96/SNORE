@@ -5,7 +5,7 @@
             <ToggleGroup
                 type="multiple"
                 variant="outline"
-                class="picker-toggles mt-1"
+                class="picker-toggles toggle-strong mt-1"
                 :aria-labelledby="modesLabelId"
                 :model-value="modes"
                 @update:model-value="setModes"
@@ -43,7 +43,7 @@
                     <ToggleGroup
                         type="single"
                         variant="outline"
-                        class="picker-toggles mt-1"
+                        class="picker-toggles toggle-strong mt-1"
                         :aria-labelledby="primaryLabelId"
                         :model-value="effective"
                         @update:model-value="pickPrimary"
@@ -108,13 +108,6 @@ function pickPrimary(value: unknown): void {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-}
-
-/* The shared toggles mark "on" with a faint muted fill; make the selection unmistakable. */
-.picker-toggles :deep([data-state='on']) {
-    background-color: var(--primary);
-    border-color: var(--primary);
-    color: var(--primary-foreground);
 }
 
 @media (max-width: 767.98px) {

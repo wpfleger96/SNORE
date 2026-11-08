@@ -54,6 +54,7 @@
                     type="single"
                     variant="outline"
                     size="sm"
+                    class="toggle-strong"
                     aria-label="Results shown"
                     :model-value="resultsShown"
                     @update:model-value="
@@ -178,7 +179,7 @@
                 :model-value="activeMode"
                 type="single"
                 variant="outline"
-                class="mode-selector"
+                class="mode-selector toggle-strong"
                 @update:model-value="
                     (v) => {
                         if (v) selectedMode = v as string
@@ -633,9 +634,10 @@
                             :show-stored-rera="saveResults"
                         />
                         <div>
-                            <Toggle v-model="saveResults" variant="outline" class="save-toggle">
-                                Save results
-                            </Toggle>
+                            <label class="save-check">
+                                <input v-model="saveResults" type="checkbox" />
+                                <span>Save results</span>
+                            </label>
                             <p class="mt-1 text-xs text-muted-foreground">
                                 {{
                                     saveResults
@@ -674,7 +676,6 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
     AlertDialog,
@@ -1045,10 +1046,25 @@ onMounted(loadSavedAnalysis)
     gap: 0.5rem;
 }
 
+.save-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: fit-content;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-foreground);
+    cursor: pointer;
+}
+
+.save-check input {
+    cursor: pointer;
+}
+
 @media (max-width: 767.98px) {
     .page-header :deep(button),
     .preview-actions :deep(button),
-    .save-toggle {
+    .save-check {
         min-height: var(--tap-target);
     }
 }

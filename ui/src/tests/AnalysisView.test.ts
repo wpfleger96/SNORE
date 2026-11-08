@@ -230,8 +230,17 @@ describe('AnalysisView', () => {
         await flushPromises()
     }
 
+    function saveResultsCheckbox(): HTMLInputElement {
+        const label = [...document.body.querySelectorAll('label')].find(
+            (l) => l.textContent?.trim() === 'Save results',
+        )
+        const input = label?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+        expect(input, 'Save results checkbox').toBeDefined()
+        return input!
+    }
+
     async function toggleSaving() {
-        dialogButton('Save results').click()
+        saveResultsCheckbox().click()
         await flushPromises()
     }
 
@@ -654,10 +663,12 @@ describe('AnalysisView', () => {
         const wrapper = await mountView()
         await openRunDialog(wrapper)
         await clickMode(document.body, 'Modes', 'ResMed')
+        expect(saveResultsCheckbox().checked).toBe(true)
         expect(advancedTrigger(document.body)).not.toBeNull()
 
         await toggleSaving()
 
+        expect(saveResultsCheckbox().checked).toBe(false)
         expect(advancedTrigger(document.body)).toBeNull()
         dialogButton('Run').click()
         await flushPromises()
