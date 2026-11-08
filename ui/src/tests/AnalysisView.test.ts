@@ -13,7 +13,7 @@ import { getAnalysis, runAnalysis } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { setMediaMatches } from './matchMedia'
-import { clickMode } from './helpers/modePicker'
+import { clickMode, RERA_GROUP } from './helpers/modePicker'
 
 const ANALYSIS = {
     session_id: 7,
@@ -270,7 +270,7 @@ describe('AnalysisView', () => {
 
         await runFromDialog(wrapper, async () => {
             await clickMode(document.body, 'Modes', 'ResMed')
-            await clickMode(document.body, 'Primary mode', 'ResMed')
+            await clickMode(document.body, RERA_GROUP, 'ResMed')
         })
 
         expect(runAnalysis).toHaveBeenCalledWith(7, {

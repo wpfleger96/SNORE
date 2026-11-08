@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { h, reactive } from 'vue'
 import AnalysisModePicker from '@/components/AnalysisModePicker.vue'
 import type { AnalysisMode } from '@/api/analysis'
-import { clickMode, pickerGroup, pressedModes } from './helpers/modePicker'
+import {
+    advancedTrigger,
+    clickMode,
+    pickerGroup,
+    pressedModes,
+    RERA_GROUP,
+} from './helpers/modePicker'
 
 // The host owns the v-model state, as the analysis views do.
 function mountPicker(modes: AnalysisMode[], primaryMode: AnalysisMode = modes[0]!) {
@@ -30,41 +36,83 @@ describe('AnalysisModePicker', () => {
         expect(labels).toEqual(['AASM', 'AASM Relaxed', 'ResMed'])
     })
 
-    it('test_single_mode_hides_primary_picker', () => {
+    it('test_single_mode_hides_advanced_disclosure', () => {
         const { root } = mountPicker(['resmed'])
 
-        expect(pickerGroup(root, 'Primary mode')).toBeNull()
+        expect(advancedTrigger(root)).toBeNull()
+        expect(pickerGroup(root, RERA_GROUP)).toBeNull()
     })
 
-    it('test_adding_a_mode_shows_primary_picker_on_the_first_selected_mode', async () => {
+    it('test_several_modes_show_advanced_collapsed_naming_current_choice', () => {
+        const { root } = mountPicker(['aasm', 'resmed'])
+
+        const trigger = advancedTrigger(root)!
+        expect(trigger.textContent!.trim()).toBe('Advanced: RERA flags from AASM')
+        expect(trigger.getAttribute('aria-expanded')).toBe('false')
+        expect(pickerGroup(root, RERA_GROUP)).toBeNull()
+    })
+
+    it('test_selected_non_default_primary_passed_on_mount_is_kept', () => {
+        const { root, state } = mountPicker(['aasm', 'resmed'], 'resmed')
+
+        expect(state.primaryMode).toBe('resmed')
+        expect(advancedTrigger(root)!.textContent!.trim()).toBe('Advanced: RERA flags from ResMed')
+    })
+
+    it('test_expanding_advanced_offers_only_selected_modes', async () => {
+        const { root } = mountPicker(['aasm', 'resmed'])
+
+        advancedTrigger(root)!.click()
+        await flushPromises()
+
+        const options = [...pickerGroup(root, RERA_GROUP)!.querySelectorAll('button')].map((b) =>
+            b.textContent!.trim(),
+        )
+        expect(options).toEqual(['AASM', 'ResMed'])
+        expect(pressedModes(root, RERA_GROUP)).toEqual(['AASM'])
+    })
+
+    it('test_adding_aasm_makes_it_the_default_primary', async () => {
         const { state, root } = mountPicker(['resmed'])
 
         await clickMode(root, 'Modes', 'AASM')
 
         expect(state.modes).toEqual(['aasm', 'resmed'])
-        expect(state.primaryMode).toBe('resmed')
-        expect(pressedModes(root, 'Primary mode')).toEqual(['ResMed'])
+        expect(state.primaryMode).toBe('aasm')
     })
 
-    it('test_primary_picker_offers_only_selected_modes', async () => {
-        const { state, root } = mountPicker(['aasm', 'resmed'])
+    it('test_default_primary_without_aasm_is_first_selected_mode', async () => {
+        const { state, root } = mountPicker(['resmed'])
 
-        await clickMode(root, 'Primary mode', 'ResMed')
+        await clickMode(root, 'Modes', 'AASM Relaxed')
 
-        const options = [...pickerGroup(root, 'Primary mode')!.querySelectorAll('button')].map(
-            (b) => b.textContent!.trim(),
+        expect(state.primaryMode).toBe('aasm_relaxed')
+        expect(advancedTrigger(root)!.textContent!.trim()).toBe(
+            'Advanced: RERA flags from AASM Relaxed',
         )
-        expect(options).toEqual(['AASM', 'ResMed'])
-        expect(state.primaryMode).toBe('resmed')
     })
 
-    it('test_deselecting_primary_mode_moves_it_to_a_selected_mode', async () => {
-        const { state, root } = mountPicker(['aasm', 'aasm_relaxed', 'resmed'], 'aasm')
+    it('test_explicit_pick_updates_trigger_and_survives_adding_a_mode', async () => {
+        const { state, root } = mountPicker(['aasm_relaxed', 'resmed'])
 
+        await clickMode(root, RERA_GROUP, 'ResMed')
         await clickMode(root, 'Modes', 'AASM')
 
-        expect(state.modes).toEqual(['aasm_relaxed', 'resmed'])
-        expect(state.primaryMode).toBe('aasm_relaxed')
+        expect(state.modes).toEqual(['aasm', 'aasm_relaxed', 'resmed'])
+        expect(state.primaryMode).toBe('resmed')
+        expect(advancedTrigger(root)!.textContent!.trim()).toBe('Advanced: RERA flags from ResMed')
+    })
+
+    it('test_deselecting_explicit_pick_falls_back_to_default', async () => {
+        const { state, root } = mountPicker(['aasm', 'aasm_relaxed', 'resmed'])
+
+        await clickMode(root, RERA_GROUP, 'ResMed')
+        await clickMode(root, 'Modes', 'ResMed')
+        expect(state.primaryMode).toBe('aasm')
+
+        // The override is gone: re-adding ResMed does not restore it.
+        await clickMode(root, 'Modes', 'ResMed')
+        expect(state.primaryMode).toBe('aasm')
     })
 
     it('test_initial_primary_outside_selection_is_corrected', () => {

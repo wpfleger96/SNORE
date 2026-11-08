@@ -45,7 +45,7 @@ import {
 import { getExperimentalStats } from '@/api/stats'
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { setMediaMatches } from './matchMedia'
-import { clickMode } from './helpers/modePicker'
+import { clickMode, RERA_GROUP } from './helpers/modePicker'
 
 describe('AnalysisManagementView — analyze missing', () => {
     beforeEach(() => {
@@ -187,7 +187,7 @@ describe('AnalysisManagementView — analyze missing', () => {
         await clickBatchDialogButton(label, dates, async (root) => {
             await clickMode(root, 'Modes', 'AASM Relaxed')
             await clickMode(root, 'Modes', 'ResMed')
-            await clickMode(root, 'Primary mode', 'ResMed')
+            await clickMode(root, RERA_GROUP, 'ResMed')
         })
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()

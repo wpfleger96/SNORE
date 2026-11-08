@@ -3,7 +3,9 @@ import { flushPromises } from '@vue/test-utils'
 // Helpers for driving AnalysisModePicker by its visible labels. `root` is the
 // mounted wrapper's element, or document.body when the picker is in a dialog.
 
-type PickerGroup = 'Modes' | 'Primary mode'
+export const RERA_GROUP = 'Mode for stored RERA flags'
+
+type PickerGroup = 'Modes' | typeof RERA_GROUP
 
 /** The toggle group under the `group` label, or null when it is not rendered. */
 export function pickerGroup(root: ParentNode, group: PickerGroup): HTMLElement | null {
@@ -18,8 +20,21 @@ export function pressedModes(root: ParentNode, group: PickerGroup): string[] {
     )
 }
 
-/** Click the item labelled `mode` in the `group` toggle group. */
+/** The Advanced disclosure trigger, or null when it is not rendered. */
+export function advancedTrigger(root: ParentNode): HTMLButtonElement | null {
+    return (
+        [...root.querySelectorAll('button')].find((b) =>
+            b.textContent?.trim().startsWith('Advanced:'),
+        ) ?? null
+    )
+}
+
+/** Click the item labelled `mode` in the `group` toggle group, expanding Advanced if needed. */
 export async function clickMode(root: ParentNode, group: PickerGroup, mode: string): Promise<void> {
+    if (group === RERA_GROUP && !pickerGroup(root, group)) {
+        advancedTrigger(root)?.click()
+        await flushPromises()
+    }
     const button = [...(pickerGroup(root, group)?.querySelectorAll('button') ?? [])].find(
         (b) => b.textContent?.trim() === mode,
     )
