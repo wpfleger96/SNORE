@@ -98,7 +98,6 @@ async def _upsert_job_record(job: ImportJob) -> None:
         "error_message": job.error_message,
         "analysis_queued": job.analysis_queued,
         "spool_dir_path": spool_dir_path,
-        "force": job.force,
         "created_at": job.created_at_wall,
         "started_at": job.started_at_wall,
         "finished_at": finished,
@@ -333,7 +332,6 @@ def _acquire_import(
     return asyncio.run(
         service.import_sources(
             sources,
-            force=job.force,
             backup=True,
             backup_root=profile_raw_root,
             profile_id=target_profile_id,

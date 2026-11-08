@@ -690,8 +690,9 @@ export interface paths {
          *
          *     The work outlasts the proxy's request timeout on a large database, so this
          *     returns 202 at once with a ``job_id`` to poll with
-         *     ``GET /db/reset-jobs/status``.  Returns 409 while another reset or data
-         *     deletion is queued or running.
+         *     ``GET /db/reset-jobs/status``.  Returns 409 while any database maintenance
+         *     task (a reset, another data deletion, a vacuum or a day recompute) is queued
+         *     or running.
          *
          *     NOTE: Concurrent in-flight imports for this user's devices will fail if
          *     their device rows are deleted mid-import; this is accepted behavior.
@@ -1008,8 +1009,8 @@ export interface paths {
          *     are deleted.  Use it after a change to day aggregation.
          *
          *     Returns 202 at once; poll ``GET /db/recompute-days`` for progress and the
-         *     result.  Returns 409 while another recompute, a database reset or a data
-         *     deletion is queued or running.
+         *     result.  Returns 409 while any database maintenance task (another
+         *     recompute, a reset, a data deletion or a vacuum) is queued or running.
          */
         post: operations['recompute_days_api_v1_db_recompute_days_post']
         delete?: never
@@ -1051,8 +1052,9 @@ export interface paths {
          *     The work outlasts the proxy's request timeout on a large database, so this
          *     returns 202 at once with a ``job_id`` to poll with
          *     ``GET /db/reset-jobs/status``, which carries the result, including a factory
-         *     reset's one-time ``bootstrap_invite_url``.  Returns 409 while another reset
-         *     or data deletion is queued or running.
+         *     reset's one-time ``bootstrap_invite_url``.  Returns 409 while any database
+         *     maintenance task (another reset, a data deletion, a vacuum or a day
+         *     recompute) is queued or running.
          *
          *     Note: the job holds the SQLite write lock for the entire delete+commit, so
          *     on large databases concurrent import/analysis writers may hit their busy
@@ -1116,6 +1118,8 @@ export interface paths {
          * @description Vacuum the SQLite database to reclaim space after deletions.
          *
          *     Requires a SQLite file target; raises 422 for non-SQLite databases.
+         *     Returns 409 while another vacuum or any other database maintenance task (a
+         *     reset, data deletion or day recompute) is queued or running.
          */
         post: operations['vacuum_db_api_v1_db_vacuum_post']
         delete?: never
@@ -1439,6 +1443,8 @@ export interface paths {
          *     ``analyze=false`` skips the follow-up analysis job.
          *
          *     Returns 422 when no archive exists or the archive contains no device data.
+         *     Returns 409 when ``force`` is set and a forced rescan of the same profile is
+         *     already queued or running.
          *     Returns 429 when admission caps are exceeded.
          */
         post: operations['rescan_archive_api_v1_import_rescan_post']
@@ -5279,14 +5285,14 @@ export interface components {
             force: boolean
             /**
              * From Date
-             * @description Only re-import sessions on or after this date
+             * @description Only re-import sessions that start on or after this date. Dates match each session's start date, not its night: a night's sessions that start after midnight fall on the next day.
              */
             from_date?: string | null
             /** Profile Id */
             profile_id?: number | null
             /**
              * To Date
-             * @description Only re-import sessions on or before this date
+             * @description Only re-import sessions that start on or before this date. To cover a night, include the following day: sessions that start after midnight are dated the next day.
              */
             to_date?: string | null
         }
@@ -8576,11 +8582,6 @@ export interface operations {
             content: {
                 'multipart/form-data': {
                     files: string[]
-                    /**
-                     * @description CPAP only: delete and recreate sessions that already exist instead of skipping them. 'true' on any chunk of a batch forces the batch.
-                     * @default false
-                     */
-                    force?: boolean
                     /**
                      * @description Type of import: 'cpap' for CPAP device uploads (default), 'health' for Apple Health export.zip
                      * @enum {string}

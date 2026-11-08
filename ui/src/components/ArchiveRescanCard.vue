@@ -43,6 +43,7 @@
                     Clear dates
                 </Button>
             </div>
+            <p class="archive-hint">{{ DATE_HINT }}</p>
             <p v-if="dateOrderInvalid" class="error-text">
                 The From date must be on or before the To date.
             </p>
@@ -75,10 +76,11 @@
                 <AlertDialogHeader>
                     <AlertDialogTitle>Force re-parse?</AlertDialogTitle>
                     <AlertDialogDescription>
-                        Every already-imported session {{ scopeText }} will be deleted and recreated
-                        from the archived raw files, including its events, statistics, waveforms,
-                        settings, analysis results and breath rows. Disabled sessions stay disabled.
-                        {{ analysisText }}
+                        Every already-imported session {{ scopeText }} will be deleted, including
+                        its events, statistics, waveforms, settings, analysis results and breath
+                        rows, and rebuilt from the files in the server archive. Disabled sessions
+                        stay disabled. {{ analysisText }}
+                        <template v-if="fromDate || toDate">{{ DATE_HINT }}</template>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -112,6 +114,8 @@ import { formatDateFull } from '@/utils/formatting'
 const props = defineProps<{ profileId: number | null }>()
 const emit = defineEmits<{ started: [] }>()
 
+const DATE_HINT =
+    "Dates match each session's start date. To cover a night, include the following day: a session that starts after midnight is dated the next day."
 const FORCE_WARNING =
     'Every matched session that is already imported is deleted and recreated, including its analysis results and breath rows. Disabled sessions stay disabled.'
 
@@ -162,7 +166,7 @@ async function submit(): Promise<void> {
     error.value = null
     try {
         await triggerRescan({
-            ...(props.profileId !== null ? { profile_id: props.profileId } : {}),
+            profile_id: props.profileId,
             force: force.value,
             from_date: fromDate.value || null,
             to_date: toDate.value || null,
@@ -174,14 +178,7 @@ async function submit(): Promise<void> {
         emit('started')
     } catch (e: unknown) {
         confirmOpen.value = false
-        const axiosErr = e as { response?: { data?: { detail?: unknown } } }
-        const detail = axiosErr.response?.data?.detail
-        error.value =
-            typeof detail === 'string'
-                ? detail
-                : e instanceof Error
-                  ? e.message
-                  : 'Re-import from archive failed'
+        error.value = e instanceof Error ? e.message : 'Re-import from archive failed'
     } finally {
         pending.value = false
     }
@@ -264,6 +261,12 @@ async function submit(): Promise<void> {
 .archive-date-label {
     font-size: 0.75rem;
     color: var(--color-muted-foreground);
+}
+
+.archive-hint {
+    font-size: 0.75rem;
+    color: var(--color-muted-foreground);
+    margin: 0;
 }
 
 .archive-actions {

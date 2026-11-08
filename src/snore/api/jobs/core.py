@@ -1,4 +1,4 @@
-"""Shared in-memory job machinery for the import and analysis pipelines.
+"""Shared in-memory job machinery for the background job pipelines.
 
 ``import_jobs`` and ``analysis_jobs`` are structural twins: both keep an
 in-memory store of jobs guarded by a store lock, model each job as a
@@ -12,11 +12,21 @@ are genuinely identical between them:
 - :func:`run_worker_loop` — the ``wait → dequeue → execute`` worker skeleton
   with its BaseException guard (log, force terminal, never re-raise).
 
+It also holds what the database-wide maintenance jobs share (``reset_jobs`` for
+reset and data deletion, ``recompute_jobs`` for the day recompute):
+
+- :class:`MaintenanceJobState` and :class:`SingleShotJobRecord` — the
+  QUEUED → RUNNING → terminal lifecycle of a job that runs once.
+- The maintenance registry (:func:`register_maintenance_job`,
+  :func:`admit_maintenance`) — no two maintenance activities, including the
+  synchronous ``POST /db/vacuum``, ever run at the same time.
+
 Deliberately NOT unified here (they diverge in ways that matter):
 
 - ``_finish`` / ``finish`` terminal transitions — import embeds the durable
   import result and broadcasts SSE observers; analysis records an error
-  message.  Each subclass keeps its own.
+  message; each maintenance job stores its own result.  Each subclass keeps its
+  own.
 - Observer / SSE machinery — import only.
 - Two-phase admission, capacity accounting, queue eviction — policy that stays
   local to each module.
@@ -31,7 +41,8 @@ import threading
 import time
 
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -43,13 +54,6 @@ logger = logging.getLogger(__name__)
 # both pipelines; single-sourced here to kill the cross-module import that used
 # to couple analysis_jobs to import_jobs.
 JOB_TTL_SECONDS: float = 600.0
-
-# Held across admission of the database-wide maintenance jobs (reset/delete-data
-# in ``reset_jobs`` and the day recompute in ``recompute_jobs``), which must never
-# run together.  Each enqueue checks the other module's active jobs and admits its
-# own under this lock, so two concurrent requests cannot both pass the check.
-# Always acquire it before a module's own store lock, never while holding one.
-MAINTENANCE_ADMISSION_LOCK = threading.Lock()
 
 
 @dataclass(kw_only=True)
@@ -322,3 +326,113 @@ def run_worker_loop[T](
 
         if after_execute is not None:
             after_execute()
+
+
+# ---------------------------------------------------------------------------
+# Database maintenance jobs
+# ---------------------------------------------------------------------------
+
+
+class MaintenanceJobState(Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+MAINTENANCE_TERMINAL_STATES = frozenset(
+    {
+        MaintenanceJobState.SUCCEEDED,
+        MaintenanceJobState.FAILED,
+        MaintenanceJobState.CANCELLED,
+    }
+)
+
+
+@dataclass(kw_only=True)
+class SingleShotJobRecord(JobRecordBase[MaintenanceJobState]):
+    """A maintenance job that runs once: QUEUED → RUNNING → terminal.
+
+    Cancelling a QUEUED job ends it CANCELLED at once; a RUNNING job only sees
+    the flag through :attr:`cancel_requested`.  Subclasses supply ``finish``
+    and their status snapshot.
+    """
+
+    _TERMINAL_STATES = MAINTENANCE_TERMINAL_STATES
+
+    _state: MaintenanceJobState = field(
+        default=MaintenanceJobState.QUEUED, init=False, repr=False
+    )
+    _finished_at: float | None = field(default=None, init=False, repr=False)
+
+    @property
+    def finished_at(self) -> float | None:
+        """Monotonic timestamp when the job reached a terminal state, or None."""
+        with self._lock:
+            return self._finished_at
+
+    def _stamp_finished(self) -> None:
+        """Record the terminal timestamps. Caller holds ``_lock``."""
+        self._finished_at = time.monotonic()
+        self._finished_at_wall = datetime.now(UTC)
+
+    def try_start(self) -> bool:
+        """Atomically transition QUEUED → RUNNING, or → CANCELLED if cancel was set."""
+        with self._lock:
+            if self._cancel_flag:
+                self._state = MaintenanceJobState.CANCELLED
+                self._stamp_finished()
+                return False
+            self._start_running(MaintenanceJobState.RUNNING)
+            return True
+
+    def _on_cancel_locked(self) -> None:
+        """Eager-terminalize a QUEUED job. Caller holds ``_lock`` (see base)."""
+        if self._state == MaintenanceJobState.QUEUED:
+            self._state = MaintenanceJobState.CANCELLED
+            self._stamp_finished()
+
+
+# The 409 detail for every maintenance request refused by admit_maintenance.
+MAINTENANCE_CONFLICT_DETAIL = (
+    "Another database maintenance task (reset, data deletion, optimization or day "
+    "recompute) is in progress. Try again when it finishes."
+)
+
+# Held across each maintenance admission, so two concurrent requests cannot both
+# pass the check.  Always acquire it before a module's own store lock, never
+# while holding one: the registered ``has_active`` callbacks take those locks.
+_maintenance_admission_lock = threading.Lock()
+_maintenance_activities: dict[str, Callable[[], bool]] = {}
+
+
+def register_maintenance_job(name: str, has_active: Callable[[], bool]) -> None:
+    """Register a maintenance activity; *has_active* reports whether it is underway.
+
+    Each module registers itself at import time.  The app imports every one
+    through its routers, so all are registered before the first request.
+    """
+    _maintenance_activities[name] = has_active
+
+
+def active_maintenance() -> list[str]:
+    """Names of the registered maintenance activities underway; read by ``/health/busy``."""
+    return [
+        name for name, has_active in _maintenance_activities.items() if has_active()
+    ]
+
+
+@contextmanager
+def admit_maintenance(name: str) -> Iterator[bool]:
+    """Hold the admission lock; yield False if another maintenance activity is active.
+
+    The caller admits its own job inside the block only when it yields True.
+    Activities other than *name* are checked here; the caller checks its own.
+    """
+    with _maintenance_admission_lock:
+        yield not any(
+            has_active()
+            for other, has_active in _maintenance_activities.items()
+            if other != name
+        )

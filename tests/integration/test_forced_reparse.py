@@ -1,8 +1,8 @@
 """Forced re-parse and the other import options against a real database.
 
-Runs the import worker on the recorded ResMed SD card, copied into a profile's
-raw archive for rescans or into an upload spool for uploads, to check what
-``force``, the date range and ``analyze`` do to sessions already imported.
+Runs the rescan worker on the recorded ResMed SD card, copied into a profile's
+raw archive, to check what ``force``, the date range and ``analyze`` do to
+sessions already imported.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy import select, update
 
 from snore.api.import_jobs import ImportJob, JobState, JobType, create_job
-from snore.api.import_worker import _run_import, _run_rescan
+from snore.api.import_worker import _run_rescan
 from snore.database import models
 from snore.database.session import cleanup_database, init_database, session_scope
 from tests.integration.conftest import _make_profile
@@ -63,20 +63,6 @@ def _rescan(archive: tuple[int, Path], **options: Any) -> tuple[ImportJob, Magic
         _run_rescan(job, archive_root)
     assert job.state == JobState.SUCCEEDED, job.error_message
     return job, enqueue
-
-
-def _upload(
-    archive: tuple[int, Path], card: Path, spool: Path, *, force: bool = False
-) -> ImportJob:
-    """Run one upload job of *card* to completion, as the final chunk would."""
-    profile_id, archive_root = archive
-    shutil.copytree(card, spool)
-    job = create_job(JobType.UPLOAD, owner_user_id=None, temp_dir=spool, force=force)
-    job.target_profile_id = profile_id
-    with patch("snore.api.analysis_jobs.enqueue", return_value=None):
-        _run_import(job, archive_root)
-    assert job.state == JobState.SUCCEEDED, job.error_message
-    return job
 
 
 def _session_ids() -> list[int]:
@@ -183,26 +169,22 @@ def test_rescan_with_analyze_on_queues_analysis_for_imported_sessions(archive):
     assert job.analysis_job_id == "analysis-1"
 
 
-def test_upload_without_force_skips_existing_sessions(
-    archive, resmed_fixture_path, tmp_path
-):
-    _upload(archive, resmed_fixture_path, tmp_path / "spool-1")
+def test_forced_rescan_keeps_disabled_session_disabled(archive):
+    _rescan(archive)
+
+    async def _disable_all() -> None:
+        async with session_scope() as db:
+            await db.execute(update(models.Session).values(enabled=False))
+
+    asyncio.run(_disable_all())
     _mark_sessions_stale()
 
-    job = _upload(archive, resmed_fixture_path, tmp_path / "spool-2")
+    job, _ = _rescan(archive, force=True)
 
-    assert job.import_result_snapshot["total_skipped"] == 1
-    assert _stale_session_count() == 1
-
-
-def test_upload_with_force_replaces_existing_sessions(
-    archive, resmed_fixture_path, tmp_path
-):
-    _upload(archive, resmed_fixture_path, tmp_path / "spool-1")
-    _mark_sessions_stale()
-
-    job = _upload(archive, resmed_fixture_path, tmp_path / "spool-2", force=True)
+    async def _enabled_flags() -> list[bool]:
+        async with session_scope() as db:
+            return list((await db.scalars(select(models.Session.enabled))).all())
 
     assert job.import_result_snapshot["total_imported"] == 1
-    assert len(_session_ids()) == 1
     assert _stale_session_count() == 0
+    assert asyncio.run(_enabled_flags()) == [False]

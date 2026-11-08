@@ -27,14 +27,21 @@ ProgressCallback = Callable[[int, int], None]
 """Called with ``(days_processed, days_total)`` before the first chunk and after each."""
 
 
+class RecomputeStopped(Exception):
+    """``should_stop`` ended the run early; the chunks before it stay committed."""
+
+
 async def recompute_all_days(
     on_progress: ProgressCallback | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> RecomputeDaysResult:
     """Recompute every Day in chunks, each committed in its own gated write.
 
     The SQLite write lock is released between chunks, so concurrent import and
-    analysis workers are not starved.  Recomputation is idempotent, so a run
-    interrupted after some chunks committed can simply be re-run.
+    analysis workers are not starved.  ``should_stop`` is checked before each
+    chunk and raises :class:`RecomputeStopped` when it returns True.
+    Recomputation is idempotent, so a run interrupted after some chunks
+    committed can simply be re-run.
     """
     async with session_scope() as session:
         day_ids = (
@@ -43,21 +50,27 @@ async def recompute_all_days(
 
     total = len(day_ids)
     processed = 0
+    recomputed = 0
     pruned = 0
     if on_progress is not None:
         on_progress(processed, total)
     for chunk in iter_id_chunks(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE):
+        if should_stop is not None and should_stop():
+            raise RecomputeStopped
         async with write_gate(), session_scope(immediate=True) as session:
+            # A day deleted since the listing is simply not loaded.
             days = (
                 (await session.execute(select(Day).where(Day.id.in_(chunk))))
                 .scalars()
                 .all()
             )
             for day in days:
-                if not await DayManager.recalculate_day(day, session):
+                if await DayManager.recalculate_day(day, session):
+                    recomputed += 1
+                else:
                     pruned += 1
         processed += len(chunk)
         if on_progress is not None:
             on_progress(processed, total)
 
-    return RecomputeDaysResult(days_recomputed=total - pruned, days_pruned=pruned)
+    return RecomputeDaysResult(days_recomputed=recomputed, days_pruned=pruned)

@@ -675,6 +675,19 @@ describe('ImportView archive re-import', () => {
         expect(getImportJobs).toHaveBeenCalledTimes(2)
     })
 
+    it('test_started_rescan_returns_selected_folder_to_drop_zone', async () => {
+        const wrapper = mount(ImportView)
+        await flushPromises()
+        await triggerFileSelection(wrapper, allSkippedFiles)
+        expect(wrapper.text()).toContain('MySD')
+
+        await wrapper.find('.archive-stub').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).not.toContain('MySD')
+        expect(wrapper.findAll('button').some((b) => b.text() === 'Change folder')).toBe(false)
+    })
+
     it('test_all_files_on_server_points_to_archive_card_and_disables_import', async () => {
         const wrapper = mount(ImportView)
         await flushPromises()

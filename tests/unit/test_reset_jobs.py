@@ -28,8 +28,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.api import reset_jobs
-from snore.api.jobs.core import JOB_TTL_SECONDS
-from snore.api.reset_jobs import ResetJob, ResetJobKind, ResetJobState
+from snore.api.jobs.core import JOB_TTL_SECONDS, MaintenanceJobState
+from snore.api.reset_jobs import ResetJob, ResetJobKind
 from snore.auth.invite_tokens import hash_invite_token
 from snore.database import models
 from snore.database.session import cleanup_database, init_database, session_scope
@@ -64,7 +64,7 @@ def _enqueue(
 def test_enqueue_returns_queued_job_with_unguessable_token():
     job = _enqueue()
 
-    assert job.state == ResetJobState.QUEUED
+    assert job.state == MaintenanceJobState.QUEUED
     assert reset_jobs.get_job(job.job_id) is job
     assert len(job.job_id) >= 43  # 32 random bytes, base64url
 
@@ -113,7 +113,7 @@ def test_finish_keeps_success_despite_pending_cancel():
 
     job.finish(succeeded=True)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
 
 
 def test_finish_keeps_failure_message_despite_pending_cancel():
@@ -123,7 +123,7 @@ def test_finish_keeps_failure_message_despite_pending_cancel():
 
     job.finish(succeeded=False, error_message="boom")
 
-    assert job.state == ResetJobState.FAILED
+    assert job.state == MaintenanceJobState.FAILED
     assert job.error_message == "boom"
 
 
@@ -135,7 +135,7 @@ def test_cancel_before_start_prevents_any_work():
         reset_jobs._execute_job(job)
 
     run.assert_not_called()
-    assert job.state == ResetJobState.CANCELLED
+    assert job.state == MaintenanceJobState.CANCELLED
 
 
 def test_shutdown_cancels_queued_job():
@@ -143,7 +143,7 @@ def test_shutdown_cancels_queued_job():
 
     reset_jobs.shutdown(timeout=1.0)
 
-    assert job.state == ResetJobState.CANCELLED
+    assert job.state == MaintenanceJobState.CANCELLED
     assert reset_jobs.has_active_job() is False
 
 
@@ -288,7 +288,7 @@ def test_factory_reset_wipes_accounts_and_mints_redeemable_invite(init_db):
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     result = job.to_dict()["reset_result"]
     assert isinstance(result, ResetResult)
     assert _run(_count(models.User)) == 0
@@ -304,7 +304,7 @@ def test_data_only_reset_keeps_accounts_and_deletes_sleep_data(init_db):
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     assert _run(_count(models.User)) == 1
     assert _run(_count(models.Profile)) == 1
     assert _run(_count(models.Session)) == 0
@@ -316,7 +316,7 @@ def test_delete_data_cascades_through_real_foreign_keys(init_db):
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     result = job.to_dict()["delete_data_result"]
     assert isinstance(result, DeleteDataResult)
     assert result.devices_deleted == 1
@@ -330,7 +330,7 @@ def test_factory_reset_without_caller_email_deletes_nothing(init_db):
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.FAILED
+    assert job.state == MaintenanceJobState.FAILED
     assert job.error_message == reset_jobs._FAILURE_MESSAGE
     assert _run(_count(models.User)) == 1
     assert _run(_count(models.Session)) == 1
@@ -347,7 +347,7 @@ def test_worker_thread_runs_queued_job_to_completion(init_db):
     while not job.is_terminal and time.monotonic() < deadline:
         time.sleep(0.01)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
 
 
 @pytest.mark.parametrize(
@@ -461,10 +461,10 @@ def test_job_stays_active_while_its_vacuum_runs(init_db, marker, monkeypatch):
 
     assert seen == {
         "active": True,
-        "state": ResetJobState.RUNNING,
+        "state": MaintenanceJobState.RUNNING,
         "reset_result": None,
     }
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
 
 
 def test_delete_runs_in_an_immediate_transaction(init_db):
@@ -510,7 +510,7 @@ def test_cache_clear_failure_after_commit_still_delivers_invite(init_db):
     ):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     result = job.to_dict()["reset_result"]
     assert isinstance(result, ResetResult)
     assert result.bootstrap_invite_url
@@ -549,7 +549,7 @@ def test_session_close_failure_after_commit_still_delivers_invite(
     ):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     result = job.to_dict()["reset_result"]
     assert isinstance(result, ResetResult)
     assert result.bootstrap_invite_url
@@ -581,7 +581,7 @@ def test_quarantine_failure_partway_restores_dirs_and_keeps_rows(init_db, tmp_pa
     ):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.FAILED
+    assert job.state == MaintenanceJobState.FAILED
     assert _run(_count(models.Profile)) == 2
     assert _run(_count(models.Session)) == 1
     assert (raw_root / str(first) / "data.edf").read_text() == "backup"
@@ -603,7 +603,7 @@ def test_failure_before_commit_removes_the_marker_it_wrote(init_db, marker, erro
     with patch.object(DatabaseService, "reset_all_data", side_effect=error):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.FAILED
+    assert job.state == MaintenanceJobState.FAILED
     assert not marker.exists()
 
 
@@ -618,7 +618,7 @@ def test_failure_before_commit_leaves_an_earlier_marker(init_db, marker):
     ):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.FAILED
+    assert job.state == MaintenanceJobState.FAILED
     assert marker.exists()
 
 
@@ -632,7 +632,7 @@ def test_job_deleting_nothing_skips_vacuum_and_removes_marker(
     with patch.object(reset_jobs, "file_size_mb", side_effect=[3.0, 1.0]):
         reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     assert vacuum_calls == []
     assert not marker.exists()
     assert job.result is not None
@@ -649,7 +649,7 @@ def test_job_deleting_nothing_leaves_an_earlier_marker(
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     assert vacuum_calls == []
     assert marker.exists()
 
@@ -660,7 +660,7 @@ def test_delete_data_deleting_a_device_vacuums(init_db, marker, vacuum_calls):
 
     reset_jobs._execute_job(job)
 
-    assert job.state == ResetJobState.SUCCEEDED
+    assert job.state == MaintenanceJobState.SUCCEEDED
     assert vacuum_calls == [_JOB_DB_PATH]
     assert marker.exists(), "_vacuum_background clears the marker, not the job"
 

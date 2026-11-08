@@ -14,9 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from snore.api import recompute_jobs, reset_jobs
+from snore.api.jobs.core import MAINTENANCE_CONFLICT_DETAIL
 from snore.auth.actor import ActorContext, AuthMode, Role
 from snore.database import models
-from snore.services import day_recompute_service
+from snore.services import day_recompute
 from tests.helpers.api_client import make_test_client
 from tests.helpers.recompute_jobs import RECOMPUTE_PATH, run_queued_recompute_job
 from tests.helpers.reset_jobs import RESET_PATH
@@ -35,7 +36,7 @@ def recompute_job_session(async_db_session, monkeypatch):
         async with async_db_session.begin():
             yield async_db_session
 
-    monkeypatch.setattr(day_recompute_service, "session_scope", _scope)
+    monkeypatch.setattr(day_recompute, "session_scope", _scope)
 
 
 @pytest.fixture
@@ -51,21 +52,14 @@ def member_client(async_db_session, db_session):
     return make_test_client(async_db_session, actor=actor)
 
 
-def _seed_stale_day_and_orphan_day(
-    db_session: OrmSession, device: models.Device
-) -> int:
-    """Seed a Day whose aggregates disagree with its one session, plus a Day
-    no session references.  Returns the first Day's id."""
+def _seed_stale_day(db_session: OrmSession, device: models.Device, night: date) -> int:
+    """Seed a Day whose aggregates disagree with its one 2-hour session; return its id."""
     stale = models.Day(
-        device_id=device.id,
-        date=date(2025, 1, 10),
-        session_count=5,
-        total_therapy_hours=99.0,
+        device_id=device.id, date=night, session_count=5, total_therapy_hours=99.0
     )
-    orphan = models.Day(device_id=device.id, date=date(2025, 1, 11), session_count=1)
-    db_session.add_all([stale, orphan])
+    db_session.add(stale)
     db_session.flush()
-    start = datetime(2025, 1, 10, 22, 0)
+    start = datetime.combine(night, datetime.min.time()) + timedelta(hours=22)
     db_session.add(
         models.Session(
             device_id=device.id,
@@ -78,6 +72,18 @@ def _seed_stale_day_and_orphan_day(
     )
     db_session.flush()
     return stale.id
+
+
+def _seed_stale_day_and_orphan_day(
+    db_session: OrmSession, device: models.Device
+) -> int:
+    """Seed a stale Day plus a Day no session references.  Returns the stale Day's id."""
+    stale_id = _seed_stale_day(db_session, device, date(2025, 1, 10))
+    db_session.add(
+        models.Day(device_id=device.id, date=date(2025, 1, 11), session_count=1)
+    )
+    db_session.flush()
+    return stale_id
 
 
 class TestRecomputeDaysAccess:
@@ -126,6 +132,55 @@ class TestRecomputeDaysJob:
         assert [(d.id, d.session_count) for d in days] == [(stale_id, 1)]
         assert days[0].total_therapy_hours == pytest.approx(2.0)
 
+    def test_job_over_no_days_succeeds_with_zero_counts(self, api_client):
+        api_client.post(RECOMPUTE_PATH)
+
+        run_queued_recompute_job()
+
+        status = api_client.get(RECOMPUTE_PATH).json()
+        assert status["state"] == "succeeded"
+        assert (status["days_processed"], status["days_total"]) == (0, 0)
+        assert status["result"] == {"days_recomputed": 0, "days_pruned": 0}
+
+    def test_cancel_while_running_stops_before_next_chunk(
+        self, api_client, db_session, test_device, monkeypatch
+    ):
+        first_id = _seed_stale_day(db_session, test_device, date(2025, 1, 10))
+        second_id = _seed_stale_day(db_session, test_device, date(2025, 1, 11))
+        monkeypatch.setattr(day_recompute, "RECOMPUTE_DAYS_CHUNK_SIZE", 1)
+        report_progress = recompute_jobs.RecomputeDaysJob.report_progress
+
+        def _cancel_after_first_chunk(job, processed, total):
+            # Stands in for shutdown cancelling the job while it runs.
+            report_progress(job, processed, total)
+            if processed == 1:
+                job.try_cancel()
+
+        monkeypatch.setattr(
+            recompute_jobs.RecomputeDaysJob,
+            "report_progress",
+            _cancel_after_first_chunk,
+        )
+        api_client.post(RECOMPUTE_PATH)
+
+        run_queued_recompute_job()
+
+        status = api_client.get(RECOMPUTE_PATH).json()
+        assert status["state"] == "cancelled"
+        assert (status["days_processed"], status["days_total"]) == (1, 2)
+        assert status["result"] is None
+        db_session.expire_all()
+        assert db_session.get(models.Day, first_id).session_count == 1
+        assert db_session.get(models.Day, second_id).session_count == 5
+
+    def test_status_is_not_cached(self, api_client):
+        api_client.post(RECOMPUTE_PATH)
+
+        response = api_client.get(RECOMPUTE_PATH)
+
+        assert response.status_code == 200
+        assert "no-store" in response.headers["cache-control"]
+
     def test_failure_reports_fixed_message_only(self, api_client):
         api_client.post(RECOMPUTE_PATH)
 
@@ -161,7 +216,7 @@ class TestRecomputeDaysConcurrency:
         second = api_client.post(RECOMPUTE_PATH)
 
         assert second.status_code == 409
-        assert "already in progress" in second.json()["detail"]
+        assert second.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
         assert len(recompute_jobs._queue) == 1
 
     def test_409_while_recompute_running(self, api_client):
@@ -184,5 +239,5 @@ class TestRecomputeDaysConcurrency:
         response = api_client.post(RESET_PATH)
 
         assert response.status_code == 409
-        assert "already in progress" in response.json()["detail"]
+        assert response.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
         assert not reset_jobs.has_active_job()

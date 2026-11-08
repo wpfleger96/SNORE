@@ -55,15 +55,21 @@ describe('ArchiveRescanCard', () => {
         expect(wrapper.emitted('started')).toHaveLength(1)
     })
 
-    it('test_omits_profile_when_none_selected', async () => {
+    it('test_sends_null_profile_when_none_selected', async () => {
         const wrapper = mountCard(null)
 
         await rescanButton(wrapper).trigger('click')
         await flushPromises()
 
-        const body = vi.mocked(triggerRescan).mock.calls[0][0]
-        expect(body).not.toHaveProperty('profile_id')
-        expect(body).toEqual({ force: false, from_date: null, to_date: null, analyze: true })
+        expect(triggerRescan).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_BODY, profile_id: null })
+    })
+
+    it('test_date_hint_explains_sessions_after_midnight', () => {
+        const wrapper = mountCard()
+
+        const hint = wrapper.find('.archive-hint').text()
+        expect(hint).toContain("each session's start date")
+        expect(hint).toContain('include the following day')
     })
 
     it('test_sends_date_range_and_analysis_choice', async () => {
@@ -111,7 +117,20 @@ describe('ArchiveRescanCard', () => {
 
         expect(triggerRescan).not.toHaveBeenCalled()
         expect(document.body.textContent).toContain('Force re-parse?')
+        expect(document.body.textContent).toContain('rebuilt from the files in the server archive')
         expect(bodyButton('Delete and re-parse')).toBeDefined()
+    })
+
+    it('test_forced_rescan_confirmation_repeats_date_hint_for_a_range', async () => {
+        const wrapper = mountCard()
+        await wrapper.find('[data-testid="force"]').setValue(true)
+        await setDates(wrapper, '2024-06-20', '2024-06-21')
+
+        await rescanButton(wrapper).trigger('click')
+        await flushPromises()
+
+        const dialog = document.body.querySelector('[role="alertdialog"]')!.textContent
+        expect(dialog).toContain('include the following day')
     })
 
     it('test_confirmed_forced_rescan_sends_force_then_disarms_it', async () => {
@@ -143,10 +162,11 @@ describe('ArchiveRescanCard', () => {
         expect(bodyButton('Delete and re-parse')).toBeUndefined()
     })
 
-    it('test_error_detail_is_shown_and_nothing_emitted', async () => {
-        vi.mocked(triggerRescan).mockRejectedValue({
-            response: { data: { detail: 'Archive exists but contains no device data.' } },
-        })
+    it('test_error_message_is_shown_and_nothing_emitted', async () => {
+        // The API client's interceptor copies the server's `detail` into `message`.
+        vi.mocked(triggerRescan).mockRejectedValue(
+            new Error('Archive exists but contains no device data.'),
+        )
         const wrapper = mountCard()
 
         await rescanButton(wrapper).trigger('click')

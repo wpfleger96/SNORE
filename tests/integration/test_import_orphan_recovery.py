@@ -184,36 +184,3 @@ async def test_recovery_with_empty_table_is_noop(tmp_path):
 
     finally:
         await cleanup_database()
-
-
-async def test_resumed_upload_keeps_force(tmp_path, monkeypatch):
-    """A forced upload whose spool survived resumes forced, not as a plain import."""
-    from snore.api import app as app_module  # noqa: PLC0415
-    from snore.api import import_jobs  # noqa: PLC0415
-
-    db_path = str(tmp_path / "resume.db")
-    await init_database(db_path)
-    spool = tmp_path / "spool"
-    spool.mkdir()
-    (spool / "a.edf").write_bytes(b"x")
-    resumed: list[import_jobs.ImportJob] = []
-    monkeypatch.setattr(
-        import_jobs, "enqueue_for_execution", lambda job, root: resumed.append(job)
-    )
-
-    try:
-        async with session_scope(immediate=True) as db:
-            rec = _make_record("job_forced", "pending")
-            rec.target_profile_id = 7
-            rec.spool_dir_path = str(spool)
-            rec.force = True
-            db.add(rec)
-
-        candidates = await _recover_orphaned_import_jobs()
-        app_module._startup_resume_imports(candidates)
-
-        assert [job.force for job in resumed] == [True]
-    finally:
-        for job in resumed:
-            import_jobs.remove_job(job.job_id)
-        await cleanup_database()

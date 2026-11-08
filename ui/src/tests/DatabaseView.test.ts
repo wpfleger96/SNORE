@@ -29,6 +29,7 @@ import {
     getResetJobStatus,
     resetDb,
     startRecomputeDays,
+    vacuumDb,
 } from '@/api/db'
 import { POLL_FAILURES_BEFORE_WARNING, POLL_INTERVAL_MS } from '@/composables/useResetJob'
 
@@ -86,9 +87,13 @@ function jobStatus(overrides: Record<string, unknown> = {}) {
     } as never
 }
 
-function httpError(status: number) {
-    return Object.assign(new Error(`HTTP ${status}`), { response: { status } })
+// The API client's interceptor copies the server's `detail` into `message`.
+function httpError(status: number, message = `HTTP ${status}`) {
+    return Object.assign(new Error(message), { response: { status } })
 }
+
+const CONFLICT_DETAIL =
+    'Another database maintenance task (reset, data deletion, optimization or day recompute) is in progress. Try again when it finishes.'
 
 function makeAuthMock(overrides: Record<string, unknown> = {}) {
     vi.mocked(useAuth).mockReturnValue(
@@ -111,6 +116,7 @@ describe('DatabaseView — danger zone', () => {
         vi.mocked(getDbStats).mockResolvedValue(DB_STATS as never)
         vi.mocked(resetDb).mockResolvedValue(JOB_ENQUEUED as never)
         vi.mocked(getResetJobStatus).mockResolvedValue(jobStatus())
+        vi.mocked(getRecomputeDaysStatus).mockRejectedValue(httpError(404))
     })
 
     afterEach(() => {
@@ -391,16 +397,14 @@ describe('DatabaseView — danger zone', () => {
         expect(jobNotice(wrapper).exists()).toBe(false)
     })
 
-    it('test_reset_conflict_shows_in_progress_message_and_does_not_poll', async () => {
-        vi.mocked(resetDb).mockRejectedValueOnce(httpError(409))
+    it('test_reset_conflict_shows_server_message_and_does_not_poll', async () => {
+        vi.mocked(resetDb).mockRejectedValueOnce(httpError(409, CONFLICT_DETAIL))
 
         const wrapper = await mountAndLoad()
         await confirmReset(wrapper)
         await pollOnce()
 
-        expect(wrapper.find('.error-state').text()).toContain(
-            'Another reset, data deletion or day recompute is in progress',
-        )
+        expect(wrapper.find('.error-state').text()).toContain(CONFLICT_DETAIL)
         expect(getResetJobStatus).not.toHaveBeenCalled()
         expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(false)
     })
@@ -555,6 +559,8 @@ describe('DatabaseView — day recompute', () => {
         vi.mocked(getDbStats).mockResolvedValue(DB_STATS as never)
         vi.mocked(getRecomputeDaysStatus).mockRejectedValue(httpError(404))
         vi.mocked(startRecomputeDays).mockResolvedValue(recomputeStatus({ state: 'queued' }))
+        vi.mocked(resetDb).mockResolvedValue(JOB_ENQUEUED as never)
+        vi.mocked(getResetJobStatus).mockResolvedValue(jobStatus())
     })
 
     afterEach(() => {
@@ -585,6 +591,84 @@ describe('DatabaseView — day recompute', () => {
         bodyButton('Start recompute')!.click()
         await flushPromises()
     }
+
+    function pageButton(wrapper: Awaited<ReturnType<typeof mountAndLoad>>, label: string) {
+        return wrapper.findAll('button').find((b) => b.text().trim() === label)!
+    }
+
+    async function startVacuum(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        await pageButton(wrapper, 'Optimize').trigger('click')
+        await flushPromises()
+        // The dialog's confirm button shares the label; it renders after the page's.
+        const confirm = [...document.body.querySelectorAll('button')].filter(
+            (b) => b.textContent?.trim() === 'Optimize',
+        )
+        confirm[confirm.length - 1]!.click()
+        await flushPromises()
+    }
+
+    it('test_optimize_disabled_while_recompute_runs', async () => {
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValue(recomputeStatus())
+
+        const wrapper = await mountAndLoad()
+
+        expect(pageButton(wrapper, 'Optimize').attributes('disabled')).toBeDefined()
+    })
+
+    it('test_recompute_disabled_while_vacuum_runs', async () => {
+        vi.mocked(vacuumDb).mockReturnValue(new Promise(() => {}))
+        const wrapper = await mountAndLoad()
+
+        await startVacuum(wrapper)
+
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeDefined()
+    })
+
+    it('test_recompute_disabled_while_reset_runs', async () => {
+        const wrapper = await mountAndLoad()
+
+        await wrapper.find('.danger-card button').trigger('click')
+        await wrapper.vm.$nextTick()
+        await wrapper.find('.stub-confirm').trigger('click')
+        await flushPromises()
+
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeDefined()
+    })
+
+    it('test_vacuum_conflict_shows_server_message_in_optimize_card', async () => {
+        vi.mocked(vacuumDb).mockRejectedValueOnce(httpError(409, CONFLICT_DETAIL))
+        const wrapper = await mountAndLoad()
+
+        await startVacuum(wrapper)
+
+        const errors = wrapper.findAll('.error-state').map((e) => e.text())
+        expect(errors).toContain(CONFLICT_DETAIL)
+    })
+
+    it('test_running_recompute_before_listing_days_reads_as_running', async () => {
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValue(recomputeStatus())
+
+        const wrapper = await mountAndLoad()
+
+        const progress = wrapper.find('[role="status"]').text()
+        expect(progress).toContain('Recomputing days')
+        expect(progress).not.toContain('queued')
+    })
+
+    it('test_cancelled_recompute_says_finished_days_are_kept', async () => {
+        const wrapper = await mountAndLoad()
+        await startRecompute(wrapper)
+
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValueOnce(
+            recomputeStatus({ state: 'cancelled', days_processed: 100, days_total: 400 }),
+        )
+        await vi.advanceTimersByTimeAsync(RECOMPUTE_POLL_MS)
+
+        const message = wrapper.find('.error-state').text()
+        expect(message).toContain('shut down before the recompute finished')
+        expect(message).toContain('Days already recomputed are kept')
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeUndefined()
+    })
 
     it('test_recompute_hidden_for_member', async () => {
         makeAuthMock({ role: ref('member') })
@@ -650,15 +734,13 @@ describe('DatabaseView — day recompute', () => {
         expect(wrapper.find('.error-state').text()).toContain('The day recompute failed.')
     })
 
-    it('test_recompute_conflict_shows_in_progress_message', async () => {
-        vi.mocked(startRecomputeDays).mockRejectedValueOnce(httpError(409))
+    it('test_recompute_conflict_shows_server_message', async () => {
+        vi.mocked(startRecomputeDays).mockRejectedValueOnce(httpError(409, CONFLICT_DETAIL))
         const wrapper = await mountAndLoad()
 
         await startRecompute(wrapper)
 
-        expect(wrapper.find('.error-state').text()).toContain(
-            'Another day recompute, reset or data deletion is in progress',
-        )
+        expect(wrapper.find('.error-state').text()).toContain(CONFLICT_DETAIL)
         expect(recomputeButton(wrapper)!.attributes('disabled')).toBeUndefined()
     })
 

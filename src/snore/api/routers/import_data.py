@@ -23,11 +23,12 @@ from snore.api.deps import ActorDep, get_db
 from snore.api.guards import RequireAuth, RequireWritable
 from snore.api.import_jobs import (
     TERMINAL_STATES,
+    ForcedRescanActiveError,
     ImportJob,
     JobState,
     JobType,
     cancel_job,
-    create_job,
+    create_rescan_job,
     enqueue_for_execution,
     get_job,
     list_jobs,
@@ -151,10 +152,20 @@ class RescanRequest(BaseModel):
         ),
     )
     from_date: date | None = Field(
-        default=None, description="Only re-import sessions on or after this date"
+        default=None,
+        description=(
+            "Only re-import sessions that start on or after this date. Dates match "
+            "each session's start date, not its night: a night's sessions that "
+            "start after midnight fall on the next day."
+        ),
     )
     to_date: date | None = Field(
-        default=None, description="Only re-import sessions on or before this date"
+        default=None,
+        description=(
+            "Only re-import sessions that start on or before this date. To cover a "
+            "night, include the following day: sessions that start after midnight "
+            "are dated the next day."
+        ),
     )
     analyze: bool = Field(
         default=True, description="Queue analysis for the imported sessions"
@@ -281,15 +292,6 @@ def _get_upload_limits() -> tuple[int, int, int]:
         return 2 * 1024 * 1024 * 1024, 10_000, 256 * 1024 * 1024
 
 
-def _form_flag(raw: object, name: str) -> bool:
-    """Read an optional 'true'/'false' multipart field; absent means False."""
-    if raw is None:
-        return False
-    if isinstance(raw, str) and raw.lower() in ("true", "false"):
-        return raw.lower() == "true"
-    raise HTTPException(status_code=422, detail=f"{name} must be 'true' or 'false'")
-
-
 async def _resolve_profile_id(
     db: AsyncSession,
     actor: ActorContext,
@@ -348,15 +350,6 @@ async def _resolve_profile_id(
                                 "description": (
                                     "Type of import: 'cpap' for CPAP device uploads (default), "
                                     "'health' for Apple Health export.zip"
-                                ),
-                            },
-                            "force": {
-                                "type": "boolean",
-                                "default": False,
-                                "description": (
-                                    "CPAP only: delete and recreate sessions that "
-                                    "already exist instead of skipping them. "
-                                    "'true' on any chunk of a batch forces the batch."
                                 ),
                             },
                         },
@@ -426,13 +419,6 @@ async def import_files(
                 raise HTTPException(
                     status_code=422,
                     detail="import_type must be 'cpap' or 'health'",
-                )
-
-            force = _form_flag(form.get("force"), "force")
-            if force and import_type == "health":
-                raise HTTPException(
-                    status_code=422,
-                    detail="force is not supported for health imports",
                 )
 
             # Health imports are single-request only — batch continuation is not supported.
@@ -589,9 +575,6 @@ async def import_files(
                 # Refresh activity so the stale-upload reaper sees a live upload.
                 job.touch()
 
-        if force:
-            job.force = True
-
         if not batch_final:
             # More chunks coming — keep the job in PENDING_UPLOAD.
             _job_cleanup = False
@@ -696,6 +679,8 @@ async def rescan_archive(
     ``analyze=false`` skips the follow-up analysis job.
 
     Returns 422 when no archive exists or the archive contains no device data.
+    Returns 409 when ``force`` is set and a forced rescan of the same profile is
+    already queued or running.
     Returns 429 when admission caps are exceeded.
     """
     from snore.constants import DEFAULT_RAW_BACKUP_DIR  # noqa: PLC0415
@@ -721,21 +706,27 @@ async def rescan_archive(
         )
 
     try:
-        job = create_job(
-            JobType.RESCAN,
+        job = create_rescan_job(
             owner_user_id=actor.user_id,
+            target_profile_id=resolved_profile_id,
             force=body.force,
             date_from=body.from_date,
             date_to=body.to_date,
             analyze=body.analyze,
         )
+    except ForcedRescanActiveError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A forced re-import of this profile is already queued or running. "
+                "Wait for it to finish and try again."
+            ),
+        ) from None
     except RuntimeError:
         raise HTTPException(
             status_code=429,
             detail="Too many active imports. Please wait for existing imports to complete.",
         ) from None
-
-    job.target_profile_id = resolved_profile_id
 
     try:
         from snore.api.import_worker import _upsert_job_record  # noqa: PLC0415

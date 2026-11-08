@@ -1034,8 +1034,7 @@ class TestRescanEndpoint:
 
         monkeypatch.setattr("snore.constants.DEFAULT_RAW_BACKUP_DIR", raw_root)
         monkeypatch.setattr(
-            "snore.api.routers.import_data.create_job",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("caps")),
+            "snore.api.import_jobs._check_and_reserve", lambda owner_user_id: False
         )
 
         response = api_client.post("/api/v1/import/rescan", json={})
@@ -1147,70 +1146,33 @@ class TestRescanEndpoint:
         assert response.status_code == 422
         assert job_store._jobs == {}
 
+    def test_second_forced_rescan_of_same_profile_returns_409(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        first = self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
+        assert first.status_code == 202
 
-class TestUploadForce:
-    """``force`` on ``POST /import`` uploads."""
+        second = api_client.post("/api/v1/import/rescan", json={"force": True})
 
-    @pytest.fixture(autouse=True)
-    def _no_worker(self, monkeypatch):
-        import shutil  # noqa: PLC0415
+        assert second.status_code == 409
+        assert "already queued or running" in second.json()["detail"]
+        assert list(job_store._jobs) == [first.json()["job_id"]]
 
-        import snore.api.routers.import_data as import_mod  # noqa: PLC0415
+    def test_unforced_rescan_accepted_while_forced_rescan_active(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
 
-        monkeypatch.setattr(
-            import_mod, "enqueue_for_execution", lambda job, root=None: None
-        )
-        yield
-        for job in list(job_store._jobs.values()):
-            if job.temp_dir is not None:
-                shutil.rmtree(job.temp_dir, ignore_errors=True)
+        second = api_client.post("/api/v1/import/rescan", json={})
 
-    def _post(self, api_client: TestClient, data: dict[str, str]) -> httpx2.Response:
-        return api_client.post(
-            "/api/v1/import",
-            files=[("files", ("DATALOG/a.edf", b"x", "application/octet-stream"))],
-            data=data,
-        )
+        assert second.status_code == 202
 
-    def test_upload_without_force_is_not_forced(self, api_client):
-        response = self._post(api_client, {})
+    def test_forced_rescan_accepted_after_previous_one_finished(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        first = self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
+        job_store.get_job(first.json()["job_id"]).try_cancel()
 
-        job = job_store.get_job(response.json()["job_id"])
-        assert job is not None
-        assert job.force is False
+        second = api_client.post("/api/v1/import/rescan", json={"force": True})
 
-    def test_upload_with_force_true_is_forced(self, api_client):
-        response = self._post(api_client, {"force": "true"})
-
-        assert response.status_code == 202
-        job = job_store.get_job(response.json()["job_id"])
-        assert job is not None
-        assert job.force is True
-
-    def test_force_on_a_continuation_chunk_forces_the_batch(self, api_client):
-        first = self._post(api_client, {"batch_final": "false"})
-        batch_id = first.json()["job_id"]
-
-        final = self._post(api_client, {"batch_id": batch_id, "force": "true"})
-
-        assert final.status_code == 202
-        job = job_store.get_job(batch_id)
-        assert job is not None
-        assert job.force is True
-        assert job.state == job_store.JobState.PENDING
-
-    def test_force_with_unrecognized_value_returns_422(self, api_client):
-        response = self._post(api_client, {"force": "yes"})
-
-        assert response.status_code == 422
-        assert job_store._jobs == {}
-
-    def test_force_on_health_import_returns_422(self, api_client):
-        response = api_client.post(
-            "/api/v1/import",
-            files=[("files", ("export.zip", b"x", "application/zip"))],
-            data={"import_type": "health", "force": "true"},
-        )
-
-        assert response.status_code == 422
-        assert job_store._jobs == {}
+        assert second.status_code == 202

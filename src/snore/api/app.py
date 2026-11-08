@@ -566,9 +566,7 @@ def _cleanup_stale_upload_spool_dirs(
         logger.info("Removed %d stale upload spool dir(s)", cleaned)
 
 
-async def _recover_orphaned_import_jobs() -> list[
-    tuple[Path, int, int | None, str, bool]
-]:
+async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, str]]:
     """Mark orphaned import jobs as failed; return resume candidates.
 
     Jobs in PENDING_UPLOAD, PENDING, or RUNNING state at startup are orphans
@@ -576,7 +574,7 @@ async def _recover_orphaned_import_jobs() -> list[
     directory still exists on disk are returned as resume candidates — the
     caller can re-enqueue them as new import jobs.
 
-    Returns 5-tuples of (spool_path, profile_id, owner_user_id, job_type_str, force).
+    Returns 4-tuples of (spool_path, profile_id, owner_user_id, job_type_str).
     """
     from datetime import UTC, datetime  # noqa: PLC0415
 
@@ -587,7 +585,7 @@ async def _recover_orphaned_import_jobs() -> list[
     from snore.database.session import session_scope  # noqa: PLC0415
 
     non_terminal = [s.value for s in ACTIVE_STATES]
-    resume_candidates: list[tuple[Path, int, int | None, str, bool]] = []
+    resume_candidates: list[tuple[Path, int, int | None, str]] = []
     now = datetime.now(UTC)
     try:
         async with session_scope(immediate=True) as db:
@@ -599,26 +597,19 @@ async def _recover_orphaned_import_jobs() -> list[
                         models.ImportJobRecord.target_profile_id,
                         models.ImportJobRecord.owner_user_id,
                         models.ImportJobRecord.job_type,
-                        models.ImportJobRecord.force,
                     ).where(
                         models.ImportJobRecord.state.in_(non_terminal),
                         models.ImportJobRecord.spool_dir_path.is_not(None),
                     )
                 )
             ).all()
-            for (
-                spool_path_str,
-                profile_id,
-                owner_user_id,
-                job_type_str,
-                force,
-            ) in rows:
+            for spool_path_str, profile_id, owner_user_id, job_type_str in rows:
                 if spool_path_str is None:  # excluded by the is_not(None) filter
                     continue
                 spool_path = Path(spool_path_str)
                 if profile_id is not None and spool_path.exists():
                     resume_candidates.append(
-                        (spool_path, profile_id, owner_user_id, job_type_str, force)
+                        (spool_path, profile_id, owner_user_id, job_type_str)
                     )
 
             result = await db.execute(
@@ -718,7 +709,7 @@ async def _recover_orphaned_validation_jobs() -> None:
 
 
 def _startup_resume_imports(
-    candidates: list[tuple[Path, int, int | None, str, bool]],
+    candidates: list[tuple[Path, int, int | None, str]],
 ) -> None:
     """Re-enqueue import jobs for which spool files survived the restart."""
     from snore.api.import_jobs import (  # noqa: PLC0415
@@ -728,7 +719,7 @@ def _startup_resume_imports(
     )
     from snore.constants import DEFAULT_RAW_BACKUP_DIR  # noqa: PLC0415
 
-    for spool_path, profile_id, owner_user_id, job_type_str, force in candidates:
+    for spool_path, profile_id, owner_user_id, job_type_str in candidates:
         try:
             try:
                 job_type = JobType(job_type_str)
@@ -745,7 +736,6 @@ def _startup_resume_imports(
                 owner_user_id=owner_user_id,
                 target_profile_id=profile_id,
                 temp_dir=spool_path,
-                force=force,
             )
             job._state = job._state.__class__("pending")
             job._file_count = sum(1 for f in spool_path.iterdir() if f.is_file())
@@ -942,29 +932,26 @@ def create_app() -> FastAPI:
     @app.get("/health/busy", include_in_schema=False)
     async def health_busy() -> dict[str, bool]:
         from snore.api import analysis_jobs as _analysis_jobs  # noqa: PLC0415
-        from snore.api import recompute_jobs as _recompute_jobs  # noqa: PLC0415
-        from snore.api import reset_jobs as _reset_jobs  # noqa: PLC0415
         from snore.api import validation_jobs as _validation_jobs  # noqa: PLC0415
         from snore.api.import_jobs import has_active_jobs  # noqa: PLC0415
+        from snore.api.jobs.core import active_maintenance  # noqa: PLC0415
 
         reasons: list[str] = []
         # Import jobs gate on PENDING_UPLOAD/PENDING/RUNNING — all three states
         # represent in-flight work.  Analysis and validation gate on RUNNING
         # only: QUEUED jobs have no in-progress data writes and are safe to
         # interrupt.  A multi-minute validation run must not be cut off by a
-        # watchtower container replacement.  Reset jobs gate on QUEUED/RUNNING:
-        # a user was told their data is going away, and RUNNING covers the VACUUM.
-        # A day recompute gates on QUEUED/RUNNING too: an admin is watching it.
+        # watchtower container replacement.  Maintenance activities (reset and
+        # data deletion, day recompute, VACUUM) gate on QUEUED/RUNNING: a user
+        # was told their data is going away or an admin is watching, and a
+        # VACUUM cut off mid-rebuild has to be redone at startup.
         if has_active_jobs():
             reasons.append("imports")
         if _analysis_jobs.has_running_jobs():
             reasons.append("analysis")
         if _validation_jobs.has_running_jobs():
             reasons.append("validation")
-        if _reset_jobs.has_active_job():
-            reasons.append("reset")
-        if _recompute_jobs.has_active_job():
-            reasons.append("recompute")
+        reasons.extend(active_maintenance())
         logger.debug("health/busy: %s", reasons)
         return {"busy": bool(reasons)}
 

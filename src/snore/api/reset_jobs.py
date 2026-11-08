@@ -16,7 +16,8 @@ divergences:
   and the startup vacuum marker and quarantine sweep finish its cleanup.
 - At most one job exists at a time.  :func:`enqueue` refuses while any job is
   non-terminal, which is what serializes these two destructive operations.  It
-  also refuses while a day recompute (:mod:`snore.api.recompute_jobs`) is active.
+  also refuses while any other maintenance activity (a day recompute or a
+  VACUUM) is active, through :func:`~snore.api.jobs.core.admit_maintenance`.
 - QUEUED counts as active for ``/health/busy``: the user has been told their
   data is being deleted, so a container swap must not silently drop the job.
 - A pending cancel does not overwrite the outcome.  Once the delete commits the
@@ -33,11 +34,9 @@ import collections
 import logging
 import secrets
 import threading
-import time
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import Enum, StrEnum
+from enum import StrEnum
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -47,9 +46,13 @@ from snore.api.constants import NO_STORE
 from snore.api.errors import db_busy_maps_to_409
 from snore.api.jobs.core import (
     JOB_TTL_SECONDS,
-    MAINTENANCE_ADMISSION_LOCK,
-    JobRecordBase,
+    MAINTENANCE_CONFLICT_DETAIL,
+    MAINTENANCE_TERMINAL_STATES,
     JobStore,
+    MaintenanceJobState,
+    SingleShotJobRecord,
+    admit_maintenance,
+    register_maintenance_job,
 )
 from snore.api.jobs.pool import WorkerPool
 from snore.api.schemas import ResetJobEnqueued
@@ -66,14 +69,7 @@ from snore.services.schemas import DeleteDataResult, ResetResult
 logger = logging.getLogger(__name__)
 
 _FAILURE_MESSAGE = "The deletion failed. An admin can find details in the server logs."
-
-
-class ResetJobState(Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+_MAINTENANCE_NAME = "reset"
 
 
 class ResetJobKind(StrEnum):
@@ -81,15 +77,8 @@ class ResetJobKind(StrEnum):
     DELETE_DATA = "delete_data"
 
 
-TERMINAL_STATES = frozenset(
-    {ResetJobState.SUCCEEDED, ResetJobState.FAILED, ResetJobState.CANCELLED}
-)
-
-
 @dataclass(kw_only=True)
-class ResetJob(JobRecordBase[ResetJobState]):
-    _TERMINAL_STATES = TERMINAL_STATES
-
+class ResetJob(SingleShotJobRecord):
     # Re-declared from the base so repr(job) cannot put the bearer token in a log.
     job_id: str = field(repr=False)
     kind: ResetJobKind
@@ -97,9 +86,7 @@ class ResetJob(JobRecordBase[ResetJobState]):
     include_accounts: bool = False
     db_path: str = ""
 
-    _state: ResetJobState = field(default=ResetJobState.QUEUED, init=False, repr=False)
     _error_message: str | None = field(default=None, init=False, repr=False)
-    _finished_at: float | None = field(default=None, init=False, repr=False)
     _result: ResetResult | DeleteDataResult | None = field(
         default=None, init=False, repr=False
     )
@@ -108,11 +95,6 @@ class ResetJob(JobRecordBase[ResetJobState]):
     def error_message(self) -> str | None:
         with self._lock:
             return self._error_message
-
-    @property
-    def finished_at(self) -> float | None:
-        with self._lock:
-            return self._finished_at
 
     @property
     def result(self) -> ResetResult | DeleteDataResult | None:
@@ -124,37 +106,16 @@ class ResetJob(JobRecordBase[ResetJobState]):
         with self._lock:
             self._result = result
 
-    def _stamp_finished(self) -> None:
-        """Record the terminal timestamps. Caller holds ``_lock``."""
-        self._finished_at = time.monotonic()
-        self._finished_at_wall = datetime.now(UTC)
-
-    def try_start(self) -> bool:
-        """Atomically transition QUEUED → RUNNING, or → CANCELLED if cancel was set."""
-        with self._lock:
-            if self._cancel_flag:
-                self._state = ResetJobState.CANCELLED
-                self._stamp_finished()
-                return False
-            self._start_running(ResetJobState.RUNNING)
-            return True
-
     def finish(self, succeeded: bool, error_message: str | None = None) -> None:
         """Transition to a terminal state; a pending cancel never changes the outcome."""
         with self._lock:
-            if self._state in TERMINAL_STATES:
+            if self._state in MAINTENANCE_TERMINAL_STATES:
                 return
             if succeeded:
-                self._state = ResetJobState.SUCCEEDED
+                self._state = MaintenanceJobState.SUCCEEDED
             else:
-                self._state = ResetJobState.FAILED
+                self._state = MaintenanceJobState.FAILED
                 self._error_message = error_message
-            self._stamp_finished()
-
-    def _on_cancel_locked(self) -> None:
-        """Eager-terminalize a QUEUED job. Caller holds ``_lock`` (see base)."""
-        if self._state == ResetJobState.QUEUED:
-            self._state = ResetJobState.CANCELLED
             self._stamp_finished()
 
     def to_dict(self) -> dict[str, object]:
@@ -164,7 +125,9 @@ class ResetJob(JobRecordBase[ResetJobState]):
         VACUUM, and ``size_after_mb`` is a placeholder until the job re-measures.
         """
         with self._lock:
-            result = self._result if self._state in TERMINAL_STATES else None
+            result = (
+                self._result if self._state in MAINTENANCE_TERMINAL_STATES else None
+            )
             return {
                 "kind": self.kind.value,
                 "state": self._state.value,
@@ -203,11 +166,9 @@ def enqueue(
     db_path: str,
     include_accounts: bool = False,
 ) -> ResetJob | None:
-    """Queue a job, or return None if this or a day recompute job is still active."""
-    from snore.api import recompute_jobs  # noqa: PLC0415
-
-    with MAINTENANCE_ADMISSION_LOCK:
-        if recompute_jobs.has_active_job():
+    """Queue a job, or return None while any maintenance activity is underway."""
+    with admit_maintenance(_MAINTENANCE_NAME) as admitted:
+        if not admitted:
             return None
         with _condition:
             if any(not job.is_terminal for job in _all_jobs.values()):
@@ -232,12 +193,7 @@ def accepted_or_409(job: ResetJob | None) -> JSONResponse:
     ``no-store`` because the body carries the job's bearer token.
     """
     if job is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "A database reset, data deletion, or day recompute is already in progress"
-            ),
-        )
+        raise HTTPException(status_code=409, detail=MAINTENANCE_CONFLICT_DETAIL)
     enqueued = ResetJobEnqueued.model_validate(
         {"job_id": job.job_id, "state": job.state.value}
     )
@@ -257,6 +213,9 @@ def has_active_job() -> bool:
     """
     with _lock:
         return any(not job.is_terminal for job in _all_jobs.values())
+
+
+register_maintenance_job(_MAINTENANCE_NAME, has_active_job)
 
 
 def _reap_terminal() -> None:

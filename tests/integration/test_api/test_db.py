@@ -25,9 +25,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session as SyncSession
 from sqlalchemy.pool import NullPool
 
-from snore.api import reset_jobs
+from snore.api import recompute_jobs, reset_jobs
 from snore.api.app import create_app
 from snore.api.config import load_config, set_config
+from snore.api.jobs.core import MAINTENANCE_CONFLICT_DETAIL
 from snore.auth.actor import ActorContext, AuthMode, Role
 from snore.auth.session_cookie import encode_session
 from snore.database import models
@@ -35,8 +36,10 @@ from snore.database.models import Base
 from snore.database.session import cleanup_database, init_database, session_scope
 from snore.services.database_service import DatabaseService
 from snore.services.database_service import _vacuum_background as _REAL_VACUUM_BG
+from snore.services.schemas import VacuumResult
 from snore.services.waveform_service import _waveform_array_cache
 from tests.helpers.api_client import make_test_client
+from tests.helpers.recompute_jobs import RECOMPUTE_PATH
 from tests.helpers.reset_jobs import (
     DELETE_DATA_PATH,
     RESET_PATH,
@@ -178,6 +181,68 @@ class TestDbVacuum:
             f"but got size_after_mb={data['size_after_mb']:.6f} MB — "
             "dependency override may have silently stopped working"
         )
+
+
+VACUUM_PATH = "/api/v1/db/vacuum"
+
+
+@pytest.fixture
+def vacuum_target(api_client, tmp_path):
+    """Point the vacuum (and reset) routes at a fresh SQLite file."""
+    from snore.api.routers.db import _get_target  # noqa: PLC0415
+    from snore.database.target import DatabaseTarget  # noqa: PLC0415
+
+    vacuum_db = tmp_path / "vacuum_only.db"
+    sqlite3.connect(str(vacuum_db)).close()
+    target = DatabaseTarget.from_url(str(vacuum_db))
+    api_client.app.dependency_overrides[_get_target] = lambda: target
+    yield
+    del api_client.app.dependency_overrides[_get_target]
+
+
+@pytest.mark.usefixtures("vacuum_target")
+class TestDbVacuumExclusion:
+    """Vacuum, reset and day recompute never run at the same time."""
+
+    def test_vacuum_409_while_recompute_active(self, api_client):
+        assert api_client.post(RECOMPUTE_PATH).status_code == 202
+
+        response = api_client.post(VACUUM_PATH)
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
+
+    def test_vacuum_409_while_reset_active(self, api_client):
+        assert api_client.post(RESET_PATH).status_code == 202
+
+        response = api_client.post(VACUUM_PATH)
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
+
+    def test_neither_reset_nor_recompute_starts_while_vacuum_runs(
+        self, api_client, monkeypatch
+    ):
+        admitted_during_vacuum: dict[str, bool] = {}
+
+        def _vacuum(self: DatabaseService, db_path: str) -> VacuumResult:
+            # Enqueue directly: a nested request would share the test's DB session.
+            admitted_during_vacuum["recompute"] = (
+                recompute_jobs.enqueue(owner_user_id=None) is not None
+            )
+            admitted_during_vacuum["reset"] = (
+                reset_jobs.enqueue(
+                    kind=reset_jobs.ResetJobKind.RESET, user_id=1, db_path=""
+                )
+                is not None
+            )
+            return VacuumResult(status="success", size_before_mb=0, size_after_mb=0)
+
+        monkeypatch.setattr(DatabaseService, "vacuum_sqlite", _vacuum)
+
+        assert api_client.post(VACUUM_PATH).status_code == 200
+        assert admitted_during_vacuum == {"recompute": False, "reset": False}
+        assert api_client.post(RECOMPUTE_PATH).status_code == 202
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +664,7 @@ class TestDbResetConcurrency:
 
         assert first.status_code == 202
         assert second.status_code == 409
-        assert "already in progress" in second.json()["detail"]
+        assert second.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
         assert len(reset_jobs._queue) == 1
 
     def test_409_while_delete_data_job_active(self, api_client, temp_db):

@@ -200,7 +200,7 @@ def recompute_days(db: str | None) -> None:
             TextColumn,
         )
 
-        from snore.services.day_recompute_service import (  # noqa: PLC0415
+        from snore.services.day_recompute import (  # noqa: PLC0415
             recompute_all_days,
         )
 

@@ -213,7 +213,7 @@
         <ArchiveRescanCard
             v-show="activeTab === 'cpap'"
             :profile-id="selectedProfileId"
-            @started="fetchImportJobs"
+            @started="onRescanStarted"
         />
 
         <!-- Active / recent import jobs (shared) -->
@@ -489,6 +489,12 @@ async function handleImport() {
         importError.value = e instanceof Error ? e.message : 'Import failed'
         uploadPhase.value = 'error'
     }
+}
+
+// A rescan replaces the selected folder's upload, so return to the drop zone.
+function onRescanStarted() {
+    if (uploadPhase.value === 'selected') resetUpload()
+    void fetchImportJobs()
 }
 
 function resetUpload() {

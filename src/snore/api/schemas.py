@@ -338,7 +338,7 @@ class AnalysisJobStatus(BaseModel):
     """
 
     job_id: str
-    state: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    state: MaintenanceJobStateName
     source: str
     session_count: int
     progress_completed: int
@@ -359,12 +359,14 @@ class AnalysisJobEnqueued(BaseModel):
     session_count: int
 
 
-ResetJobStateName = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+MaintenanceJobStateName = Literal[
+    "queued", "running", "succeeded", "failed", "cancelled"
+]
 
 
 class ResetJobEnqueued(BaseModel):
     job_id: str
-    state: ResetJobStateName
+    state: MaintenanceJobStateName
 
 
 class ResetJobStatus(BaseModel):
@@ -375,7 +377,7 @@ class ResetJobStatus(BaseModel):
     """
 
     kind: Literal["reset", "delete_data"]
-    state: ResetJobStateName
+    state: MaintenanceJobStateName
     error_message: str | None
     reset_result: ResetResult | None
     delete_data_result: DeleteDataResult | None
@@ -385,7 +387,7 @@ class RecomputeDaysJobStatus(BaseModel):
     """Snapshot of the admin job that re-derives every Day row."""
 
     job_id: str
-    state: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    state: MaintenanceJobStateName
     days_processed: int = Field(description="Days handled so far")
     days_total: int | None = Field(
         description="Days the job will handle; null until it has listed them"

@@ -34,9 +34,13 @@ function jobStatus(overrides: Partial<ResetJobStatus> = {}): ResetJobStatus {
     }
 }
 
-function httpError(status: number) {
-    return Object.assign(new Error(`HTTP ${status}`), { response: { status } })
+// The API client's interceptor copies the server's `detail` into `message`.
+function httpError(status: number, message = `HTTP ${status}`) {
+    return Object.assign(new Error(message), { response: { status } })
 }
+
+const CONFLICT_DETAIL =
+    'Another database maintenance task (reset, data deletion, optimization or day recompute) is in progress. Try again when it finishes.'
 
 function respondWith(status: ResetJobStatus) {
     return { data: status } as never
@@ -407,17 +411,15 @@ describe('useResetJob', () => {
         expect(sessionStorage.length).toBe(0)
     })
 
-    it('test_conflict_on_start_reports_in_progress_and_does_not_poll', async () => {
+    it('test_conflict_on_start_reports_server_message_and_does_not_poll', async () => {
         const { job } = mountJob()
 
-        await job.start(() => Promise.reject(httpError(409)), true)
+        await job.start(() => Promise.reject(httpError(409, CONFLICT_DETAIL)), true)
         await pollOnce()
 
         expect(job.running.value).toBe(false)
         expect(job.factoryReset.value).toBe(false)
-        expect(job.error.value).toContain(
-            'Another reset, data deletion or day recompute is in progress',
-        )
+        expect(job.error.value).toBe(CONFLICT_DETAIL)
         expect(request).not.toHaveBeenCalled()
         expect(sessionStorage.length).toBe(0)
     })

@@ -561,16 +561,19 @@ describe('AccountView — danger zone (delete-data)', () => {
         expect(wrapper.find('.form-success').exists()).toBe(false)
     })
 
-    it('test_conflict_shows_in_progress_message', async () => {
+    it('test_conflict_shows_server_message', async () => {
+        // The API client's interceptor copies the server's `detail` into `message`.
         vi.mocked(deleteMyData).mockRejectedValueOnce(
-            Object.assign(new Error('Conflict'), { response: { status: 409 } }),
+            Object.assign(new Error('Another database maintenance task is in progress.'), {
+                response: { status: 409 },
+            }),
         )
 
         const wrapper = await mountAndLoad()
         await confirmDeleteData(wrapper)
 
         expect(wrapper.find('[role="alert"]').text()).toContain(
-            'Another reset, data deletion or day recompute is in progress',
+            'Another database maintenance task is in progress.',
         )
     })
 

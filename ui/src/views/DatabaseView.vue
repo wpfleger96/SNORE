@@ -375,8 +375,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
-import type { AxiosError } from 'axios'
+import { ref, computed } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 
 import StatCard from '@/components/StatCard.vue'
@@ -394,10 +393,11 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Loader2, AlertTriangle, Database, HardDrive } from '@lucide/vue'
 import { useApiLoad } from '@/composables/useApiLoad'
+import { useRecomputeDaysJob } from '@/composables/useRecomputeDaysJob'
 import { useResetJob } from '@/composables/useResetJob'
-import { getDbStats, getRecomputeDaysStatus, resetDb, startRecomputeDays, vacuumDb } from '@/api/db'
+import { getDbStats, resetDb, vacuumDb } from '@/api/db'
 import { formatDateShort } from '@/utils/formatting'
-import type { RecomputeDaysJobStatus, VacuumResult, ResetJobStatus } from '@/types'
+import type { VacuumResult, ResetJobStatus } from '@/types'
 
 const {
     running: resetting,
@@ -499,30 +499,17 @@ function onResetFinished(status: ResetJobStatus | null): void {
 // Day recompute job
 // ---------------------------------------------------------------------------
 
-const RECOMPUTE_POLL_INTERVAL_MS = 2000
-
-const RECOMPUTE_IN_PROGRESS =
-    'Another day recompute, reset or data deletion is in progress — wait for it to finish and try again.'
-const RECOMPUTE_STATUS_LOST =
-    'Recompute status is unavailable because the server restarted or the job expired. Days already recomputed are kept, and running it again is safe.'
-const RECOMPUTE_CANCELLED = 'The server shut down before the recompute started. Nothing changed.'
-
 const recomputeDialogOpen = ref(false)
-const recomputeJob = ref<RecomputeDaysJobStatus | null>(null)
-const recomputeStarting = ref(false)
-const recomputeError = ref<string | null>(null)
-let recomputeTimer: ReturnType<typeof setTimeout> | null = null
-let recomputeUnmounted = false
-// True while this view follows a job it saw queued or running; only such a job
-// reloads the stats or reports its failure when it ends.
-let followingRecompute = false
+const {
+    job: recomputeJob,
+    active: recomputeActive,
+    error: recomputeError,
+    start: startRecompute,
+} = useRecomputeDaysJob({
+    resumeOnMount: () => showDangerZone.value && !factoryResetRunning.value,
+    onSucceeded: () => void reload(),
+})
 
-const recomputeActive = computed(
-    () =>
-        recomputeStarting.value ||
-        recomputeJob.value?.state === 'queued' ||
-        recomputeJob.value?.state === 'running',
-)
 const recomputeResult = computed(() =>
     recomputeJob.value?.state === 'succeeded' ? recomputeJob.value.result : null,
 )
@@ -532,83 +519,15 @@ const recomputePct = computed(() => {
 })
 const recomputeProgressText = computed(() => {
     const job = recomputeJob.value
-    if (job?.state !== 'running' || job.days_total === null) {
-        return 'Day recompute queued on the server…'
-    }
+    if (job?.state !== 'running') return 'Day recompute queued on the server…'
+    if (job.days_total === null) return 'Recomputing days…'
     return `Recomputing days… ${job.days_processed.toLocaleString()} of ${job.days_total.toLocaleString()}. It runs on the server, so it is safe to leave this page.`
 })
 
-function scheduleRecomputePoll(): void {
-    recomputeTimer = setTimeout(() => void pollRecompute(), RECOMPUTE_POLL_INTERVAL_MS)
-}
-
-function finishRecompute(job: RecomputeDaysJobStatus): void {
-    followingRecompute = false
-    if (job.state === 'failed') {
-        recomputeError.value = job.error_message ?? 'The day recompute failed.'
-    } else if (job.state === 'cancelled') {
-        recomputeError.value = RECOMPUTE_CANCELLED
-    } else {
-        void reload()
-    }
-}
-
-async function pollRecompute(): Promise<void> {
-    recomputeTimer = null
-    let job: RecomputeDaysJobStatus | null
-    try {
-        job = (await getRecomputeDaysStatus()) ?? null
-    } catch (err: unknown) {
-        if (recomputeUnmounted) return
-        if ((err as AxiosError).response?.status === 404) {
-            if (followingRecompute) recomputeError.value = RECOMPUTE_STATUS_LOST
-            followingRecompute = false
-            recomputeJob.value = null
-        } else if (followingRecompute) {
-            scheduleRecomputePoll()
-        }
-        return
-    }
-    if (recomputeUnmounted) return
-    recomputeJob.value = job
-    if (recomputeActive.value) {
-        followingRecompute = true
-        scheduleRecomputePoll()
-    } else if (followingRecompute && job) {
-        finishRecompute(job)
-    }
-}
-
-async function handleRecompute(): Promise<void> {
-    if (recomputeActive.value) return
+function handleRecompute(): void {
     recomputeDialogOpen.value = false
-    recomputeStarting.value = true
-    recomputeError.value = null
-    try {
-        recomputeJob.value = await startRecomputeDays()
-        followingRecompute = true
-        if (!recomputeUnmounted) scheduleRecomputePoll()
-    } catch (err: unknown) {
-        recomputeError.value =
-            (err as AxiosError).response?.status === 409
-                ? RECOMPUTE_IN_PROGRESS
-                : err instanceof Error
-                  ? err.message
-                  : 'Request failed'
-    } finally {
-        recomputeStarting.value = false
-    }
+    void startRecompute()
 }
-
-// Pick up a recompute started earlier, from this tab or another.
-onMounted(() => {
-    if (showDangerZone.value && !factoryResetRunning.value) void pollRecompute()
-})
-
-onBeforeUnmount(() => {
-    recomputeUnmounted = true
-    if (recomputeTimer !== null) clearTimeout(recomputeTimer)
-})
 
 function copyInviteUrl(): void {
     if (!bootstrapInviteUrl.value) return
