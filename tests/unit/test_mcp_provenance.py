@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 import snore.mcp.tools
 
-from snore.mcp.profiles import get_profile
+from snore.mcp.profiles import ClinicalProfile, get_profile
 from snore.mcp.schemas import (
     SCHEMA_MODEL_MAP,
     BreathTableRow,
@@ -50,8 +50,14 @@ from snore.mcp.schemas import (
     SettingsChangesResponse,
     SettingsTimelineResponse,
     WaveformWindowResponse,
+    model_to_schema,
 )
-from snore.mcp.server import StaticRuntime, _build_instructions, make_server
+from snore.mcp.server import (
+    _SCHEMA_PROVENANCE_LEGEND,
+    StaticRuntime,
+    _build_instructions,
+    make_server,
+)
 from snore.mcp.tools._scaffold import _scope_and_run
 from snore.provenance import (
     PROVENANCE_NOTES,
@@ -108,6 +114,14 @@ async def _tool_descriptions() -> dict[str, str]:
         async with fastmcp.Client(mcp) as client:
             tools = await client.list_tools()
     return {t.name: " ".join((t.description or "").split()) for t in tools}
+
+
+async def _read_resource(uri: str) -> str:
+    mcp = make_server()
+    with patch("snore.mcp.server._lifespan", _fake_lifespan):
+        async with fastmcp.Client(mcp) as client:
+            contents = await client.read_resource(uri)
+    return contents[0].text
 
 
 def _field_description(model: type[BaseModel], field_name: str) -> str:
@@ -321,47 +335,34 @@ class TestSchemaFieldLabels:
 
 
 class TestInstructions:
-    def test_instructions_explain_provenance_tiers(self) -> None:
+    def test_instructions_state_experimental_rule(self) -> None:
         instructions = _build_instructions(get_profile("neutral"))
 
-        assert "PROVENANCE:" in instructions
-        for marker in ("[DEVICE]", "[DERIVED]", "[EXPERIMENTAL]", "`provenance`"):
-            assert marker in instructions
-        for note in PROVENANCE_NOTES.values():
-            assert note in instructions
+        for text in (
+            EXPERIMENTAL_NOTE,
+            "reference standard",
+            "experimental_* tools return experimental metrics:",
+            "Never present them as device-scored or clinically validated",
+            "docs://capabilities",
+        ):
+            assert text in instructions
 
-    def test_instructions_explain_source_dependent_map(self) -> None:
-        instructions = " ".join(_build_instructions(get_profile("neutral")).split())
-
-        assert "`source_dependent`" in instructions
-        assert "mv_source" not in instructions
-        for source_field in INDEX_SOURCE_FIELDS.values():
-            assert source_field in instructions
-        assert "coverage counts" in instructions
-
-    def test_instructions_run_device_workflow_before_experimental_step(self) -> None:
-        instructions = _build_instructions(get_profile("neutral"))
-        experimental_step = instructions.index("OPTIONAL EXPERIMENTAL STEP")
-
-        for tool in DEFAULT_TOOLS:
-            assert instructions.index(tool) < experimental_step
-        for tool in EXPERIMENTAL_TOOLS:
-            assert instructions.index(tool) > experimental_step
-
-    def test_instructions_treat_waveforms_as_primary_evidence(self) -> None:
+    def test_instructions_state_null_convention(self) -> None:
         instructions = _build_instructions(get_profile("neutral"))
 
-        assert "PRIMARY EVIDENCE" in instructions
-        assert "Tier 1" not in instructions
-        assert "escape hatch" not in instructions
-        assert "≤15 min" in instructions
-        assert "≤2 min window / ≤1000 pts" in instructions
+        assert "never zero" in instructions
+        assert "`*_reason`" in instructions
 
-    def test_instructions_null_example_names_a_default_field(self) -> None:
-        instructions = _build_instructions(get_profile("neutral"))
+    @pytest.mark.parametrize("tool", [*DEFAULT_TOOLS, *EXPERIMENTAL_TOOLS])
+    def test_instructions_name_no_tool(self, tool: str) -> None:
+        """Only profile text may name tools; the server's own text never does."""
+        stub = ClinicalProfile(
+            name="stub", display_name="Stub", priority_hint="", clinical_context=""
+        )
+        assert tool not in _build_instructions(stub)
 
-        assert "leak_above_24_pct_reason" in instructions
-        assert "rera_index_reason" not in instructions
+    def test_neutral_instructions_stay_under_1k_chars(self) -> None:
+        assert len(_build_instructions(get_profile("neutral"))) < 1000
 
     def test_uars_profile_flags_rera_proxy_as_experimental(self) -> None:
         hint = get_profile("uars").priority_hint
@@ -559,17 +560,11 @@ class TestCapabilitiesResource:
             analysis_run=analysis_run,
             analysis_session_count=int(analysis_run),
         )
-        mcp = make_server()
-        with (
-            patch("snore.mcp.server._lifespan", _fake_lifespan),
-            patch(
-                "snore.mcp.tools.overview.get_data_overview",
-                AsyncMock(return_value=overview),
-            ),
+        with patch(
+            "snore.mcp.tools.overview.get_data_overview",
+            AsyncMock(return_value=overview),
         ):
-            async with fastmcp.Client(mcp) as client:
-                contents = await client.read_resource("docs://capabilities")
-        caps = json.loads(contents[0].text)
+            caps = json.loads(await _read_resource("docs://capabilities"))
 
         assert caps["provenance"] == {str(t): n for t, n in PROVENANCE_NOTES.items()}
         assert "Device data needs no analysis" in caps["analysis"]["note"]
@@ -586,3 +581,39 @@ class TestCapabilitiesResource:
         )
 
         assert set(SCHEMA_MODEL_MAP) <= set(re.findall(r"\w+", description or ""))
+
+
+class TestSchemasResource:
+    @pytest.mark.parametrize("schema_type", sorted(SCHEMA_MODEL_MAP))
+    async def test_schema_is_intact_and_carries_legend(self, schema_type: str) -> None:
+        schema = json.loads(await _read_resource(f"docs://schemas/{schema_type}"))
+
+        assert schema == {
+            **model_to_schema(SCHEMA_MODEL_MAP[schema_type]),
+            "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
+        }
+
+    async def test_legend_tiers_match_provenance_notes(self) -> None:
+        schema = json.loads(await _read_resource("docs://schemas/nightly_summary"))
+
+        assert schema["x-provenance-legend"]["tiers"] == {
+            str(t): n for t, n in PROVENANCE_NOTES.items()
+        }
+
+    def test_legend_explains_tags_and_response_block(self) -> None:
+        legend = _SCHEMA_PROVENANCE_LEGEND
+        text = " ".join(f"{legend['field_tags']} {legend['response_block']}".split())
+
+        for expected in (
+            "[DEVICE]",
+            "[DERIVED]",
+            "[EXPERIMENTAL]",
+            "`provenance`",
+            "`source_dependent`",
+            "`x-provenance-source`",
+            "coverage counts",
+            "less certain of the two tiers",
+        ):
+            assert expected in text
+        for unexpected in (*DEFAULT_TOOLS, *EXPERIMENTAL_TOOLS, "mv_source"):
+            assert unexpected not in text
