@@ -88,7 +88,7 @@ class HealthService(ProfileScopedService):
         return list(rows)
 
     async def get_night_detail(self, night_date: date) -> HealthNightDetailRead:
-        """Return nightly sleep summary with aggregated SpO2 and respiratory rate.
+        """Return nightly sleep summary with SpO2, respiratory rate and breathing disturbances.
 
         SpO2 is stored on the percent scale (the parser scales fractions);
         samples outside 50–100% are ignored.
@@ -116,6 +116,12 @@ class HealthService(ProfileScopedService):
             )
         )
         rr = case((models.HealthSample.record_type == _RR_RECORD_TYPE, value))
+        breathing_disturbances = case(
+            (
+                models.HealthSample.record_type == _BREATHING_DISTURBANCE_RECORD_TYPE,
+                value,
+            )
+        )
 
         # Single-pass conditional aggregation for SpO2 avg/min and RR avg.
         agg = (
@@ -124,10 +130,13 @@ class HealthService(ProfileScopedService):
                     func.avg(spo2_pct).label("avg_spo2"),
                     func.min(spo2_pct).label("min_spo2"),
                     func.avg(rr).label("avg_rr"),
+                    func.avg(breathing_disturbances).label("breathing_disturbances"),
                 ).where(
                     models.HealthSample.profile_id == self.profile_id,
                     models.HealthSample.night_date == night_date,
-                    models.HealthSample.record_type.in_([SPO2_TYPE, _RR_RECORD_TYPE]),
+                    models.HealthSample.record_type.in_(
+                        [SPO2_TYPE, _RR_RECORD_TYPE, _BREATHING_DISTURBANCE_RECORD_TYPE]
+                    ),
                 )
             )
         ).one()
@@ -137,6 +146,11 @@ class HealthService(ProfileScopedService):
             avg_spo2_pct=round(agg.avg_spo2, 1) if agg.avg_spo2 is not None else None,
             min_spo2_pct=round(agg.min_spo2, 1) if agg.min_spo2 is not None else None,
             avg_rr=round(agg.avg_rr, 2) if agg.avg_rr is not None else None,
+            breathing_disturbances=(
+                float(agg.breathing_disturbances)
+                if agg.breathing_disturbances is not None
+                else None
+            ),
         )
 
     async def get_breathing_disturbance_by_night(

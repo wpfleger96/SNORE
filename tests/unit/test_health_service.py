@@ -26,6 +26,7 @@ from snore.services.health_service import HealthService
 _SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 _SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
 _RR_TYPE = "HKQuantityTypeIdentifierRespiratoryRate"
+_BD_TYPE = "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances"
 _WATCH = "Will's Apple Watch"
 _IPHONE = "Will's iPhone"
 _NIGHT = date(2024, 1, 15)
@@ -230,6 +231,79 @@ class TestGetNightDetailAggregates:
         assert detail.avg_spo2_pct is None
         assert detail.min_spo2_pct is None
         assert detail.avg_rr is None
+
+
+class TestGetNightDetailBreathingDisturbances:
+    @staticmethod
+    def _bd(
+        db: AsyncSession,
+        pid: int,
+        val: float,
+        h: int,
+        night: date = _NIGHT,
+        source: str = _WATCH,
+    ) -> None:
+        db.add(
+            HealthSample(
+                profile_id=pid,
+                record_type=_BD_TYPE,
+                source_name=source,
+                start_time=_dt(h),
+                end_time=_dt(h),
+                value_num=val,
+                unit=None,
+                night_date=night,
+                ingest_channel="export_xml",
+            )
+        )
+
+    async def test_single_sample_returned(
+        self, async_db_session, profile_id, night_summary
+    ):
+        self._bd(async_db_session, profile_id, 7.5, 3)
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.breathing_disturbances == pytest.approx(7.5)
+
+    async def test_multiple_samples_averaged(
+        self, async_db_session, profile_id, night_summary
+    ):
+        self._bd(async_db_session, profile_id, 4.0, 3)
+        self._bd(async_db_session, profile_id, 8.0, 4, source=_IPHONE)
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.breathing_disturbances == pytest.approx(6.0)
+
+    async def test_absent_returns_none(
+        self, async_db_session, profile_id, night_summary
+    ):
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.breathing_disturbances is None
+
+    async def test_other_profile_and_night_ignored(
+        self, async_db_session, profile_id, night_summary
+    ):
+        other = await _make_profile(async_db_session)
+        self._bd(async_db_session, other, 20.0, 3)
+        self._bd(async_db_session, profile_id, 20.0, 3, night=date(2024, 1, 14))
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.breathing_disturbances is None
 
 
 # ---------------------------------------------------------------------------

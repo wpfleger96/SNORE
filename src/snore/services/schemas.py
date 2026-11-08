@@ -1044,6 +1044,13 @@ class HealthNightDetailRead(HealthNightSummaryRead):
     avg_rr: float | None = provenance_field(
         Provenance.DERIVED, "Average respiratory rate (breaths/min)", default=None
     )
+    breathing_disturbances: float | None = provenance_field(
+        Provenance.DEVICE,
+        "Apple Watch breathing disturbances for the night as recorded (HealthKit "
+        "unit 'count', a non-integer nightly value); mean of the night's samples "
+        "when several sources wrote one, null without a sample",
+        default=None,
+    )
 
 
 class HealthSampleRead(BaseModel):
