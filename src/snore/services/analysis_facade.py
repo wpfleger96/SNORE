@@ -571,7 +571,8 @@ class AnalysisFacade:
             modes: Detection modes to run (None = default mode).
             primary_mode: Mode whose recovery markers are persisted.  Must be a
                 member of ``modes`` when supplied; defaults to DEFAULT_MODE when
-                DEFAULT_MODE is in modes; required otherwise (ValueError).
+                DEFAULT_MODE is in modes, else to the sole mode when ``modes``
+                has one entry; required otherwise (ValueError).
             store_results: Whether to persist results to DB.
         """
         return await run_one(
@@ -675,7 +676,8 @@ class AnalysisFacade:
             session_ids: Explicit session IDs to analyze (overrides date filters when set)
             modes: Detection modes to run (None = default)
             primary_mode: Mode whose recovery markers are persisted; defaults to
-                DEFAULT_MODE when included in ``modes``, required otherwise.
+                DEFAULT_MODE when included in ``modes``, else to the sole mode
+                when ``modes`` has one entry; required otherwise.
             store_results: Whether to store results in the database
             max_workers: Max parallel threads (capped to session count)
             progress_callback: Called with (completed, total) after each session
@@ -683,8 +685,18 @@ class AnalysisFacade:
 
         Returns:
             BatchAnalysisResult with per-session outcomes and aggregate counts
+
+        Raises:
+            ValueError: Up front, before any session runs, when ``modes`` or
+                ``primary_mode`` is invalid (see ``resolve_primary_mode``).
         """
+        from snore.analysis.modes import DEFAULT_MODE  # noqa: PLC0415
+        from snore.analysis.service import resolve_primary_mode  # noqa: PLC0415
         from snore.database.session import session_scope  # noqa: PLC0415
+
+        resolve_primary_mode(
+            list(modes) if modes is not None else [DEFAULT_MODE], primary_mode
+        )
 
         base_stmt = (
             select(
@@ -822,7 +834,8 @@ class BatchAnalysisCoordinator:
                 ``AnalysisService`` read/write scope so all I/O is scoped.
             modes: Detection modes to run (``None`` = default).
             primary_mode: Mode whose recovery markers are persisted; defaults to
-                DEFAULT_MODE when included in ``modes``, required otherwise.
+                DEFAULT_MODE when included in ``modes``, else to the sole mode
+                when ``modes`` has one entry; required otherwise.
             store_results: If True, write each result to the DB.
             max_workers: Concurrency cap (number of simultaneous coroutines).
             progress_callback: Called with (completed, total) after each session.

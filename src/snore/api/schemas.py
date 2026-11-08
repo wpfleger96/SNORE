@@ -128,14 +128,20 @@ class BulkDeletePreviewRequest(BaseModel):
     delete_all: bool = False
 
 
+AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
+
+
 class AnalysisRunRequest(BaseModel):
-    modes: list[str] = Field(default_factory=lambda: ["aasm"])
+    modes: list[AnalysisMode] = Field(
+        default_factory=lambda: cast(list[AnalysisMode], ["aasm"])
+    )
     primary_mode: str | None = Field(
         default=None,
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True
@@ -165,9 +171,6 @@ class EventItem(BaseModel):
     )
 
 
-AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
-
-
 class BatchAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -191,7 +194,8 @@ class BatchAnalysisRequest(BaseModel):
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True

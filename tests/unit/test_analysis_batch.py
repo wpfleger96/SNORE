@@ -268,6 +268,70 @@ class TestAnalyzeBatch:
         assert "Analyzed 1 sessions" in captured
         assert "1" in captured
 
+    def test_analyze_batch_unknown_mode_exits_with_reason(self):
+        """An unknown -m value fails the command with the validation message, not per-session failures."""
+        scope = _make_session_scope(_make_mock_sessions(2))
+        coordinator_cls = MagicMock()
+
+        runner = CliRunner()
+        with (
+            patch("snore.database.session.init_database", new_callable=AsyncMock),
+            patch("snore.database.session.session_scope", scope),
+            patch(
+                "snore.services.analysis_facade.BatchAnalysisCoordinator",
+                coordinator_cls,
+            ),
+            patch(
+                "snore.auth.factory.resolve_cli_profile_id",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+        ):
+            result = runner.invoke(
+                analysis,
+                ["run", "--from", "2024-01-01", "-m", "bogus"],
+            )
+
+        assert result.exit_code != 0
+        assert "Unknown mode(s)" in result.output
+        coordinator_cls.assert_not_called()
+
+
+@pytest.mark.unit
+class TestRunBatchAnalysisValidation:
+    """run_batch_analysis rejects invalid modes before touching the DB or coordinator."""
+
+    @pytest.mark.parametrize(
+        ("modes", "primary_mode", "match"),
+        [
+            (["bogus"], None, "Unknown mode"),
+            (["aasm_relaxed", "resmed"], None, "primary_mode must be supplied"),
+            (["aasm"], "resmed", "must be a member of modes"),
+            ([], None, "primary_mode must be supplied"),
+        ],
+    )
+    async def test_invalid_modes_raise_before_any_session_runs(
+        self, modes, primary_mode, match
+    ):
+        from snore.services.analysis_facade import AnalysisFacade
+
+        scope = MagicMock(side_effect=AssertionError("DB must not be queried"))
+        coordinator_cls = MagicMock()
+        with (
+            patch("snore.database.session.session_scope", scope),
+            patch(
+                "snore.services.analysis_facade.BatchAnalysisCoordinator",
+                coordinator_cls,
+            ),
+            pytest.raises(ValueError, match=match),
+        ):
+            await AnalysisFacade(None, profile_id=1).run_batch_analysis(
+                modes=modes, primary_mode=primary_mode
+            )
+
+        scope.assert_not_called()
+        coordinator_cls.assert_not_called()
+
 
 @pytest.mark.unit
 class TestAnalyzeBatchOnlySelector:
