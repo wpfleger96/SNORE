@@ -183,25 +183,28 @@ class ActorRuntime:
         return current_actor().profile_id
 
 
+_TIER_NOTES: dict[str, str] = {
+    str(tier): note for tier, note in PROVENANCE_NOTES.items()
+}
+
 _SCHEMA_PROVENANCE_LEGEND: dict[str, Any] = {
-    "tiers": {str(tier): note for tier, note in PROVENANCE_NOTES.items()},
+    "tiers": _TIER_NOTES,
     "field_tags": (
         "Each tagged field's description starts with its tier, [DEVICE], [DERIVED] "
-        "or [EXPERIMENTAL], and `x-provenance` holds the same tier. A field with "
-        "`x-provenance-source` takes its tier per value from the sibling field it "
-        "names. Experimental fields appear only in experimental_* tools."
+        "or [EXPERIMENTAL], and `x-provenance` holds the same tier. A tagged field "
+        "nested under a tagged parent takes the less certain of the two tiers. A "
+        "field with `x-provenance-source` takes its tier per value from the sibling "
+        "field it names, whose value is `device` or `derived`."
     ),
     "response_block": (
         "Tool responses carry a top-level `provenance` block listing the paths of "
-        "non-device fields by tier (`derived`, `experimental`). Metric fields it "
-        "does not list are device data; identifiers and bookkeeping fields (ids, "
-        "offsets, pagination, coverage counts) are not classified; responses with "
-        "only device data carry no block. Its `source_dependent` map takes a field "
-        "path to the sibling field whose value decides that value's tier: the "
-        "nightly headline ahi/oai/cai/hi -> `nights[].index_source` "
-        "(get_nightly_summary) or `device.index_source` (get_night_detail), where "
-        "`device` is the device-reported daily value and `derived` is SNORE's "
-        "recount; the recount, when computable, is in `*_computed`."
+        "non-device fields by tier (`derived`, `experimental`), with inherited tiers "
+        "applied. Metric fields it does not list are device data; identifiers and "
+        "bookkeeping fields (ids, offsets, pagination, coverage counts) are not "
+        "classified; responses with only device data carry no block. Its "
+        "`source_dependent` map takes the path of each field marked "
+        "`x-provenance-source` to the sibling path whose value gives that value's "
+        "tier."
     ),
 }
 
@@ -216,9 +219,11 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-Device-scored events are the reference standard. experimental_* tools return SNORE's own heuristics ({PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}); never present them as device-scored or clinically validated.
+Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated.
 
-`docs://schemas/{{type}}` gives each response's JSON schema and explains the [DEVICE]/[DERIVED]/[EXPERIMENTAL] field tiers and the per-response `provenance` block; `docs://capabilities` lists this dataset's channels and event types.
+A null field means the data is absent, never zero; its companion `*_reason` field says why.
+
+`docs://schemas/{{type}}` gives each response's JSON schema and explains its [DEVICE]/[DERIVED]/[EXPERIMENTAL] field tiers and `provenance` block; `docs://capabilities` lists this dataset's channels and event types.
 """
 
 
@@ -477,8 +482,8 @@ def _register_resources(mcp: FastMCP) -> None:
             )
         return json.dumps(
             {
-                "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
                 **model_to_schema(model),
+                "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
             },
             indent=2,
         )
@@ -540,7 +545,7 @@ def _register_resources(mcp: FastMCP) -> None:
                 "session_count": overview.analysis_session_count,
                 "note": _ANALYSIS_NOTE,
             },
-            "provenance": {str(tier): note for tier, note in PROVENANCE_NOTES.items()},
+            "provenance": _TIER_NOTES,
             "supported_parsers": supported_parsers,
         }
 
