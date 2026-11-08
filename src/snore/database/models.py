@@ -1047,12 +1047,15 @@ class AnalysisResult(Base):
         lazy="raise",
     )
 
+    # Covering index for "latest analysis per session" (snore.analysis.queries):
+    # engine_versions_json rides along so staleness checks never read the row.
     __table_args__ = (
         Index(
-            "ix_analysis_results_session_id_created_at_id",
+            "ix_analysis_results_session_latest",
             "session_id",
             "created_at",
             "id",
+            "engine_versions_json",
         ),
     )
 

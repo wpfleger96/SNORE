@@ -16,6 +16,7 @@ from pydantic import (
 
 from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import (
+    AnalysisSelection,
     DayDetail,
     DayExperimentalMetrics,
     DayListItem,
@@ -127,14 +128,20 @@ class BulkDeletePreviewRequest(BaseModel):
     delete_all: bool = False
 
 
+AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
+
+
 class AnalysisRunRequest(BaseModel):
-    modes: list[str] = Field(default_factory=lambda: ["aasm"])
+    modes: list[AnalysisMode] = Field(
+        default_factory=lambda: cast(list[AnalysisMode], ["aasm"])
+    )
     primary_mode: str | None = Field(
         default=None,
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True
@@ -164,18 +171,19 @@ class EventItem(BaseModel):
     )
 
 
-AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
-
-
 class BatchAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     from_date: date | None = None
     to_date: date | None = None
-    missing_only: bool = Field(
-        default=False,
+    only: AnalysisSelection | None = Field(
+        default=None,
         description=(
-            "When true, restrict the batch to sessions that have a flow waveform "
-            "but no analysis result yet. Composable with from_date/to_date. "
-            "When true, from_date and to_date are not required."
+            "Restrict the batch to analyzable sessions (those with a flow waveform): "
+            "'missing' selects sessions with no analysis yet; 'stale' selects "
+            "sessions whose latest analysis came from an older algorithm version. "
+            "Composable with from_date/to_date; when set, from_date and to_date "
+            "are optional."
         ),
     )
     modes: list[AnalysisMode] = Field(
@@ -186,7 +194,8 @@ class BatchAnalysisRequest(BaseModel):
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True

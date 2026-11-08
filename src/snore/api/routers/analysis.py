@@ -25,6 +25,7 @@ from snore.api.schemas import (
 )
 from snore.services import AnalysisFacade
 from snore.services.schemas import (
+    EMPTY_SELECTION_MESSAGES,
     AnalysisDeletePreview,
     AnalysisListItem,
 )
@@ -81,7 +82,7 @@ async def run_analysis(
     try:
         return await facade.run_analysis(
             session_id,
-            modes=body.modes,
+            modes=list(body.modes),
             primary_mode=body.primary_mode,
             store_results=body.store_results,
         )
@@ -129,46 +130,43 @@ async def run_batch_analysis(
     facade: AnalysisFacadeDep,
     actor: RequireWritable,
 ) -> AnalysisJobEnqueued:
-    from snore.analysis.modes.config import (  # noqa: PLC0415
-        AVAILABLE_CONFIGS,
-        DEFAULT_MODE,
-    )
+    from snore.analysis.service import resolve_primary_mode  # noqa: PLC0415
 
-    if body.from_date is None and body.to_date is None and not body.missing_only:
+    if body.from_date is None and body.to_date is None and body.only is None:
         raise HTTPException(
             status_code=400,
-            detail="At least one of from_date or to_date is required",
+            detail="At least one of from_date, to_date, or only is required",
         )
 
     # Validate modes and primary_mode at the endpoint so invalid input fails fast.
-    invalid_modes = [m for m in body.modes if m not in AVAILABLE_CONFIGS]
-    if invalid_modes:
-        raise HTTPException(status_code=422, detail=f"Unknown mode(s): {invalid_modes}")
-    if body.primary_mode is not None and body.primary_mode not in body.modes:
-        raise HTTPException(
-            status_code=422,
-            detail="primary_mode must be a member of modes",
-        )
-    if body.primary_mode is None and DEFAULT_MODE not in body.modes:
-        raise HTTPException(
-            status_code=422,
-            detail="primary_mode must be supplied explicitly when aasm is not in modes",
-        )
+    try:
+        primary_mode = resolve_primary_mode(list(body.modes), body.primary_mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     from_dt = datetime.combine(body.from_date, time.min) if body.from_date else None
     to_dt = datetime.combine(body.to_date, time.max) if body.to_date else None
 
     session_ids = await facade.list_session_ids(
-        from_date=from_dt, to_date=to_dt, missing_only=body.missing_only
+        from_date=from_dt, to_date=to_dt, only=body.only
     )
-
     if not session_ids:
-        detail = (
-            "No unanalyzed sessions to backfill"
-            if body.missing_only
-            else "No sessions found for the specified date range"
-        )
+        if body.only is None:
+            detail = "No sessions found for the specified date range"
+        else:
+            detail = EMPTY_SELECTION_MESSAGES[body.only]
         raise HTTPException(status_code=422, detail=detail)
+
+    if body.only is not None:
+        # A filtered batch re-selects sessions that a queued job has not
+        # written yet; enqueueing them again would store duplicate runs.
+        in_flight = analysis_jobs.in_flight_session_ids(facade.profile_id)
+        session_ids = [sid for sid in session_ids if sid not in in_flight]
+        if not session_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Every selected session is already queued for analysis",
+            )
 
     aj = analysis_jobs.enqueue(
         profile_id=facade.profile_id,
@@ -176,7 +174,7 @@ async def run_batch_analysis(
         source=analysis_jobs.AnalysisJobSource.BATCH,
         owner_user_id=actor.user_id,
         modes=list(body.modes),
-        primary_mode=body.primary_mode,
+        primary_mode=primary_mode,
         store_results=body.store_results,
     )
     if aj is None:
