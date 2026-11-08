@@ -73,7 +73,8 @@ def analysis() -> None:
     help=(
         "Mode whose recovery markers are persisted. "
         "Must be a member of --mode when supplied. "
-        "Required when --mode excludes 'aasm'."
+        "Defaults to 'aasm' when included, else to the sole --mode; "
+        "required otherwise."
     ),
 )
 @click.option(

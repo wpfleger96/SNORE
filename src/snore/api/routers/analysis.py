@@ -81,7 +81,7 @@ async def run_analysis(
     try:
         return await facade.run_analysis(
             session_id,
-            modes=body.modes,
+            modes=list(body.modes),
             primary_mode=body.primary_mode,
             store_results=body.store_results,
         )
@@ -129,10 +129,7 @@ async def run_batch_analysis(
     facade: AnalysisFacadeDep,
     actor: RequireWritable,
 ) -> AnalysisJobEnqueued:
-    from snore.analysis.modes.config import (  # noqa: PLC0415
-        AVAILABLE_CONFIGS,
-        DEFAULT_MODE,
-    )
+    from snore.analysis.service import resolve_primary_mode  # noqa: PLC0415
 
     if body.from_date is None and body.to_date is None and not body.missing_only:
         raise HTTPException(
@@ -141,19 +138,10 @@ async def run_batch_analysis(
         )
 
     # Validate modes and primary_mode at the endpoint so invalid input fails fast.
-    invalid_modes = [m for m in body.modes if m not in AVAILABLE_CONFIGS]
-    if invalid_modes:
-        raise HTTPException(status_code=422, detail=f"Unknown mode(s): {invalid_modes}")
-    if body.primary_mode is not None and body.primary_mode not in body.modes:
-        raise HTTPException(
-            status_code=422,
-            detail="primary_mode must be a member of modes",
-        )
-    if body.primary_mode is None and DEFAULT_MODE not in body.modes:
-        raise HTTPException(
-            status_code=422,
-            detail="primary_mode must be supplied explicitly when aasm is not in modes",
-        )
+    try:
+        primary_mode = resolve_primary_mode(list(body.modes), body.primary_mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     from_dt = datetime.combine(body.from_date, time.min) if body.from_date else None
     to_dt = datetime.combine(body.to_date, time.max) if body.to_date else None
@@ -176,7 +164,7 @@ async def run_batch_analysis(
         source=analysis_jobs.AnalysisJobSource.BATCH,
         owner_user_id=actor.user_id,
         modes=list(body.modes),
-        primary_mode=body.primary_mode,
+        primary_mode=primary_mode,
         store_results=body.store_results,
     )
     if aj is None:

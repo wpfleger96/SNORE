@@ -41,7 +41,7 @@ from snore.analysis.data.waveform_loader import (
     detect_and_mark_artifacts,
     fetch_waveform_blob,
 )
-from snore.analysis.modes import DEFAULT_MODE, get_mode
+from snore.analysis.modes import AVAILABLE_CONFIGS, DEFAULT_MODE, get_mode
 from snore.analysis.shared.breath_segmenter import BreathSegmenter
 from snore.analysis.shared.feature_extractors import (
     WaveformFeatureExtractor,
@@ -176,27 +176,33 @@ class AnalysisInputs:
     smart_ramp: bool = False
 
 
-def _resolve_primary_mode(modes: list[str], primary_mode: str | None) -> str:
+def resolve_primary_mode(modes: list[str], primary_mode: str | None) -> str:
     """Resolve and validate primary_mode against modes list.
 
     Rules:
+    - Every entry of modes must be a known mode → ValueError if not.
     - If primary_mode is supplied, it MUST be in modes → ValueError if not.
     - If not supplied and DEFAULT_MODE is in modes → DEFAULT_MODE.
-    - If not supplied and DEFAULT_MODE is NOT in modes → ValueError (caller must
-      supply primary_mode explicitly for non-default mode sets).
+    - If not supplied and modes names exactly one distinct mode → that mode.
+    - Otherwise → ValueError (caller must supply primary_mode explicitly).
     """
+    invalid = [m for m in modes if m not in AVAILABLE_CONFIGS]
+    if invalid:
+        raise ValueError(f"Unknown mode(s): {invalid}")
     if primary_mode is not None:
         if primary_mode not in modes:
             raise ValueError(
                 f"primary_mode {primary_mode!r} must be a member of modes {modes}"
             )
         return primary_mode
-    # No primary_mode supplied: default only when DEFAULT_MODE is present.
+    # No primary_mode supplied: prefer DEFAULT_MODE, else the sole mode.
     if DEFAULT_MODE in modes:
         return DEFAULT_MODE
+    if len(set(modes)) == 1:
+        return modes[0]
     raise ValueError(
         f"primary_mode must be supplied explicitly when modes {modes!r} "
-        f"exclude the DEFAULT_MODE {DEFAULT_MODE!r}"
+        f"exclude {DEFAULT_MODE!r} and do not name exactly one mode"
     )
 
 
@@ -378,7 +384,7 @@ class AnalysisService:
             "load_session_inputs_raw requires a DB session"
         )
         modes_list = list(modes) if modes is not None else [DEFAULT_MODE]
-        resolved_primary = _resolve_primary_mode(modes_list, primary_mode)
+        resolved_primary = resolve_primary_mode(modes_list, primary_mode)
 
         # Single query: Session + Device (inner join — device_id is NOT NULL) +
         # Setting (outer join — 0-3 rows for ramp keys).  The outer join fans
@@ -795,7 +801,8 @@ class AnalysisService:
             modes: Detection modes to run (None = default mode)
             primary_mode: Mode whose recovery markers are persisted.  Must be a
                 member of ``modes`` when supplied; defaults to DEFAULT_MODE when
-                DEFAULT_MODE is in modes; required otherwise (ValueError).
+                DEFAULT_MODE is in modes, else to the sole mode when ``modes``
+                has one entry; required otherwise (ValueError).
             store_results: Whether to persist results
 
         Returns:
