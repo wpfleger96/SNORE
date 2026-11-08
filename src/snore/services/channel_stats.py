@@ -16,22 +16,18 @@ range's peak memory far below holding its samples.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta
-from itertools import batched
 from typing import NewType
 
 import numpy as np
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
-from snore.database import models
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.services.schemas import DeviceChannelStats, MaskOnSpan
 from snore.therapy_hours import parse_mask_on_segments
 from snore.utils.stats import nearest_rank_index
@@ -44,7 +40,6 @@ __all__ = [
     "ChannelHistograms",
     "PooledHistogram",
     "channel_histogram",
-    "decode_channel_blobs",
     "histogram_distribution",
     "load_channel_histograms",
     "mask_on_spans",
@@ -68,11 +63,6 @@ _CHANNEL_FIELDS = {
     "snore": ("snore_median", "snore_95th", "snore_max"),
 }
 _ROUND_DIGITS = 4
-
-# Sessions fetched per query.  The blobs of a batch are buffered in memory until
-# decoded, so this bounds that buffer, at two blobs per session for the FL and
-# snore pair.
-_DECODE_BATCH_SESSIONS = 64
 
 # A session's usable samples as ascending distinct values and how often each occurs.
 type ChannelHistogram = tuple[np.ndarray, np.ndarray]
@@ -166,68 +156,6 @@ def histogram_distribution(
     return pooled_distribution(pool_histograms(histograms))
 
 
-def _decode_rows[T](
-    rows: Sequence[tuple[int, str, bytes | None, int | None]],
-    reduce: Callable[[str, np.ndarray], T],
-    values: dict[str, dict[int, T]],
-    corrupt: dict[str, set[int]],
-) -> None:
-    """Decode and reduce fetched blobs into ``values`` and ``corrupt``.
-
-    Runs on a worker thread, so ``rows`` holds plain values, never ORM objects.
-    """
-    for session_id, channel, blob, sample_count in rows:
-        if not blob or not sample_count:
-            continue
-        try:
-            _, samples = deserialize_waveform_blob(blob, sample_count)
-        except ValueError:
-            corrupt[channel].add(session_id)
-            continue
-        values[channel][session_id] = reduce(channel, samples)
-
-
-async def decode_channel_blobs[T](
-    db: AsyncSession,
-    session_ids: Sequence[int],
-    channels: Sequence[str],
-    reduce: Callable[[str, np.ndarray], T],
-) -> tuple[dict[str, dict[int, T]], dict[str, set[int]]]:
-    """``(values, corrupt)`` of ``channels`` for ``session_ids``.
-
-    ``values`` is channel -> session_id -> ``reduce(channel, samples)``, the raw
-    samples including sentinels; ``corrupt`` is channel -> ids of sessions whose
-    blob could not be decoded.  Every requested channel is a key of both, and a
-    session without a usable row for a channel is absent from its ``values`` map.
-
-    Blobs are fetched in batches and decoded off the event loop.  There is no
-    ownership check here: callers pass ids already scoped to the profile.
-    """
-    values: dict[str, dict[int, T]] = {channel: {} for channel in channels}
-    corrupt: dict[str, set[int]] = {channel: set() for channel in channels}
-    waveform = models.Waveform
-    for batch in batched(session_ids, _DECODE_BATCH_SESSIONS, strict=False):
-        result = await db.execute(
-            select(
-                waveform.session_id,
-                waveform.waveform_type,
-                waveform.data_blob,
-                waveform.sample_count,
-            ).where(
-                waveform.session_id.in_(batch),
-                waveform.waveform_type.in_(channels),
-            )
-        )
-        await asyncio.to_thread(
-            _decode_rows,
-            [(sid, channel, blob, count) for sid, channel, blob, count in result],
-            reduce,
-            values,
-            corrupt,
-        )
-    return values, corrupt
-
-
 async def load_channel_histograms(
     db: AsyncSession, session_ids: Sequence[int]
 ) -> ChannelHistograms:
@@ -238,14 +166,9 @@ async def load_channel_histograms(
     logs a warning.  ``decode_channel_blobs`` does no ownership check, so callers
     pass ids already scoped to the profile.
     """
-    histograms, corrupt = await decode_channel_blobs(
+    histograms, _ = await decode_channel_blobs(
         db, session_ids, tuple(_CHANNEL_FIELDS), channel_histogram
     )
-    for channel, corrupt_ids in corrupt.items():
-        for session_id in sorted(corrupt_ids):
-            logger.warning(
-                "Skipping corrupt %s waveform of session %d", channel, session_id
-            )
     return histograms
 
 

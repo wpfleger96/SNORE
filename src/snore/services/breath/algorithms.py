@@ -10,9 +10,9 @@ from typing import Any
 
 import numpy as np
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.shared.versioning import NullReason
 from snore.constants import RERAProxyConstants
+from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.services.lttb import lttb_downsample
 
 from .dtos import (

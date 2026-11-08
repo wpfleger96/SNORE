@@ -14,6 +14,7 @@ genuine single-source wins: they are declared only here.
 from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal, assert_never
 
 
 class DayAgg(StrEnum):
@@ -23,6 +24,33 @@ class DayAgg(StrEnum):
     MIN = "min"
     MAX = "max"
     USAGE_WEIGHTED_MEAN = "usage_weighted_mean"
+    # Percentile of the day's pooled waveform samples, falling back to a
+    # usage-weighted mean of the session values when a contributing session
+    # has no usable stored waveform.
+    POOLED_PERCENTILE = "pooled_percentile"
+
+
+type PooledStat = Literal["Median", "95th percentile"]
+
+
+def _pooled_stat_plural(stat: PooledStat) -> str:
+    """Plural of ``stat``; ``assert_never`` makes mypy flag an unhandled value."""
+    match stat:
+        case "Median":
+            return "medians"
+        case "95th percentile":
+            return "95th percentiles"
+        case _:
+            assert_never(stat)
+
+
+def pooled_percentile_description(stat: PooledStat, channel: str, unit: str) -> str:
+    """Field description for a ``DayAgg.POOLED_PERCENTILE`` day-level value."""
+    return (
+        f"{stat} {channel} over the night's pooled samples ({unit}); "
+        f"a usage-weighted mean of session {_pooled_stat_plural(stat)} when a "
+        "session has no usable stored waveform"
+    )
 
 
 @dataclass(frozen=True)
@@ -151,19 +179,19 @@ def _day(name: str, day_agg: DayAgg) -> MetricSpec:
 DAY_METRIC_STAT_COLUMNS: tuple[MetricSpec, ...] = (
     _day("pressure_min", DayAgg.MIN),
     _day("pressure_max", DayAgg.MAX),
-    _day("pressure_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("pressure_median", DayAgg.POOLED_PERCENTILE),
     _day("pressure_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("pressure_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("pressure_95th", DayAgg.POOLED_PERCENTILE),
     _day("epap_min", DayAgg.MIN),
     _day("epap_max", DayAgg.MAX),
-    _day("epap_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("epap_median", DayAgg.POOLED_PERCENTILE),
     _day("epap_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("epap_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("epap_95th", DayAgg.POOLED_PERCENTILE),
     _day("leak_min", DayAgg.MIN),
     _day("leak_max", DayAgg.MAX),
-    _day("leak_median", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("leak_median", DayAgg.POOLED_PERCENTILE),
     _day("leak_mean", DayAgg.USAGE_WEIGHTED_MEAN),
-    _day("leak_95th", DayAgg.USAGE_WEIGHTED_MEAN),
+    _day("leak_95th", DayAgg.POOLED_PERCENTILE),
     _day("spo2_min", DayAgg.MIN),
     _day("spo2_max", DayAgg.MAX),
     _day("spo2_mean", DayAgg.USAGE_WEIGHTED_MEAN),

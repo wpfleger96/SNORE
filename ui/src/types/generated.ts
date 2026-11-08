@@ -2945,12 +2945,12 @@ export interface components {
             ahi_computed?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Usage-weighted mean leak (L/min)
+             * @description [DERIVED] Median leak over the night's pooled samples (L/min); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             avg_leak?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Usage-weighted mean pressure (cmH2O)
+             * @description [DERIVED] Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             avg_pressure?: number | null
             /**
@@ -2985,7 +2985,7 @@ export interface components {
             device_id: number
             /**
              * Epap 95Th
-             * @description [DERIVED] Usage-weighted 95th percentile EPAP (cmH2O)
+             * @description [DERIVED] 95th percentile EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             epap_95th?: number | null
             /**
@@ -3000,7 +3000,7 @@ export interface components {
             epap_mean?: number | null
             /**
              * Epap Median
-             * @description [DERIVED] Usage-weighted median EPAP (cmH2O)
+             * @description [DERIVED] Median EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             epap_median?: number | null
             /**
@@ -3029,7 +3029,7 @@ export interface components {
             index_source?: components['schemas']['IndexSource'] | null
             /**
              * Leak 95Th
-             * @description [DERIVED] Usage-weighted 95th percentile leak (L/min)
+             * @description [DERIVED] 95th percentile leak over the night's pooled samples (L/min); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             leak_95th?: number | null
             /**
@@ -3070,7 +3070,7 @@ export interface components {
             obstructive_apneas: number
             /**
              * Pressure 95Th
-             * @description [DERIVED] Usage-weighted 95th percentile pressure (cmH2O)
+             * @description [DERIVED] 95th percentile pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             pressure_95th?: number | null
             /**
@@ -3080,7 +3080,7 @@ export interface components {
             pressure_max?: number | null
             /**
              * Pressure Median
-             * @description [DERIVED] Usage-weighted median pressure (cmH2O)
+             * @description [DERIVED] Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             pressure_median?: number | null
             /**
@@ -4587,7 +4587,7 @@ export interface components {
             avg_hours_per_day?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Average leak rate (L/min)
+             * @description [DERIVED] Usage-weighted mean of the daily median leak (L/min)
              */
             avg_leak?: number | null
             /**
@@ -4597,7 +4597,7 @@ export interface components {
             avg_oai?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Average pressure (cmH₂O)
+             * @description [DERIVED] Usage-weighted mean of the daily median pressure (cmH₂O)
              */
             avg_pressure?: number | null
             /**
@@ -5318,7 +5318,7 @@ export interface components {
             avg_hours?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Usage-hours-weighted average leak (L/min)
+             * @description [DERIVED] Usage-weighted mean of the daily median leak over the period (L/min)
              */
             avg_leak?: number | null
             /** Days Count */
@@ -6112,7 +6112,7 @@ export interface components {
             avg_hours: number
             /**
              * Avg Leak
-             * @description [DERIVED] Average leak (L/min)
+             * @description [DERIVED] Usage-weighted mean of the daily median leak (L/min)
              */
             avg_leak?: number | null
             /**
@@ -6122,7 +6122,7 @@ export interface components {
             avg_minute_ventilation?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Average pressure (cmH2O)
+             * @description [DERIVED] Usage-weighted mean of the daily median pressure (cmH2O)
              */
             avg_pressure?: number | null
             /**
@@ -6176,12 +6176,12 @@ export interface components {
             last_date: string
             /**
              * Max Pressure
-             * @description [DERIVED] Maximum pressure (cmH2O)
+             * @description [DERIVED] Highest daily median pressure (cmH2O)
              */
             max_pressure?: number | null
             /**
              * Min Pressure
-             * @description [DERIVED] Minimum pressure (cmH2O)
+             * @description [DERIVED] Lowest daily median pressure (cmH2O)
              */
             min_pressure?: number | null
             /**

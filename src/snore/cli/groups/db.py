@@ -30,6 +30,10 @@ from snore.database.session import cleanup_database, init_database, session_scop
 from snore.services.database_service import DatabaseService
 from snore.utils.db_chunk import iter_id_chunks
 
+# Days recomputed per write transaction.  Each day decodes its sessions'
+# waveform blobs while holding the SQLite write lock, so chunks stay small.
+RECOMPUTE_DAYS_CHUNK_SIZE = 100
+
 
 @click.group()
 def db() -> None:
@@ -171,18 +175,19 @@ def cleanup_orphans(db: str | None) -> None:
 @db_option
 @click.confirmation_option(
     prompt=(
-        "Re-derive every Day's metrics from stored session statistics "
-        "and delete Day rows no session references?"
+        "Re-derive every Day's metrics from stored session statistics and "
+        "waveforms and delete Day rows no session references?"
     )
 )
 def recompute_days(db: str | None) -> None:
-    """Recompute all Day aggregates from stored session statistics (no reparse).
+    """Recompute all Day aggregates from stored session statistics and waveforms.
 
-    Re-runs day aggregation over the ``Statistics`` already stored for each
-    session, refreshing every Day row across all devices and profiles.  Use
-    after an aggregation-formula change (e.g. a new weighting) to update
-    historical Day rows without re-importing raw device data.  Day rows that
-    no session references are deleted rather than recomputed.
+    No reparse: re-runs day aggregation over the ``Statistics`` and waveforms
+    already stored for each session, refreshing every Day row across all
+    devices and profiles.  Use after an aggregation-formula change (e.g. a
+    new weighting) to update historical Day rows without re-importing raw
+    device data.  Day rows that no session references are deleted rather than
+    recomputed.
 
     Days are processed in chunks, each committed in its own gated write
     transaction (like ``cleanup-orphans``), so the SQLite write lock is
@@ -223,7 +228,7 @@ def recompute_days(db: str | None) -> None:
         ) as progress:
             task = progress.add_task("Recomputing days", total=len(day_ids))
             pruned = 0
-            for chunk in iter_id_chunks(day_ids):
+            for chunk in iter_id_chunks(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE):
                 async with write_gate(), session_scope(immediate=True) as session:
                     days = (
                         (await session.execute(select(Day).where(Day.id.in_(chunk))))
@@ -235,7 +240,10 @@ def recompute_days(db: str | None) -> None:
                             pruned += 1
                 progress.update(task, advance=len(chunk))
 
-        summary = f"Recomputed {len(day_ids) - pruned} day(s) from session statistics"
+        summary = (
+            f"Recomputed {len(day_ids) - pruned} day(s) "
+            "from session statistics and waveforms"
+        )
         if pruned:
             summary += f"; pruned {pruned} orphaned day(s)"
         print_success(summary)

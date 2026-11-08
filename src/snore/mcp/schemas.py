@@ -34,6 +34,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from snore.metrics import pooled_percentile_description
 from snore.provenance import IndexSource, Provenance, provenance_field
 from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
@@ -308,20 +309,30 @@ class NightlyRow(NightlyChannelFields):
     unclassified_apneas_reason: str | None = None
 
     pressure_median_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED, "Median pressure (cmH₂O).", default=None
+        Provenance.DERIVED,
+        pooled_percentile_description("Median", "pressure", "cmH₂O"),
+        default=None,
     )
     pressure_95th_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED, "95th-percentile pressure (cmH₂O).", default=None
+        Provenance.DERIVED,
+        pooled_percentile_description("95th percentile", "pressure", "cmH₂O"),
+        default=None,
     )
     epap_median_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED, "Median EPAP (cmH₂O).", default=None
+        Provenance.DERIVED,
+        pooled_percentile_description("Median", "EPAP", "cmH₂O"),
+        default=None,
     )
 
     leak_median_lpm: float | None = provenance_field(
-        Provenance.DERIVED, "Median leak (L/min).", default=None
+        Provenance.DERIVED,
+        pooled_percentile_description("Median", "leak", "L/min"),
+        default=None,
     )
     leak_95th_lpm: float | None = provenance_field(
-        Provenance.DERIVED, "95th-percentile leak (L/min).", default=None
+        Provenance.DERIVED,
+        pooled_percentile_description("95th percentile", "leak", "L/min"),
+        default=None,
     )
     rr_mean_bpm: float | None = provenance_field(
         Provenance.DEVICE,

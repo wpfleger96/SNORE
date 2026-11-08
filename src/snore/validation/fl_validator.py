@@ -29,11 +29,11 @@ from scipy.stats import mannwhitneyu
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.shared.versioning import AnalysisStatus
 from snore.constants import FLOW_LIMITATION_CLASSES
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
+from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.services.breath_service import BreathService
 from snore.validation.alignment import average_waveform_over_breaths
 from snore.validation.fl_report import (

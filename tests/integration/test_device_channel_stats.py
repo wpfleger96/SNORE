@@ -18,10 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.calculations import PeriodType
 from snore.database.models import Day, Device, Session, Statistics
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.mcp.schemas import EpochSpec
 from snore.mcp.tools.epochs import compare_epochs
 from snore.services.breath_service import BreathService
-from snore.services.channel_stats import decode_channel_blobs
 from snore.services.day_service import DayService
 from snore.services.report_service import ReportService
 from snore.services.session_service import SessionService
@@ -191,7 +191,7 @@ async def test_corrupt_blob_skips_that_channel_and_warns(
     await _make_channel_waveform(async_db_session, session, "snore", [2.0])
     await async_db_session.flush()
 
-    with caplog.at_level(logging.WARNING, logger="snore.services.channel_stats"):
+    with caplog.at_level(logging.WARNING):
         detail = await SessionService(async_db_session, profile_id).get_session_detail(
             session.id
         )
@@ -199,6 +199,14 @@ async def test_corrupt_blob_skips_that_channel_and_warns(
     assert detail.channel_stats.device_flg_max is None
     assert detail.channel_stats.snore_max == 2.0
     assert f"session {session.id}" in caplog.text
+    assert (
+        sum(
+            r.levelno >= logging.WARNING
+            for r in caplog.records
+            if r.name == "snore.database.waveform_blobs"
+        )
+        == 1
+    )
 
 
 async def test_empty_blob_is_skipped(
@@ -714,7 +722,7 @@ async def test_loader_fetches_blobs_in_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, device = profile_device
-    monkeypatch.setattr("snore.services.channel_stats._DECODE_BATCH_SESSIONS", 2)
+    monkeypatch.setattr("snore.database.waveform_blobs.DECODE_BATCH_SESSIONS", 2)
     session_ids = []
     for offset in range(5):
         _, session = await _make_day_session(

@@ -42,13 +42,13 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.data.waveform_loader import deserialize_waveform_blob
 from snore.analysis.modes.postprocess import EVENT_MATCH_TOLERANCE_SECONDS
 from snore.analysis.shared.versioning import AnalysisStatus
 from snore.analysis.utils import convert_machine_reras
 from snore.constants import FlowLimitationConstants, RERAProxyConstants
 from snore.database import models
 from snore.database.day_manager import DayManager
+from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.services.breath.algorithms import iter_fl_run_recoveries
 from snore.services.breath_service import BreathService
 from snore.services.health_service import HealthService

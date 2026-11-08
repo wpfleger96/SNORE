@@ -9,12 +9,15 @@ import logging
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 
+import numpy as np
+
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from snore.database.models import Day, Statistics
+from snore.database.models import Day, Statistics, Waveform
 from snore.database.models import Session as SessionModel
+from snore.database.waveform_blobs import decode_channel_blobs
 from snore.metrics import (
     COVERAGE_TOLERANCE_FRACTION,
     COVERAGE_TOLERANCE_HOURS,
@@ -22,6 +25,7 @@ from snore.metrics import (
     DAY_METRIC_STAT_COLUMNS,
     DayAgg,
 )
+from snore.parsers.unified import SUMMARY_CHANNELS
 from snore.provenance import IndexSource
 from snore.therapy_hours import effective_session_hours
 from snore.utils.stats import weighted_mean
@@ -32,6 +36,18 @@ logger = logging.getLogger(__name__)
 # headlined, but logged: a gap that large suggests the sessions were stamped
 # from the wrong STR record even though the coverage check passed.
 DEVICE_RECOUNT_AHI_WARN_DELTA = 5.0
+
+# SUMMARY_CHANNELS prefix -> {Day column: percentile 0-100} for the
+# DayAgg.POOLED_PERCENTILE columns.
+POOLED_PERCENTILE_SOURCES: dict[str, dict[str, float]] = {
+    "pressure": {"pressure_median": 50.0, "pressure_95th": 95.0},
+    "epap": {"epap_median": 50.0, "epap_95th": 95.0},
+    "leak": {"leak_median": 50.0, "leak_95th": 95.0},
+}
+
+# Finite samples of each session's chosen channel, keyed (prefix, session_id).
+# A session whose chosen channel has no usable samples is absent.
+type ChannelSamples = dict[tuple[str, int], np.ndarray]
 
 
 class DayManager:
@@ -138,6 +154,101 @@ class DayManager:
             for s, sess in stat_pairs
             if getattr(s, attr) is not None
         )
+
+    @staticmethod
+    async def _load_channel_samples(
+        session_ids: list[int], db_session: AsyncSession
+    ) -> ChannelSamples:
+        """Finite samples of each session's summary channel, per prefix.
+
+        A session's channel for a prefix is the first ``SUMMARY_CHANNELS``
+        channel it has a stored row for, the rule ``finalize_statistics`` used
+        for the session value.  Only chosen channels are decoded.  A chosen row
+        that is empty, corrupt or all non-finite leaves the session out, so the
+        caller falls back rather than reading a channel the session value did
+        not come from.
+        """
+        # session_id and waveform_type are stored before data_blob, so this
+        # never reads a blob.
+        channel_rows = await db_session.execute(
+            select(Waveform.session_id, Waveform.waveform_type).where(
+                Waveform.session_id.in_(session_ids),
+                Waveform.waveform_type.in_(
+                    {c.value for chans in SUMMARY_CHANNELS.values() for c in chans}
+                ),
+            )
+        )
+        stored: dict[int, set[str]] = {}
+        for session_id, waveform_type in channel_rows:
+            stored.setdefault(session_id, set()).add(waveform_type)
+
+        # channel -> [(prefix, session_id)] the channel was chosen for.
+        chosen: dict[str, list[tuple[str, int]]] = {}
+        for session_id, channels in stored.items():
+            for prefix, preference in SUMMARY_CHANNELS.items():
+                choice = next(
+                    (c.value for c in preference if c.value in channels), None
+                )
+                if choice is not None:
+                    chosen.setdefault(choice, []).append((prefix, session_id))
+
+        samples: ChannelSamples = {}
+        for channel, keys in chosen.items():
+            values, _ = await decode_channel_blobs(
+                db_session,
+                [session_id for _, session_id in keys],
+                [channel],
+                lambda _, v: v[np.isfinite(v)],
+            )
+            for prefix, session_id in keys:
+                finite = values[channel].get(session_id)
+                if finite is not None and finite.size:
+                    samples[(prefix, session_id)] = finite
+        return samples
+
+    @classmethod
+    def _pooled_percentiles(
+        cls,
+        stat_pairs: list[tuple[Statistics, SessionModel]],
+        samples: ChannelSamples,
+    ) -> dict[str, float | None]:
+        """Each ``POOLED_PERCENTILE_SOURCES`` prefix's columns from its pooled samples.
+
+        A session contributes to a prefix when it has mask-on time and a value
+        for any of the prefix's columns.  Each prefix pools its contributing
+        sessions' samples; if one of them has none, the prefix's columns fall
+        back to the usage-weighted mean of the session values.  A prefix with
+        no contributing session is None.
+        """
+        result: dict[str, float | None] = {}
+        for prefix, columns in POOLED_PERCENTILE_SOURCES.items():
+            contributing = [
+                session.id
+                for stats, session in stat_pairs
+                if any(getattr(stats, name) is not None for name in columns)
+                and effective_session_hours(stats.usage_hours, session.duration_seconds)
+                > 0
+            ]
+            pooled = [
+                samples[(prefix, sid)]
+                for sid in contributing
+                if (prefix, sid) in samples
+            ]
+            if len(pooled) < len(contributing):
+                result |= {
+                    name: cls._weighted_average(stat_pairs, name) for name in columns
+                }
+            elif not pooled:
+                result |= dict.fromkeys(columns)
+            else:
+                percentiles = np.percentile(
+                    np.concatenate(pooled), list(columns.values())
+                )
+                result |= {
+                    name: float(value)
+                    for name, value in zip(columns, percentiles, strict=True)
+                }
+        return result
 
     @staticmethod
     def _trusted_device_indices(
@@ -301,6 +412,12 @@ class DayManager:
                 s.unclassified_apneas for s in stats_records if s.unclassified_apneas
             )
 
+            pooled = cls._pooled_percentiles(
+                stat_pairs,
+                await cls._load_channel_samples(
+                    [s.id for _, s in stat_pairs], db_session
+                ),
+            )
             for spec in DAY_METRIC_STAT_COLUMNS:
                 if spec.day_agg in (DayAgg.MIN, DayAgg.MAX):
                     # Truthiness filter is intentional-legacy: 0.0 values are
@@ -312,10 +429,13 @@ class DayManager:
                     ]
                     reduce = min if spec.day_agg is DayAgg.MIN else max
                     setattr(day, spec.name, reduce(values) if values else None)
-                elif spec.day_agg is DayAgg.USAGE_WEIGHTED_MEAN and total_hours > 0:
+                elif spec.day_agg is DayAgg.USAGE_WEIGHTED_MEAN:
+                    # None on a zero-hour day, like the pooled percentiles.
                     setattr(
                         day, spec.name, cls._weighted_average(stat_pairs, spec.name)
                     )
+                elif spec.day_agg is DayAgg.POOLED_PERCENTILE:
+                    setattr(day, spec.name, pooled[spec.name])
 
         computed = (
             {f: cls._weighted_average(stat_pairs, f) for f in DAY_INDEX_FIELDS}

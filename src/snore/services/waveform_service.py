@@ -11,15 +11,15 @@ import numpy as np
 
 from sqlalchemy import func, select
 
-from snore.analysis.data.waveform_loader import (
-    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
-    deserialize_waveform_blob,
-)
 from snore.analysis.modes.postprocess import match_events_by_start_time
 from snore.analysis.queries import latest_analysis_row
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.constants import EVENT_TYPE_HYPOPNEA, EVENT_TYPE_RERA
 from snore.database import models
+from snore.database.waveform_blobs import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
+    deserialize_waveform_blob,
+)
 from snore.exceptions import NotFoundError
 from snore.services._base import (
     ProfileScopedService,

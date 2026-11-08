@@ -14,7 +14,7 @@ HYPOPNEA_END_S = 44 * BREATH_S
 
 
 def _blob(timestamps: np.ndarray, values: np.ndarray) -> bytes:
-    """Serialize like ``database.importers.serialize_waveform``."""
+    """Serialize like ``database.waveform_blobs.serialize_waveform``."""
     return np.column_stack([timestamps, values]).astype(np.float32).tobytes()
 
 

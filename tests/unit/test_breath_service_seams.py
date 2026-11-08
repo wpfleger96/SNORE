@@ -5977,7 +5977,7 @@ class TestNightlyDeviceSummaryDecodeBatches:
         With a batch size of 2, three single-session nights span two batches;
         a dropped batch would leave a night with ``channel_absent``.
         """
-        monkeypatch.setattr("snore.services.channel_stats._DECODE_BATCH_SESSIONS", 2)
+        monkeypatch.setattr("snore.database.waveform_blobs.DECODE_BATCH_SESSIONS", 2)
 
         _, profile_id = await _make_profile(async_db_session)
         dev = await _make_device(async_db_session, profile_id)

@@ -15,15 +15,17 @@ import numpy as np
 import pytest
 
 from snore.analysis.data.waveform_loader import (
-    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
     apply_noise_filter,
-    deserialize_waveform_blob,
     detect_and_mark_artifacts,
     handle_discontinuities,
     handle_sample_rate_conversion,
     load_waveform_from_db,
 )
-from snore.database.importers import serialize_waveform
+from snore.database.waveform_blobs import (
+    WAVEFORM_BLOB_BYTES_PER_SAMPLE,
+    deserialize_waveform_blob,
+    serialize_waveform,
+)
 from snore.parsers.unified import WaveformData, WaveformType
 
 
@@ -51,9 +53,7 @@ class TestWaveformDeserialization:
         """The debug message survives being skipped when debug logging is off."""
         blob = np.array([[0.0, 10.0], [1.0, 20.0]], dtype=np.float32).tobytes()
 
-        with caplog.at_level(
-            logging.DEBUG, logger="snore.analysis.data.waveform_loader"
-        ):
+        with caplog.at_level(logging.DEBUG, logger="snore.database.waveform_blobs"):
             deserialize_waveform_blob(blob, sample_count=2)
 
         assert "value range [10.00, 20.00]" in caplog.text
