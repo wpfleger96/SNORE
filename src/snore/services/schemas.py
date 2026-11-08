@@ -1532,6 +1532,15 @@ class VacuumResult(BaseModel):
     size_after_mb: float = Field(description="Database size after vacuum in MB")
 
 
+class RecomputeDaysResult(BaseModel):
+    """Result of re-deriving every Day row from stored session data."""
+
+    days_recomputed: int = Field(description="Day rows re-aggregated and kept")
+    days_pruned: int = Field(
+        description="Day rows deleted because no session references them"
+    )
+
+
 class ResetResult(BaseModel):
     """Result of a database reset (delete all data, preserve schema) operation."""
 

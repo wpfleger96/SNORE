@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 # to couple analysis_jobs to import_jobs.
 JOB_TTL_SECONDS: float = 600.0
 
+# Held across admission of the database-wide maintenance jobs (reset/delete-data
+# in ``reset_jobs`` and the day recompute in ``recompute_jobs``), which must never
+# run together.  Each enqueue checks the other module's active jobs and admits its
+# own under this lock, so two concurrent requests cannot both pass the check.
+# Always acquire it before a module's own store lock, never while holding one.
+MAINTENANCE_ADMISSION_LOCK = threading.Lock()
+
 
 @dataclass(kw_only=True)
 class JobRecordBase[StateT: Enum]:

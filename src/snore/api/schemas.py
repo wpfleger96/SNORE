@@ -26,6 +26,7 @@ from snore.services.schemas import (
     HealthSampleRead,
     ImportSource,
     MaskLogEntryResponse,
+    RecomputeDaysResult,
     ResetResult,
     RxAllResponse,
     RxChangesResponse,
@@ -68,6 +69,7 @@ __all__ = [
     "AnalysisJobStatus",
     "AnalysisJobsListResponse",
     "AnalysisJobEnqueued",
+    "RecomputeDaysJobStatus",
     "ResetJobEnqueued",
     "ResetJobStatus",
     "ValidatorType",
@@ -377,6 +379,21 @@ class ResetJobStatus(BaseModel):
     error_message: str | None
     reset_result: ResetResult | None
     delete_data_result: DeleteDataResult | None
+
+
+class RecomputeDaysJobStatus(BaseModel):
+    """Snapshot of the admin job that re-derives every Day row."""
+
+    job_id: str
+    state: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    days_processed: int = Field(description="Days handled so far")
+    days_total: int | None = Field(
+        description="Days the job will handle; null until it has listed them"
+    )
+    error_message: str | None
+    result: RecomputeDaysResult | None = Field(
+        description="Final counts; null until the job succeeds"
+    )
 
 
 # Accepted validator types. events/fl/breaths run today; rera/apple are accepted

@@ -55,7 +55,7 @@ import uuid
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
@@ -199,6 +199,14 @@ class ImportJob(JobRecordBase[JobState]):
 
     # UPLOAD jobs: temp dir with written files.
     temp_dir: Path | None = None
+
+    # Import options, fixed before the job is enqueued.  ``force`` deletes and
+    # recreates sessions that already exist (UPLOAD and RESCAN); the date range
+    # and ``analyze`` are RESCAN-only.
+    force: bool = False
+    date_from: date | None = None
+    date_to: date | None = None
+    analyze: bool = True
 
     # File count — protected by _lock (written by the request handler before the worker starts).
     _file_count: int = field(default=0, init=False, repr=False)

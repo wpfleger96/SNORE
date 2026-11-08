@@ -98,6 +98,7 @@ async def _upsert_job_record(job: ImportJob) -> None:
         "error_message": job.error_message,
         "analysis_queued": job.analysis_queued,
         "spool_dir_path": spool_dir_path,
+        "force": job.force,
         "created_at": job.created_at_wall,
         "started_at": job.started_at_wall,
         "finished_at": finished,
@@ -174,12 +175,13 @@ def _maybe_enqueue_analysis(
     """Enqueue background analysis for imported sessions (import/rescan only) and
     build the terminal "complete" extra payload.
 
-    Health imports (``enqueue_analysis`` False) skip analysis entirely and never
-    touch ``set_analysis_link``. For import/rescan, ``set_analysis_link`` is
-    always called — even when nothing was imported — because the /import/jobs
-    list endpoint reads those fields.
+    Health imports (``enqueue_analysis`` False) and rescans with ``analyze``
+    off skip analysis entirely and never touch ``set_analysis_link``, so the
+    /import/jobs list endpoint reports them as done. Otherwise
+    ``set_analysis_link`` is always called — even when nothing was imported —
+    because that endpoint reads those fields.
     """
-    if not spec.enqueue_analysis:
+    if not (spec.enqueue_analysis and job.analyze):
         return {"result": import_result_dict}
 
     analysis_job_id = None
@@ -331,6 +333,7 @@ def _acquire_import(
     return asyncio.run(
         service.import_sources(
             sources,
+            force=job.force,
             backup=True,
             backup_root=profile_raw_root,
             profile_id=target_profile_id,
@@ -374,7 +377,7 @@ def _acquire_rescan(
     job: ImportJob, target_profile_id: int, profile_raw_root: Path | None
 ) -> Any:
     """RESCAN: detect sources from the archive root and import with backup=False
-    — the archive IS the source."""
+    — the archive IS the source. ``force`` and the date range come from the job."""
     service = ImportService()
     job.report_progress("Scanning archive for device data...")
     if job.cancel_requested:
@@ -393,7 +396,10 @@ def _acquire_rescan(
     return asyncio.run(
         service.import_sources(
             sources,
+            force=job.force,
             backup=False,
+            date_from=job.date_from.isoformat() if job.date_from else None,
+            date_to=job.date_to.isoformat() if job.date_to else None,
             profile_id=target_profile_id,
             progress_callback=lambda msg: job.report_progress(msg),
             cancel_predicate=lambda: job.cancel_requested,

@@ -1,4 +1,5 @@
-import api from './client'
+import api, { apiPost } from './client'
+import type { RescanRequest } from '@/types'
 import type { AxiosProgressEvent } from 'axios'
 
 export interface FileEntry {
@@ -234,11 +235,10 @@ export async function importFiles(
     return lastJobResponse!
 }
 
-export async function triggerRescan(profileId?: number): Promise<{ job_id: string }> {
-    const body = profileId !== undefined ? { profile_id: profileId } : {}
-    const { data } = await api.post<{ job_id: string }>('/import/rescan', body)
-    return data
-}
+export const triggerRescan = apiPost<JobResponse, [body: RescanRequest]>(
+    '/import/rescan',
+    (body) => ({ data: body }),
+)
 
 /**
  * Upload a single Apple Health export file (export.xml or similar).

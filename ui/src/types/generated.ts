@@ -982,6 +982,42 @@ export interface paths {
         patch?: never
         trace?: never
     }
+    '/api/v1/db/recompute-days': {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        /**
+         * Get Recompute Days Status
+         * @description Report the most recent day recompute job.
+         *
+         *     Returns 404 when no job has run since the server started, or the last one
+         *     ended long enough ago to have expired.
+         */
+        get: operations['get_recompute_days_status_api_v1_db_recompute_days_get']
+        put?: never
+        /**
+         * Recompute Days
+         * @description Queue a background job that re-derives every Day row.
+         *
+         *     The API counterpart of ``snore db recompute-days``: no re-parse.  Every Day
+         *     across all users, profiles and devices is re-aggregated from the session
+         *     statistics and waveforms already stored, and Day rows no session references
+         *     are deleted.  Use it after a change to day aggregation.
+         *
+         *     Returns 202 at once; poll ``GET /db/recompute-days`` for progress and the
+         *     result.  Returns 409 while another recompute, a database reset or a data
+         *     deletion is queued or running.
+         */
+        post: operations['recompute_days_api_v1_db_recompute_days_post']
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
     '/api/v1/db/reset': {
         parameters: {
             query?: never
@@ -1397,6 +1433,10 @@ export interface paths {
          *     (~/.snore/raw/<profile_id>/<serial>/DATALOG/) without requiring a new file
          *     upload.  Useful when DB sessions were deleted but the archive is intact —
          *     the UNIQUE(device_id, device_session_id) upsert-skip makes this idempotent.
+         *
+         *     With ``force``, sessions that already exist are deleted and recreated
+         *     instead of skipped; the date range limits which sessions are parsed and
+         *     ``analyze=false`` skips the follow-up analysis job.
          *
          *     Returns 422 when no archive exists or the archive contains no device data.
          *     Returns 429 when admission caps are exceeded.
@@ -4816,6 +4856,49 @@ export interface components {
             start_time: number
         }
         /**
+         * RecomputeDaysJobStatus
+         * @description Snapshot of the admin job that re-derives every Day row.
+         */
+        RecomputeDaysJobStatus: {
+            /**
+             * Days Processed
+             * @description Days handled so far
+             */
+            days_processed: number
+            /**
+             * Days Total
+             * @description Days the job will handle; null until it has listed them
+             */
+            days_total: number | null
+            /** Error Message */
+            error_message: string | null
+            /** Job Id */
+            job_id: string
+            /** @description Final counts; null until the job succeeds */
+            result: components['schemas']['RecomputeDaysResult'] | null
+            /**
+             * State
+             * @enum {string}
+             */
+            state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+        }
+        /**
+         * RecomputeDaysResult
+         * @description Result of re-deriving every Day row from stored session data.
+         */
+        RecomputeDaysResult: {
+            /**
+             * Days Pruned
+             * @description Day rows deleted because no session references them
+             */
+            days_pruned: number
+            /**
+             * Days Recomputed
+             * @description Day rows re-aggregated and kept
+             */
+            days_recomputed: number
+        }
+        /**
          * RecordExtremes
          * @description Top-N best and worst ``[date, value]`` days for one metric.
          */
@@ -5182,8 +5265,30 @@ export interface components {
         }
         /** RescanRequest */
         RescanRequest: {
+            /**
+             * Analyze
+             * @description Queue analysis for the imported sessions
+             * @default true
+             */
+            analyze: boolean
+            /**
+             * Force
+             * @description Delete and recreate every matched session that already exists, including its analysis and breath rows. Disabled sessions stay disabled.
+             * @default false
+             */
+            force: boolean
+            /**
+             * From Date
+             * @description Only re-import sessions on or after this date
+             */
+            from_date?: string | null
             /** Profile Id */
             profile_id?: number | null
+            /**
+             * To Date
+             * @description Only re-import sessions on or before this date
+             */
+            to_date?: string | null
         }
         /** ResetAllBindingsResponse */
         ResetAllBindingsResponse: {
@@ -7909,6 +8014,46 @@ export interface operations {
             }
         }
     }
+    get_recompute_days_status_api_v1_db_recompute_days_get: {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['RecomputeDaysJobStatus']
+                }
+            }
+        }
+    }
+    recompute_days_api_v1_db_recompute_days_post: {
+        parameters: {
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown
+                }
+                content: {
+                    'application/json': components['schemas']['RecomputeDaysJobStatus']
+                }
+            }
+        }
+    }
     reset_db_api_v1_db_reset_post: {
         parameters: {
             query?: never
@@ -8431,6 +8576,11 @@ export interface operations {
             content: {
                 'multipart/form-data': {
                     files: string[]
+                    /**
+                     * @description CPAP only: delete and recreate sessions that already exist instead of skipping them. 'true' on any chunk of a batch forces the batch.
+                     * @default false
+                     */
+                    force?: boolean
                     /**
                      * @description Type of import: 'cpap' for CPAP device uploads (default), 'health' for Apple Health export.zip
                      * @enum {string}

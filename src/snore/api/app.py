@@ -37,6 +37,8 @@ from snore.api.middleware import (
     RateLimitMiddleware,
     TotpEnforcementMiddleware,
 )
+from snore.api.recompute_jobs import shutdown as _shutdown_recompute_jobs
+from snore.api.recompute_jobs import start_worker as _start_recompute_worker
 from snore.api.reset_jobs import shutdown as _shutdown_reset_jobs
 from snore.api.reset_jobs import start_worker as _start_reset_worker
 from snore.api.routers import (
@@ -200,6 +202,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _start_analysis_worker()
     _start_validation_worker()
     _start_reset_worker()
+    _start_recompute_worker()
     from snore.api.import_worker import _run_dispatch  # noqa: PLC0415
 
     _start_import_worker(_run_dispatch)
@@ -246,6 +249,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _shutdown_reset_jobs()
             except Exception:
                 logger.warning("Error shutting down reset jobs", exc_info=True)
+            try:
+                _shutdown_recompute_jobs()
+            except Exception:
+                logger.warning("Error shutting down recompute jobs", exc_info=True)
             try:
                 from snore.utils.process_pool import shutdown_pool  # noqa: PLC0415
 
@@ -559,7 +566,9 @@ def _cleanup_stale_upload_spool_dirs(
         logger.info("Removed %d stale upload spool dir(s)", cleaned)
 
 
-async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, str]]:
+async def _recover_orphaned_import_jobs() -> list[
+    tuple[Path, int, int | None, str, bool]
+]:
     """Mark orphaned import jobs as failed; return resume candidates.
 
     Jobs in PENDING_UPLOAD, PENDING, or RUNNING state at startup are orphans
@@ -567,7 +576,7 @@ async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, s
     directory still exists on disk are returned as resume candidates — the
     caller can re-enqueue them as new import jobs.
 
-    Returns 4-tuples of (spool_path, profile_id, owner_user_id, job_type_str).
+    Returns 5-tuples of (spool_path, profile_id, owner_user_id, job_type_str, force).
     """
     from datetime import UTC, datetime  # noqa: PLC0415
 
@@ -578,7 +587,7 @@ async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, s
     from snore.database.session import session_scope  # noqa: PLC0415
 
     non_terminal = [s.value for s in ACTIVE_STATES]
-    resume_candidates: list[tuple[Path, int, int | None, str]] = []
+    resume_candidates: list[tuple[Path, int, int | None, str, bool]] = []
     now = datetime.now(UTC)
     try:
         async with session_scope(immediate=True) as db:
@@ -590,19 +599,26 @@ async def _recover_orphaned_import_jobs() -> list[tuple[Path, int, int | None, s
                         models.ImportJobRecord.target_profile_id,
                         models.ImportJobRecord.owner_user_id,
                         models.ImportJobRecord.job_type,
+                        models.ImportJobRecord.force,
                     ).where(
                         models.ImportJobRecord.state.in_(non_terminal),
                         models.ImportJobRecord.spool_dir_path.is_not(None),
                     )
                 )
             ).all()
-            for spool_path_str, profile_id, owner_user_id, job_type_str in rows:
+            for (
+                spool_path_str,
+                profile_id,
+                owner_user_id,
+                job_type_str,
+                force,
+            ) in rows:
                 if spool_path_str is None:  # excluded by the is_not(None) filter
                     continue
                 spool_path = Path(spool_path_str)
                 if profile_id is not None and spool_path.exists():
                     resume_candidates.append(
-                        (spool_path, profile_id, owner_user_id, job_type_str)
+                        (spool_path, profile_id, owner_user_id, job_type_str, force)
                     )
 
             result = await db.execute(
@@ -702,7 +718,7 @@ async def _recover_orphaned_validation_jobs() -> None:
 
 
 def _startup_resume_imports(
-    candidates: list[tuple[Path, int, int | None, str]],
+    candidates: list[tuple[Path, int, int | None, str, bool]],
 ) -> None:
     """Re-enqueue import jobs for which spool files survived the restart."""
     from snore.api.import_jobs import (  # noqa: PLC0415
@@ -712,7 +728,7 @@ def _startup_resume_imports(
     )
     from snore.constants import DEFAULT_RAW_BACKUP_DIR  # noqa: PLC0415
 
-    for spool_path, profile_id, owner_user_id, job_type_str in candidates:
+    for spool_path, profile_id, owner_user_id, job_type_str, force in candidates:
         try:
             try:
                 job_type = JobType(job_type_str)
@@ -729,6 +745,7 @@ def _startup_resume_imports(
                 owner_user_id=owner_user_id,
                 target_profile_id=profile_id,
                 temp_dir=spool_path,
+                force=force,
             )
             job._state = job._state.__class__("pending")
             job._file_count = sum(1 for f in spool_path.iterdir() if f.is_file())
@@ -925,6 +942,7 @@ def create_app() -> FastAPI:
     @app.get("/health/busy", include_in_schema=False)
     async def health_busy() -> dict[str, bool]:
         from snore.api import analysis_jobs as _analysis_jobs  # noqa: PLC0415
+        from snore.api import recompute_jobs as _recompute_jobs  # noqa: PLC0415
         from snore.api import reset_jobs as _reset_jobs  # noqa: PLC0415
         from snore.api import validation_jobs as _validation_jobs  # noqa: PLC0415
         from snore.api.import_jobs import has_active_jobs  # noqa: PLC0415
@@ -936,6 +954,7 @@ def create_app() -> FastAPI:
         # interrupt.  A multi-minute validation run must not be cut off by a
         # watchtower container replacement.  Reset jobs gate on QUEUED/RUNNING:
         # a user was told their data is going away, and RUNNING covers the VACUUM.
+        # A day recompute gates on QUEUED/RUNNING too: an admin is watching it.
         if has_active_jobs():
             reasons.append("imports")
         if _analysis_jobs.has_running_jobs():
@@ -944,6 +963,8 @@ def create_app() -> FastAPI:
             reasons.append("validation")
         if _reset_jobs.has_active_job():
             reasons.append("reset")
+        if _recompute_jobs.has_active_job():
+            reasons.append("recompute")
         logger.debug("health/busy: %s", reasons)
         return {"busy": bool(reasons)}
 

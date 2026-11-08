@@ -1,5 +1,11 @@
 import { apiGet, apiPost } from './client'
-import type { DatabaseStatsPublic, ResetJobEnqueued, ResetJobStatus, VacuumResult } from '@/types'
+import type {
+    DatabaseStatsPublic,
+    RecomputeDaysJobStatus,
+    ResetJobEnqueued,
+    ResetJobStatus,
+    VacuumResult,
+} from '@/types'
 
 // A hung request must count as a failed poll, or it would stall the poll loop.
 const RESET_JOB_STATUS_TIMEOUT_MS = 15_000
@@ -21,3 +27,7 @@ export const getResetJobStatus = apiGet<ResetJobStatus, [token: string]>(
         timeout: RESET_JOB_STATUS_TIMEOUT_MS,
     }),
 )
+
+// Admin-only. The status endpoint reports the most recent job and 404s when there is none.
+export const startRecomputeDays = apiPost<RecomputeDaysJobStatus>('/db/recompute-days')
+export const getRecomputeDaysStatus = apiGet<RecomputeDaysJobStatus>('/db/recompute-days')

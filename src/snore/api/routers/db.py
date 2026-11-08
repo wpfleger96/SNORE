@@ -4,11 +4,15 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from snore.api import reset_jobs
+from snore.api import recompute_jobs, reset_jobs
 from snore.api.constants import NO_STORE
 from snore.api.deps import service_dep
 from snore.api.guards import RequireAdmin
-from snore.api.schemas import ResetJobEnqueued, ResetJobStatus
+from snore.api.schemas import (
+    RecomputeDaysJobStatus,
+    ResetJobEnqueued,
+    ResetJobStatus,
+)
 from snore.database.target import DatabaseTarget
 from snore.services.database_service import DatabaseService
 from snore.services.schemas import DatabaseStats, VacuumResult
@@ -124,3 +128,41 @@ async def get_reset_job_status(
         raise HTTPException(status_code=404, detail="Reset job not found or expired")
     status = ResetJobStatus.model_validate(job.to_dict())
     return JSONResponse(content=status.model_dump(mode="json"), headers=NO_STORE)
+
+
+@router.post("/recompute-days", status_code=202, response_model=RecomputeDaysJobStatus)
+async def recompute_days(actor: RequireAdmin) -> RecomputeDaysJobStatus:
+    """Queue a background job that re-derives every Day row.
+
+    The API counterpart of ``snore db recompute-days``: no re-parse.  Every Day
+    across all users, profiles and devices is re-aggregated from the session
+    statistics and waveforms already stored, and Day rows no session references
+    are deleted.  Use it after a change to day aggregation.
+
+    Returns 202 at once; poll ``GET /db/recompute-days`` for progress and the
+    result.  Returns 409 while another recompute, a database reset or a data
+    deletion is queued or running.
+    """
+    job = recompute_jobs.enqueue(owner_user_id=actor.user_id)
+    if job is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A day recompute, database reset, or data deletion is already "
+                "in progress"
+            ),
+        )
+    return job.to_status()
+
+
+@router.get("/recompute-days", response_model=RecomputeDaysJobStatus)
+async def get_recompute_days_status(_actor: RequireAdmin) -> RecomputeDaysJobStatus:
+    """Report the most recent day recompute job.
+
+    Returns 404 when no job has run since the server started, or the last one
+    ended long enough ago to have expired.
+    """
+    job = recompute_jobs.latest_job()
+    if job is None:
+        raise HTTPException(status_code=404, detail="No day recompute job found")
+    return job.to_status()

@@ -415,7 +415,9 @@ describe('useResetJob', () => {
 
         expect(job.running.value).toBe(false)
         expect(job.factoryReset.value).toBe(false)
-        expect(job.error.value).toContain('Another reset or data deletion is in progress')
+        expect(job.error.value).toContain(
+            'Another reset, data deletion or day recompute is in progress',
+        )
         expect(request).not.toHaveBeenCalled()
         expect(sessionStorage.length).toBe(0)
     })

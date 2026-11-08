@@ -8,12 +8,13 @@ import shutil
 import uuid
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
+from datetime import date
 from pathlib import Path
 from typing import IO, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -142,6 +143,28 @@ class PrecheckResponse(BaseModel):
 
 class RescanRequest(BaseModel):
     profile_id: int | None = None
+    force: bool = Field(
+        default=False,
+        description=(
+            "Delete and recreate every matched session that already exists, "
+            "including its analysis and breath rows. Disabled sessions stay disabled."
+        ),
+    )
+    from_date: date | None = Field(
+        default=None, description="Only re-import sessions on or after this date"
+    )
+    to_date: date | None = Field(
+        default=None, description="Only re-import sessions on or before this date"
+    )
+    analyze: bool = Field(
+        default=True, description="Queue analysis for the imported sessions"
+    )
+
+    @model_validator(mode="after")
+    def _check_date_order(self) -> RescanRequest:
+        if self.from_date and self.to_date and self.from_date > self.to_date:
+            raise ValueError("from_date must be on or before to_date")
+        return self
 
 
 # Anchor files must never be reported as skippable. STR.edf changes daily and
@@ -258,6 +281,15 @@ def _get_upload_limits() -> tuple[int, int, int]:
         return 2 * 1024 * 1024 * 1024, 10_000, 256 * 1024 * 1024
 
 
+def _form_flag(raw: object, name: str) -> bool:
+    """Read an optional 'true'/'false' multipart field; absent means False."""
+    if raw is None:
+        return False
+    if isinstance(raw, str) and raw.lower() in ("true", "false"):
+        return raw.lower() == "true"
+    raise HTTPException(status_code=422, detail=f"{name} must be 'true' or 'false'")
+
+
 async def _resolve_profile_id(
     db: AsyncSession,
     actor: ActorContext,
@@ -316,6 +348,15 @@ async def _resolve_profile_id(
                                 "description": (
                                     "Type of import: 'cpap' for CPAP device uploads (default), "
                                     "'health' for Apple Health export.zip"
+                                ),
+                            },
+                            "force": {
+                                "type": "boolean",
+                                "default": False,
+                                "description": (
+                                    "CPAP only: delete and recreate sessions that "
+                                    "already exist instead of skipping them. "
+                                    "'true' on any chunk of a batch forces the batch."
                                 ),
                             },
                         },
@@ -385,6 +426,13 @@ async def import_files(
                 raise HTTPException(
                     status_code=422,
                     detail="import_type must be 'cpap' or 'health'",
+                )
+
+            force = _form_flag(form.get("force"), "force")
+            if force and import_type == "health":
+                raise HTTPException(
+                    status_code=422,
+                    detail="force is not supported for health imports",
                 )
 
             # Health imports are single-request only — batch continuation is not supported.
@@ -541,6 +589,9 @@ async def import_files(
                 # Refresh activity so the stale-upload reaper sees a live upload.
                 job.touch()
 
+        if force:
+            job.force = True
+
         if not batch_final:
             # More chunks coming — keep the job in PENDING_UPLOAD.
             _job_cleanup = False
@@ -640,6 +691,10 @@ async def rescan_archive(
     upload.  Useful when DB sessions were deleted but the archive is intact —
     the UNIQUE(device_id, device_session_id) upsert-skip makes this idempotent.
 
+    With ``force``, sessions that already exist are deleted and recreated
+    instead of skipped; the date range limits which sessions are parsed and
+    ``analyze=false`` skips the follow-up analysis job.
+
     Returns 422 when no archive exists or the archive contains no device data.
     Returns 429 when admission caps are exceeded.
     """
@@ -666,7 +721,14 @@ async def rescan_archive(
         )
 
     try:
-        job = create_job(JobType.RESCAN, owner_user_id=actor.user_id)
+        job = create_job(
+            JobType.RESCAN,
+            owner_user_id=actor.user_id,
+            force=body.force,
+            date_from=body.from_date,
+            date_to=body.to_date,
+            analyze=body.analyze,
+        )
     except RuntimeError:
         raise HTTPException(
             status_code=429,

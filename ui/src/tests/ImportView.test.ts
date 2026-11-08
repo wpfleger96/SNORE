@@ -25,7 +25,6 @@ vi.mock('@/api/import', async (importActual) => {
         importFiles: vi.fn(),
         precheckFiles: vi.fn(),
         importHealthFile: vi.fn(),
-        triggerRescan: vi.fn(),
     }
 })
 vi.mock('@/utils/formatting', () => ({
@@ -33,6 +32,17 @@ vi.mock('@/utils/formatting', () => ({
 }))
 vi.mock('@/components/ui/button', () => ({
     Button: { template: '<button v-bind="$attrs"><slot /></button>' },
+}))
+
+// Stub the archive card (tested in ArchiveRescanCard.test.ts) with a buttonless
+// element so tests that click the view's last button still reach Import.
+vi.mock('@/components/ArchiveRescanCard.vue', () => ({
+    default: defineComponent({
+        name: 'ArchiveRescanCard',
+        props: ['profileId'],
+        emits: ['started'],
+        template: `<div class="archive-stub" @click="$emit('started')" />`,
+    }),
 }))
 
 // Stub ImportJobsPanel to emit cancel with jobs[0] on button click.
@@ -49,7 +59,7 @@ import { makeAuthMock } from './helpers/mockUseAuth'
 import { useAuth } from '@/composables/useAuth'
 import { getImportJobs, cancelImport } from '@/api/importJobs'
 import { cancelAnalysisJob } from '@/api/analysis'
-import { importFiles, precheckFiles, importHealthFile, triggerRescan } from '@/api/import'
+import { importFiles, precheckFiles, importHealthFile } from '@/api/import'
 import ImportView from '@/views/ImportView.vue'
 
 function makeJob(overrides: Partial<PipelineJobStatus> = {}): PipelineJobStatus {
@@ -594,7 +604,7 @@ describe('ImportView Apple Health tab', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Rescan tests
+// Archive re-import
 // ---------------------------------------------------------------------------
 
 // All session files skippable — uploadCount === 0 state.
@@ -609,134 +619,69 @@ const allSkippedPaths = new Set([
     'MySD/DATALOG/20240102_010000_BRP2.edf',
 ])
 
-describe('ImportView rescan', () => {
+describe('ImportView archive re-import', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         vi.mocked(useAuth).mockReturnValue(
             makeAuthMock({
-                profiles: ref([{ id: 1, name: 'Test' }]),
+                profiles: ref([
+                    { id: 1, name: 'Test' },
+                    { id: 2, name: 'Other' },
+                ]),
                 activeProfileId: ref(1),
             }) as never,
         )
         vi.mocked(getImportJobs).mockResolvedValue({ jobs: [] })
         vi.mocked(precheckFiles).mockResolvedValue(allSkippedPaths)
-        vi.mocked(triggerRescan).mockResolvedValue({ job_id: 'rescan-1' })
     })
 
-    it('test_rescan_button_rendered_only_when_all_session_files_skipped', async () => {
+    it('test_archive_card_shown_without_selecting_a_folder', async () => {
         const wrapper = mount(ImportView)
         await flushPromises()
 
-        // No files selected — rescan button must not exist.
-        expect(wrapper.findAll('button').some((b) => b.text() === 'Re-import from archive')).toBe(
-            false,
-        )
-
-        // Select all-skipped files — uploadCount === 0, forceUploadAll === false.
-        await triggerFileSelection(wrapper, allSkippedFiles)
-
-        expect(wrapper.findAll('button').some((b) => b.text() === 'Re-import from archive')).toBe(
-            true,
-        )
+        const card = wrapper.findComponent({ name: 'ArchiveRescanCard' })
+        expect(card.exists()).toBe(true)
+        expect(card.isVisible()).toBe(true)
+        expect(card.props('profileId')).toBe(1)
     })
 
-    it('test_rescan_button_hidden_when_forceUploadAll_is_true', async () => {
-        // Use one skippable + one new session so forceUploadAll checkbox appears.
-        vi.mocked(precheckFiles).mockResolvedValue(
-            new Set(['MySD/DATALOG/20240101_010000_BRP.edf']),
-        )
+    it('test_archive_card_targets_the_selected_profile', async () => {
         const wrapper = mount(ImportView)
         await flushPromises()
-        await triggerFileSelection(wrapper, resMedFiles)
 
-        // uploadCount > 0, so rescan button must not be shown.
-        expect(wrapper.findAll('button').some((b) => b.text() === 'Re-import from archive')).toBe(
-            false,
-        )
+        await wrapper.find('#import-profile').setValue('2')
 
-        // Enable forceUploadAll — still no rescan button.
-        const checkbox = wrapper.find('input[type="checkbox"]')
-        await checkbox.setValue(true)
-        expect(wrapper.findAll('button').some((b) => b.text() === 'Re-import from archive')).toBe(
-            false,
-        )
+        expect(wrapper.findComponent({ name: 'ArchiveRescanCard' }).props('profileId')).toBe(2)
     })
 
-    it('test_rescan_success_calls_triggerRescan_and_refreshes_jobs', async () => {
+    it('test_archive_card_hidden_on_health_tab', async () => {
         const wrapper = mount(ImportView)
         await flushPromises()
-        await triggerFileSelection(wrapper, allSkippedFiles)
 
-        const rescanBtn = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Re-import from archive')!
-        await rescanBtn.trigger('click')
+        ;(wrapper.vm as unknown as { activeTab: string }).activeTab = 'health'
         await flushPromises()
 
-        expect(triggerRescan).toHaveBeenCalledOnce()
-        expect(triggerRescan).toHaveBeenCalledWith(1)
-        // After success, resetUpload brings view back to idle (drop zone visible).
-        expect(wrapper.find('.drop-zone').exists()).toBe(true)
-        // fetchImportJobs was called (at mount + after rescan success).
+        expect(wrapper.findComponent({ name: 'ArchiveRescanCard' }).isVisible()).toBe(false)
+    })
+
+    it('test_started_rescan_refreshes_jobs', async () => {
+        const wrapper = mount(ImportView)
+        await flushPromises()
+
+        await wrapper.find('.archive-stub').trigger('click')
+        await flushPromises()
+
+        // Once at mount, once after the rescan started.
         expect(getImportJobs).toHaveBeenCalledTimes(2)
     })
 
-    it('test_rescan_passes_undefined_profile_when_no_profile_selected', async () => {
-        vi.mocked(useAuth).mockReturnValue(
-            makeAuthMock({
-                profiles: ref([]),
-                activeProfileId: ref(null),
-            }) as never,
-        )
+    it('test_all_files_on_server_points_to_archive_card_and_disables_import', async () => {
         const wrapper = mount(ImportView)
         await flushPromises()
         await triggerFileSelection(wrapper, allSkippedFiles)
 
-        const rescanBtn = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Re-import from archive')!
-        await rescanBtn.trigger('click')
-        await flushPromises()
-
-        expect(triggerRescan).toHaveBeenCalledWith(undefined)
-    })
-
-    it('test_rescan_error_surfaces_detail_message', async () => {
-        vi.mocked(triggerRescan).mockRejectedValue({
-            response: { data: { detail: 'Archive contains no device data' } },
-        })
-        const wrapper = mount(ImportView)
-        await flushPromises()
-        await triggerFileSelection(wrapper, allSkippedFiles)
-
-        const rescanBtn = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Re-import from archive')!
-        await rescanBtn.trigger('click')
-        await flushPromises()
-
-        expect(wrapper.find('.error-text').text()).toBe('Archive contains no device data')
-        // View stays in selected phase — the rescan action remains available.
-        // (Cannot assert on '.drop-zone' absence: the Apple Health tab renders
-        // its own drop zone inside a v-show container, so one always exists.)
-        expect(wrapper.findAll('button').some((b) => b.text() === 'Re-import from archive')).toBe(
-            true,
-        )
-    })
-
-    it('test_rescan_double_click_triggers_triggerRescan_exactly_once', async () => {
-        vi.mocked(triggerRescan).mockReturnValue(new Promise(() => {}))
-        const wrapper = mount(ImportView)
-        await flushPromises()
-        await triggerFileSelection(wrapper, allSkippedFiles)
-
-        const rescanBtn = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Re-import from archive')!
-        void rescanBtn.trigger('click')
-        void rescanBtn.trigger('click')
-        await flushPromises()
-
-        expect(triggerRescan).toHaveBeenCalledTimes(1)
+        expect(wrapper.text()).toContain('Use Re-import from server archive below')
+        const importBtn = wrapper.findAll('button').find((b) => b.text() === 'Import')!
+        expect(importBtn.attributes('disabled')).toBeDefined()
     })
 })

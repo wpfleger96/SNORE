@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import httpx2
 import pytest
+
+from fastapi.testclient import TestClient
 
 import snore.api.analysis_jobs as aj_store
 import snore.api.import_jobs as job_store
@@ -1064,3 +1067,150 @@ class TestRescanEndpoint:
         """profile_id that belongs to another user → 403."""
         response = api_client.post("/api/v1/import/rescan", json={"profile_id": 999999})
         assert response.status_code == 403
+
+    # ── re-parse options ───────────────────────────────────────────────────
+
+    def _post_rescan(
+        self,
+        api_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        body: dict[str, object],
+    ) -> httpx2.Response:
+        import snore.api.routers.import_data as import_mod  # noqa: PLC0415
+
+        raw_root = tmp_path / "raw"
+        profiles = api_client.get("/api/v1/profiles/").json()
+        actor_profile_id = next(p["id"] for p in profiles if p["is_default"])
+        self._make_archive(raw_root / str(actor_profile_id))
+        monkeypatch.setattr("snore.constants.DEFAULT_RAW_BACKUP_DIR", raw_root)
+        monkeypatch.setattr(
+            import_mod, "enqueue_for_execution", lambda job, root=None: None
+        )
+        return api_client.post("/api/v1/import/rescan", json=body)
+
+    def test_rescan_defaults_to_plain_reimport_with_analysis(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        from snore.api.import_jobs import get_job  # noqa: PLC0415
+
+        response = self._post_rescan(api_client, monkeypatch, tmp_path, {})
+
+        job = get_job(response.json()["job_id"])
+        assert job is not None
+        assert (job.force, job.date_from, job.date_to, job.analyze) == (
+            False,
+            None,
+            None,
+            True,
+        )
+
+    def test_rescan_carries_reparse_options_to_job(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        from datetime import date  # noqa: PLC0415
+
+        from snore.api.import_jobs import get_job  # noqa: PLC0415
+
+        response = self._post_rescan(
+            api_client,
+            monkeypatch,
+            tmp_path,
+            {
+                "force": True,
+                "from_date": "2024-06-01",
+                "to_date": "2024-06-30",
+                "analyze": False,
+            },
+        )
+
+        assert response.status_code == 202
+        job = get_job(response.json()["job_id"])
+        assert job is not None
+        assert (job.force, job.date_from, job.date_to, job.analyze) == (
+            True,
+            date(2024, 6, 1),
+            date(2024, 6, 30),
+            False,
+        )
+
+    def test_rescan_422_when_from_date_after_to_date(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        response = self._post_rescan(
+            api_client,
+            monkeypatch,
+            tmp_path,
+            {"from_date": "2024-07-01", "to_date": "2024-06-30"},
+        )
+
+        assert response.status_code == 422
+        assert job_store._jobs == {}
+
+
+class TestUploadForce:
+    """``force`` on ``POST /import`` uploads."""
+
+    @pytest.fixture(autouse=True)
+    def _no_worker(self, monkeypatch):
+        import shutil  # noqa: PLC0415
+
+        import snore.api.routers.import_data as import_mod  # noqa: PLC0415
+
+        monkeypatch.setattr(
+            import_mod, "enqueue_for_execution", lambda job, root=None: None
+        )
+        yield
+        for job in list(job_store._jobs.values()):
+            if job.temp_dir is not None:
+                shutil.rmtree(job.temp_dir, ignore_errors=True)
+
+    def _post(self, api_client: TestClient, data: dict[str, str]) -> httpx2.Response:
+        return api_client.post(
+            "/api/v1/import",
+            files=[("files", ("DATALOG/a.edf", b"x", "application/octet-stream"))],
+            data=data,
+        )
+
+    def test_upload_without_force_is_not_forced(self, api_client):
+        response = self._post(api_client, {})
+
+        job = job_store.get_job(response.json()["job_id"])
+        assert job is not None
+        assert job.force is False
+
+    def test_upload_with_force_true_is_forced(self, api_client):
+        response = self._post(api_client, {"force": "true"})
+
+        assert response.status_code == 202
+        job = job_store.get_job(response.json()["job_id"])
+        assert job is not None
+        assert job.force is True
+
+    def test_force_on_a_continuation_chunk_forces_the_batch(self, api_client):
+        first = self._post(api_client, {"batch_final": "false"})
+        batch_id = first.json()["job_id"]
+
+        final = self._post(api_client, {"batch_id": batch_id, "force": "true"})
+
+        assert final.status_code == 202
+        job = job_store.get_job(batch_id)
+        assert job is not None
+        assert job.force is True
+        assert job.state == job_store.JobState.PENDING
+
+    def test_force_with_unrecognized_value_returns_422(self, api_client):
+        response = self._post(api_client, {"force": "yes"})
+
+        assert response.status_code == 422
+        assert job_store._jobs == {}
+
+    def test_force_on_health_import_returns_422(self, api_client):
+        response = api_client.post(
+            "/api/v1/import",
+            files=[("files", ("export.zip", b"x", "application/zip"))],
+            data={"import_type": "health", "force": "true"},
+        )
+
+        assert response.status_code == 422
+        assert job_store._jobs == {}

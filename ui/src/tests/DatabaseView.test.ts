@@ -23,7 +23,13 @@ vi.mock('@/components/DeleteConfirmDialog.vue', () => ({
 import { makeAuthMock as baseMakeAuthMock } from './helpers/mockUseAuth'
 import DatabaseView from '@/views/DatabaseView.vue'
 import { useAuth } from '@/composables/useAuth'
-import { getDbStats, getResetJobStatus, resetDb } from '@/api/db'
+import {
+    getDbStats,
+    getRecomputeDaysStatus,
+    getResetJobStatus,
+    resetDb,
+    startRecomputeDays,
+} from '@/api/db'
 import { POLL_FAILURES_BEFORE_WARNING, POLL_INTERVAL_MS } from '@/composables/useResetJob'
 
 enableAutoUnmount(afterEach)
@@ -393,7 +399,7 @@ describe('DatabaseView — danger zone', () => {
         await pollOnce()
 
         expect(wrapper.find('.error-state').text()).toContain(
-            'Another reset or data deletion is in progress',
+            'Another reset, data deletion or day recompute is in progress',
         )
         expect(getResetJobStatus).not.toHaveBeenCalled()
         expect(isDisabled(buttonNamed(wrapper, 'Reset'))).toBe(false)
@@ -523,5 +529,163 @@ describe('DatabaseView — danger zone', () => {
 
             expect(previewLabels(wrapper)).toContain('Profiles')
         })
+    })
+})
+
+describe('DatabaseView — day recompute', () => {
+    const RECOMPUTE_POLL_MS = 2000
+
+    function recomputeStatus(overrides: Record<string, unknown> = {}) {
+        return {
+            job_id: 'recompute-1',
+            state: 'running',
+            days_processed: 0,
+            days_total: null,
+            error_message: null,
+            result: null,
+            ...overrides,
+        } as never
+    }
+
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        vi.resetAllMocks()
+        sessionStorage.clear()
+        makeAuthMock()
+        vi.mocked(getDbStats).mockResolvedValue(DB_STATS as never)
+        vi.mocked(getRecomputeDaysStatus).mockRejectedValue(httpError(404))
+        vi.mocked(startRecomputeDays).mockResolvedValue(recomputeStatus({ state: 'queued' }))
+    })
+
+    afterEach(() => {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+    })
+
+    async function mountAndLoad() {
+        // The confirmation dialog teleports to document.body.
+        const wrapper = mount(DatabaseView, { attachTo: document.body })
+        await flushPromises()
+        return wrapper
+    }
+
+    function recomputeButton(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        return wrapper.findAll('button').find((b) => b.text().trim() === 'Recompute')
+    }
+
+    function bodyButton(label: string): HTMLButtonElement | undefined {
+        return [...document.body.querySelectorAll('button')].find(
+            (b) => b.textContent?.trim() === label,
+        )
+    }
+
+    async function startRecompute(wrapper: Awaited<ReturnType<typeof mountAndLoad>>) {
+        await recomputeButton(wrapper)!.trigger('click')
+        await flushPromises()
+        bodyButton('Start recompute')!.click()
+        await flushPromises()
+    }
+
+    it('test_recompute_hidden_for_member', async () => {
+        makeAuthMock({ role: ref('member') })
+        const wrapper = await mountAndLoad()
+
+        expect(recomputeButton(wrapper)).toBeUndefined()
+        expect(getRecomputeDaysStatus).not.toHaveBeenCalled()
+    })
+
+    it('test_recompute_asks_for_confirmation_explaining_no_reparse', async () => {
+        const wrapper = await mountAndLoad()
+
+        await recomputeButton(wrapper)!.trigger('click')
+        await flushPromises()
+
+        expect(startRecomputeDays).not.toHaveBeenCalled()
+        expect(document.body.textContent).toContain('for every user, profile and device')
+        expect(document.body.textContent).toContain('Nothing is re-parsed from raw files')
+    })
+
+    it('test_confirmed_recompute_shows_progress_then_result_and_reloads_stats', async () => {
+        const wrapper = await mountAndLoad()
+        await startRecompute(wrapper)
+
+        expect(startRecomputeDays).toHaveBeenCalledOnce()
+        expect(wrapper.find('[role="status"]').text()).toContain('queued')
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeDefined()
+
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValueOnce(
+            recomputeStatus({ days_processed: 100, days_total: 400 }),
+        )
+        await vi.advanceTimersByTimeAsync(RECOMPUTE_POLL_MS)
+        expect(wrapper.find('[role="status"]').text()).toContain('100 of 400')
+        expect(wrapper.find('.coverage-fill[style*="25%"]').exists()).toBe(true)
+
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValueOnce(
+            recomputeStatus({
+                state: 'succeeded',
+                days_processed: 400,
+                days_total: 400,
+                result: { days_recomputed: 398, days_pruned: 2 },
+            }),
+        )
+        await vi.advanceTimersByTimeAsync(RECOMPUTE_POLL_MS)
+        await flushPromises()
+
+        expect(wrapper.find('[role="status"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain('398 day(s) recomputed')
+        expect(wrapper.text()).toContain('2 orphaned day(s) removed')
+        expect(getDbStats).toHaveBeenCalledTimes(2)
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('test_failed_recompute_shows_server_message', async () => {
+        const wrapper = await mountAndLoad()
+        await startRecompute(wrapper)
+
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValueOnce(
+            recomputeStatus({ state: 'failed', error_message: 'The day recompute failed.' }),
+        )
+        await vi.advanceTimersByTimeAsync(RECOMPUTE_POLL_MS)
+
+        expect(wrapper.find('.error-state').text()).toContain('The day recompute failed.')
+    })
+
+    it('test_recompute_conflict_shows_in_progress_message', async () => {
+        vi.mocked(startRecomputeDays).mockRejectedValueOnce(httpError(409))
+        const wrapper = await mountAndLoad()
+
+        await startRecompute(wrapper)
+
+        expect(wrapper.find('.error-state').text()).toContain(
+            'Another day recompute, reset or data deletion is in progress',
+        )
+        expect(recomputeButton(wrapper)!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('test_running_recompute_is_picked_up_on_mount_and_locks_reset', async () => {
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValue(
+            recomputeStatus({ days_processed: 5, days_total: 10 }),
+        )
+
+        const wrapper = await mountAndLoad()
+
+        expect(wrapper.find('[role="status"]').text()).toContain('5 of 10')
+        const reset = wrapper.findAll('button').find((b) => b.text().trim() === 'Reset')!
+        expect(reset.attributes('disabled')).toBeDefined()
+    })
+
+    it('test_finished_job_from_before_mount_shows_result_without_reloading', async () => {
+        vi.mocked(getRecomputeDaysStatus).mockResolvedValue(
+            recomputeStatus({
+                state: 'succeeded',
+                result: { days_recomputed: 12, days_pruned: 0 },
+            }),
+        )
+
+        const wrapper = await mountAndLoad()
+
+        expect(wrapper.text()).toContain('12 day(s) recomputed')
+        expect(wrapper.text()).not.toContain('orphaned')
+        expect(getDbStats).toHaveBeenCalledOnce()
     })
 })

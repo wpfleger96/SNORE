@@ -1199,6 +1199,10 @@ class ImportJobRecord(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     analysis_queued: Mapped[bool | None] = mapped_column(Boolean)
     spool_dir_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Forced re-parse: startup resume re-runs a surviving upload with it.
+    force: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
     # None until the job reaches RUNNING; set once when it starts executing.
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

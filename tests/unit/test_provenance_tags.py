@@ -184,6 +184,8 @@ _OPERATIONAL_MODELS = {
     "MeResponse",
     "PipelineJobStatus",
     "ProfileResponse",
+    "RecomputeDaysJobStatus",
+    "RecomputeDaysResult",
     "ResetAllBindingsResponse",
     "ResetJobEnqueued",
     "ResetJobStatus",

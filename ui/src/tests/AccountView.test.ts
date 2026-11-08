@@ -570,7 +570,7 @@ describe('AccountView — danger zone (delete-data)', () => {
         await confirmDeleteData(wrapper)
 
         expect(wrapper.find('[role="alert"]').text()).toContain(
-            'Another reset or data deletion is in progress',
+            'Another reset, data deletion or day recompute is in progress',
         )
     })
 

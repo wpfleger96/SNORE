@@ -15,7 +15,8 @@ divergences:
 - There is no job-record table.  State is memory-only: a restart loses the job,
   and the startup vacuum marker and quarantine sweep finish its cleanup.
 - At most one job exists at a time.  :func:`enqueue` refuses while any job is
-  non-terminal, which is what serializes these two destructive operations.
+  non-terminal, which is what serializes these two destructive operations.  It
+  also refuses while a day recompute (:mod:`snore.api.recompute_jobs`) is active.
 - QUEUED counts as active for ``/health/busy``: the user has been told their
   data is being deleted, so a container swap must not silently drop the job.
 - A pending cancel does not overwrite the outcome.  Once the delete commits the
@@ -44,7 +45,12 @@ from fastapi.responses import JSONResponse
 
 from snore.api.constants import NO_STORE
 from snore.api.errors import db_busy_maps_to_409
-from snore.api.jobs.core import JOB_TTL_SECONDS, JobRecordBase, JobStore
+from snore.api.jobs.core import (
+    JOB_TTL_SECONDS,
+    MAINTENANCE_ADMISSION_LOCK,
+    JobRecordBase,
+    JobStore,
+)
 from snore.api.jobs.pool import WorkerPool
 from snore.api.schemas import ResetJobEnqueued
 from snore.constants import DEFAULT_VACUUM_PENDING_MARKER
@@ -197,20 +203,25 @@ def enqueue(
     db_path: str,
     include_accounts: bool = False,
 ) -> ResetJob | None:
-    """Queue a job, or return None if any job is still queued or running."""
-    with _condition:
-        if any(not job.is_terminal for job in _all_jobs.values()):
+    """Queue a job, or return None if this or a day recompute job is still active."""
+    from snore.api import recompute_jobs  # noqa: PLC0415
+
+    with MAINTENANCE_ADMISSION_LOCK:
+        if recompute_jobs.has_active_job():
             return None
-        job = ResetJob(
-            job_id=secrets.token_urlsafe(32),
-            kind=kind,
-            user_id=user_id,
-            include_accounts=include_accounts,
-            db_path=db_path,
-        )
-        _queue.append(job)
-        _all_jobs[job.job_id] = job
-        _condition.notify_all()
+        with _condition:
+            if any(not job.is_terminal for job in _all_jobs.values()):
+                return None
+            job = ResetJob(
+                job_id=secrets.token_urlsafe(32),
+                kind=kind,
+                user_id=user_id,
+                include_accounts=include_accounts,
+                db_path=db_path,
+            )
+            _queue.append(job)
+            _all_jobs[job.job_id] = job
+            _condition.notify_all()
     logger.info("Enqueued %s job for user id=%d", kind.value, user_id)
     return job
 
@@ -223,7 +234,9 @@ def accepted_or_409(job: ResetJob | None) -> JSONResponse:
     if job is None:
         raise HTTPException(
             status_code=409,
-            detail="A database reset or data deletion is already in progress",
+            detail=(
+                "A database reset, data deletion, or day recompute is already in progress"
+            ),
         )
     enqueued = ResetJobEnqueued.model_validate(
         {"job_id": job.job_id, "state": job.state.value}

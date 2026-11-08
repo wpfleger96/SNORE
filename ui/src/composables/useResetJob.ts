@@ -12,7 +12,7 @@ const ACTIVE_STATES = new Set<ResetJobStatus['state']>(['queued', 'running'])
 const JOB_KINDS: ResetJobStatus['kind'][] = ['reset', 'delete_data']
 
 const ALREADY_IN_PROGRESS =
-    'Another reset or data deletion is in progress — wait for it to finish and try again.'
+    'Another reset, data deletion or day recompute is in progress — wait for it to finish and try again.'
 const STATUS_UNAVAILABLE =
     'Job status is unavailable because the server restarted or the job expired. Reload this page to check the current state.'
 const LOST_CONTACT =

@@ -7,6 +7,7 @@ import snore.api.reset_jobs as _reset_jobs
 import snore.auth.lockout as _lockout
 
 from tests.helpers.api_client import make_test_client
+from tests.helpers.recompute_jobs import clear_recompute_jobs
 from tests.helpers.reset_jobs import clear_reset_jobs
 
 # ---------------------------------------------------------------------------
@@ -49,13 +50,16 @@ def reset_import_job_store():
 
 @pytest.fixture(autouse=True)
 def reset_reset_job_store():
-    """Empty the module-global reset job store around each test.
+    """Empty the module-global reset and day recompute job stores around each test.
 
-    A leftover non-terminal job would make every later POST in this worker 409.
+    A leftover non-terminal job of either kind would make every later reset or
+    recompute POST in this worker 409.
     """
     clear_reset_jobs()
+    clear_recompute_jobs()
     yield
     clear_reset_jobs()
+    clear_recompute_jobs()
 
 
 @pytest.fixture
