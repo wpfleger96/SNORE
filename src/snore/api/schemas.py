@@ -127,8 +127,13 @@ class BulkDeletePreviewRequest(BaseModel):
     delete_all: bool = False
 
 
+AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
+
+
 class AnalysisRunRequest(BaseModel):
-    modes: list[str] = Field(default_factory=lambda: ["aasm"])
+    modes: list[AnalysisMode] = Field(
+        default_factory=lambda: cast(list[AnalysisMode], ["aasm"])
+    )
     primary_mode: str | None = Field(
         default=None,
         description=(
@@ -163,9 +168,6 @@ class EventItem(BaseModel):
     peak_flow_limitation: float | None = provenance_field(
         Provenance.DEVICE, "Peak flow limitation", default=None
     )
-
-
-AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
 
 
 class BatchAnalysisRequest(BaseModel):

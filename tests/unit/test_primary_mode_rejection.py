@@ -4,11 +4,11 @@ Scenarios covered:
 1. resolve_primary_mode raises ValueError when primary_mode is not in modes.
 2. resolve_primary_mode raises ValueError when modes has several entries,
    excludes DEFAULT_MODE, and primary_mode is None; a single non-default mode
-   resolves to itself.
+   resolves to itself (duplicates included); unknown mode names are rejected.
 3. resolve_primary_mode returns primary_mode when it is a valid member.
 4. resolve_primary_mode returns DEFAULT_MODE when modes includes it and
    primary_mode is None.
-5. API single-session route raises 422 when primary_mode is invalid.
+5. API single-session route raises 422 when primary_mode or a mode is invalid.
 6. API batch route raises 422 when primary_mode is invalid or ambiguous, and
    defaults it to the sole mode when modes has one entry.
 7. _compute_leak_valid: absent channel → (None, "channel_absent").
@@ -78,6 +78,25 @@ class TestResolvePrimaryMode:
             ValueError, match="primary_mode must be supplied explicitly"
         ):
             resolve_primary_mode([], None)
+
+    def test_unknown_sole_mode_raises_value_error(self):
+        """A single unknown mode is rejected rather than defaulted to."""
+        with pytest.raises(ValueError, match="Unknown mode"):
+            resolve_primary_mode(["bogus"], None)
+
+    def test_unknown_mode_alongside_default_raises_value_error(self):
+        """An unknown mode is rejected even when DEFAULT_MODE is present."""
+        with pytest.raises(ValueError, match="Unknown mode"):
+            resolve_primary_mode([DEFAULT_MODE, "bogus"], None)
+
+    def test_unknown_explicit_primary_mode_raises_value_error(self):
+        """An unknown mode is rejected even when named as primary_mode too."""
+        with pytest.raises(ValueError, match="Unknown mode"):
+            resolve_primary_mode(["bogus"], "bogus")
+
+    def test_duplicate_sole_mode_used_when_primary_mode_none(self):
+        """Repeated entries of one non-default mode resolve to that mode."""
+        assert resolve_primary_mode(["resmed", "resmed"], None) == "resmed"
 
     def test_valid_primary_mode_returned_unchanged(self):
         """Explicit primary_mode that is in modes is returned as-is."""
@@ -180,6 +199,15 @@ class TestAnalysisRouterPrimaryMode:
         )
         # 201 or 422 — not a ValueError-triggered 422
         facade.run_analysis.assert_awaited_once()
+
+    def test_single_session_unknown_mode_returns_422(self):
+        """POST /sessions/{id}/analysis with an unknown mode → 422 before analysis."""
+        facade = MagicMock()
+        facade.run_analysis = AsyncMock()
+        client = self._make_client(facade)
+        resp = client.post("/api/v1/sessions/1/analysis", json={"modes": ["bogus"]})
+        assert resp.status_code == 422
+        facade.run_analysis.assert_not_awaited()
 
     def _fake_session_item(self, session_id: int = 42) -> MagicMock:
         item = MagicMock()
