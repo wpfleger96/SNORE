@@ -1,5 +1,6 @@
 """Session service for session listing, detail, deletion, and management operations."""
 
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
@@ -35,7 +36,7 @@ from snore.services.tidal_volume import tidal_volume_ml
 from snore.services.waveform_service import clear_waveform_array_cache
 from snore.utils.db_chunk import iter_id_chunks
 
-__all__ = ["SessionService"]
+__all__ = ["SessionService", "session_statistics"]
 
 _TIDAL_VOLUME_FIELDS = (
     "tidal_volume_mean",
@@ -43,6 +44,25 @@ _TIDAL_VOLUME_FIELDS = (
     "tidal_volume_max",
     "tidal_volume_95th",
 )
+
+
+def session_statistics(
+    stats: models.Statistics, import_source: str | None, reported: Collection[str]
+) -> SessionStatistics:
+    """A stored Statistics row as served: tidal volume in mL, unscored counts null.
+
+    ``import_source`` is the session's (it sets the stored tidal-volume unit) and
+    ``reported`` is what its device has ever scored (``device_reported_types``).
+    """
+    return SessionStatistics.model_validate(stats).model_copy(
+        update={
+            **{
+                field: tidal_volume_ml(getattr(stats, field), import_source)
+                for field in _TIDAL_VOLUME_FIELDS
+            },
+            **reported_counts(stats, reported),
+        }
+    )
 
 
 class SessionService(ProfileScopedService):
@@ -214,16 +234,8 @@ class SessionService(ProfileScopedService):
         statistics = None
         if stats_record:
             reported = await device_reported_types(self.db_session, session.device_id)
-            statistics = SessionStatistics.model_validate(stats_record).model_copy(
-                update={
-                    **{
-                        field: tidal_volume_ml(
-                            getattr(stats_record, field), session.import_source
-                        )
-                        for field in _TIDAL_VOLUME_FIELDS
-                    },
-                    **reported_counts(stats_record, reported),
-                }
+            statistics = session_statistics(
+                stats_record, session.import_source, reported
             )
 
         settings_list = None

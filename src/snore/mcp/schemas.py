@@ -40,7 +40,11 @@ from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
     INDEX_SOURCE_DESCRIPTION,
     RERA_PROXY_FALLBACK_NOTE,
+    DayDetail,
+    HealthNightDetailRead,
     MergedSettingsChange,
+    PeriodStatistics,
+    SessionStatistics,
 )
 
 
@@ -508,6 +512,42 @@ class NightlySummaryResponse(BaseModel):
     # Compliance block only present in range mode
     compliance: ComplianceFields | None = None
     device_capabilities: DeviceCapabilities | None = None
+
+
+class NightSession(BaseModel):
+    """One session of the night, enabled or disabled, with its device statistics."""
+
+    id: int
+    start_time: datetime = Field(description="Device wall-clock session start")
+    end_time: datetime = Field(description="Device wall-clock session end")
+    enabled: bool
+    therapy_mode: str | None = None
+    statistics: SessionStatistics | None = Field(
+        default=None, description="Null when the session has no statistics row"
+    )
+
+
+class NightDetailResponse(BaseModel):
+    """Response from get_night_detail."""
+
+    date: date
+    device: DayDetail | None = Field(
+        default=None,
+        description="The device night (Day row); null when the date has none. "
+        "health_sleep is always null here: the Apple Health night is apple_health",
+    )
+    sessions: list[NightSession] = Field(
+        default_factory=list, description="The device night's sessions by start"
+    )
+    apple_health: HealthNightDetailRead | None = Field(
+        default=None, description="The Apple Health night; null when the date has none"
+    )
+
+
+class PeriodStatsResponse(BaseModel):
+    """Response from get_period_stats."""
+
+    periods: list[PeriodStatistics]
 
 
 class ExperimentalNightlyResponse(BaseModel):
@@ -1152,6 +1192,9 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "nightly_row": NightlyRow,
     "compliance_fields": ComplianceFields,
     "nightly_summary": NightlySummaryResponse,
+    "night_session": NightSession,
+    "night_detail": NightDetailResponse,
+    "period_stats": PeriodStatsResponse,
     "experimental_nightly_row": ExperimentalNightlyRow,
     "experimental_nightly_metrics": ExperimentalNightlyResponse,
     "event_context": EventContext,
