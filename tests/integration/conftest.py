@@ -1,7 +1,8 @@
 """Shared fixtures and seed helpers for integration tests.
 
 Seed helpers (_make_profile, _make_device, _make_day_session, _make_analysis_result,
-_make_event) are plain functions — not fixtures — so test modules can import and call them directly:
+_make_event, _make_channel_waveform, _make_apple_night) are plain functions, not
+fixtures, so test modules can import and call them directly:
 
     from tests.integration.conftest import _make_profile, _make_device, ...
 """
@@ -23,6 +24,7 @@ from snore.database.models import (
     Day,
     Device,
     Event,
+    HealthNightlySummary,
     Profile,
     Session,
     User,
@@ -178,3 +180,18 @@ async def _make_channel_waveform(
     db.add(waveform)
     await db.flush()
     return waveform
+
+
+async def _make_apple_night(
+    db: AsyncSession, profile_id: int, night: date, total_sleep_seconds: float
+) -> None:
+    """Create an Apple Health nightly summary at 90% sleep efficiency."""
+    db.add(
+        HealthNightlySummary(
+            profile_id=profile_id,
+            night_date=night,
+            total_sleep_seconds=total_sleep_seconds,
+            sleep_efficiency_pct=90.0,
+        )
+    )
+    await db.flush()

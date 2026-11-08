@@ -326,7 +326,8 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 **Device channel statistics** (FL and snore median, 95th, max) have no summary columns:
 `services/channel_stats.py` computes them on read from `Waveform.data_blob`, reducing each session
 to a value histogram. Pool every enabled session in scope; never average per-session percentiles.
-FL and snore are on detail models and `/stats/periods` only, not on trends, so list endpoints and
+FL and snore are on detail models and `/stats/periods` only (in MCP, `get_night_detail`'s
+`device.channel_stats` and `get_period_stats`), not on trends, so list endpoints and
 `/stats/trends` stay blob-free; callers that do not show them pass `include_channel_stats=False`.
 The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_blobs`), and they
 also reduce each session to a histogram and read percentiles from the pooled histogram

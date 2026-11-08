@@ -12,6 +12,8 @@ from snore.services.breath.dtos import MAX_EPOCH_NIGHTS, MAX_PAGE
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+MAX_NIGHTLY_RANGE = 90
+
 
 def parse_date(value: str, param_name: str) -> date:
     """Parse an ISO 8601 date string (YYYY-MM-DD).
@@ -138,4 +140,14 @@ def validate_epoch_span(start: date, end: date, param_name: str) -> None:
         raise ValidationError(
             f"'{param_name}' spans {nights} nights; an epoch may span at most "
             f"{MAX_EPOCH_NIGHTS}. Split the range into shorter epochs."
+        )
+
+
+def validate_nightly_span(start: date, end: date) -> None:
+    """Raise ValidationError if ``start``..``end`` spans more than MAX_NIGHTLY_RANGE."""
+    nights = (end - start).days + 1
+    if nights > MAX_NIGHTLY_RANGE:
+        raise ValidationError(
+            f"Date range spans {nights} nights; maximum per call is "
+            f"{MAX_NIGHTLY_RANGE}. Use multiple calls to page over longer ranges."
         )

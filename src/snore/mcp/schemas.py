@@ -533,8 +533,9 @@ class NightDetailResponse(BaseModel):
     date: date
     device: DayDetail | None = Field(
         default=None,
-        description="The device night (Day row); null when the date has none. "
-        "health_sleep is always null here: the Apple Health night is apple_health",
+        description="The device night as GET /days/{date} serves it; null when the "
+        "date has none. health_sleep is the Day page's Apple Health summary; "
+        "apple_health is the fuller Apple night",
     )
     sessions: list[NightSession] = Field(
         default_factory=list, description="The device night's sessions by start"

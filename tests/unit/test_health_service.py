@@ -291,6 +291,56 @@ class TestGetNightDetailBreathingDisturbances:
 
         assert detail.breathing_disturbances is None
 
+    @staticmethod
+    def _rr(db: AsyncSession, pid: int, val: float, h: int) -> None:
+        db.add(
+            HealthSample(
+                profile_id=pid,
+                record_type=_RR_TYPE,
+                source_name=_WATCH,
+                start_time=_dt(h),
+                end_time=_dt(h),
+                value_num=val,
+                unit="count/min",
+                night_date=_NIGHT,
+                ingest_channel="export_xml",
+            )
+        )
+
+    async def test_spo2_rr_and_bd_on_one_night_aggregate_separately(
+        self, async_db_session, profile_id, night_summary
+    ):
+        """A BD value inside the SpO2 and RR ranges feeds only breathing_disturbances."""
+        _add_spo2_samples(async_db_session, profile_id, (95.0, 97.0))
+        self._rr(async_db_session, profile_id, 14.0, 4)
+        self._rr(async_db_session, profile_id, 16.0, 5)
+        self._bd(async_db_session, profile_id, 60.25, 6)
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.avg_spo2_pct == pytest.approx(96.0, abs=0.1)
+        assert detail.min_spo2_pct == pytest.approx(95.0, abs=0.1)
+        assert detail.avg_rr == pytest.approx(15.0, abs=0.01)
+        assert detail.breathing_disturbances == pytest.approx(60.25)
+
+    async def test_spo2_and_rr_without_bd_returns_none(
+        self, async_db_session, profile_id, night_summary
+    ):
+        _add_spo2_samples(async_db_session, profile_id, (95.0,))
+        self._rr(async_db_session, profile_id, 14.0, 4)
+        await async_db_session.flush()
+
+        detail = await HealthService(async_db_session, profile_id).get_night_detail(
+            _NIGHT
+        )
+
+        assert detail.avg_spo2_pct == pytest.approx(95.0, abs=0.1)
+        assert detail.avg_rr == pytest.approx(14.0, abs=0.01)
+        assert detail.breathing_disturbances is None
+
     async def test_other_profile_and_night_ignored(
         self, async_db_session, profile_id, night_summary
     ):

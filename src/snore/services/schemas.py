@@ -1033,7 +1033,7 @@ class HealthNightSummaryRead(BaseModel):
 
 
 class HealthNightDetailRead(HealthNightSummaryRead):
-    """Nightly sleep summary with aggregated oximetry and respiratory rate metrics."""
+    """Nightly sleep summary with oximetry, respiratory rate and breathing disturbances."""
 
     avg_spo2_pct: float | None = provenance_field(
         Provenance.DERIVED, "Average SpO2 (%)", default=None
@@ -1046,9 +1046,10 @@ class HealthNightDetailRead(HealthNightSummaryRead):
     )
     breathing_disturbances: float | None = provenance_field(
         Provenance.DEVICE,
-        "Apple Watch breathing disturbances for the night as recorded (HealthKit "
-        "unit 'count', a non-integer nightly value); mean of the night's samples "
-        "when several sources wrote one, null without a sample",
+        "Apple's nightly breathing-disturbances value as recorded (HealthKit "
+        "unit 'count', a non-integer nightly value; Apple writes one per night); "
+        "when several sources wrote one, the mean of their values; null without "
+        "a sample",
         default=None,
     )
 

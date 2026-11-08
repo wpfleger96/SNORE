@@ -1,4 +1,4 @@
-"""Integration tests: get_night_detail and get_period_stats against a real SQLite DB."""
+"""Integration tests: get_night_detail against a real SQLite DB."""
 
 from __future__ import annotations
 
@@ -7,19 +7,14 @@ from typing import Any
 
 import pytest
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import (
-    Day,
-    Device,
-    HealthNightlySummary,
-    Session,
-    Statistics,
-)
+from snore.database.models import Day, Device, Session, Statistics
 from snore.mcp.errors import ValidationError
 from snore.mcp.tools.night_detail import get_night_detail
-from snore.mcp.tools.period_stats import get_period_stats
 from tests.integration.conftest import (
+    _make_apple_night,
     _make_day_session,
     _make_device,
     _make_event,
@@ -47,20 +42,6 @@ async def _add_session(
     db.add(sess)
     await db.flush()
     return sess
-
-
-async def _add_apple_night(
-    db: AsyncSession, profile_id: int, night: date, total_sleep_seconds: float
-) -> None:
-    db.add(
-        HealthNightlySummary(
-            profile_id=profile_id,
-            night_date=night,
-            total_sleep_seconds=total_sleep_seconds,
-            sleep_efficiency_pct=90.0,
-        )
-    )
-    await db.flush()
 
 
 class TestGetNightDetail:
@@ -125,7 +106,7 @@ class TestGetNightDetail:
     async def test_apple_only_night_returns_apple_block(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
-        await _add_apple_night(async_db_session, async_test_profile.id, NIGHT, 25200.0)
+        await _make_apple_night(async_db_session, async_test_profile.id, NIGHT, 25200.0)
 
         result = await get_night_detail(
             async_db_session, NIGHT, profile_id=async_test_profile.id
@@ -136,20 +117,120 @@ class TestGetNightDetail:
         assert result.apple_health is not None
         assert result.apple_health.total_sleep_seconds == 25200.0
 
-    async def test_apple_night_is_not_repeated_in_device_block(
+    async def test_device_block_keeps_day_page_apple_summary(
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         device = await _make_device(async_db_session, async_test_profile.id)
-        await _make_day_session(async_db_session, device, NIGHT)
-        await _add_apple_night(async_db_session, async_test_profile.id, NIGHT, 25200.0)
+        _, sess = await _make_day_session(async_db_session, device, NIGHT)
+        await _make_apple_night(async_db_session, async_test_profile.id, NIGHT, 25200.0)
 
         result = await get_night_detail(
             async_db_session, NIGHT, profile_id=async_test_profile.id
         )
 
         assert result.device is not None
-        assert result.device.health_sleep is None
+        assert result.device.session_ids == [sess.id]
+        assert result.device.health_sleep is not None
+        assert result.device.health_sleep.total_sleep_seconds == 25200.0
         assert result.apple_health is not None
+
+    @pytest.mark.parametrize("with_apple_night", [False, True])
+    @pytest.mark.parametrize("target", ["nonexistent", "other_profile", "no_night"])
+    async def test_unmatched_device_id_raises(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        target: str,
+        with_apple_night: bool,
+    ) -> None:
+        own = await _make_device(async_db_session, async_test_profile.id)
+        await _make_day_session(async_db_session, own, NIGHT)
+        other = await _make_device(
+            async_db_session, (await _make_profile(async_db_session)).id
+        )
+        await _make_day_session(async_db_session, other, NIGHT)
+        nightless = await _make_device(async_db_session, async_test_profile.id)
+        device_id = {
+            "nonexistent": other.id + 1000,
+            "other_profile": other.id,
+            "no_night": nightless.id,
+        }[target]
+        if with_apple_night:
+            await _make_apple_night(
+                async_db_session, async_test_profile.id, NIGHT, 25200.0
+            )
+
+        with pytest.raises(
+            ValidationError,
+            match=f"^device_id={device_id} has no night on {NIGHT} in this session$",
+        ):
+            await get_night_detail(
+                async_db_session,
+                NIGHT,
+                profile_id=async_test_profile.id,
+                device_id=device_id,
+            )
+
+    async def test_two_devices_without_device_id_raises_ambiguity(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        first = await _make_device(async_db_session, async_test_profile.id)
+        second = await _make_device(async_db_session, async_test_profile.id)
+        for device in (first, second):
+            await _make_day_session(async_db_session, device, NIGHT)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await get_night_detail(
+                async_db_session, NIGHT, profile_id=async_test_profile.id
+            )
+
+        assert str(exc_info.value) == (
+            f"Multiple devices have sessions on {NIGHT}: pass device_id to "
+            f"disambiguate. Devices: device_id={first.id} "
+            f"(serial={first.serial_number}), device_id={second.id} "
+            f"(serial={second.serial_number})"
+        )
+
+    async def test_device_id_on_shared_date_returns_that_devices_night(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        first = await _make_device(async_db_session, async_test_profile.id)
+        second = await _make_device(async_db_session, async_test_profile.id)
+        await _make_day_session(async_db_session, first, NIGHT, ahi=1.0)
+        _, second_sess = await _make_day_session(
+            async_db_session, second, NIGHT, ahi=4.0
+        )
+
+        result = await get_night_detail(
+            async_db_session,
+            NIGHT,
+            profile_id=async_test_profile.id,
+            device_id=second.id,
+        )
+
+        assert result.device is not None
+        assert result.device.device_id == second.id
+        assert result.device.ahi == 4.0
+        assert [s.id for s in result.sessions] == [second_sess.id]
+
+    async def test_invalid_stored_mask_on_segments_returns_sessions(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, NIGHT)
+        await async_db_session.execute(
+            text("UPDATE sessions SET mask_on_segments = :stored WHERE id = :id"),
+            {"stored": "{not json", "id": sess.id},
+        )
+        async_db_session.expunge_all()
+
+        result = await get_night_detail(
+            async_db_session, NIGHT, profile_id=async_test_profile.id
+        )
+
+        assert [s.id for s in result.sessions] == [sess.id]
+        assert result.device is not None
+        assert result.device.mask_on_spans is None
 
     async def test_night_with_no_data_raises(
         self, async_db_session: AsyncSession, async_test_profile: Any
@@ -165,58 +246,9 @@ class TestGetNightDetail:
         other = await _make_profile(async_db_session)
         other_device = await _make_device(async_db_session, other.id)
         await _make_day_session(async_db_session, other_device, NIGHT)
-        await _add_apple_night(async_db_session, other.id, NIGHT, 25200.0)
+        await _make_apple_night(async_db_session, other.id, NIGHT, 25200.0)
 
         with pytest.raises(ValidationError):
             await get_night_detail(
                 async_db_session, NIGHT, profile_id=async_test_profile.id
             )
-
-
-class TestGetPeriodStats:
-    async def test_month_periods_include_apple_sleep_averages(
-        self, async_db_session: AsyncSession, async_test_profile: Any
-    ) -> None:
-        device = await _make_device(async_db_session, async_test_profile.id)
-        for night, ahi in ((date(2026, 2, 3), 1.0), (date(2026, 3, 4), 3.0)):
-            await _make_day_session(async_db_session, device, night, ahi=ahi)
-        await _add_apple_night(
-            async_db_session, async_test_profile.id, date(2026, 3, 4), 7.5 * 3600
-        )
-
-        result = await get_period_stats(
-            async_db_session, profile_id=async_test_profile.id
-        )
-
-        assert [p.period_start for p in result.periods] == [
-            date(2026, 2, 1),
-            date(2026, 3, 1),
-        ]
-        assert [p.avg_ahi for p in result.periods] == [1.0, 3.0]
-        assert result.periods[0].avg_total_sleep_hours is None
-        assert result.periods[1].avg_total_sleep_hours == 7.5
-        assert result.periods[1].avg_sleep_efficiency_pct == 90.0
-
-    async def test_range_bounds_and_profile_scope_apply(
-        self, async_db_session: AsyncSession, async_test_profile: Any
-    ) -> None:
-        device = await _make_device(async_db_session, async_test_profile.id)
-        for night in (date(2026, 3, 1), date(2026, 3, 2), date(2026, 3, 3)):
-            await _make_day_session(async_db_session, device, night)
-        other_device = await _make_device(
-            async_db_session, (await _make_profile(async_db_session)).id
-        )
-        await _make_day_session(async_db_session, other_device, date(2026, 3, 2))
-
-        result = await get_period_stats(
-            async_db_session,
-            profile_id=async_test_profile.id,
-            period_type="day",
-            start=date(2026, 3, 2),
-            end=date(2026, 3, 3),
-        )
-
-        assert [(p.period_start, p.days_used) for p in result.periods] == [
-            (date(2026, 3, 2), 1),
-            (date(2026, 3, 3), 1),
-        ]

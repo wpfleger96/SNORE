@@ -243,8 +243,9 @@ field path to the sibling field whose value decides that value's tier: the
 nightly headline ahi/oai/cai/hi -> `nights[].index_source` (get_nightly_summary)
 or `device.index_source` (get_night_detail), where `device` is the
 device-reported daily value and `derived` is SNORE's recount; the recount, when
-computable, is in `*_computed`. Device-scored events are the reference standard; never present
-experimental metrics as device-scored or clinically validated.
+computable, is in `*_computed`. Device-scored events are the reference
+standard; never present experimental metrics as device-scored or clinically
+validated.
 
 See docs://capabilities for dataset-specific channel availability.
 """

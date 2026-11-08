@@ -3844,7 +3844,7 @@ export interface components {
         }
         /**
          * HealthNightDetailRead
-         * @description Nightly sleep summary with aggregated oximetry and respiratory rate metrics.
+         * @description Nightly sleep summary with oximetry, respiratory rate and breathing disturbances.
          */
         HealthNightDetailRead: {
             /**
@@ -3864,7 +3864,7 @@ export interface components {
             awake_seconds?: number | null
             /**
              * Breathing Disturbances
-             * @description [DEVICE] Apple Watch breathing disturbances for the night as recorded (HealthKit unit 'count', a non-integer nightly value); mean of the night's samples when several sources wrote one, null without a sample
+             * @description [DEVICE] Apple's nightly breathing-disturbances value as recorded (HealthKit unit 'count', a non-integer nightly value; Apple writes one per night); when several sources wrote one, the mean of their values; null without a sample
              */
             breathing_disturbances?: number | null
             /**

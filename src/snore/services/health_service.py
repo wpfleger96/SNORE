@@ -123,7 +123,8 @@ class HealthService(ProfileScopedService):
             )
         )
 
-        # Single-pass conditional aggregation for SpO2 avg/min and RR avg.
+        # Single-pass conditional aggregation for SpO2 avg/min, RR avg and the
+        # breathing-disturbances mean.
         agg = (
             await self.db_session.execute(
                 select(

@@ -83,7 +83,7 @@
             />
         </div>
 
-        <!-- Oximetry + respiratory rate (only when data is present) -->
+        <!-- Oximetry, respiratory rate + breathing disturbances (only when data is present) -->
         <div
             v-if="
                 night.avg_spo2_pct != null ||
@@ -121,7 +121,8 @@
                 v-if="night.breathing_disturbances != null"
                 label="Breathing Disturbances"
                 :value="night.breathing_disturbances"
-                :decimals="1"
+                :decimals="2"
+                glossary-key="apple_breathing_disturbances"
             />
         </div>
 
