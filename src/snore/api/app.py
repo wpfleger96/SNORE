@@ -762,7 +762,7 @@ async def _startup_resume_analysis(affected_profile_ids: set[int]) -> None:
         try:
             async with session_scope() as db:
                 facade = AnalysisFacade(db, profile_id=profile_id)
-                session_ids = await facade.list_session_ids(missing_only=True)
+                session_ids = await facade.list_session_ids(only="missing")
             if not session_ids:
                 logger.debug("Startup: no gap-fill needed for profile %d", profile_id)
                 continue

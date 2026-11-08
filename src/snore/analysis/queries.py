@@ -4,15 +4,21 @@
 ``created_at``, ties broken by highest ``id``.  These helpers are the single
 source of that ordering — single-row callers use ``latest_analysis_stmt`` /
 ``latest_analysis_row``; batch callers use the window-function helpers.
+
+The ranking reads only ``ix_analysis_results_session_latest`` (a covering index
+over ``session_id, created_at, id, engine_versions_json``), so it never walks a
+row's ``programmatic_result_json`` overflow chain to reach the columns stored
+after it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Row, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.selectable import Subquery
+from sqlalchemy.sql.selectable import FromClause, Subquery
 
 from snore.database import models
 from snore.utils.db_chunk import iter_id_chunks
@@ -21,6 +27,7 @@ __all__ = [
     "latest_analysis_ids",
     "latest_analysis_ranked_subquery",
     "latest_analysis_row",
+    "latest_analysis_rows",
     "latest_analysis_stmt",
 ]
 
@@ -55,8 +62,10 @@ def latest_analysis_ranked_subquery(
 ) -> Subquery:
     """Window-function subquery ranking AnalysisResult rows per session.
 
-    Columns: ``session_id``, ``id``, ``recency_rank`` — rank 1 is the latest
-    row (``created_at DESC, id DESC``) within each session partition.
+    Columns: ``session_id``, ``id``, ``engine_versions_json``, ``recency_rank``
+    — rank 1 is the latest row (``created_at DESC, id DESC``) within each
+    session partition.  Every column is in the covering index, so the ranking
+    never reads the table row.
 
     Args:
         session_ids: Session IDs to scope the ranking to — either a
@@ -66,6 +75,7 @@ def latest_analysis_ranked_subquery(
         select(
             models.AnalysisResult.session_id,
             models.AnalysisResult.id,
+            models.AnalysisResult.engine_versions_json,
             func.row_number()
             .over(
                 partition_by=models.AnalysisResult.session_id,
@@ -106,3 +116,36 @@ async def latest_analysis_ids(
         ).all()
         result.update({session_id: analysis_id for session_id, analysis_id in rows})
     return result
+
+
+async def latest_analysis_rows(
+    db: AsyncSession, session_ids: Iterable[int] | Select[int], *columns: Any
+) -> AsyncIterator[Row[Any]]:
+    """Yield ``(id, session_id, engine_versions_json, *columns)`` for each
+    session's latest AnalysisResult; sessions without a run yield nothing.
+
+    The first three come from the covering index.  Only ``columns`` (expressions
+    over ``models.AnalysisResult``) join back to the table row.  A SELECT of
+    session ids ranks in one statement; a materialized id list is chunked under
+    SQLite's bound-parameter cap.  No profile scoping: callers validate
+    ownership.
+    """
+    scopes: Iterable[Iterable[int] | Select[int]] = (
+        [session_ids]
+        if isinstance(session_ids, Select)
+        else iter_id_chunks(list(session_ids))
+    )
+    for scope in scopes:
+        ranked = latest_analysis_ranked_subquery(scope)
+        source: FromClause = ranked
+        if columns:
+            ar = models.AnalysisResult
+            source = ranked.join(ar, ar.id == ranked.c.id)
+        stmt = (
+            select(ranked.c.id, ranked.c.session_id, ranked.c.engine_versions_json)
+            .add_columns(*columns)
+            .select_from(source)
+            .where(ranked.c.recency_rank == 1)
+        )
+        for row in await db.execute(stmt):
+            yield row

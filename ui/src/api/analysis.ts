@@ -6,6 +6,11 @@ import type {
     AnalysisDeletePreview,
     AnalysisJobsListResponse,
 } from '@/types'
+import type { components } from '@/types/generated'
+
+type BatchAnalysisRequest = components['schemas']['BatchAnalysisRequest']
+export type BatchSelection = NonNullable<BatchAnalysisRequest['only']>
+export type AnalysisMode = NonNullable<BatchAnalysisRequest['modes']>[number]
 
 export interface AnalysisSessionsParams {
     limit?: number
@@ -45,15 +50,7 @@ export const getAnalysisDeletePreview = apiGet<
 
 export const runBatchAnalysis = apiPost<
     { job_id: string; session_count: number },
-    [
-        body: {
-            from_date?: string
-            to_date?: string
-            missing_only?: boolean
-            modes?: string[]
-            store_results?: boolean
-        },
-    ]
+    [body: BatchAnalysisRequest]
 >('/analysis/batch', (body) => ({ data: body }))
 
 export const getAnalysisJobs = apiGet<AnalysisJobsListResponse>('/analysis/jobs')

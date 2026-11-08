@@ -2580,14 +2580,13 @@ export interface components {
         BatchAnalysisRequest: {
             /** From Date */
             from_date?: string | null
-            /**
-             * Missing Only
-             * @description When true, restrict the batch to sessions that have a flow waveform but no analysis result yet. Composable with from_date/to_date. When true, from_date and to_date are not required.
-             * @default false
-             */
-            missing_only: boolean
             /** Modes */
             modes?: ('aasm' | 'aasm_relaxed' | 'resmed')[]
+            /**
+             * Only
+             * @description Restrict the batch to analyzable sessions (those with a flow waveform): 'missing' selects sessions with no analysis yet; 'stale' selects sessions whose latest analysis came from an older algorithm version. Composable with from_date/to_date; when set, from_date and to_date are optional.
+             */
+            only?: ('missing' | 'stale') | null
             /**
              * Primary Mode
              * @description Mode whose recovery markers are persisted. Must be a member of `modes` when supplied; defaults to 'aasm' when 'aasm' is in modes, else to the sole mode when modes has one entry; required otherwise.

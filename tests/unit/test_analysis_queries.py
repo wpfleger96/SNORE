@@ -1,10 +1,11 @@
-"""Unit tests for snore.analysis.queries chunked id binding (Fix #280)."""
+"""Unit tests for snore.analysis.queries latest-row lookups."""
 
 from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.queries import latest_analysis_ids
+from snore.analysis.queries import latest_analysis_ids, latest_analysis_rows
 from snore.database.models import AnalysisResult, Day, Device, Session
 
 
@@ -32,6 +33,7 @@ async def _seed_session_with_versions(
                 timestamp_start=sess.start_time,
                 timestamp_end=sess.end_time,
                 programmatic_result_json={"version": i + 1},
+                engine_versions_json={"version": i + 1},
                 created_at=datetime.now(UTC) + timedelta(minutes=i),
             )
         )
@@ -93,3 +95,53 @@ class TestLatestAnalysisIdsChunking:
         """Empty session id list short-circuits to an empty map without querying."""
         result = await latest_analysis_ids(async_db_session, [])
         assert result == {}
+
+
+class TestLatestAnalysisRows:
+    """latest_analysis_rows yields one latest row per analyzed session."""
+
+    async def test_id_list_and_select_scopes_yield_latest_rows(
+        self, async_db_session, async_test_device, monkeypatch
+    ):
+        """Chunked id lists and a session-id SELECT give the same latest rows,
+        and extra columns are read from that same row."""
+        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
+        sessions = [
+            await _seed_session_with_versions(
+                async_db_session,
+                async_test_device,
+                date(2025, 8, 1) + timedelta(days=i),
+                num_versions=i + 1,
+            )
+            for i in range(3)
+        ]
+        unanalyzed = await _seed_session_with_versions(
+            async_db_session, async_test_device, date(2025, 8, 9), num_versions=0
+        )
+        await async_db_session.commit()
+        version = func.json_extract(
+            AnalysisResult.programmatic_result_json, "$.version"
+        ).label("version")
+        latest_id = await latest_analysis_ids(
+            async_db_session, [s.id for s in sessions]
+        )
+        expected = {
+            s.id: (latest_id[s.id], {"version": i + 1}, i + 1)
+            for i, s in enumerate(sessions)
+        }
+        session_ids = [s.id for s in sessions] + [unanalyzed.id]
+
+        for scope in (
+            session_ids,
+            select(Session.id).where(Session.device_id == async_test_device.id),
+        ):
+            rows = [
+                row
+                async for row in latest_analysis_rows(async_db_session, scope, version)
+            ]
+
+            assert {
+                row.session_id: (row.id, row.engine_versions_json, row.version)
+                for row in rows
+            } == expected
+            assert len(rows) == len(sessions)

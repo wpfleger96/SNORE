@@ -310,6 +310,22 @@ def cancel_job(job_id: str) -> bool:
     return result
 
 
+def in_flight_session_ids(profile_id: int) -> set[int]:
+    """Session ids that a QUEUED or RUNNING job for *profile_id* will analyze.
+
+    Any owner's job counts; a job with cancellation requested does not.
+    """
+    with _lock:
+        return {
+            sid
+            for job in _all_jobs.values()
+            if job.profile_id == profile_id
+            and not job.is_terminal
+            and not job.cancel_requested
+            for sid in job.session_ids
+        }
+
+
 def has_running_jobs() -> bool:
     """Return True if any analysis job is currently in the RUNNING state.
 

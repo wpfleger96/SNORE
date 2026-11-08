@@ -13,15 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.analysis.queries import (
     latest_analysis_ids,
     latest_analysis_ranked_subquery,
+    latest_analysis_rows,
 )
 from snore.analysis.runner import Dispatch, run_one, store_with_retry
-from snore.analysis.shared.versioning import AlgorithmIdentity, AlgoVersions
+from snore.analysis.shared.versioning import AlgoVersions, is_current_identity
 from snore.analysis.types import AnalysisResult
 from snore.database import models
 from snore.services import _base
 from snore.services.schemas import (
     AnalysisDeletePreview,
     AnalysisListItem,
+    AnalysisSelection,
     AnalysisSessionDetail,
     BatchAnalysisResult,
     BatchSessionResult,
@@ -34,15 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 def _is_stale(engine_versions_json: dict[str, Any]) -> bool:
-    """Return True when an AnalysisResult row's engine_versions_json is stale.
-
-    Stale means: legacy flat row (no 'identity' key), unparseable, or the
-    stored AlgorithmIdentity does not match the current identity exactly.
-    """
-    parsed = AlgoVersions.from_stored(engine_versions_json)
-    if parsed is None:
-        return True
-    return parsed.identity.model_dump() != AlgorithmIdentity.current().model_dump()
+    """True when a stored run is not from the current algorithm identity."""
+    return not is_current_identity(AlgoVersions.from_stored(engine_versions_json))
 
 
 class AnalysisFacade:
@@ -606,16 +601,22 @@ class AnalysisFacade:
         self,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        missing_only: bool = False,
+        only: AnalysisSelection | None = None,
     ) -> list[int]:
         """Return session IDs for this profile, optionally filtered by date range.
 
         Cheaper than ``list_sessions_with_status``: selects only the ID column,
-        no ORM object hydration, no artificial row cap.
+        no ORM object hydration, no artificial row cap.  Ordered by ``Day.date``.
 
-        When ``missing_only`` is true, restrict to sessions that have a flow
-        waveform (sessions without flow data cannot be analyzed) but have no
-        existing analysis result.  Composable with date filters.
+        ``only`` narrows the result to sessions that have a flow waveform
+        (sessions without flow data cannot be analyzed) and either:
+
+        - ``"missing"``: no analysis result of any version yet.
+        - ``"stale"``: the latest analysis result (``created_at DESC, id DESC``)
+          fails the current-identity check (``_is_stale``).  Sessions with no
+          analysis at all are not stale.
+
+        Composable with date filters.
         """
         stmt = (
             select(models.Session.id)
@@ -627,21 +628,30 @@ class AnalysisFacade:
             stmt = stmt.where(models.Day.date >= from_date.date())
         if to_date:
             stmt = stmt.where(models.Day.date <= to_date.date())
-        if missing_only:
+        if only is not None:
             stmt = stmt.where(
                 select(models.Waveform.id)
                 .where(models.Waveform.session_id == models.Session.id)
                 .where(models.Waveform.waveform_type == "flow")
                 .exists()
             )
+        if only == "missing":
             stmt = stmt.where(
                 ~select(models.AnalysisResult.id)
                 .where(models.AnalysisResult.session_id == models.Session.id)
                 .exists()
             )
-        stmt = stmt.order_by(models.Day.date)
-        result = await self._db.execute(stmt)
-        return list(result.scalars())
+        session_ids = list(
+            (await self._db.execute(stmt.order_by(models.Day.date))).scalars()
+        )
+        if only == "stale":
+            stale = {
+                row.session_id
+                async for row in latest_analysis_rows(self._db, stmt)
+                if _is_stale(row.engine_versions_json)
+            }
+            session_ids = [sid for sid in session_ids if sid in stale]
+        return session_ids
 
     async def run_batch_analysis(
         self,

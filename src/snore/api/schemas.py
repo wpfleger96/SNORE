@@ -16,6 +16,7 @@ from pydantic import (
 
 from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import (
+    AnalysisSelection,
     DayDetail,
     DayExperimentalMetrics,
     DayListItem,
@@ -171,14 +172,18 @@ class EventItem(BaseModel):
 
 
 class BatchAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     from_date: date | None = None
     to_date: date | None = None
-    missing_only: bool = Field(
-        default=False,
+    only: AnalysisSelection | None = Field(
+        default=None,
         description=(
-            "When true, restrict the batch to sessions that have a flow waveform "
-            "but no analysis result yet. Composable with from_date/to_date. "
-            "When true, from_date and to_date are not required."
+            "Restrict the batch to analyzable sessions (those with a flow waveform): "
+            "'missing' selects sessions with no analysis yet; 'stale' selects "
+            "sessions whose latest analysis came from an older algorithm version. "
+            "Composable with from_date/to_date; when set, from_date and to_date "
+            "are optional."
         ),
     )
     modes: list[AnalysisMode] = Field(

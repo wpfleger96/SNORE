@@ -18,6 +18,7 @@ fresh-DB / reimport is the mandated upgrade path.
 from __future__ import annotations
 
 from enum import StrEnum
+from functools import cache
 from typing import Any
 
 from pydantic import BaseModel, model_validator
@@ -111,7 +112,8 @@ class AlgorithmIdentity(BaseModel):
     # equal to the current identity and silently stay OK.
     #
     # RELEASE NOTE: bumping format_version marks every stored AnalysisResult
-    # STALE_VERSION — the next batch analysis re-processes all sessions.
+    # STALE_VERSION; nothing re-analyzes automatically — re-run them with
+    # `snore analysis run --only stale`.
     # Call this out explicitly in release notes whenever format_version is bumped.
     format_version: int = 6
     segmenter: str = SEGMENTER_ALGO_VERSION
@@ -218,6 +220,21 @@ class AlgoVersions(BaseModel):
             return cls.model_validate(raw)
         except Exception:
             return None  # nested but unparseable → classify as stale
+
+
+@cache
+def _current_identity_dump() -> dict[str, Any]:
+    return AlgorithmIdentity.current().model_dump()
+
+
+def is_current_identity(algo: AlgoVersions | None) -> bool:
+    """True when ``algo`` was produced by the current algorithm versions.
+
+    The single staleness rule: a stored run is STALE_VERSION unless its
+    identity equals the current one exactly.  ``None`` (a legacy or
+    unparseable row, see ``AlgoVersions.from_stored``) is never current.
+    """
+    return algo is not None and algo.identity.model_dump() == _current_identity_dump()
 
 
 # ---------------------------------------------------------------------------
