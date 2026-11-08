@@ -55,10 +55,10 @@
                     variant="outline"
                     size="sm"
                     aria-label="Results shown"
-                    :model-value="showingPreview ? 'preview' : 'saved'"
+                    :model-value="resultsShown"
                     @update:model-value="
                         (v) => {
-                            if (v) previewSelected = v === 'preview'
+                            if (v) resultsShown = v as ResultsShown
                         }
                     "
                 >
@@ -186,7 +186,7 @@
                 "
             >
                 <ToggleGroupItem v-for="mode in modeOptions" :key="mode" :value="mode">
-                    {{ mode }}
+                    {{ modeLabel(mode) }}
                 </ToggleGroupItem>
             </ToggleGroup>
 
@@ -411,7 +411,9 @@
         />
         <div v-else-if="comparison" class="section-card">
             <h2>Event Comparison</h2>
-            <p class="mb-3 text-sm text-muted-foreground">Detection mode: {{ comparison.mode }}</p>
+            <p class="mb-3 text-sm text-muted-foreground">
+                Detection mode: {{ modeLabel(comparison.mode) }}
+            </p>
             <div class="summary-row" style="margin-bottom: 1rem">
                 <StatCard
                     label="Device-scored Events"
@@ -619,7 +621,7 @@
         </div>
     </div>
 
-    <AlertDialog :open="runDialogOpen" @update:open="runDialogOpen = $event">
+    <AlertDialog :open="runDialogOpen" @update:open="setRunDialogOpen">
         <AlertDialogContent class="max-w-[450px]">
             <AlertDialogHeader>
                 <AlertDialogTitle>Run Analysis</AlertDialogTitle>
@@ -628,9 +630,12 @@
                         <AnalysisModePicker
                             v-model:modes="runModes"
                             v-model:primary-mode="runPrimaryMode"
+                            :show-stored-rera="saveResults"
                         />
                         <div>
-                            <Toggle v-model="saveResults" variant="outline"> Save results </Toggle>
+                            <Toggle v-model="saveResults" variant="outline" class="save-toggle">
+                                Save results
+                            </Toggle>
                             <p class="mt-1 text-xs text-muted-foreground">
                                 {{
                                     saveResults
@@ -693,6 +698,7 @@ import ErrorState from '@/components/ErrorState.vue'
 import AnalysisModePicker from '@/components/AnalysisModePicker.vue'
 import { getAnalysis, runAnalysis } from '@/api/analysis'
 import type { AnalysisMode } from '@/api/analysis'
+import { effectivePrimaryMode, modeLabel } from '@/utils/analysisModes'
 import { getWaveformCompare } from '@/api/waveforms'
 import { useAuth } from '@/composables/useAuth'
 import { useApiLoad } from '@/composables/useApiLoad'
@@ -717,7 +723,8 @@ const flLegendOpen = ref(false)
 
 const runDialogOpen = ref(false)
 const runModes = ref<AnalysisMode[]>(['aasm'])
-const runPrimaryMode = ref<AnalysisMode>('aasm')
+// The explicit stored-RERA mode pick; null follows the default.
+const runPrimaryMode = ref<AnalysisMode | null>(null)
 const saveResults = ref(true)
 const running = ref(false)
 const runError = ref<string | null>(null)
@@ -725,16 +732,32 @@ const runError = ref<string | null>(null)
 // An unsaved run's results. They sit beside the saved analysis rather than
 // replacing it, so the saved results and their cached comparisons stay intact.
 const preview = ref<AnalysisResult | null>(null)
-const previewSelected = ref(false)
+type ResultsShown = 'saved' | 'preview'
+const resultsShown = ref<ResultsShown>('saved')
+// With no saved analysis the preview is all there is, whatever the switch says.
 const showingPreview = computed(
-    () => preview.value !== null && (previewSelected.value || analysis.value === null),
+    () => preview.value !== null && (resultsShown.value === 'preview' || analysis.value === null),
 )
 const shown = computed(() => (showingPreview.value ? preview.value : analysis.value))
-const previewModes = computed(() => Object.keys(preview.value?.mode_results ?? {}).join(', '))
+const previewModes = computed(() =>
+    Object.keys(preview.value?.mode_results ?? {})
+        .map(modeLabel)
+        .join(', '),
+)
 
-// Saved results per mode; cleared when the session changes or a saved run replaces them.
-// A null entry is a mode the server has no comparison for (404).
+// Event comparisons for the saved analysis, per mode. A null entry is a mode
+// the server has no comparison for (404).
 const comparisonCache = new Map<string, EventComparisonResult | null>()
+// Bumped whenever `analysis` is replaced (session load or saved run), so a
+// comparison requested for the replaced analysis is neither cached nor shown.
+const analysisGeneration = ref(0)
+
+function replaceAnalysis(next: AnalysisResult | null): void {
+    analysisGeneration.value++
+    comparisonCache.clear()
+    analysis.value = next
+    preview.value = null
+}
 
 const modeOptions = computed(() => Object.keys(shown.value?.mode_results ?? {}))
 
@@ -752,35 +775,43 @@ const {
     reload: loadComparison,
 } = useApiLoad(async () => {
     const mode = activeMode.value
+    const generation = analysisGeneration.value
     if (!mode || showingPreview.value) return null
-    const cached = comparisonCache.get(mode)
-    if (cached !== undefined) return cached
-    try {
-        const result = await getWaveformCompare(props.sessionId, { mode })
+    let result = comparisonCache.get(mode)
+    if (result === undefined) {
+        result = await fetchComparison(mode)
+        // A session change also replaces the analysis, so this covers it too.
+        if (generation !== analysisGeneration.value) return null
         comparisonCache.set(mode, result)
-        return result
-    } catch (err: unknown) {
-        // A 404 means no comparison for this mode: hide the card. Anything else is a failure.
-        if (isAxiosError(err) && err.response?.status === 404) {
-            comparisonCache.set(mode, null)
-            return null
-        }
-        throw err
     }
+    return { generation, result }
 }, 'Failed to load event comparison')
 
-// Data for another mode stays hidden until its own load lands.
-const comparison = computed(() =>
-    comparisonData.value?.mode === activeMode.value ? comparisonData.value : null,
-)
+async function fetchComparison(mode: string): Promise<EventComparisonResult | null> {
+    try {
+        return await getWaveformCompare(props.sessionId, { mode })
+    } catch (err: unknown) {
+        // A 404 means no comparison for this mode: hide the card. Anything else is a failure.
+        if (isAxiosError(err) && err.response?.status === 404) return null
+        throw err
+    }
+}
 
-// Mount, running an analysis, the mode toggle and leaving a preview all land here.
-watch([analysis, activeMode, showingPreview], () => void loadComparison())
+// Data for another mode or a replaced analysis stays hidden until its own load lands.
+const comparison = computed(() => {
+    const loaded = comparisonData.value
+    if (loaded?.generation !== analysisGeneration.value) return null
+    return loaded.result?.mode === activeMode.value ? loaded.result : null
+})
+
+// Loading an analysis, running one, the mode toggle and leaving a preview all land here.
+watch([analysisGeneration, activeMode, showingPreview], () => void loadComparison())
 watch(
     () => props.sessionId,
     () => {
-        comparisonCache.clear()
-        preview.value = null
+        replaceAnalysis(null)
+        selectedMode.value = ''
+        void loadSavedAnalysis()
     },
 )
 
@@ -806,7 +837,7 @@ interface ModeRow {
 const modeRows = computed<ModeRow[]>(() => {
     if (!shown.value) return []
     return Object.entries(shown.value.mode_results ?? {}).map(([name, r]) => ({
-        mode: name,
+        mode: modeLabel(name),
         ahi: r.ahi,
         rdi: r.rdi,
         apneas: r.apnea_count,
@@ -926,26 +957,33 @@ function openRunDialog(): void {
     runDialogOpen.value = true
 }
 
+// A run in flight keeps the dialog open (Escape included), so its outcome,
+// including a failure, always shows there.
+function setRunDialogOpen(open: boolean): void {
+    if (open || !running.value) runDialogOpen.value = open
+}
+
 async function handleRunAnalysis(): Promise<void> {
+    const sessionId = props.sessionId
     const store = saveResults.value
     running.value = true
     runError.value = null
     try {
-        const result = await runAnalysis(props.sessionId, {
+        const result = await runAnalysis(sessionId, {
             modes: runModes.value,
-            primary_mode: runPrimaryMode.value,
+            primary_mode: effectivePrimaryMode(runModes.value, runPrimaryMode.value),
             store_results: store,
         })
+        if (sessionId !== props.sessionId) return
         if (store) {
-            comparisonCache.clear()
-            analysis.value = result
-            preview.value = null
+            replaceAnalysis(result)
         } else {
             preview.value = result
-            previewSelected.value = true
+            resultsShown.value = 'preview'
         }
         runDialogOpen.value = false
     } catch (err: unknown) {
+        if (sessionId !== props.sessionId) return
         runError.value = err instanceof Error ? err.message : 'Failed to run analysis'
     } finally {
         running.value = false
@@ -953,18 +991,24 @@ async function handleRunAnalysis(): Promise<void> {
 }
 
 // useApiLoad skipped — 404 routes to the empty state, not generic error
-onMounted(async () => {
+async function loadSavedAnalysis(): Promise<void> {
+    const sessionId = props.sessionId
+    loading.value = true
+    error.value = null
     try {
-        analysis.value = await getAnalysis(props.sessionId)
+        const result = await getAnalysis(sessionId)
+        if (sessionId === props.sessionId) replaceAnalysis(result)
     } catch (err: unknown) {
         const status = (err as { response?: { status?: number } }).response?.status
-        if (status !== 404) {
+        if (sessionId === props.sessionId && status !== 404) {
             error.value = err instanceof Error ? err.message : 'Failed to load analysis'
         }
     } finally {
-        loading.value = false
+        if (sessionId === props.sessionId) loading.value = false
     }
-})
+}
+
+onMounted(loadSavedAnalysis)
 </script>
 
 <style scoped>
@@ -1003,7 +1047,8 @@ onMounted(async () => {
 
 @media (max-width: 767.98px) {
     .page-header :deep(button),
-    .preview-actions :deep(button) {
+    .preview-actions :deep(button),
+    .save-toggle {
         min-height: var(--tap-target);
     }
 }

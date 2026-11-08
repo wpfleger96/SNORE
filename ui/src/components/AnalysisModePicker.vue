@@ -10,22 +10,19 @@
                 :model-value="modes"
                 @update:model-value="setModes"
             >
-                <ToggleGroupItem
-                    v-for="option in MODE_OPTIONS"
-                    :key="option.value"
-                    :value="option.value"
-                >
-                    {{ option.label }}
+                <ToggleGroupItem v-for="mode in ANALYSIS_MODES" :key="mode" :value="mode">
+                    {{ MODE_LABELS[mode] }}
                 </ToggleGroupItem>
             </ToggleGroup>
             <p v-if="!modes.length" class="mt-1 text-xs text-destructive">
                 Select at least one mode.
             </p>
             <p class="mt-1 text-xs text-muted-foreground">
-                Each selected mode runs separately and appears as its own row in the comparison.
+                Each selected mode runs separately and gets its own row in each session's Mode
+                Comparison.
             </p>
         </div>
-        <Collapsible v-if="modes.length > 1" v-slot="{ open }">
+        <Collapsible v-if="showStoredRera && effective && modes.length > 1" v-slot="{ open }">
             <CollapsibleTrigger as-child>
                 <button
                     type="button"
@@ -35,7 +32,7 @@
                         class="h-4 w-4 transition-transform"
                         :class="{ 'rotate-90': open }"
                     />
-                    Advanced: RERA flags from {{ modeLabel(primaryMode) }}
+                    Advanced: RERA flags from {{ MODE_LABELS[effective] }}
                 </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
@@ -48,21 +45,18 @@
                         variant="outline"
                         class="picker-toggles mt-1"
                         :aria-labelledby="primaryLabelId"
-                        :model-value="primaryMode"
+                        :model-value="effective"
                         @update:model-value="pickPrimary"
                     >
-                        <ToggleGroupItem
-                            v-for="option in selectedOptions"
-                            :key="option.value"
-                            :value="option.value"
-                        >
-                            {{ option.label }}
+                        <ToggleGroupItem v-for="mode in modes" :key="mode" :value="mode">
+                            {{ MODE_LABELS[mode] }}
                         </ToggleGroupItem>
                     </ToggleGroup>
                     <p class="mt-1 text-xs text-muted-foreground">
-                        Each selected mode runs and appears in the comparison. This one decides
-                        which mode's RERAs mark recovery breaths in the saved per-breath data, which
-                        the experimental RERA estimate and breath tables use.
+                        Decides which mode's RERAs mark recovery breaths in the saved per-breath
+                        data, used by the experimental RERA estimate and breath tables. Sessions
+                        saved with different choices can't be compared in the experimental RERA
+                        epoch comparison.
                     </p>
                 </div>
             </CollapsibleContent>
@@ -72,68 +66,41 @@
 
 <script setup lang="ts">
 // Detection-mode selection shared by the single-session and batch analysis
-// runs: any non-empty subset of modes, plus the primary mode the server
-// requires to be one of them. The primary only picks which mode's RERAs flag
-// recovery breaths in the stored per-breath rows, so it sits under Advanced.
-import { computed, ref, useId, watch } from 'vue'
+// runs: any non-empty subset of modes, plus an optional explicit primary mode.
+// The primary only picks which mode's RERAs flag recovery breaths in the stored
+// per-breath rows, so it sits under Advanced. The parent owns the explicit pick
+// (null follows the default) and sends effectivePrimaryMode() with the run.
+import { computed, useId } from 'vue'
 import { ChevronRight } from '@lucide/vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { AnalysisMode } from '@/api/analysis'
+import { ANALYSIS_MODES, MODE_LABELS, effectivePrimaryMode } from '@/utils/analysisModes'
 
-// Canonical order; AASM first, so the first selected mode is also the
-// server's default (AASM when selected).
-const MODE_OPTIONS: { value: AnalysisMode; label: string }[] = [
-    { value: 'aasm', label: 'AASM' },
-    { value: 'aasm_relaxed', label: 'AASM Relaxed' },
-    { value: 'resmed', label: 'ResMed' },
-]
+// Hide the primary choice when it cannot matter, e.g. for a run that saves nothing.
+const { showStoredRera = true } = defineProps<{ showStoredRera?: boolean }>()
 
 const modes = defineModel<AnalysisMode[]>('modes', { required: true })
-const primaryMode = defineModel<AnalysisMode>('primaryMode', { required: true })
+const primaryMode = defineModel<AnalysisMode | null>('primaryMode', { required: true })
 
 const modesLabelId = useId()
 const primaryLabelId = useId()
 
-const selectedOptions = computed(() => MODE_OPTIONS.filter((o) => modes.value.includes(o.value)))
+const effective = computed(() => effectivePrimaryMode(modes.value, primaryMode.value))
 
-// The user's explicit Advanced pick; null while the primary follows the default.
-// A selected non-default primary passed in on mount is an earlier pick (the run
-// dialog remounts the picker each time it opens), so it is kept.
-const userPick = ref<AnalysisMode | null>(
-    modes.value.includes(primaryMode.value) && primaryMode.value !== selectedOptions.value[0]?.value
-        ? primaryMode.value
-        : null,
-)
-
-function modeLabel(mode: AnalysisMode): string {
-    return MODE_OPTIONS.find((o) => o.value === mode)?.label ?? mode
-}
-
-// Keep the selection in canonical order rather than click order.
+// Keep the selection in canonical order rather than click order, and drop an
+// explicit pick that is no longer selected so it cannot resurface later.
 function setModes(value: unknown): void {
-    const selected = value as AnalysisMode[]
-    modes.value = MODE_OPTIONS.map((o) => o.value).filter((m) => selected.includes(m))
+    const selected = ANALYSIS_MODES.filter((m) => (value as AnalysisMode[]).includes(m))
+    modes.value = selected
+    if (primaryMode.value && !selected.includes(primaryMode.value)) primaryMode.value = null
 }
 
+// Re-clicking the pressed item emits an empty value; it pins that mode instead
+// of unsetting it, since the pressed item is always the effective primary.
 function pickPrimary(value: unknown): void {
-    if (!value) return
-    userPick.value = value as AnalysisMode
-    primaryMode.value = userPick.value
+    primaryMode.value = (value as AnalysisMode | undefined) || effective.value || null
 }
-
-// The primary is the user's pick while it stays selected, otherwise the first
-// selected mode. An empty selection keeps the last primary, since nothing can
-// run until one is chosen.
-watch(
-    modes,
-    (selected) => {
-        if (userPick.value && !selected.includes(userPick.value)) userPick.value = null
-        const next = userPick.value ?? selectedOptions.value[0]?.value
-        if (next && next !== primaryMode.value) primaryMode.value = next
-    },
-    { immediate: true },
-)
 </script>
 
 <style scoped>
@@ -141,6 +108,13 @@ watch(
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+}
+
+/* The shared toggles mark "on" with a faint muted fill; make the selection unmistakable. */
+.picker-toggles :deep([data-state='on']) {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-foreground);
 }
 
 @media (max-width: 767.98px) {

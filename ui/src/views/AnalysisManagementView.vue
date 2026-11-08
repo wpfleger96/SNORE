@@ -284,6 +284,7 @@ import {
 } from '@/api/analysis'
 import type { AnalysisMode, BatchSelection } from '@/api/analysis'
 import { formatDateShort } from '@/utils/formatting'
+import { effectivePrimaryMode } from '@/utils/analysisModes'
 import type { AnalysisListItem, AnalysisDeletePreview, AnalysisJobStatus } from '@/types'
 import { useAuth } from '@/composables/useAuth'
 import { useAvailableDates } from '@/composables/useAvailableDates'
@@ -308,7 +309,8 @@ const batchDialogOpen = ref(false)
 const batchFrom = ref('')
 const batchTo = ref('')
 const batchModes = ref<AnalysisMode[]>(['aasm'])
-const batchPrimaryMode = ref<AnalysisMode>('aasm')
+// The explicit stored-RERA mode pick; null follows the default.
+const batchPrimaryMode = ref<AnalysisMode | null>(null)
 // 'range' is the plain date-range Run; a BatchSelection is Analyze Missing or
 // Re-analyze Outdated. Non-null while a batch request is in flight.
 const pendingAction = ref<'range' | BatchSelection | null>(null)
@@ -407,7 +409,7 @@ async function queueBatch(action: 'range' | BatchSelection): Promise<void> {
             ...(to ? { to_date: to } : {}),
             ...(action === 'range' ? {} : { only: action }),
             modes: batchModes.value,
-            primary_mode: batchPrimaryMode.value,
+            primary_mode: effectivePrimaryMode(batchModes.value, batchPrimaryMode.value),
             store_results: true,
         })
         void fetchJobs()
