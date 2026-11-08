@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from snore.api import reset_jobs
 from snore.api.app import create_app
 from snore.api.config import load_config, set_config
+from snore.api.jobs.core import MAINTENANCE_CONFLICT_DETAIL
 from snore.auth.actor import ActorContext, AuthMode, Role
 from snore.auth.lockout import get_lockout_store
 from snore.auth.passwords import hash_password, verify_password
@@ -1097,7 +1098,7 @@ class TestDeleteData:
         resp = client.post(DELETE_DATA_PATH)
 
         assert resp.status_code == 409
-        assert "already in progress" in resp.json()["detail"]
+        assert resp.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
         assert len(reset_jobs._queue) == 1
 
     def test_409_while_reset_job_active(self, async_db_session, db_session):
@@ -1115,7 +1116,7 @@ class TestDeleteData:
         resp = member_client.post(DELETE_DATA_PATH)
 
         assert resp.status_code == 409
-        assert "already in progress" in resp.json()["detail"]
+        assert resp.json()["detail"] == MAINTENANCE_CONFLICT_DETAIL
 
     def test_failed_delete_reports_generic_error_and_keeps_data(
         self, async_db_session, db_session

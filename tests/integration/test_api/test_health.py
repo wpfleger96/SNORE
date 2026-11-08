@@ -109,6 +109,56 @@ class TestHealthBusyEndpoint:
         assert resp.status_code == 200
         assert resp.json() == {"busy": False}
 
+    def test_health_busy_with_queued_recompute_job(self) -> None:
+        """A QUEUED day recompute → busy=true: an admin is waiting on it."""
+        import snore.api.recompute_jobs as rcj
+
+        assert rcj.enqueue(owner_user_id=1) is not None
+
+        resp = self._make_client().get("/health/busy")
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": True}
+
+    def test_health_busy_with_running_recompute_job(self) -> None:
+        """A RUNNING day recompute → busy=true."""
+        import snore.api.recompute_jobs as rcj
+
+        job = rcj.enqueue(owner_user_id=1)
+        assert job is not None
+        assert job.try_start()
+
+        resp = self._make_client().get("/health/busy")
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": True}
+
+    def test_health_busy_after_recompute_job_finishes_is_not_busy(self) -> None:
+        """A finished day recompute lingers for its status poll but is not busy."""
+        import snore.api.recompute_jobs as rcj
+
+        job = rcj.enqueue(owner_user_id=1)
+        assert job is not None
+        assert job.try_start()
+        job.finish(succeeded=True)
+
+        resp = self._make_client().get("/health/busy")
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": False}
+
+    def test_health_busy_while_vacuum_runs(self) -> None:
+        """A VACUUM in progress → busy=true, so a container swap cannot cut it off."""
+        from snore.api.routers import db as db_router
+
+        client = self._make_client()
+        db_router._vacuum_running.set()
+        try:
+            resp = client.get("/health/busy")
+        finally:
+            db_router._vacuum_running.clear()
+
+        assert resp.status_code == 200
+        assert resp.json() == {"busy": True}
+        assert client.get("/health/busy").json() == {"busy": False}
+
     def test_health_busy_queued_analysis_job_is_not_busy(self) -> None:
         """A QUEUED (not yet started) analysis job → busy=false.
 

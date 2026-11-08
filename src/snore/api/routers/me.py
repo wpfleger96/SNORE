@@ -387,8 +387,9 @@ async def delete_my_data(actor: RequireWritable) -> JSONResponse:
 
     The work outlasts the proxy's request timeout on a large database, so this
     returns 202 at once with a ``job_id`` to poll with
-    ``GET /db/reset-jobs/status``.  Returns 409 while another reset or data
-    deletion is queued or running.
+    ``GET /db/reset-jobs/status``.  Returns 409 while any database maintenance
+    task (a reset, another data deletion, a vacuum or a day recompute) is queued
+    or running.
 
     NOTE: Concurrent in-flight imports for this user's devices will fail if
     their device rows are deleted mid-import; this is accepted behavior.

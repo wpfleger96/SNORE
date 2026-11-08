@@ -8,12 +8,13 @@ import shutil
 import uuid
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
+from datetime import date
 from pathlib import Path
 from typing import IO, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -22,11 +23,12 @@ from snore.api.deps import ActorDep, get_db
 from snore.api.guards import RequireAuth, RequireWritable
 from snore.api.import_jobs import (
     TERMINAL_STATES,
+    ForcedRescanActiveError,
     ImportJob,
     JobState,
     JobType,
     cancel_job,
-    create_job,
+    create_rescan_job,
     enqueue_for_execution,
     get_job,
     list_jobs,
@@ -142,6 +144,38 @@ class PrecheckResponse(BaseModel):
 
 class RescanRequest(BaseModel):
     profile_id: int | None = None
+    force: bool = Field(
+        default=False,
+        description=(
+            "Delete and recreate every matched session that already exists, "
+            "including its analysis and breath rows. Disabled sessions stay disabled."
+        ),
+    )
+    from_date: date | None = Field(
+        default=None,
+        description=(
+            "Only re-import sessions that start on or after this date. Dates match "
+            "each session's start date, not its night: a night's sessions that "
+            "start after midnight fall on the next day."
+        ),
+    )
+    to_date: date | None = Field(
+        default=None,
+        description=(
+            "Only re-import sessions that start on or before this date. To cover a "
+            "night, include the following day: sessions that start after midnight "
+            "are dated the next day."
+        ),
+    )
+    analyze: bool = Field(
+        default=True, description="Queue analysis for the imported sessions"
+    )
+
+    @model_validator(mode="after")
+    def _check_date_order(self) -> RescanRequest:
+        if self.from_date and self.to_date and self.from_date > self.to_date:
+            raise ValueError("from_date must be on or before to_date")
+        return self
 
 
 # Anchor files must never be reported as skippable. STR.edf changes daily and
@@ -640,7 +674,13 @@ async def rescan_archive(
     upload.  Useful when DB sessions were deleted but the archive is intact —
     the UNIQUE(device_id, device_session_id) upsert-skip makes this idempotent.
 
+    With ``force``, sessions that already exist are deleted and recreated
+    instead of skipped; the date range limits which sessions are parsed and
+    ``analyze=false`` skips the follow-up analysis job.
+
     Returns 422 when no archive exists or the archive contains no device data.
+    Returns 409 when ``force`` is set and a forced rescan of the same profile is
+    already queued or running.
     Returns 429 when admission caps are exceeded.
     """
     from snore.constants import DEFAULT_RAW_BACKUP_DIR  # noqa: PLC0415
@@ -666,14 +706,27 @@ async def rescan_archive(
         )
 
     try:
-        job = create_job(JobType.RESCAN, owner_user_id=actor.user_id)
+        job = create_rescan_job(
+            owner_user_id=actor.user_id,
+            target_profile_id=resolved_profile_id,
+            force=body.force,
+            date_from=body.from_date,
+            date_to=body.to_date,
+            analyze=body.analyze,
+        )
+    except ForcedRescanActiveError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A forced re-import of this profile is already queued or running. "
+                "Wait for it to finish and try again."
+            ),
+        ) from None
     except RuntimeError:
         raise HTTPException(
             status_code=429,
             detail="Too many active imports. Please wait for existing imports to complete.",
         ) from None
-
-    job.target_profile_id = resolved_profile_id
 
     try:
         from snore.api.import_worker import _upsert_job_record  # noqa: PLC0415

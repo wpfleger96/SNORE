@@ -11,8 +11,6 @@ export const POLL_FAILURES_BEFORE_WARNING = 30
 const ACTIVE_STATES = new Set<ResetJobStatus['state']>(['queued', 'running'])
 const JOB_KINDS: ResetJobStatus['kind'][] = ['reset', 'delete_data']
 
-const ALREADY_IN_PROGRESS =
-    'Another reset or data deletion is in progress — wait for it to finish and try again.'
 const STATUS_UNAVAILABLE =
     'Job status is unavailable because the server restarted or the job expired. Reload this page to check the current state.'
 const LOST_CONTACT =
@@ -172,11 +170,7 @@ export function useResetJob(
             running.value = false
             factoryReset.value = false
             expectSessionLoss(false)
-            if ((err as AxiosError).response?.status === 409) {
-                error.value = ALREADY_IN_PROGRESS
-            } else {
-                error.value = err instanceof Error ? err.message : 'Request failed'
-            }
+            error.value = err instanceof Error ? err.message : 'Request failed'
         }
     }
 

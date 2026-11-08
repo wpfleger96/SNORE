@@ -37,6 +37,8 @@ from snore.api.middleware import (
     RateLimitMiddleware,
     TotpEnforcementMiddleware,
 )
+from snore.api.recompute_jobs import shutdown as _shutdown_recompute_jobs
+from snore.api.recompute_jobs import start_worker as _start_recompute_worker
 from snore.api.reset_jobs import shutdown as _shutdown_reset_jobs
 from snore.api.reset_jobs import start_worker as _start_reset_worker
 from snore.api.routers import (
@@ -200,6 +202,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _start_analysis_worker()
     _start_validation_worker()
     _start_reset_worker()
+    _start_recompute_worker()
     from snore.api.import_worker import _run_dispatch  # noqa: PLC0415
 
     _start_import_worker(_run_dispatch)
@@ -246,6 +249,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _shutdown_reset_jobs()
             except Exception:
                 logger.warning("Error shutting down reset jobs", exc_info=True)
+            try:
+                _shutdown_recompute_jobs()
+            except Exception:
+                logger.warning("Error shutting down recompute jobs", exc_info=True)
             try:
                 from snore.utils.process_pool import shutdown_pool  # noqa: PLC0415
 
@@ -925,25 +932,26 @@ def create_app() -> FastAPI:
     @app.get("/health/busy", include_in_schema=False)
     async def health_busy() -> dict[str, bool]:
         from snore.api import analysis_jobs as _analysis_jobs  # noqa: PLC0415
-        from snore.api import reset_jobs as _reset_jobs  # noqa: PLC0415
         from snore.api import validation_jobs as _validation_jobs  # noqa: PLC0415
         from snore.api.import_jobs import has_active_jobs  # noqa: PLC0415
+        from snore.api.jobs.core import active_maintenance  # noqa: PLC0415
 
         reasons: list[str] = []
         # Import jobs gate on PENDING_UPLOAD/PENDING/RUNNING — all three states
         # represent in-flight work.  Analysis and validation gate on RUNNING
         # only: QUEUED jobs have no in-progress data writes and are safe to
         # interrupt.  A multi-minute validation run must not be cut off by a
-        # watchtower container replacement.  Reset jobs gate on QUEUED/RUNNING:
-        # a user was told their data is going away, and RUNNING covers the VACUUM.
+        # watchtower container replacement.  Maintenance activities (reset and
+        # data deletion, day recompute, VACUUM) gate on QUEUED/RUNNING: a user
+        # was told their data is going away or an admin is watching, and a
+        # VACUUM cut off mid-rebuild has to be redone at startup.
         if has_active_jobs():
             reasons.append("imports")
         if _analysis_jobs.has_running_jobs():
             reasons.append("analysis")
         if _validation_jobs.has_running_jobs():
             reasons.append("validation")
-        if _reset_jobs.has_active_job():
-            reasons.append("reset")
+        reasons.extend(active_maintenance())
         logger.debug("health/busy: %s", reasons)
         return {"busy": bool(reasons)}
 

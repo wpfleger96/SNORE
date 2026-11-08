@@ -1,14 +1,25 @@
+import threading
+
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from snore.api import reset_jobs
+from snore.api import recompute_jobs, reset_jobs
 from snore.api.constants import NO_STORE
 from snore.api.deps import service_dep
 from snore.api.guards import RequireAdmin
-from snore.api.schemas import ResetJobEnqueued, ResetJobStatus
+from snore.api.jobs.core import (
+    MAINTENANCE_CONFLICT_DETAIL,
+    admit_maintenance,
+    register_maintenance_job,
+)
+from snore.api.schemas import (
+    RecomputeDaysJobStatus,
+    ResetJobEnqueued,
+    ResetJobStatus,
+)
 from snore.database.target import DatabaseTarget
 from snore.services.database_service import DatabaseService
 from snore.services.schemas import DatabaseStats, VacuumResult
@@ -16,6 +27,10 @@ from snore.services.schemas import DatabaseStats, VacuumResult
 router = APIRouter()
 
 DatabaseServiceDep = Annotated[DatabaseService, Depends(service_dep(DatabaseService))]
+
+# Set for the whole of a POST /vacuum, so no reset or recompute starts under it.
+_vacuum_running = threading.Event()
+register_maintenance_job("vacuum", _vacuum_running.is_set)
 
 
 class DatabaseStatsPublic(DatabaseStats):
@@ -51,6 +66,8 @@ def vacuum_db(
     """Vacuum the SQLite database to reclaim space after deletions.
 
     Requires a SQLite file target; raises 422 for non-SQLite databases.
+    Returns 409 while another vacuum or any other database maintenance task (a
+    reset, data deletion or day recompute) is queued or running.
     """
     if (
         target.dialect != "sqlite"
@@ -61,7 +78,14 @@ def vacuum_db(
             status_code=422,
             detail="VACUUM is only available for SQLite file databases.",
         )
-    return service.vacuum_sqlite(target.sqlite_path)
+    with admit_maintenance("vacuum") as admitted:
+        if not admitted or _vacuum_running.is_set():
+            raise HTTPException(status_code=409, detail=MAINTENANCE_CONFLICT_DETAIL)
+        _vacuum_running.set()
+    try:
+        return service.vacuum_sqlite(target.sqlite_path)
+    finally:
+        _vacuum_running.clear()
 
 
 @router.post("/reset", status_code=202, response_model=ResetJobEnqueued)
@@ -92,8 +116,9 @@ async def reset_db(
     The work outlasts the proxy's request timeout on a large database, so this
     returns 202 at once with a ``job_id`` to poll with
     ``GET /db/reset-jobs/status``, which carries the result, including a factory
-    reset's one-time ``bootstrap_invite_url``.  Returns 409 while another reset
-    or data deletion is queued or running.
+    reset's one-time ``bootstrap_invite_url``.  Returns 409 while any database
+    maintenance task (another reset, a data deletion, a vacuum or a day
+    recompute) is queued or running.
 
     Note: the job holds the SQLite write lock for the entire delete+commit, so
     on large databases concurrent import/analysis writers may hit their busy
@@ -124,3 +149,37 @@ async def get_reset_job_status(
         raise HTTPException(status_code=404, detail="Reset job not found or expired")
     status = ResetJobStatus.model_validate(job.to_dict())
     return JSONResponse(content=status.model_dump(mode="json"), headers=NO_STORE)
+
+
+@router.post("/recompute-days", status_code=202, response_model=RecomputeDaysJobStatus)
+async def recompute_days(actor: RequireAdmin) -> RecomputeDaysJobStatus:
+    """Queue a background job that re-derives every Day row.
+
+    The API counterpart of ``snore db recompute-days``: no re-parse.  Every Day
+    across all users, profiles and devices is re-aggregated from the session
+    statistics and waveforms already stored, and Day rows no session references
+    are deleted.  Use it after a change to day aggregation.
+
+    Returns 202 at once; poll ``GET /db/recompute-days`` for progress and the
+    result.  Returns 409 while any database maintenance task (another
+    recompute, a reset, a data deletion or a vacuum) is queued or running.
+    """
+    job = recompute_jobs.enqueue(owner_user_id=actor.user_id)
+    if job is None:
+        raise HTTPException(status_code=409, detail=MAINTENANCE_CONFLICT_DETAIL)
+    return job.to_status()
+
+
+@router.get("/recompute-days", response_model=RecomputeDaysJobStatus)
+async def get_recompute_days_status(_actor: RequireAdmin) -> JSONResponse:
+    """Report the most recent day recompute job.
+
+    Returns 404 when no job has run since the server started, or the last one
+    ended long enough ago to have expired.
+    """
+    job = recompute_jobs.latest_job()
+    if job is None:
+        raise HTTPException(status_code=404, detail="No day recompute job found")
+    return JSONResponse(
+        content=job.to_status().model_dump(mode="json"), headers=NO_STORE
+    )

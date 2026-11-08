@@ -24,15 +24,10 @@ from snore.cli.display import (
     print_warning,
 )
 from snore.constants import DEFAULT_DATABASE_PATH, OSCAR_BINARY_PARSER_ID
-from snore.database.day_manager import DayManager
 from snore.database.models import Base
 from snore.database.session import cleanup_database, init_database, session_scope
 from snore.services.database_service import DatabaseService
 from snore.utils.db_chunk import iter_id_chunks
-
-# Days recomputed per write transaction.  Each day decodes its sessions'
-# waveform blobs while holding the SQLite write lock, so chunks stay small.
-RECOMPUTE_DAYS_CHUNK_SIZE = 100
 
 
 @click.group()
@@ -204,21 +199,12 @@ def recompute_days(db: str | None) -> None:
             Progress,
             TextColumn,
         )
-        from sqlalchemy import select  # noqa: PLC0415
 
-        from snore.database.models import Day  # noqa: PLC0415
-        from snore.database.session import (  # noqa: PLC0415
-            init_database,
-            session_scope,
+        from snore.services.day_recompute import (  # noqa: PLC0415
+            recompute_all_days,
         )
-        from snore.database.write_gate import write_gate  # noqa: PLC0415
 
         await init_database(str(Path(db).expanduser()) if db else None)
-
-        async with session_scope() as session:
-            day_ids = (
-                (await session.execute(select(Day.id).order_by(Day.id))).scalars().all()
-            )
 
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -226,26 +212,19 @@ def recompute_days(db: str | None) -> None:
             MofNCompleteColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task("Recomputing days", total=len(day_ids))
-            pruned = 0
-            for chunk in iter_id_chunks(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE):
-                async with write_gate(), session_scope(immediate=True) as session:
-                    days = (
-                        (await session.execute(select(Day).where(Day.id.in_(chunk))))
-                        .scalars()
-                        .all()
-                    )
-                    for day in days:
-                        if not await DayManager.recalculate_day(day, session):
-                            pruned += 1
-                progress.update(task, advance=len(chunk))
+            task = progress.add_task("Recomputing days", total=None)
+            result = await recompute_all_days(
+                lambda processed, total: progress.update(
+                    task, completed=processed, total=total
+                )
+            )
 
         summary = (
-            f"Recomputed {len(day_ids) - pruned} day(s) "
+            f"Recomputed {result.days_recomputed} day(s) "
             "from session statistics and waveforms"
         )
-        if pruned:
-            summary += f"; pruned {pruned} orphaned day(s)"
+        if result.days_pruned:
+            summary += f"; pruned {result.days_pruned} orphaned day(s)"
         print_success(summary)
 
     asyncio.run(_run())

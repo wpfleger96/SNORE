@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import httpx2
 import pytest
+
+from fastapi.testclient import TestClient
 
 import snore.api.analysis_jobs as aj_store
 import snore.api.import_jobs as job_store
@@ -1031,8 +1034,7 @@ class TestRescanEndpoint:
 
         monkeypatch.setattr("snore.constants.DEFAULT_RAW_BACKUP_DIR", raw_root)
         monkeypatch.setattr(
-            "snore.api.routers.import_data.create_job",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("caps")),
+            "snore.api.import_jobs._check_and_reserve", lambda owner_user_id: False
         )
 
         response = api_client.post("/api/v1/import/rescan", json={})
@@ -1064,3 +1066,113 @@ class TestRescanEndpoint:
         """profile_id that belongs to another user → 403."""
         response = api_client.post("/api/v1/import/rescan", json={"profile_id": 999999})
         assert response.status_code == 403
+
+    # ── re-parse options ───────────────────────────────────────────────────
+
+    def _post_rescan(
+        self,
+        api_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        body: dict[str, object],
+    ) -> httpx2.Response:
+        import snore.api.routers.import_data as import_mod  # noqa: PLC0415
+
+        raw_root = tmp_path / "raw"
+        profiles = api_client.get("/api/v1/profiles/").json()
+        actor_profile_id = next(p["id"] for p in profiles if p["is_default"])
+        self._make_archive(raw_root / str(actor_profile_id))
+        monkeypatch.setattr("snore.constants.DEFAULT_RAW_BACKUP_DIR", raw_root)
+        monkeypatch.setattr(
+            import_mod, "enqueue_for_execution", lambda job, root=None: None
+        )
+        return api_client.post("/api/v1/import/rescan", json=body)
+
+    def test_rescan_defaults_to_plain_reimport_with_analysis(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        from snore.api.import_jobs import get_job  # noqa: PLC0415
+
+        response = self._post_rescan(api_client, monkeypatch, tmp_path, {})
+
+        job = get_job(response.json()["job_id"])
+        assert job is not None
+        assert (job.force, job.date_from, job.date_to, job.analyze) == (
+            False,
+            None,
+            None,
+            True,
+        )
+
+    def test_rescan_carries_reparse_options_to_job(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        from datetime import date  # noqa: PLC0415
+
+        from snore.api.import_jobs import get_job  # noqa: PLC0415
+
+        response = self._post_rescan(
+            api_client,
+            monkeypatch,
+            tmp_path,
+            {
+                "force": True,
+                "from_date": "2024-06-01",
+                "to_date": "2024-06-30",
+                "analyze": False,
+            },
+        )
+
+        assert response.status_code == 202
+        job = get_job(response.json()["job_id"])
+        assert job is not None
+        assert (job.force, job.date_from, job.date_to, job.analyze) == (
+            True,
+            date(2024, 6, 1),
+            date(2024, 6, 30),
+            False,
+        )
+
+    def test_rescan_422_when_from_date_after_to_date(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        response = self._post_rescan(
+            api_client,
+            monkeypatch,
+            tmp_path,
+            {"from_date": "2024-07-01", "to_date": "2024-06-30"},
+        )
+
+        assert response.status_code == 422
+        assert job_store._jobs == {}
+
+    def test_second_forced_rescan_of_same_profile_returns_409(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        first = self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
+        assert first.status_code == 202
+
+        second = api_client.post("/api/v1/import/rescan", json={"force": True})
+
+        assert second.status_code == 409
+        assert "already queued or running" in second.json()["detail"]
+        assert list(job_store._jobs) == [first.json()["job_id"]]
+
+    def test_unforced_rescan_accepted_while_forced_rescan_active(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
+
+        second = api_client.post("/api/v1/import/rescan", json={})
+
+        assert second.status_code == 202
+
+    def test_forced_rescan_accepted_after_previous_one_finished(
+        self, api_client, monkeypatch, tmp_path
+    ):
+        first = self._post_rescan(api_client, monkeypatch, tmp_path, {"force": True})
+        job_store.get_job(first.json()["job_id"]).try_cancel()
+
+        second = api_client.post("/api/v1/import/rescan", json={"force": True})
+
+        assert second.status_code == 202

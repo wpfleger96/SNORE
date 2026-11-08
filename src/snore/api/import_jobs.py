@@ -55,7 +55,7 @@ import uuid
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
@@ -199,6 +199,14 @@ class ImportJob(JobRecordBase[JobState]):
 
     # UPLOAD jobs: temp dir with written files.
     temp_dir: Path | None = None
+
+    # RESCAN options, fixed before the job is enqueued and never persisted:
+    # rescans are not resumed after a restart.  ``force`` deletes and recreates
+    # sessions that already exist.
+    force: bool = False
+    date_from: date | None = None
+    date_to: date | None = None
+    analyze: bool = True
 
     # File count — protected by _lock (written by the request handler before the worker starts).
     _file_count: int = field(default=0, init=False, repr=False)
@@ -679,6 +687,50 @@ def create_job(
     with _lock:
         _jobs[job.job_id] = job
     return job
+
+
+class ForcedRescanActiveError(Exception):
+    """A forced rescan of the target profile is already queued or running."""
+
+
+# Serializes forced-rescan admission so two requests cannot both pass the check.
+_rescan_admission_lock = threading.Lock()
+
+
+def create_rescan_job(
+    *,
+    owner_user_id: int | None,
+    target_profile_id: int,
+    force: bool,
+    date_from: date | None,
+    date_to: date | None,
+    analyze: bool,
+) -> ImportJob:
+    """Create a PENDING rescan job for *target_profile_id*.
+
+    At most one forced rescan per profile is queued or running at a time: a
+    second would delete and recreate the same sessions the first is replacing.
+    Raises :class:`ForcedRescanActiveError` for that, and RuntimeError (as
+    :func:`create_job`) when admission caps are exceeded.
+    """
+    with _rescan_admission_lock:
+        if force and any(
+            job.job_type is JobType.RESCAN
+            and job.force
+            and job.target_profile_id == target_profile_id
+            and not job.is_terminal
+            for job in _store.snapshot()
+        ):
+            raise ForcedRescanActiveError
+        return create_job(
+            JobType.RESCAN,
+            owner_user_id=owner_user_id,
+            target_profile_id=target_profile_id,
+            force=force,
+            date_from=date_from,
+            date_to=date_to,
+            analyze=analyze,
+        )
 
 
 def get_job(job_id: str) -> ImportJob | None:

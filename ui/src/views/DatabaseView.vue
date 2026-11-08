@@ -159,6 +159,50 @@
                     <AlertTriangle class="h-4 w-4" />
                     {{ vacuumError }}
                 </div>
+
+                <template v-if="showDangerZone">
+                    <div class="vacuum-card">
+                        <div class="vacuum-description">
+                            <p class="vacuum-title">Recompute Day Aggregates</p>
+                            <p class="vacuum-subtitle">
+                                Re-derives every day's metrics, for every user, from the session
+                                statistics and waveforms already stored. Nothing is re-parsed from
+                                raw files. Use it after a change to how days are aggregated.
+                            </p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            :disabled="actionsLocked"
+                            @click="recomputeDialogOpen = true"
+                        >
+                            <Loader2 v-if="recomputeActive" class="mr-2 h-4 w-4 animate-spin" />
+                            Recompute
+                        </Button>
+                    </div>
+
+                    <div v-if="recomputeActive" class="recompute-progress" role="status">
+                        <span class="vacuum-result-value">{{ recomputeProgressText }}</span>
+                        <div class="coverage-track">
+                            <div class="coverage-fill" :style="{ width: recomputePct + '%' }" />
+                        </div>
+                    </div>
+
+                    <div v-else-if="recomputeResult" class="vacuum-result">
+                        <span class="vacuum-result-label">Last recompute:</span>
+                        <span class="vacuum-result-value">
+                            {{ recomputeResult.days_recomputed.toLocaleString() }} day(s)
+                            recomputed<template v-if="recomputeResult.days_pruned > 0"
+                                >, {{ recomputeResult.days_pruned.toLocaleString() }} orphaned
+                                day(s) removed</template
+                            >
+                        </span>
+                    </div>
+
+                    <div v-if="recomputeError" class="error-state">
+                        <AlertTriangle class="h-4 w-4" />
+                        {{ recomputeError }}
+                    </div>
+                </template>
             </section>
         </template>
 
@@ -260,6 +304,28 @@
             </AlertDialogContent>
         </AlertDialog>
 
+        <!-- Recompute confirmation dialog -->
+        <AlertDialog :open="recomputeDialogOpen" @update:open="recomputeDialogOpen = $event">
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Recompute day aggregates?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This re-derives every day's metrics, for every user, profile and device,
+                        from the session statistics and waveforms already stored in the database.
+                        Nothing is re-parsed from raw files, and days no session belongs to are
+                        deleted. It runs in the background and can take several minutes on a large
+                        database.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <Button :disabled="recomputeActive" @click="handleRecompute">
+                        Start recompute
+                    </Button>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         <!-- Reset confirmation dialog -->
         <DeleteConfirmDialog
             v-if="showDangerZone"
@@ -327,8 +393,9 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Loader2, AlertTriangle, Database, HardDrive } from '@lucide/vue'
 import { useApiLoad } from '@/composables/useApiLoad'
+import { useRecomputeDaysJob } from '@/composables/useRecomputeDaysJob'
 import { useResetJob } from '@/composables/useResetJob'
-import { getDbStats, vacuumDb, resetDb } from '@/api/db'
+import { getDbStats, resetDb, vacuumDb } from '@/api/db'
 import { formatDateShort } from '@/utils/formatting'
 import type { VacuumResult, ResetJobStatus } from '@/types'
 
@@ -385,10 +452,14 @@ const includeAccounts = ref(false)
 const bootstrapInviteUrl = computed(() => resetResult.value?.bootstrap_invite_url ?? null)
 const inviteCopied = ref(false)
 
-// Optimize and Reset exclude each other, and neither works once a factory reset has
-// ended this session: their 401 would redirect away from the invite banner.
+// Optimize, Recompute and Reset exclude each other, and none works once a factory
+// reset has ended this session: their 401 would redirect away from the invite banner.
 const actionsLocked = computed(
-    () => vacuuming.value || resetting.value || bootstrapInviteUrl.value !== null,
+    () =>
+        vacuuming.value ||
+        recomputeActive.value ||
+        resetting.value ||
+        bootstrapInviteUrl.value !== null,
 )
 
 const RESET_RESTORE_WARNING =
@@ -422,6 +493,40 @@ function onResetFinished(status: ResetJobStatus | null): void {
         ? Boolean(status.reset_result?.bootstrap_invite_url)
         : jobIsFactoryReset.value
     if (!sessionDead) void reload()
+}
+
+// ---------------------------------------------------------------------------
+// Day recompute job
+// ---------------------------------------------------------------------------
+
+const recomputeDialogOpen = ref(false)
+const {
+    job: recomputeJob,
+    active: recomputeActive,
+    error: recomputeError,
+    start: startRecompute,
+} = useRecomputeDaysJob({
+    resumeOnMount: () => showDangerZone.value && !factoryResetRunning.value,
+    onSucceeded: () => void reload(),
+})
+
+const recomputeResult = computed(() =>
+    recomputeJob.value?.state === 'succeeded' ? recomputeJob.value.result : null,
+)
+const recomputePct = computed(() => {
+    const job = recomputeJob.value
+    return job?.days_total ? Math.round((job.days_processed / job.days_total) * 100) : 0
+})
+const recomputeProgressText = computed(() => {
+    const job = recomputeJob.value
+    if (job?.state !== 'running') return 'Day recompute queued on the server…'
+    if (job.days_total === null) return 'Recomputing days…'
+    return `Recomputing days… ${job.days_processed.toLocaleString()} of ${job.days_total.toLocaleString()}. It runs on the server, so it is safe to leave this page.`
+})
+
+function handleRecompute(): void {
+    recomputeDialogOpen.value = false
+    void startRecompute()
 }
 
 function copyInviteUrl(): void {
@@ -707,6 +812,14 @@ function copyInviteUrl(): void {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     color: var(--color-foreground);
+}
+
+.recompute-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    padding: 0.5rem 0;
 }
 
 @media (max-width: 767.98px) {

@@ -89,6 +89,7 @@ export type HealthImportResultSummary = Schemas['HealthImportResultSummary']
 
 // Import
 export type ImportSource = Schemas['ImportSource']
+export type RescanRequest = Schemas['RescanRequest']
 export type PipelineJobStatus = Schemas['PipelineJobStatus']
 export type PipelineJobsListResponse = Schemas['PipelineJobsListResponse']
 export type LinkedAnalysisSummary = Schemas['LinkedAnalysisSummary']
@@ -120,6 +121,7 @@ export type ResetResult = Schemas['ResetResult']
 export type DeleteDataResult = Schemas['DeleteDataResult']
 export type ResetJobEnqueued = Schemas['ResetJobEnqueued']
 export type ResetJobStatus = Schemas['ResetJobStatus']
+export type RecomputeDaysJobStatus = Schemas['RecomputeDaysJobStatus']
 
 // Validation — events (apnea/hypopnea)
 export type ValidationReport = Schemas['ValidationReport']

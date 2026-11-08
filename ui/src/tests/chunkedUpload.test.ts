@@ -14,7 +14,6 @@ import api from '@/api/client'
 import {
     importFiles,
     precheckFiles,
-    triggerRescan,
     buildChunks,
     type FileEntry,
     type ChunkedImportProgress,
@@ -291,26 +290,5 @@ describe('precheckFiles', () => {
         const result = await precheckFiles(entries)
         expect(result).toEqual(new Set())
         expect(api.post).not.toHaveBeenCalled()
-    })
-})
-
-describe('triggerRescan', () => {
-    beforeEach(() => {
-        vi.clearAllMocks()
-    })
-
-    it('posts to /import/rescan with profile_id when provided', async () => {
-        vi.mocked(api.post).mockResolvedValue({ data: { job_id: 'rescan-42' } })
-        const result = await triggerRescan(7)
-        expect(api.post).toHaveBeenCalledWith('/import/rescan', { profile_id: 7 })
-        expect(result).toEqual({ job_id: 'rescan-42' })
-    })
-
-    it('posts to /import/rescan with empty body when profileId is undefined', async () => {
-        vi.mocked(api.post).mockResolvedValue({ data: { job_id: 'rescan-43' } })
-        await triggerRescan()
-        const [url, body] = vi.mocked(api.post).mock.calls[0]
-        expect(url).toBe('/import/rescan')
-        expect(body).not.toHaveProperty('profile_id')
     })
 })
