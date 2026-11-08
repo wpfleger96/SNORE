@@ -4,8 +4,9 @@ Third presentation layer over the async service layer — a peer of the CLI and
 FastAPI, never a place where analysis logic lives.
 
 Design doctrine:
-  - Device data first: overview → summary → events → waveforms; SNORE's own
-    heuristics live only in separately named ``experimental_*`` tools
+  - Device data first: overview → periods → summary → night → events →
+    waveforms; SNORE's own heuristics live only in separately named
+    ``experimental_*`` tools
   - Compute server-side, return compact JSON; units on every field
   - Data-quality flags / null + reason everywhere (G2)
   - Stateless: no module-global state; DB access injected via SNORERuntime (G3)
@@ -204,13 +205,15 @@ Clinical context:
 
 WORKFLOW (device data first; none of these tools needs analysis):
 1. get_data_overview  → discover devices, date ranges, channels
-2. get_nightly_summary → identify nights of interest: indices, event counts, pressure, leak, device flow limitation (30 nights/page)
-3. get_settings_timeline → understand settings epochs
-4. get_settings_changes → full audit log of device settings changes + user-logged mask equipment changes
-5. get_events (date) → device-scored events for a night, with device-channel context (pressure, leak, MV, delivered PS)
-6. compare_epochs → device flow-limitation and snore channels across settings epochs
-7. render_window → PNG chart of device waveforms for visual inspection (≤15 min window)
-8. get_waveform → raw per-sample arrays for deep inspection (≤2 min window / ≤1000 pts)
+2. get_period_stats → weekly/monthly/yearly averages of usage, indices, pressure, leak, SpO2, Apple Health sleep
+3. get_nightly_summary → identify nights of interest: indices, event counts, pressure, leak, device flow limitation (30 nights/page)
+4. get_night_detail (date) → one night in full: the day's device values, every session's device statistics, Apple Health sleep
+5. get_settings_timeline → understand settings epochs
+6. get_settings_changes → full audit log of device settings changes + user-logged mask equipment changes
+7. get_events (date) → device-scored events for a night, with device-channel context (pressure, leak, MV, delivered PS)
+8. compare_epochs → device flow-limitation and snore channels across settings epochs
+9. render_window → PNG chart of device waveforms for visual inspection (≤15 min window)
+10. get_waveform → raw per-sample arrays for deep inspection (≤2 min window / ≤1000 pts)
 
 OPTIONAL EXPERIMENTAL STEP (separate from the workflow above; call these only
 when SNORE's own heuristics are wanted as trend evidence alongside device data):
@@ -236,11 +239,13 @@ A top-level `provenance` block lists a response's non-device field paths; metric
 fields it does not list are device data, identifiers and bookkeeping fields
 (ids, offsets, pagination, coverage counts) are not classified, and responses
 with only device data carry no block. The block's `source_dependent` map takes a
-field path to the sibling field whose value decides that value's tier: nightly
-ahi/oai/cai/hi -> `nights[].index_source`, where `device` is the device-reported
-daily value and `derived` is SNORE's recount; the recount, when computable, is
-in `*_computed`. Device-scored events are the reference standard; never present
-experimental metrics as device-scored or clinically validated.
+field path to the sibling field whose value decides that value's tier: the
+nightly headline ahi/oai/cai/hi -> `nights[].index_source` (get_nightly_summary)
+or `device.index_source` (get_night_detail), where `device` is the
+device-reported daily value and `derived` is SNORE's recount; the recount, when
+computable, is in `*_computed`. Device-scored events are the reference
+standard; never present experimental metrics as device-scored or clinically
+validated.
 
 See docs://capabilities for dataset-specific channel availability.
 """
@@ -478,7 +483,8 @@ def _register_resources(mcp: FastMCP) -> None:
 
         Available schema_types: device_capabilities, device_info, data_overview,
         settings_epoch, settings_timeline, settings_change_entry, settings_changes,
-        nightly_row, compliance_fields, nightly_summary, experimental_nightly_row,
+        nightly_row, compliance_fields, nightly_summary, night_session,
+        night_detail, period_stats, experimental_nightly_row,
         experimental_nightly_metrics, event_context, event_row, events_response,
         experimental_event_context_row, experimental_event_context_response,
         capability_entry, breath_table_query, breath_table_row, breath_table_bin,
@@ -572,7 +578,9 @@ def _register_tools(mcp: FastMCP) -> None:
         changes,
         epochs,
         events,
+        night_detail,
         overview,
+        period_stats,
         settings,
         summary,
         waveform,
@@ -580,9 +588,11 @@ def _register_tools(mcp: FastMCP) -> None:
     )
 
     overview.register(mcp)
+    period_stats.register(mcp)
     settings.register(mcp)
     changes.register(mcp)
     summary.register(mcp)
+    night_detail.register(mcp)
     events.register(mcp)
     breath_table.register(mcp)
     windows.register(mcp)

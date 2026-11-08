@@ -18,7 +18,7 @@ SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
 QUANTITY_TYPES: dict[str, str | None] = {
     SPO2_TYPE: "%",
     "HKQuantityTypeIdentifierRespiratoryRate": "count/min",
-    # Unit is unconfirmed against real export data; accept whatever arrives.
+    # Real exports write unit "count" (a non-integer nightly value); accept whatever arrives.
     "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances": None,
 }
 

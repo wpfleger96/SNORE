@@ -83,9 +83,14 @@
             />
         </div>
 
-        <!-- Oximetry + respiratory rate (only when data is present) -->
+        <!-- Oximetry, respiratory rate + breathing disturbances (only when data is present) -->
         <div
-            v-if="night.avg_spo2_pct != null || night.min_spo2_pct != null || night.avg_rr != null"
+            v-if="
+                night.avg_spo2_pct != null ||
+                night.min_spo2_pct != null ||
+                night.avg_rr != null ||
+                night.breathing_disturbances != null
+            "
             class="stats-grid mb-6"
         >
             <StatCard
@@ -111,6 +116,13 @@
                 unit="br/min"
                 :decimals="1"
                 glossary-key="resp_rate"
+            />
+            <StatCard
+                v-if="night.breathing_disturbances != null"
+                label="Breathing Disturbances"
+                :value="night.breathing_disturbances"
+                :decimals="2"
+                glossary-key="apple_breathing_disturbances"
             />
         </div>
 

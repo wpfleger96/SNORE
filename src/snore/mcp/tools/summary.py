@@ -35,7 +35,6 @@ if TYPE_CHECKING:
         NightlyDeviceStats,
     )
 
-from snore.mcp.errors import ValidationError
 from snore.mcp.schemas import (
     ComplianceFields,
     DeviceCapabilities,
@@ -60,7 +59,6 @@ from snore.metrics import DAY_INDEX_FIELDS
 
 _DEFAULT_PAGE_SIZE = 30
 _DEFAULT_COMPLIANCE_THRESHOLD_HOURS = 4.0
-MAX_NIGHTLY_RANGE = 90
 # Day columns copied onto NightlyRow: the headline indices and their recounts.
 _NIGHTLY_INDEX_FIELDS = tuple(
     f"{index}{suffix}" for index in DAY_INDEX_FIELDS for suffix in ("", "_computed")
@@ -437,17 +435,13 @@ def register(mcp: FastMCP) -> None:
     from snore.mcp.validation import (  # noqa: PLC0415
         parse_date_range,
         validate_compliance_threshold,
+        validate_nightly_span,
         validate_page_args,
     )
 
     def _parse_nightly_range(start: str, end: str) -> tuple[date, date]:
         start_d, end_d = parse_date_range(start, end)
-        n_calendar = (end_d - start_d).days + 1
-        if n_calendar > MAX_NIGHTLY_RANGE:
-            raise ValidationError(
-                f"Date range spans {n_calendar} nights; maximum per call is {MAX_NIGHTLY_RANGE}. "
-                "Use multiple calls to page over longer ranges."
-            )
+        validate_nightly_span(start_d, end_d)
         return start_d, end_d
 
     @mcp.tool()

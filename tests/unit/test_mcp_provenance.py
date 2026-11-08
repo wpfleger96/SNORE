@@ -43,8 +43,10 @@ from snore.mcp.schemas import (
     ExperimentalEventContextRow,
     ExperimentalNightlyResponse,
     ExperimentalNightlyRow,
+    NightDetailResponse,
     NightlyRow,
     NightlySummaryResponse,
+    PeriodStatsResponse,
     SettingsChangesResponse,
     SettingsTimelineResponse,
     WaveformWindowResponse,
@@ -74,11 +76,19 @@ DEFAULT_TOOLS: dict[str, type[BaseModel] | None] = {
     "get_data_overview": DataOverviewResponse,
     "get_settings_timeline": SettingsTimelineResponse,
     "get_settings_changes": SettingsChangesResponse,
+    "get_period_stats": PeriodStatsResponse,
     "get_nightly_summary": NightlySummaryResponse,
+    "get_night_detail": NightDetailResponse,
     "get_events": EventsResponse,
     "compare_epochs": CompareEpochsResponse,
     "get_waveform": WaveformWindowResponse,
     "render_window": None,  # PNG of device samples
+}
+# The only sibling field that may set a default tool's per-value tier: the Day
+# headline indices' index_source.
+INDEX_SOURCE_FIELDS: dict[type[BaseModel], str] = {
+    NightlySummaryResponse: "nights[].index_source",
+    NightDetailResponse: "device.index_source",
 }
 
 
@@ -191,9 +201,9 @@ class TestDefaultToolGate:
 
         assert not block.get("experimental")
         assert not _has_experimental_tag(model.model_json_schema(mode="serialization"))
-        assert set(block.get("source_dependent", {}).values()) <= {
-            "nights[].index_source"
-        }
+        assert set(block.get("source_dependent", {}).values()) <= (
+            {INDEX_SOURCE_FIELDS[model]} if model in INDEX_SOURCE_FIELDS else set()
+        )
 
     def test_schema_scan_catches_experimental_parent_of_untagged_leaf(self) -> None:
         """``response_provenance`` lists leaves, so this model's block is empty."""
@@ -325,7 +335,8 @@ class TestInstructions:
 
         assert "`source_dependent`" in instructions
         assert "mv_source" not in instructions
-        assert "nights[].index_source" in instructions
+        for source_field in INDEX_SOURCE_FIELDS.values():
+            assert source_field in instructions
         assert "coverage counts" in instructions
 
     def test_instructions_run_device_workflow_before_experimental_step(self) -> None:
@@ -459,6 +470,19 @@ class TestResponseProvenanceBlock:
             assert f"nights[].{index}_computed" in provenance["derived"]
             assert f"nights[].{index}" not in provenance["derived"]
         assert payload["nights"][0]["index_source"] == "device"
+
+    def test_night_detail_maps_headline_indices_to_device_index_source(
+        self,
+    ) -> None:
+        block = response_provenance(NightDetailResponse)
+
+        for index in ("ahi", "oai", "cai", "hi"):
+            assert block["source_dependent"][f"device.{index}"] == (
+                "device.index_source"
+            )
+            assert f"device.{index}_computed" in block["derived"]
+        assert "sessions[].statistics.ahi" in block["derived"]
+        assert "sessions[].statistics.ahi_device" not in block["derived"]
 
     async def test_epoch_distribution_inherits_experimental_parent(self) -> None:
         payload = await self._run(ExperimentalCompareEpochsResponse())
