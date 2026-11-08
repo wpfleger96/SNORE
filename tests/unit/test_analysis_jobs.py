@@ -28,6 +28,7 @@ from snore.api.analysis_jobs import (
     cancel_job,
     enqueue,
     get_job,
+    in_flight_session_ids,
     list_jobs,
     shutdown,
     start_worker,
@@ -305,6 +306,36 @@ def test_reap_terminal_removes_expired_and_retains_others():
     assert get_job(job_expired.job_id) is None
     assert get_job(job_running.job_id) is job_running
     assert get_job(job_recent.job_id) is job_recent
+
+
+# ---------------------------------------------------------------------------
+# 6b. in_flight_session_ids covers live jobs of one profile
+# ---------------------------------------------------------------------------
+
+
+def test_in_flight_session_ids_counts_queued_and_running_jobs_of_profile():
+    queued = enqueue(
+        profile_id=1,
+        session_ids=[1, 2],
+        source=AnalysisJobSource.BATCH,
+        owner_user_id=7,
+    )
+    running = enqueue(profile_id=1, session_ids=[3], source=AnalysisJobSource.IMPORT)
+    other_profile = enqueue(
+        profile_id=2, session_ids=[4], source=AnalysisJobSource.BATCH
+    )
+    finished = enqueue(profile_id=1, session_ids=[5], source=AnalysisJobSource.BATCH)
+    cancelling = enqueue(profile_id=1, session_ids=[6], source=AnalysisJobSource.BATCH)
+    assert queued and running and other_profile and finished and cancelling
+    assert running.try_start()
+    assert finished.try_start()
+    finished.finish(succeeded=True)
+    assert cancelling.try_start()
+    assert cancel_job(cancelling.job_id)
+
+    assert in_flight_session_ids(1) == {1, 2, 3}
+    assert in_flight_session_ids(2) == {4}
+    assert in_flight_session_ids(3) == set()
 
 
 # ---------------------------------------------------------------------------

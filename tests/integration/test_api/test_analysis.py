@@ -319,13 +319,20 @@ class TestBatchAnalysis:
         assert "job_id" in data
         assert data["session_count"] == 1
 
-    def test_no_dates_and_no_only_returns_400(self, api_client):
-        response = api_client.post("/api/v1/analysis/batch", json={})
+    @pytest.mark.parametrize("body", [{}, {"only": None}])
+    def test_no_dates_and_no_only_returns_400(self, api_client, body):
+        response = api_client.post("/api/v1/analysis/batch", json=body)
         assert response.status_code == 400
         assert (
-            "from_date" in response.json()["detail"]
-            or "to_date" in response.json()["detail"]
+            response.json()["detail"]
+            == "At least one of from_date, to_date, or only is required"
         )
+
+    def test_legacy_missing_only_field_returns_422(self, api_client):
+        response = api_client.post(
+            "/api/v1/analysis/batch", json={"missing_only": True}
+        )
+        assert response.status_code == 422
 
     def test_only_missing_with_date_range_filters_compose(
         self, api_client, db_session, test_device, test_session_factory
@@ -395,8 +402,9 @@ class TestBatchAnalysis:
         device_id: int,
         session_factory: Callable[..., models.Session],
         day_date: date,
-        engine_versions_json: dict[str, Any],
+        engine_versions_json: dict[str, Any] | None,
     ) -> models.Session:
+        """Seed a flow-waveform session; ``None`` versions means never analyzed."""
         from snore.database.models import AnalysisResult, Day, Waveform
 
         day = Day(device_id=device_id, date=day_date, session_count=1)
@@ -414,15 +422,16 @@ class TestBatchAnalysis:
                 data_blob=b"",
             )
         )
-        db_session.add(
-            AnalysisResult(
-                session_id=session.id,
-                timestamp_start=start,
-                timestamp_end=start + timedelta(hours=8),
-                programmatic_result_json={},
-                engine_versions_json=engine_versions_json,
+        if engine_versions_json is not None:
+            db_session.add(
+                AnalysisResult(
+                    session_id=session.id,
+                    timestamp_start=start,
+                    timestamp_end=start + timedelta(hours=8),
+                    programmatic_result_json={},
+                    engine_versions_json=engine_versions_json,
+                )
             )
-        )
         db_session.flush()
         return session
 
@@ -472,6 +481,109 @@ class TestBatchAnalysis:
 
         assert response.status_code == 422
         assert response.json()["detail"] == "No sessions with outdated analysis"
+
+    @staticmethod
+    def _current_engine_json() -> dict[str, Any]:
+        from snore.analysis.shared.versioning import (  # noqa: PLC0415
+            AlgorithmIdentity,
+            AlgoVersions,
+            AnalysisRunMetadata,
+        )
+
+        return AlgoVersions(
+            identity=AlgorithmIdentity.current(),
+            run=AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"]),
+        ).model_dump()
+
+    def test_only_stale_with_date_range_excludes_out_of_range(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        in_range = self._add_flow_session_with_analysis(
+            db_session, test_device.id, test_session_factory, date(2025, 7, 10), {}
+        )
+        self._add_flow_session_with_analysis(
+            db_session, test_device.id, test_session_factory, date(2025, 8, 10), {}
+        )
+
+        response = api_client.post(
+            "/api/v1/analysis/batch",
+            json={"only": "stale", "from_date": "2025-07-01", "to_date": "2025-07-31"},
+        )
+
+        assert response.status_code == 202
+        job = aj_store.get_job(response.json()["job_id"])
+        assert job is not None
+        assert job.session_ids == [in_range.id]
+
+    def test_only_stale_repeat_request_while_queued_returns_422(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        """A second filtered request must not re-enqueue sessions still queued."""
+        for day in (date(2025, 9, 1), date(2025, 9, 2)):
+            self._add_flow_session_with_analysis(
+                db_session, test_device.id, test_session_factory, day, {}
+            )
+
+        first = api_client.post("/api/v1/analysis/batch", json={"only": "stale"})
+        second = api_client.post("/api/v1/analysis/batch", json={"only": "stale"})
+
+        assert first.status_code == 202
+        assert first.json()["session_count"] == 2
+        assert second.status_code == 422
+        assert (
+            second.json()["detail"]
+            == "Every selected session is already queued for analysis"
+        )
+
+    def test_only_missing_skips_sessions_in_flight_from_another_job(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        """Sessions a live job (e.g. post-import analysis) covers are dropped."""
+        sessions = [
+            self._add_flow_session_with_analysis(
+                db_session, test_device.id, test_session_factory, day, None
+            )
+            for day in (date(2025, 10, 1), date(2025, 10, 2))
+        ]
+        in_flight = aj_store.enqueue(
+            profile_id=test_device.profile_id,
+            session_ids=[sessions[0].id],
+            source=aj_store.AnalysisJobSource.IMPORT,
+        )
+        assert in_flight is not None
+
+        response = api_client.post("/api/v1/analysis/batch", json={"only": "missing"})
+
+        assert response.status_code == 202
+        assert response.json()["session_count"] == 1
+        job = aj_store.get_job(response.json()["job_id"])
+        assert job is not None
+        assert job.session_ids == [sessions[1].id]
+
+    def test_date_range_batch_ignores_in_flight_jobs(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        """An explicit date-range batch is a deliberate re-run and is not deduped."""
+        session = self._add_flow_session_with_analysis(
+            db_session,
+            test_device.id,
+            test_session_factory,
+            date(2025, 11, 1),
+            self._current_engine_json(),
+        )
+        assert aj_store.enqueue(
+            profile_id=test_device.profile_id,
+            session_ids=[session.id],
+            source=aj_store.AnalysisJobSource.BATCH,
+        )
+
+        response = api_client.post(
+            "/api/v1/analysis/batch",
+            json={"from_date": "2025-11-01", "to_date": "2025-11-01"},
+        )
+
+        assert response.status_code == 202
+        assert response.json()["session_count"] == 1
 
     def test_only_unknown_value_returns_422(self, api_client):
         response = api_client.post("/api/v1/analysis/batch", json={"only": "all"})

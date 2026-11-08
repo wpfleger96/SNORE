@@ -1,5 +1,6 @@
 """Unit tests for AnalysisFacade."""
 
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -388,6 +389,46 @@ class TestListSessionIdsOnly:
             column_default.id,
         ]
 
+    async def test_only_stale_orders_latest_by_created_at_not_id(
+        self, async_db_session, async_test_device
+    ):
+        """The latest row is the newest ``created_at``, even when its id is lower."""
+        device = async_test_device
+
+        async def _session_with_rows_newest_first(
+            day_date: date, newest: dict, older: dict
+        ) -> Session:
+            # Insert the newest row first so the older row gets the higher id.
+            sess = await _create_selection_session(async_db_session, device, day_date)
+            for engine_json, minutes in ((newest, 10), (older, 0)):
+                async_db_session.add(
+                    AnalysisResult(
+                        session_id=sess.id,
+                        timestamp_start=sess.start_time,
+                        timestamp_end=sess.end_time,
+                        engine_versions_json=engine_json,
+                        created_at=_SELECTION_BASE_TIME + timedelta(minutes=minutes),
+                    )
+                )
+                await async_db_session.flush()
+            return sess
+
+        await _session_with_rows_newest_first(
+            date(2025, 4, 1),
+            newest=_current_engine_json(),
+            older=_outdated_engine_json(),
+        )
+        newest_stale = await _session_with_rows_newest_first(
+            date(2025, 4, 2),
+            newest=_outdated_engine_json(),
+            older=_current_engine_json(),
+        )
+        await async_db_session.commit()
+
+        facade = AnalysisFacade(async_db_session, profile_id=1)
+
+        assert await facade.list_session_ids(only="stale") == [newest_stale.id]
+
     async def test_only_stale_with_date_range_excludes_out_of_range(
         self, async_db_session, async_test_device
     ):
@@ -410,31 +451,6 @@ class TestListSessionIdsOnly:
 
         assert ids == [in_range.id]
 
-    async def test_only_stale_across_id_chunks_returns_all_stale(
-        self, async_db_session, async_test_device, monkeypatch
-    ):
-        """Stale classification merges results across id chunks."""
-        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
-        device = async_test_device
-        stale = [
-            await _create_selection_session(
-                async_db_session,
-                device,
-                date(2025, 4, 1) + timedelta(days=i),
-                [_outdated_engine_json()],
-            )
-            for i in range(3)
-        ]
-        await _create_selection_session(
-            async_db_session, device, date(2025, 4, 10), [_current_engine_json()]
-        )
-        await async_db_session.commit()
-
-        facade = AnalysisFacade(async_db_session, profile_id=1)
-        ids = await facade.list_session_ids(only="stale")
-
-        assert ids == [s.id for s in stale]
-
     async def test_only_missing_selects_unanalyzed_flow_sessions(
         self, async_db_session, async_test_device
     ):
@@ -455,6 +471,43 @@ class TestListSessionIdsOnly:
         ids = await facade.list_session_ids(only="missing")
 
         assert ids == [unanalyzed.id]
+
+
+class TestStartupGapFill:
+    """Startup resume backfills never-analyzed sessions, never stale ones."""
+
+    async def test_startup_resume_enqueues_only_never_analyzed_sessions(
+        self, async_db_session, async_test_device
+    ):
+        from contextlib import asynccontextmanager  # noqa: PLC0415
+        from unittest.mock import patch  # noqa: PLC0415
+
+        from snore.api.app import _startup_resume_analysis  # noqa: PLC0415
+
+        device = async_test_device
+        unanalyzed = await _create_selection_session(
+            async_db_session, device, date(2025, 6, 1)
+        )
+        await _create_selection_session(
+            async_db_session, device, date(2025, 6, 2), [_outdated_engine_json()]
+        )
+        await _create_selection_session(
+            async_db_session, device, date(2025, 6, 3), [_current_engine_json()]
+        )
+        await async_db_session.commit()
+
+        @asynccontextmanager
+        async def _scope(*args: Any, **kwargs: Any) -> AsyncIterator[AsyncSession]:
+            yield async_db_session
+
+        with (
+            patch("snore.database.session.session_scope", _scope),
+            patch("snore.api.analysis_jobs.enqueue") as enqueue,
+        ):
+            await _startup_resume_analysis({device.profile_id})
+
+        enqueue.assert_called_once()
+        assert enqueue.call_args.kwargs["session_ids"] == [unanalyzed.id]
 
 
 class TestDeleteStaleVersions:

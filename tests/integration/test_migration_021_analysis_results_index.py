@@ -14,6 +14,8 @@ from snore.database.session import (
 )
 
 _INDEX = "ix_analysis_results_session_id_created_at_id"
+# 023 replaces this index, so upgrade to 021 itself rather than head.
+_REVISION = "021_analysis_results_session_index"
 
 
 def _index_columns(db_path: str) -> list[str] | None:
@@ -40,14 +42,14 @@ async def test_upgrade_from_020_creates_index(tmp_path):
     db_path, cfg = await _db_at_020(tmp_path)
     assert _index_columns(db_path) is None
 
-    alembic_command.upgrade(cfg, "head")
+    alembic_command.upgrade(cfg, _REVISION)
 
     assert _index_columns(db_path) == ["session_id", "created_at", "id"]
 
 
 async def test_downgrade_removes_index(tmp_path):
     db_path, cfg = await _db_at_020(tmp_path)
-    alembic_command.upgrade(cfg, "head")
+    alembic_command.upgrade(cfg, _REVISION)
     assert _index_columns(db_path) is not None
 
     alembic_command.downgrade(cfg, "020_analysis_result_wallclock")
@@ -64,14 +66,6 @@ async def test_upgrade_is_idempotent_when_index_exists(tmp_path):
     con.commit()
     con.close()
 
-    alembic_command.upgrade(cfg, "head")
-
-    assert _index_columns(db_path) == ["session_id", "created_at", "id"]
-
-
-async def test_fresh_database_has_index(tmp_path: Path) -> None:
-    db_path = str(tmp_path / "fresh.db")
-    await init_database(db_path)
-    await cleanup_database()
+    alembic_command.upgrade(cfg, _REVISION)
 
     assert _index_columns(db_path) == ["session_id", "created_at", "id"]

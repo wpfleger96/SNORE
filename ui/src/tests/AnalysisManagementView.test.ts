@@ -34,6 +34,7 @@ vi.mock('@/api/stats', async (importOriginal) => ({
 }))
 
 import AnalysisManagementView from '@/views/AnalysisManagementView.vue'
+import DatePickerInput from '@/components/DatePickerInput.vue'
 import { useAuth } from '@/composables/useAuth'
 import {
     runBatchAnalysis,
@@ -77,13 +78,21 @@ describe('AnalysisManagementView — analyze missing', () => {
         return wrapper
     }
 
-    async function clickBatchDialogButton(label: string): Promise<void> {
+    async function clickBatchDialogButton(
+        label: string,
+        dates: { from?: string; to?: string } = {},
+    ): Promise<ReturnType<typeof mount>> {
         // The batch dialog teleports to document.body, so its buttons are
         // outside the wrapper; open it through the toolbar button first.
         const wrapper = mount(AnalysisManagementView, { attachTo: document.body })
         await flushPromises()
         const runBatch = wrapper.findAll('button').find((b) => b.text() === 'Run Batch')
         await runBatch!.trigger('click')
+        await flushPromises()
+        // The toolbar filter pickers render first; the dialog's From/To are the last two.
+        const [fromPicker, toPicker] = wrapper.findAllComponents(DatePickerInput).slice(-2)
+        if (dates.from) fromPicker.vm.$emit('update:modelValue', dates.from)
+        if (dates.to) toPicker.vm.$emit('update:modelValue', dates.to)
         await flushPromises()
         const button = [...document.body.querySelectorAll('button')].find(
             (b) => b.textContent?.trim() === label,
@@ -92,46 +101,67 @@ describe('AnalysisManagementView — analyze missing', () => {
         button!.click()
         await flushPromises()
         wrapper.unmount()
+        return wrapper
     }
 
-    it('test_analyze_missing_button_sends_only_missing_without_dates', async () => {
-        // Falsifiable: send only: 'stale' (or drop only) from the Analyze Missing
-        // button; toMatchObject({ only: 'missing' }) fails.
-        await clickBatchDialogButton('Analyze Missing')
+    it.each([
+        ['Analyze Missing', 'missing'],
+        ['Re-analyze Outdated', 'stale'],
+    ])('test_%s_without_dates_sends_only_%s_for_whole_profile', async (label, only) => {
+        // Falsifiable: swap the two buttons' selectors, or send empty-string
+        // dates when no picker is set; toMatchObject / not.toHaveProperty fail.
+        await clickBatchDialogButton(label)
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()
         const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
-        expect(body).toMatchObject({ only: 'missing', store_results: true })
+        expect(body).toMatchObject({ only, store_results: true })
         expect(body).not.toHaveProperty('from_date')
         expect(body).not.toHaveProperty('to_date')
     })
 
-    it('test_reanalyze_outdated_button_sends_only_stale_without_dates', async () => {
-        // Falsifiable: wire Re-analyze Outdated to handleBatchOnly('missing');
-        // toMatchObject({ only: 'stale' }) fails.
-        await clickBatchDialogButton('Re-analyze Outdated')
+    it('test_reanalyze_outdated_with_dates_sends_dates_and_only_stale', async () => {
+        // Falsifiable: drop from_date/to_date from the only-button body (the
+        // pickers silently ignored); toEqual fails.
+        await clickBatchDialogButton('Re-analyze Outdated', {
+            from: '2026-01-01',
+            to: '2026-01-31',
+        })
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()
         const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
-        expect(body).toMatchObject({ only: 'stale', store_results: true })
-        expect(body).not.toHaveProperty('from_date')
-        expect(body).not.toHaveProperty('to_date')
+        expect(body).toEqual({
+            only: 'stale',
+            from_date: '2026-01-01',
+            to_date: '2026-01-31',
+            modes: ['aasm'],
+            store_results: true,
+        })
     })
 
-    it('test_handleBatchRun_does_not_include_only', async () => {
-        // Guard: the date-range batch-run path must not gain an only filter.
-        // batchFrom/batchTo start as empty strings; handleBatchRun proceeds without
-        // the date-validation check (both falsy) and fires runBatchAnalysis.
-        const wrapper = await mountView()
-        const vm = wrapper.vm as unknown as { handleBatchRun: () => Promise<void> }
+    it('test_analyze_missing_with_reversed_dates_shows_error_and_sends_nothing', async () => {
+        const wrapper = await clickBatchDialogButton('Analyze Missing', {
+            from: '2026-02-01',
+            to: '2026-01-01',
+        })
 
-        await vm.handleBatchRun()
-        await flushPromises()
+        expect(runBatchAnalysis).not.toHaveBeenCalled()
+        expect((wrapper.vm as unknown as { error: string | null }).error).toBe(
+            'From date must be before To date',
+        )
+    })
+
+    it('test_date_range_run_sends_dates_without_only', async () => {
+        // Guard: the date-range Run path must not gain an only filter.
+        await clickBatchDialogButton('Run', { from: '2026-01-01', to: '2026-01-31' })
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()
         const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
         expect(body).not.toHaveProperty('only')
-        expect(body).toMatchObject({ store_results: true })
+        expect(body).toMatchObject({
+            from_date: '2026-01-01',
+            to_date: '2026-01-31',
+            store_results: true,
+        })
     })
 
     it('test_handleCancelJob_409_silenced_and_list_still_refreshed', async () => {

@@ -4,23 +4,23 @@ from __future__ import annotations
 
 import json
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
 from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.analysis.queries import latest_analysis_ids, latest_analysis_row
+from snore.analysis.queries import latest_analysis_row, latest_analysis_rows
 from snore.analysis.shared.versioning import (
     AlgorithmIdentity,
     AlgoVersions,
     AnalysisStatus,
     DayAnalysisStatus,
     TimezoneStatus,
+    is_current_identity,
 )
 from snore.database import models
-from snore.utils.db_chunk import iter_id_chunks
 
 from .dtos import (
     DeviceAmbiguityError,
@@ -132,37 +132,10 @@ class _BreathServiceCore:
         Shared by the single-row and bulk (column-limited) lookups so both
         classify identically.
         """
-        from snore.services.breath_service import BreathService  # noqa: PLC0415
-
         algo = AlgoVersions.from_stored(engine_versions_json)
-        if algo is None:
-            return AnalysisStatus.STALE_VERSION, None
-        current = BreathService._current_algorithm_identity()
-        if algo.identity.model_dump() != current.model_dump():
+        if not is_current_identity(algo):
             return AnalysisStatus.STALE_VERSION, algo
         return AnalysisStatus.OK, algo
-
-    async def _latest_runs(
-        self, session_ids: list[int], *columns: Any
-    ) -> AsyncIterator[Row[*tuple[Any, ...]]]:
-        """``(id, session_id, engine_versions_json, *columns)`` of each session's
-        latest AnalysisResult; sessions without a run yield nothing.
-
-        One window-function query resolves the latest ids, then one chunked
-        query loads the columns.  Ownership is assumed, exactly as in
-        ``_latest_analysis_for_session``.
-        """
-        ar_id_by_session = await latest_analysis_ids(self._db, session_ids)
-        ar = models.AnalysisResult
-        # Chunk the unbounded AnalysisResult-id IN-list (SQLite bound-param cap).
-        for chunk in iter_id_chunks(list(ar_id_by_session.values())):
-            rows = await self._db.execute(
-                select(ar.id, ar.session_id, ar.engine_versions_json, *columns).where(
-                    ar.id.in_(chunk)
-                )
-            )
-            for row in rows:
-                yield row
 
     def _classify_latest_run(self, row: Row[*tuple[Any, ...]]) -> SessionClassification:
         status, algo = self._classify_engine_versions(row.engine_versions_json)
@@ -179,7 +152,7 @@ class _BreathServiceCore:
         classification: dict[int, SessionClassification] = {
             sid: (AnalysisStatus.NOT_RUN, None, None) for sid in session_ids
         }
-        async for row in self._latest_runs(session_ids):
+        async for row in latest_analysis_rows(self._db, session_ids):
             classification[row.session_id] = self._classify_latest_run(row)
         return classification
 
@@ -201,7 +174,8 @@ class _BreathServiceCore:
         }
         pb_episodes: dict[int, object] = {}
         result_json = models.AnalysisResult.programmatic_result_json
-        async for row in self._latest_runs(
+        async for row in latest_analysis_rows(
+            self._db,
             session_ids,
             func.json_extract(result_json, _PB_PATH).label("pb_episodes"),
             func.json_type(result_json, _PB_PATH).label("pb_type"),
@@ -376,8 +350,3 @@ class _BreathServiceCore:
 
         # Rule 5: any other mix → PARTIAL
         return DayAnalysisStatus.PARTIAL
-
-    @staticmethod
-    def _current_algorithm_identity() -> AlgorithmIdentity:
-        """Current algorithm identity for STALE_VERSION detection."""
-        return AlgorithmIdentity.current()

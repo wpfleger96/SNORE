@@ -51,11 +51,13 @@ def _make_session_scope(mock_sessions: list[MagicMock]) -> Any:
 
     mock_db_session = MagicMock()
     mock_db_session.execute = AsyncMock(return_value=result_mock)
+    mock_db_session.commit = AsyncMock()
 
     @asynccontextmanager
     async def _scope(*args, **kwargs):
         yield mock_db_session
 
+    _scope.session = mock_db_session
     return _scope
 
 
@@ -282,11 +284,18 @@ class TestAnalyzeBatchOnlySelector:
             cancelled=0,
             results=[],
         )
+        scope = _make_session_scope([])
         list_ids = AsyncMock(return_value=selected_ids)
-        run_batch = AsyncMock(return_value=batch_result)
+
+        async def _run_batch(**kwargs: Any) -> BatchAnalysisResult:
+            # The CLI must end its read transaction before the batch loop.
+            assert scope.session.commit.await_count >= 1
+            return batch_result
+
+        run_batch = AsyncMock(side_effect=_run_batch)
         with (
             patch("snore.database.session.init_database", new_callable=AsyncMock),
-            patch("snore.database.session.session_scope", _make_session_scope([])),
+            patch("snore.database.session.session_scope", scope),
             patch(
                 "snore.services.analysis_facade.AnalysisFacade.list_session_ids",
                 list_ids,
@@ -317,9 +326,20 @@ class TestAnalyzeBatchOnlySelector:
         assert run_batch.await_args.kwargs["session_ids"] == [2, 5]
         assert "Analyzed 2 sessions" in captured
 
+    def test_only_missing_without_dates_analyzes_selected_sessions(self):
+        """--only missing needs no dates and analyzes exactly the selected ids."""
+        result, list_ids, run_batch, captured = self._invoke(
+            ["run", "--only", "missing"], [4]
+        )
+
+        assert result.exit_code == 0, result.output
+        list_ids.assert_awaited_once_with(from_date=None, to_date=None, only="missing")
+        assert run_batch.await_args.kwargs["session_ids"] == [4]
+        assert "Analyzed 1 sessions" in captured
+
     def test_only_stale_with_date_range_passes_dates_to_selector(self):
-        """--from/--to narrow the --only selection."""
-        result, list_ids, _, _ = self._invoke(
+        """--from/--to narrow the --only selection; the batch then gets ids only."""
+        result, list_ids, run_batch, _ = self._invoke(
             ["run", "--only", "stale", "--from", "2024-01-01", "--to", "2024-01-31"],
             [3],
         )
@@ -329,6 +349,10 @@ class TestAnalyzeBatchOnlySelector:
         assert kwargs["only"] == "stale"
         assert kwargs["from_date"].date() == date(2024, 1, 1)
         assert kwargs["to_date"].date() == date(2024, 1, 31)
+        batch_kwargs = run_batch.await_args.kwargs
+        assert batch_kwargs["session_ids"] == [3]
+        assert batch_kwargs["from_date"] is None
+        assert batch_kwargs["to_date"] is None
 
     def test_only_stale_with_nothing_selected_prints_message_and_skips_run(self):
         """An empty stale selection prints a filter-specific message, no batch run."""
@@ -343,7 +367,7 @@ class TestAnalyzeBatchOnlySelector:
         result, _, run_batch, captured = self._invoke(["run", "--only", "missing"], [])
 
         assert result.exit_code == 0, result.output
-        assert "No unanalyzed sessions" in captured
+        assert "No unanalyzed sessions to backfill" in captured
         run_batch.assert_not_awaited()
 
     @pytest.mark.parametrize(
@@ -356,7 +380,7 @@ class TestAnalyzeBatchOnlySelector:
         )
 
         assert result.exit_code != 0
-        assert "--only cannot be used" in result.output
+        assert "cannot be used with batch flags (--from, --to, --only)" in result.output
         list_ids.assert_not_awaited()
         run_batch.assert_not_awaited()
 

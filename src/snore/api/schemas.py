@@ -169,6 +169,8 @@ AnalysisMode = Literal["aasm", "aasm_relaxed", "resmed"]
 
 
 class BatchAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     from_date: date | None = None
     to_date: date | None = None
     only: AnalysisSelection | None = Field(

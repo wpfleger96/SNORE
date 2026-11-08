@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from datetime import datetime
-from typing import Any
+from typing import Any, get_args
 
 import click
 
@@ -36,14 +36,9 @@ from snore.cli.display import (
 )
 from snore.cli.display.analysis import display_analysis_result
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
-from snore.services.schemas import AnalysisSelection
+from snore.services.schemas import EMPTY_SELECTION_MESSAGES, AnalysisSelection
 
 logger = logging.getLogger(__name__)
-
-_EMPTY_SELECTION_MESSAGES: dict[AnalysisSelection, str] = {
-    "missing": "No unanalyzed sessions",
-    "stale": "No sessions with outdated analysis",
-}
 
 
 @click.group()
@@ -62,12 +57,12 @@ def analysis() -> None:
 @date_range_options
 @click.option(
     "--only",
-    type=click.Choice(["missing", "stale"]),
+    type=click.Choice(get_args(AnalysisSelection)),
     default=None,
     help=(
-        "Batch only analyzable sessions: 'missing' = never analyzed, "
-        "'stale' = latest analysis is from an older algorithm version. "
-        "Covers the whole profile unless --from/--to narrow it."
+        "Limit the batch to analyzable sessions (with a flow waveform): "
+        "'missing' = never analyzed, 'stale' = latest analysis is from an older "
+        "algorithm version. Covers the whole profile unless --from/--to narrow it."
     ),
 )
 @click.option("--no-store", is_flag=True, help="Don't store results in database")
@@ -121,7 +116,7 @@ async def run(
     if plain:
         use_plain_legend()
     single_session_flags = [session_id is not None, date is not None]
-    batch_flags = [date_from is not None, date_to is not None]
+    batch_flags = [date_from is not None, date_to is not None, only is not None]
 
     single_count = sum(single_session_flags)
     batch_count = sum(batch_flags)
@@ -131,15 +126,10 @@ async def run(
 
     if single_count > 0 and batch_count > 0:
         raise click.ClickException(
-            "Single session flags (--session-id, --date) cannot be used with batch flags (--from, --to)"
+            "Single session flags (--session-id, --date) cannot be used with batch flags (--from, --to, --only)"
         )
 
-    if single_count > 0 and only is not None:
-        raise click.ClickException(
-            "--only cannot be used with single session flags (--session-id, --date)"
-        )
-
-    if single_count == 0 and batch_count == 0 and only is None:
+    if single_count == 0 and batch_count == 0:
         raise click.ClickException(
             "Must provide at least one selection flag "
             "(--session-id, --date, --from, --to, or --only)"
@@ -539,9 +529,13 @@ async def _analyze_batch(
         session_ids = await facade.list_session_ids(
             from_date=from_date, to_date=to_date, only=only
         )
-        if not session_ids:
-            console.print(_EMPTY_SELECTION_MESSAGES[only])
-            return
+        from_date = to_date = None  # the selected ids already apply the dates
+    # End the read transaction that profile resolution and the selection
+    # autobegan: held across the batch, its snapshot would pin the WAL.
+    await session.commit()
+    if only is not None and not session_ids:
+        console.print(EMPTY_SELECTION_MESSAGES[only])
+        return
 
     task_holder: list[Any] = []
 

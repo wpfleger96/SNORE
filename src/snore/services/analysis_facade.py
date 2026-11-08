@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.analysis.queries import (
     latest_analysis_ids,
     latest_analysis_ranked_subquery,
+    latest_analysis_rows,
 )
 from snore.analysis.runner import Dispatch, run_one, store_with_retry
-from snore.analysis.shared.versioning import AlgorithmIdentity, AlgoVersions
+from snore.analysis.shared.versioning import AlgoVersions, is_current_identity
 from snore.analysis.types import AnalysisResult
 from snore.database import models
 from snore.services import _base
@@ -35,15 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 def _is_stale(engine_versions_json: dict[str, Any]) -> bool:
-    """Return True when an AnalysisResult row's engine_versions_json is stale.
-
-    Stale means: legacy flat row (no 'identity' key), unparseable, or the
-    stored AlgorithmIdentity does not match the current identity exactly.
-    """
-    parsed = AlgoVersions.from_stored(engine_versions_json)
-    if parsed is None:
-        return True
-    return parsed.identity.model_dump() != AlgorithmIdentity.current().model_dump()
+    """True when a stored run is not from the current algorithm identity."""
+    return not is_current_identity(AlgoVersions.from_stored(engine_versions_json))
 
 
 class AnalysisFacade:
@@ -646,30 +640,17 @@ class AnalysisFacade:
                 .where(models.AnalysisResult.session_id == models.Session.id)
                 .exists()
             )
-        stmt = stmt.order_by(models.Day.date)
-        session_ids = list((await self._db.execute(stmt)).scalars())
+        session_ids = list(
+            (await self._db.execute(stmt.order_by(models.Day.date))).scalars()
+        )
         if only == "stale":
-            stale = await self._stale_latest_session_ids(session_ids)
+            stale = {
+                row.session_id
+                async for row in latest_analysis_rows(self._db, stmt)
+                if _is_stale(row.engine_versions_json)
+            }
             session_ids = [sid for sid in session_ids if sid in stale]
         return session_ids
-
-    async def _stale_latest_session_ids(self, session_ids: list[int]) -> set[int]:
-        """Return the subset of ``session_ids`` whose latest analysis is stale."""
-        latest_ids = list((await latest_analysis_ids(self._db, session_ids)).values())
-        stale: set[int] = set()
-        for chunk in iter_id_chunks(latest_ids):
-            rows = await self._db.execute(
-                select(
-                    models.AnalysisResult.session_id,
-                    models.AnalysisResult.engine_versions_json,
-                ).where(models.AnalysisResult.id.in_(chunk))
-            )
-            stale.update(
-                session_id
-                for session_id, engine_versions_json in rows
-                if _is_stale(engine_versions_json)
-            )
-        return stale
 
     async def run_batch_analysis(
         self,

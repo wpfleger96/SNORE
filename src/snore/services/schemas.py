@@ -37,6 +37,7 @@ __all__ = [
     "AnalysisSessionDetail",
     "AnalysisDeletePreview",
     "AnalysisSelection",
+    "EMPTY_SELECTION_MESSAGES",
     "DeviceInfo",
     "SettingChangeEntry",
     "SettingsChange",
@@ -912,7 +913,13 @@ class WaveformInfo(BaseModel):
 
 AnalysisSelection = Literal["missing", "stale"]
 """Batch session selector: ``missing`` = never analyzed; ``stale`` = latest
-analysis came from an older algorithm version."""
+analysis came from an older algorithm version (shown as "outdated" in the UI)."""
+
+EMPTY_SELECTION_MESSAGES: dict[AnalysisSelection, str] = {
+    "missing": "No unanalyzed sessions to backfill",
+    "stale": "No sessions with outdated analysis",
+}
+"""What the API and CLI report when an ``AnalysisSelection`` matches nothing."""
 
 
 class AnalysisListItem(BaseModel):

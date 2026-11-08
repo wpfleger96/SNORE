@@ -195,7 +195,7 @@
                                     :model-value="batchMode"
                                     @update:model-value="
                                         (v) => {
-                                            if (v) batchMode = v as string
+                                            if (v) batchMode = v as AnalysisMode
                                         }
                                     "
                                 >
@@ -210,27 +210,36 @@
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <Button
                         variant="outline"
-                        :disabled="batchRunning"
-                        @click="handleBatchOnly('missing')"
+                        :disabled="pendingAction !== null"
+                        @click="queueBatch('missing')"
                     >
-                        <Loader2 v-if="batchRunning" class="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2
+                            v-if="pendingAction === 'missing'"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
                         <Play v-else class="mr-2 h-4 w-4" />
                         Analyze Missing
                     </Button>
                     <Button
                         variant="outline"
-                        :disabled="batchRunning"
-                        @click="handleBatchOnly('stale')"
+                        :disabled="pendingAction !== null"
+                        @click="queueBatch('stale')"
                     >
-                        <Loader2 v-if="batchRunning" class="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2
+                            v-if="pendingAction === 'stale'"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
                         <Play v-else class="mr-2 h-4 w-4" />
                         Re-analyze Outdated
                     </Button>
                     <Button
-                        :disabled="!batchFrom || !batchTo || batchRunning"
-                        @click="handleBatchRun"
+                        :disabled="!batchFrom || !batchTo || pendingAction !== null"
+                        @click="queueBatch('range')"
                     >
-                        <Loader2 v-if="batchRunning" class="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2
+                            v-if="pendingAction === 'range'"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
                         <Play v-else class="mr-2 h-4 w-4" />
                         Run
                     </Button>
@@ -294,6 +303,7 @@ import {
     getAnalysisJobs,
     cancelAnalysisJob,
 } from '@/api/analysis'
+import type { AnalysisMode, BatchSelection } from '@/api/analysis'
 import { formatDateShort } from '@/utils/formatting'
 import type { AnalysisListItem, AnalysisDeletePreview, AnalysisJobStatus } from '@/types'
 import { useAuth } from '@/composables/useAuth'
@@ -318,8 +328,10 @@ const analyzedOnly = ref(false)
 const batchDialogOpen = ref(false)
 const batchFrom = ref('')
 const batchTo = ref('')
-const batchMode = ref('aasm')
-const batchRunning = ref(false)
+const batchMode = ref<AnalysisMode>('aasm')
+// 'range' is the plain date-range Run; a BatchSelection is Analyze Missing or
+// Re-analyze Outdated. Non-null while a batch request is in flight.
+const pendingAction = ref<'range' | BatchSelection | null>(null)
 
 const analysisJobs = ref<AnalysisJobStatus[]>([])
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -399,45 +411,29 @@ async function handleCancelJob(jobId: string) {
     }
 }
 
-async function handleBatchRun(): Promise<void> {
-    if (batchFrom.value && batchTo.value && batchFrom.value > batchTo.value) {
+async function queueBatch(action: 'range' | BatchSelection): Promise<void> {
+    const from = batchFrom.value
+    const to = batchTo.value
+    if (from && to && from > to) {
         error.value = 'From date must be before To date'
         batchDialogOpen.value = false
         return
     }
-    batchRunning.value = true
+    pendingAction.value = action
     try {
         await runBatchAnalysis({
-            from_date: batchFrom.value,
-            to_date: batchTo.value,
+            ...(from ? { from_date: from } : {}),
+            ...(to ? { to_date: to } : {}),
+            ...(action === 'range' ? {} : { only: action }),
             modes: [batchMode.value],
             store_results: true,
         })
-        batchDialogOpen.value = false
         void fetchJobs()
     } catch (err: unknown) {
-        batchDialogOpen.value = false
         error.value = err instanceof Error ? err.message : 'Failed to queue batch analysis'
     } finally {
-        batchRunning.value = false
-    }
-}
-
-async function handleBatchOnly(only: 'missing' | 'stale'): Promise<void> {
-    batchRunning.value = true
-    try {
-        await runBatchAnalysis({
-            only,
-            modes: [batchMode.value],
-            store_results: true,
-        })
         batchDialogOpen.value = false
-        void fetchJobs()
-    } catch (err: unknown) {
-        batchDialogOpen.value = false
-        error.value = err instanceof Error ? err.message : 'Failed to queue batch analysis'
-    } finally {
-        batchRunning.value = false
+        pendingAction.value = null
     }
 }
 

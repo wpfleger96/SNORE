@@ -25,6 +25,7 @@ from snore.api.schemas import (
 )
 from snore.services import AnalysisFacade
 from snore.services.schemas import (
+    EMPTY_SELECTION_MESSAGES,
     AnalysisDeletePreview,
     AnalysisListItem,
 )
@@ -137,7 +138,7 @@ async def run_batch_analysis(
     if body.from_date is None and body.to_date is None and body.only is None:
         raise HTTPException(
             status_code=400,
-            detail="At least one of from_date or to_date is required",
+            detail="At least one of from_date, to_date, or only is required",
         )
 
     # Validate modes and primary_mode at the endpoint so invalid input fails fast.
@@ -161,14 +162,23 @@ async def run_batch_analysis(
     session_ids = await facade.list_session_ids(
         from_date=from_dt, to_date=to_dt, only=body.only
     )
-
     if not session_ids:
-        detail = {
-            "missing": "No unanalyzed sessions to backfill",
-            "stale": "No sessions with outdated analysis",
-            None: "No sessions found for the specified date range",
-        }[body.only]
+        if body.only is None:
+            detail = "No sessions found for the specified date range"
+        else:
+            detail = EMPTY_SELECTION_MESSAGES[body.only]
         raise HTTPException(status_code=422, detail=detail)
+
+    if body.only is not None:
+        # A filtered batch re-selects sessions that a queued job has not
+        # written yet; enqueueing them again would store duplicate runs.
+        in_flight = analysis_jobs.in_flight_session_ids(facade.profile_id)
+        session_ids = [sid for sid in session_ids if sid not in in_flight]
+        if not session_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Every selected session is already queued for analysis",
+            )
 
     aj = analysis_jobs.enqueue(
         profile_id=facade.profile_id,
