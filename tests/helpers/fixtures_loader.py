@@ -191,7 +191,7 @@ async def async_import_to_test_db(
     from sqlalchemy import select
 
     from snore.database import models
-    from snore.database.importers import serialize_waveform
+    from snore.database.waveform_blobs import serialize_waveform
 
     device = (
         (

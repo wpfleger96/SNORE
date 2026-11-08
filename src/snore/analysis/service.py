@@ -517,7 +517,7 @@ class AnalysisService:
                 else:
                     logger.info("SpO2 channel has under two valid readings, skipping")
             except Exception as e:
-                logger.warning(f"Failed to deserialise SpO2 blob: {e}")
+                logger.warning("Failed to deserialize SpO2 blob: %s", e)
 
         pulse_timestamps: np.ndarray | None = None
         pulse_values: np.ndarray | None = None
@@ -529,7 +529,7 @@ class AnalysisService:
                 pulse_timestamps = pt.copy()
                 pulse_values = pv.copy()
             except Exception as e:
-                logger.warning(f"Failed to deserialise pulse blob: {e}")
+                logger.warning("Failed to deserialize pulse blob: %s", e)
 
         # Leak waveform for quality-flag derivation.
         leak_timestamps: np.ndarray | None = None
@@ -540,7 +540,7 @@ class AnalysisService:
                 leak_timestamps = lt.copy()
                 leak_values = lv.copy()
             except Exception as e:
-                logger.warning(f"Failed to deserialise leak blob: {e}")
+                logger.warning("Failed to deserialize leak blob: %s", e)
 
         return AnalysisInputs(
             session_id=raw.session_id,

@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.day_manager import POOLED_PERCENTILE_SOURCES, DayManager
 from snore.database.models import Day, Device, Session, Waveform
+from snore.database.waveform_blobs import serialize_waveform
 from snore.metrics import DAY_METRIC_STAT_COLUMNS, DayAgg
-from snore.parsers.unified import SUMMARY_CHANNELS
+from snore.parsers.unified import SUMMARY_CHANNELS, WaveformData, WaveformType
 from snore.provenance import IndexSource
 
 
@@ -1059,16 +1060,20 @@ async def _add_waveform(
     db: AsyncSession, session: Session, channel: str, values: np.ndarray
 ) -> None:
     """Store ``values`` as a ``channel`` waveform blob sampled every 2 seconds."""
-    timestamps = np.arange(len(values), dtype=np.float32) * 2.0
+    waveform = WaveformData(
+        waveform_type=WaveformType(channel),
+        sample_rate=0.5,
+        unit="",
+        timestamps=np.arange(len(values), dtype=np.float32) * 2.0,
+        values=values,
+    )
     db.add(
         Waveform(
             session_id=session.id,
             waveform_type=channel,
-            sample_rate=0.5,
-            data_blob=np.column_stack([timestamps, values])
-            .astype(np.float32)
-            .tobytes(),
-            sample_count=len(values),
+            sample_rate=waveform.sample_rate,
+            data_blob=serialize_waveform(waveform),
+            sample_count=waveform.sample_count,
         )
     )
     await db.flush()
@@ -1389,8 +1394,9 @@ class TestPooledPercentiles:
         await DayManager.aggregate_day_statistics(day, async_db_session)
 
         assert day.total_therapy_hours == 0.0
-        for column in POOLED_PERCENTILE_SOURCES:
-            assert getattr(day, column) is None, column
+        for columns in POOLED_PERCENTILE_SOURCES.values():
+            for column in columns:
+                assert getattr(day, column) is None, column
         for column in ("pressure_mean", "epap_mean", "leak_mean"):
             assert getattr(day, column) is None, column
 
@@ -1401,10 +1407,12 @@ class TestPooledPercentiles:
             if spec.day_agg is DayAgg.POOLED_PERCENTILE
         }
 
-        assert pooled_columns == set(POOLED_PERCENTILE_SOURCES)
-        assert {prefix for prefix, _ in POOLED_PERCENTILE_SOURCES.values()} <= set(
-            SUMMARY_CHANNELS
-        )
+        assert pooled_columns == {
+            column
+            for columns in POOLED_PERCENTILE_SOURCES.values()
+            for column in columns
+        }
+        assert set(POOLED_PERCENTILE_SOURCES) <= set(SUMMARY_CHANNELS)
 
     async def test_session_without_waveform_falls_back_to_weighted_mean(
         self, async_db_session, async_test_device, async_test_session_factory
@@ -1454,16 +1462,7 @@ class TestPooledPercentiles:
             usage_hours=3.0,
             leak_95th=8.0,
         )
-        async_db_session.add(
-            Waveform(
-                session_id=second.id,
-                waveform_type="leak",
-                sample_rate=0.5,
-                data_blob=b"\x00" * 12,
-                sample_count=5,
-            )
-        )
-        await async_db_session.flush()
+        await _add_corrupt_waveform(async_db_session, second, "leak")
 
         await DayManager.link_session_to_day(
             first, async_test_device.id, async_db_session
@@ -1477,4 +1476,11 @@ class TestPooledPercentiles:
             (first.statistics.leak_95th + 8.0 * 3) / 4
         )
         assert f"session {second.id}" in caplog.text
-        assert sum(r.levelno >= logging.WARNING for r in caplog.records) == 1
+        assert (
+            sum(
+                r.name == "snore.database.waveform_blobs"
+                and r.levelno >= logging.WARNING
+                for r in caplog.records
+            )
+            == 1
+        )

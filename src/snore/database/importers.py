@@ -30,15 +30,14 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from typing import NamedTuple
 
-import numpy as np
-
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import session_scope
-from snore.parsers.unified import UnifiedSession, WaveformData
+from snore.database.waveform_blobs import serialize_waveform
+from snore.parsers.unified import UnifiedSession
 
 logger = logging.getLogger(__name__)
 
@@ -98,33 +97,6 @@ async def _find_overlapping(
     if exclude_ids:
         stmt = stmt.where(models.Session.id.not_in(exclude_ids))
     return list((await db.execute(stmt)).scalars().all())
-
-
-def serialize_waveform(waveform: WaveformData) -> bytes:
-    """
-    Serialize waveform data to bytes for database storage.
-
-    Stores timestamps and values as float32 numpy arrays.
-    No compression - SQLite and filesystem handle that efficiently.
-
-    Args:
-        waveform: WaveformData object
-
-    Returns:
-        Serialized bytes
-    """
-    if isinstance(waveform.timestamps, list):
-        timestamps = np.array(waveform.timestamps, dtype=np.float32)
-    else:
-        timestamps = waveform.timestamps.astype(np.float32)
-
-    if isinstance(waveform.values, list):
-        values = np.array(waveform.values, dtype=np.float32)
-    else:
-        values = waveform.values.astype(np.float32)
-
-    data = np.column_stack([timestamps, values])
-    return data.tobytes()
 
 
 def _replacement_enabled(

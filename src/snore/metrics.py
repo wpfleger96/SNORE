@@ -14,7 +14,7 @@ genuine single-source wins: they are declared only here.
 from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, assert_never
 
 
 class DayAgg(StrEnum):
@@ -30,14 +30,26 @@ class DayAgg(StrEnum):
     POOLED_PERCENTILE = "pooled_percentile"
 
 
-def pooled_percentile_description(
-    stat: Literal["Median", "95th percentile"], channel: str, unit: str
-) -> str:
+type PooledStat = Literal["Median", "95th percentile"]
+
+
+def _pooled_stat_plural(stat: PooledStat) -> str:
+    """Plural of ``stat``; ``assert_never`` makes mypy flag an unhandled value."""
+    match stat:
+        case "Median":
+            return "medians"
+        case "95th percentile":
+            return "95th percentiles"
+        case _:
+            assert_never(stat)
+
+
+def pooled_percentile_description(stat: PooledStat, channel: str, unit: str) -> str:
     """Field description for a ``DayAgg.POOLED_PERCENTILE`` day-level value."""
     return (
         f"{stat} {channel} over the night's pooled samples ({unit}); "
-        f"a usage-weighted mean of session {stat.lower()}s when a session has "
-        "no usable stored waveform"
+        f"a usage-weighted mean of session {_pooled_stat_plural(stat)} when a "
+        "session has no usable stored waveform"
     )
 
 

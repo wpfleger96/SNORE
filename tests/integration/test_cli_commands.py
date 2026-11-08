@@ -390,7 +390,8 @@ class TestDbRecomputeDaysCommand:
         )
 
         assert result.exit_code == 0
-        assert "Recomputed 10 day(s)" in result.output
+        output = " ".join(result.output.split())
+        assert "Recomputed 10 day(s)" in output
 
         db_session.expire_all()
         ahi_values = db_session.execute(text("SELECT ahi FROM days")).scalars().all()
@@ -431,8 +432,9 @@ class TestDbRecomputeDaysCommand:
         )
 
         assert result.exit_code == 0
-        assert "Recomputed 9 day(s)" in result.output
-        assert "pruned 1 orphaned day(s)" in result.output
+        output = " ".join(result.output.split())
+        assert "Recomputed 9 day(s)" in output
+        assert "pruned 1 orphaned day(s)" in output
 
         db_session.expire_all()
         remaining = db_session.execute(text("SELECT id FROM days")).scalars().all()
@@ -462,7 +464,8 @@ class TestDbRecomputeDaysCommand:
         )
 
         assert result.exit_code == 0
-        assert "Recomputed 0 day(s)" in result.output
+        output = " ".join(result.output.split())
+        assert "Recomputed 0 day(s)" in output
 
 
 class TestSessionListCommand:

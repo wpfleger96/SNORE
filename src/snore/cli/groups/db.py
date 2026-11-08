@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 from datetime import date, timedelta
-from itertools import batched
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,10 @@ from snore.database.models import Base
 from snore.database.session import cleanup_database, init_database, session_scope
 from snore.services.database_service import DatabaseService
 from snore.utils.db_chunk import iter_id_chunks
+
+# Days recomputed per write transaction.  Each day decodes its sessions'
+# waveform blobs while holding the SQLite write lock, so chunks stay small.
+RECOMPUTE_DAYS_CHUNK_SIZE = 100
 
 
 @click.group()
@@ -168,11 +171,6 @@ def cleanup_orphans(db: str | None) -> None:
     asyncio.run(_run())
 
 
-# Days recomputed per write transaction.  Each day decodes its sessions'
-# waveform blobs while holding the SQLite write lock, so chunks stay small.
-RECOMPUTE_DAYS_CHUNK_SIZE = 100
-
-
 @db.command("recompute-days")
 @db_option
 @click.confirmation_option(
@@ -230,7 +228,7 @@ def recompute_days(db: str | None) -> None:
         ) as progress:
             task = progress.add_task("Recomputing days", total=len(day_ids))
             pruned = 0
-            for chunk in batched(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE, strict=False):
+            for chunk in iter_id_chunks(day_ids, RECOMPUTE_DAYS_CHUNK_SIZE):
                 async with write_gate(), session_scope(immediate=True) as session:
                     days = (
                         (await session.execute(select(Day).where(Day.id.in_(chunk))))
@@ -243,7 +241,8 @@ def recompute_days(db: str | None) -> None:
                 progress.update(task, advance=len(chunk))
 
         summary = (
-            f"Recomputed {len(day_ids) - pruned} day(s) from statistics and waveforms"
+            f"Recomputed {len(day_ids) - pruned} day(s) "
+            "from session statistics and waveforms"
         )
         if pruned:
             summary += f"; pruned {pruned} orphaned day(s)"

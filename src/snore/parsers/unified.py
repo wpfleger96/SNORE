@@ -643,17 +643,45 @@ class UnifiedSession(BaseModel):
             # Explicitly empty segments: known-zero mask-on time; rates undefined.
             self.statistics.usage_hours = 0.0
 
-        for prefix, channels in SUMMARY_CHANNELS.items():
-            waveform = next(
-                (self.waveforms[c] for c in channels if c in self.waveforms), None
-            )
-            if waveform is None or waveform.values is None or not len(waveform.values):
-                continue
-            data = waveform.values
-            setattr(self.statistics, f"{prefix}_min", waveform.min_value)
-            setattr(self.statistics, f"{prefix}_max", waveform.max_value)
-            setattr(self.statistics, f"{prefix}_mean", waveform.mean_value)
-            setattr(self.statistics, f"{prefix}_median", float(np.median(data)))
-            setattr(self.statistics, f"{prefix}_95th", float(np.percentile(data, 95)))
+        s = self.statistics
+        if summary := self._channel_summary("pressure"):
+            (
+                s.pressure_min,
+                s.pressure_max,
+                s.pressure_mean,
+                s.pressure_median,
+                s.pressure_95th,
+            ) = summary
+        if summary := self._channel_summary("epap"):
+            (s.epap_min, s.epap_max, s.epap_mean, s.epap_median, s.epap_95th) = summary
+        if summary := self._channel_summary("leak"):
+            (s.leak_min, s.leak_max, s.leak_mean, s.leak_median, s.leak_95th) = summary
 
         self.has_statistics = True
+
+    def _channel_summary(
+        self, prefix: str
+    ) -> tuple[float | None, float | None, float | None, float, float] | None:
+        """(min, max, mean, median, 95th) of the prefix's ``SUMMARY_CHANNELS`` waveform.
+
+        None when the session has none of the prefix's channels, or the first
+        one it has holds no samples.
+        """
+        waveform = next(
+            (
+                self.waveforms[c]
+                for c in SUMMARY_CHANNELS[prefix]
+                if c in self.waveforms
+            ),
+            None,
+        )
+        if waveform is None or waveform.values is None or not len(waveform.values):
+            return None
+        data = waveform.values
+        return (
+            waveform.min_value,
+            waveform.max_value,
+            waveform.mean_value,
+            float(np.median(data)),
+            float(np.percentile(data, 95)),
+        )

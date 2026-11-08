@@ -37,15 +37,12 @@ logger = logging.getLogger(__name__)
 # from the wrong STR record even though the coverage check passed.
 DEVICE_RECOUNT_AHI_WARN_DELTA = 5.0
 
-# Day column -> (SUMMARY_CHANNELS prefix, percentile 0-100) for the
+# SUMMARY_CHANNELS prefix -> {Day column: percentile 0-100} for the
 # DayAgg.POOLED_PERCENTILE columns.
-POOLED_PERCENTILE_SOURCES: dict[str, tuple[str, float]] = {
-    "pressure_median": ("pressure", 50.0),
-    "pressure_95th": ("pressure", 95.0),
-    "epap_median": ("epap", 50.0),
-    "epap_95th": ("epap", 95.0),
-    "leak_median": ("leak", 50.0),
-    "leak_95th": ("leak", 95.0),
+POOLED_PERCENTILE_SOURCES: dict[str, dict[str, float]] = {
+    "pressure": {"pressure_median": 50.0, "pressure_95th": 95.0},
+    "epap": {"epap_median": 50.0, "epap_95th": 95.0},
+    "leak": {"leak_median": 50.0, "leak_95th": 95.0},
 }
 
 # Finite samples of each session's chosen channel, keyed (prefix, session_id).
@@ -215,7 +212,7 @@ class DayManager:
         stat_pairs: list[tuple[Statistics, SessionModel]],
         samples: ChannelSamples,
     ) -> dict[str, float | None]:
-        """Every ``POOLED_PERCENTILE_SOURCES`` column from the day's pooled samples.
+        """Each ``POOLED_PERCENTILE_SOURCES`` prefix's columns from its pooled samples.
 
         A session contributes to a prefix when it has mask-on time and a value
         for any of the prefix's columns.  Each prefix pools its contributing
@@ -224,12 +221,7 @@ class DayManager:
         no contributing session is None.
         """
         result: dict[str, float | None] = {}
-        for prefix in SUMMARY_CHANNELS:
-            columns = {
-                name: q
-                for name, (p, q) in POOLED_PERCENTILE_SOURCES.items()
-                if p == prefix
-            }
+        for prefix, columns in POOLED_PERCENTILE_SOURCES.items():
             contributing = [
                 session.id
                 for stats, session in stat_pairs

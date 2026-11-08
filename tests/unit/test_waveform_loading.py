@@ -21,10 +21,10 @@ from snore.analysis.data.waveform_loader import (
     handle_sample_rate_conversion,
     load_waveform_from_db,
 )
-from snore.database.importers import serialize_waveform
 from snore.database.waveform_blobs import (
     WAVEFORM_BLOB_BYTES_PER_SAMPLE,
     deserialize_waveform_blob,
+    serialize_waveform,
 )
 from snore.parsers.unified import WaveformData, WaveformType
 

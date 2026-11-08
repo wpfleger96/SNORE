@@ -41,3 +41,6 @@ class TestIterIdChunks:
         # Proves monkeypatching the module global (not a bound default arg) takes effect.
         monkeypatch.setattr(db_chunk, "ID_CHUNK_SIZE", 3)
         assert list(iter_id_chunks([1, 2, 3, 4])) == [(1, 2, 3), (4,)]
+
+    def test_explicit_size_yields_smaller_chunks(self) -> None:
+        assert list(iter_id_chunks([1, 2, 3, 4, 5], 2)) == [(1, 2), (3, 4), (5,)]
