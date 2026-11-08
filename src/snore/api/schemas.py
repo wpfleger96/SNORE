@@ -134,7 +134,8 @@ class AnalysisRunRequest(BaseModel):
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True
@@ -186,7 +187,8 @@ class BatchAnalysisRequest(BaseModel):
         description=(
             "Mode whose recovery markers are persisted. "
             "Must be a member of `modes` when supplied; "
-            "defaults to 'aasm' when 'aasm' is in modes, required otherwise."
+            "defaults to 'aasm' when 'aasm' is in modes, else to the sole mode "
+            "when modes has one entry; required otherwise."
         ),
     )
     store_results: bool = True

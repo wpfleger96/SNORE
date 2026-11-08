@@ -59,7 +59,8 @@ async def run_one(
         modes: Detection modes to run (None = default mode).
         primary_mode: Mode whose recovery markers are persisted.  Must be a
             member of ``modes`` when supplied; defaults to DEFAULT_MODE when
-            DEFAULT_MODE is in modes; required otherwise (ValueError).
+            DEFAULT_MODE is in modes, else to the sole mode when ``modes`` has
+            one entry; required otherwise (ValueError).
         store: Whether to persist results to DB.
         dispatch: Compute-phase dispatch policy.
     """

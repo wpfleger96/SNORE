@@ -2310,7 +2310,7 @@ export interface components {
             modes?: string[]
             /**
              * Primary Mode
-             * @description Mode whose recovery markers are persisted. Must be a member of `modes` when supplied; defaults to 'aasm' when 'aasm' is in modes, required otherwise.
+             * @description Mode whose recovery markers are persisted. Must be a member of `modes` when supplied; defaults to 'aasm' when 'aasm' is in modes, else to the sole mode when modes has one entry; required otherwise.
              */
             primary_mode?: string | null
             /**
@@ -2590,7 +2590,7 @@ export interface components {
             modes?: ('aasm' | 'aasm_relaxed' | 'resmed')[]
             /**
              * Primary Mode
-             * @description Mode whose recovery markers are persisted. Must be a member of `modes` when supplied; defaults to 'aasm' when 'aasm' is in modes, required otherwise.
+             * @description Mode whose recovery markers are persisted. Must be a member of `modes` when supplied; defaults to 'aasm' when 'aasm' is in modes, else to the sole mode when modes has one entry; required otherwise.
              */
             primary_mode?: string | null
             /**

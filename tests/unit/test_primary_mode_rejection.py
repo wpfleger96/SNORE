@@ -1,14 +1,16 @@
 """Pinned tests for primary_mode end-to-end validation.
 
 Scenarios covered:
-1. _resolve_primary_mode raises ValueError when primary_mode is not in modes.
-2. _resolve_primary_mode raises ValueError when modes excludes DEFAULT_MODE and
-   primary_mode is None.
-3. _resolve_primary_mode returns primary_mode when it is a valid member.
-4. _resolve_primary_mode returns DEFAULT_MODE when modes includes it and
+1. resolve_primary_mode raises ValueError when primary_mode is not in modes.
+2. resolve_primary_mode raises ValueError when modes has several entries,
+   excludes DEFAULT_MODE, and primary_mode is None; a single non-default mode
+   resolves to itself.
+3. resolve_primary_mode returns primary_mode when it is a valid member.
+4. resolve_primary_mode returns DEFAULT_MODE when modes includes it and
    primary_mode is None.
 5. API single-session route raises 422 when primary_mode is invalid.
-6. API batch route raises 422 when primary_mode is invalid.
+6. API batch route raises 422 when primary_mode is invalid or ambiguous, and
+   defaults it to the sole mode when modes has one entry.
 7. _compute_leak_valid: absent channel → (None, "channel_absent").
 8. _compute_leak_valid: alignment gap exactly == 5 s → nearest-neighbour used.
 9. _compute_leak_valid: alignment gap just above 5 s → (None, "channel_unaligned").
@@ -35,7 +37,7 @@ from snore.analysis.service import (
     _compute_mask_off,
     _compute_ramp_active,
     _mask_off_gaps,
-    _resolve_primary_mode,
+    resolve_primary_mode,
 )
 from snore.analysis.shared.versioning import (
     LEAK_VALID_MAX_ALIGNMENT_GAP_S,
@@ -43,7 +45,7 @@ from snore.analysis.shared.versioning import (
 )
 
 # ---------------------------------------------------------------------------
-# §1 — _resolve_primary_mode unit tests
+# §1 — resolve_primary_mode unit tests
 # ---------------------------------------------------------------------------
 
 
@@ -51,7 +53,7 @@ class TestResolvePrimaryMode:
     def test_primary_mode_not_in_modes_raises_value_error(self):
         """primary_mode that is not a member of modes → ValueError."""
         with pytest.raises(ValueError, match="must be a member of modes"):
-            _resolve_primary_mode(["aasm", "aasm_relaxed"], "resmed")
+            resolve_primary_mode(["aasm", "aasm_relaxed"], "resmed")
 
     def test_primary_mode_none_and_default_absent_raises_value_error(self):
         """modes excludes DEFAULT_MODE and primary_mode is None → ValueError."""
@@ -64,24 +66,35 @@ class TestResolvePrimaryMode:
         with pytest.raises(
             ValueError, match="primary_mode must be supplied explicitly"
         ):
-            _resolve_primary_mode(non_default, None)
+            resolve_primary_mode(non_default, None)
+
+    def test_sole_non_default_mode_used_when_primary_mode_none(self):
+        """A single non-default mode with primary_mode=None resolves to that mode."""
+        assert resolve_primary_mode(["resmed"], None) == "resmed"
+
+    def test_empty_modes_without_primary_mode_raises_value_error(self):
+        """No modes and no primary_mode → ValueError."""
+        with pytest.raises(
+            ValueError, match="primary_mode must be supplied explicitly"
+        ):
+            resolve_primary_mode([], None)
 
     def test_valid_primary_mode_returned_unchanged(self):
         """Explicit primary_mode that is in modes is returned as-is."""
-        result = _resolve_primary_mode(["aasm", "resmed"], "resmed")
+        result = resolve_primary_mode(["aasm", "resmed"], "resmed")
         assert result == "resmed"
 
     def test_default_mode_used_when_primary_mode_none_and_default_present(self):
         """primary_mode=None + DEFAULT_MODE in modes → DEFAULT_MODE returned."""
-        result = _resolve_primary_mode([DEFAULT_MODE, "resmed"], None)
+        result = resolve_primary_mode([DEFAULT_MODE, "resmed"], None)
         assert result == DEFAULT_MODE
 
     def test_single_mode_list_is_accepted(self):
         """Single-element modes list works for both primary_mode=None and explicit."""
-        result_none = _resolve_primary_mode([DEFAULT_MODE], None)
+        result_none = resolve_primary_mode([DEFAULT_MODE], None)
         assert result_none == DEFAULT_MODE
 
-        result_explicit = _resolve_primary_mode([DEFAULT_MODE], DEFAULT_MODE)
+        result_explicit = resolve_primary_mode([DEFAULT_MODE], DEFAULT_MODE)
         assert result_explicit == DEFAULT_MODE
 
 
@@ -203,6 +216,36 @@ class TestAnalysisRouterPrimaryMode:
             json={"from_date": "2025-01-01", "modes": ["aasm"], "primary_mode": "aasm"},
         )
         assert resp.status_code == 202
+
+    def test_batch_sole_mode_without_primary_mode_defaults_to_it(self):
+        """POST /analysis/batch with modes=['resmed'] and no primary_mode → 202.
+
+        The enqueued job carries primary_mode='resmed' (issue #478).
+        """
+        facade = MagicMock()
+        facade.profile_id = 1
+        facade.list_session_ids = AsyncMock(return_value=[1, 2])
+        client = self._make_client(facade)
+        resp = client.post(
+            "/api/v1/analysis/batch",
+            json={"from_date": "2025-01-01", "modes": ["resmed"]},
+        )
+        assert resp.status_code == 202
+        job = _aj_store._all_jobs[resp.json()["job_id"]]
+        assert job.primary_mode == "resmed"
+
+    def test_batch_multiple_non_default_modes_without_primary_mode_returns_422(self):
+        """POST /analysis/batch with several non-default modes and no primary_mode → 422."""
+        facade = MagicMock()
+        facade.profile_id = 1
+        facade.list_session_ids = AsyncMock(return_value=[1, 2])
+        client = self._make_client(facade)
+        resp = client.post(
+            "/api/v1/analysis/batch",
+            json={"from_date": "2025-01-01", "modes": ["aasm_relaxed", "resmed"]},
+        )
+        assert resp.status_code == 422
+        facade.list_session_ids.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
