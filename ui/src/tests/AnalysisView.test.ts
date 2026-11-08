@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { ref } from 'vue'
 import { AxiosError } from 'axios'
 
@@ -13,6 +13,7 @@ import { getAnalysis, runAnalysis } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { setMediaMatches } from './matchMedia'
+import { clickMode } from './helpers/modePicker'
 
 const ANALYSIS = {
     session_id: 7,
@@ -71,11 +72,16 @@ function httpError(status: number) {
     return new AxiosError('failed', undefined, undefined, undefined, { status } as never)
 }
 
+const mounted: VueWrapper[] = []
+
+// Attached so the teleported run dialog is reachable through document.body.
 async function mountView() {
     const wrapper = mount(AnalysisView, {
         props: { sessionId: 7 },
+        attachTo: document.body,
         global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
+    mounted.push(wrapper)
     await flushPromises()
     return wrapper
 }
@@ -89,6 +95,7 @@ describe('AnalysisView', () => {
 
     afterEach(() => {
         setMediaMatches(false)
+        for (const wrapper of mounted.splice(0)) wrapper.unmount()
     })
 
     const MODE_AHI_HINT = 'button[aria-label="More information about Mode AHI"]'
@@ -200,16 +207,172 @@ describe('AnalysisView', () => {
         expect(statValue(wrapper, 'Sensitivity')).toBe('---')
     })
 
+    function dialogButton(label: string): HTMLButtonElement {
+        const button = [...document.body.querySelectorAll('button')].find(
+            (b) => b.textContent?.trim() === label,
+        )
+        expect(button, `button "${label}"`).toBeDefined()
+        return button!
+    }
+
+    async function openRunDialog(wrapper: View) {
+        await wrapper
+            .findAll('button')
+            .find((b) => b.text() === 'Run Analysis')!
+            .trigger('click')
+        await flushPromises()
+    }
+
+    async function runFromDialog(wrapper: View, setUp?: () => Promise<void>) {
+        await openRunDialog(wrapper)
+        await setUp?.()
+        dialogButton('Run').click()
+        await flushPromises()
+    }
+
+    async function toggleSaving() {
+        dialogButton('Save results').click()
+        await flushPromises()
+    }
+
+    function modeRowAhi(wrapper: View, mode: string) {
+        const row = wrapper
+            .findAll('tr')
+            .map((r) => r.findAll('td').map((c) => c.text()))
+            .find((cells) => cells[0] === mode)
+        return row?.[1]
+    }
+
+    const PREVIEW = {
+        ...ANALYSIS,
+        mode_results: { resmed: { ...TWO_MODE_ANALYSIS.mode_results.resmed, ahi: 9.9 } },
+    }
+
     it('test_running_analysis_from_the_page_shows_event_comparison', async () => {
         vi.mocked(getAnalysis).mockRejectedValue({ response: { status: 404 } })
         vi.mocked(runAnalysis).mockResolvedValue(ANALYSIS as never)
         const wrapper = await mountView()
         expect(getWaveformCompare).not.toHaveBeenCalled()
 
-        await wrapper.find('.empty-card button').trigger('click')
+        await runFromDialog(wrapper)
+
+        expect(runAnalysis).toHaveBeenCalledWith(7, {
+            modes: ['aasm'],
+            primary_mode: 'aasm',
+            store_results: true,
+        })
+        expect(statValue(wrapper, 'Matched')).toBe('2')
+    })
+
+    it('test_run_sends_selected_modes_and_primary_mode', async () => {
+        vi.mocked(runAnalysis).mockResolvedValue(TWO_MODE_ANALYSIS as never)
+        const wrapper = await mountView()
+
+        await runFromDialog(wrapper, async () => {
+            await clickMode(document.body, 'Modes', 'ResMed')
+            await clickMode(document.body, 'Primary mode', 'ResMed')
+        })
+
+        expect(runAnalysis).toHaveBeenCalledWith(7, {
+            modes: ['aasm', 'resmed'],
+            primary_mode: 'resmed',
+            store_results: true,
+        })
+    })
+
+    it('test_run_is_disabled_with_no_modes', async () => {
+        const wrapper = await mountView()
+        await openRunDialog(wrapper)
+
+        await clickMode(document.body, 'Modes', 'AASM')
+        dialogButton('Run').click()
         await flushPromises()
 
+        expect(dialogButton('Run').disabled).toBe(true)
+        expect(runAnalysis).not.toHaveBeenCalled()
+    })
+
+    it('test_unsaved_run_shows_a_preview_and_keeps_saved_results', async () => {
+        vi.mocked(runAnalysis).mockResolvedValue(PREVIEW as never)
+        const wrapper = await mountView()
+        expect(getWaveformCompare).toHaveBeenCalledOnce()
+
+        await runFromDialog(wrapper, async () => {
+            await clickMode(document.body, 'Modes', 'ResMed')
+            await clickMode(document.body, 'Modes', 'AASM')
+            await toggleSaving()
+        })
+
+        expect(runAnalysis).toHaveBeenCalledWith(7, {
+            modes: ['resmed'],
+            primary_mode: 'resmed',
+            store_results: false,
+        })
+        expect(wrapper.find('[role="status"]').text()).toContain('Showing an unsaved preview.')
+        expect(modeRowAhi(wrapper, 'resmed')).toBe('9.9')
+        expect(modeRowAhi(wrapper, 'aasm')).toBeUndefined()
+        expect(comparisonSection(wrapper)!.text()).toContain(
+            'Event comparison is available for saved results only.',
+        )
+        expect(comparisonSection(wrapper)!.find('.stat-card').exists()).toBe(false)
+
+        await wrapper
+            .findAll('[role="status"] button')
+            .find((b) => b.text() === 'Saved results')!
+            .trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[role="status"]').text()).toContain('Showing saved results.')
+        expect(modeRowAhi(wrapper, 'aasm')).toBe('4.2')
         expect(statValue(wrapper, 'Matched')).toBe('2')
+        // The saved comparison is served from cache: the preview never invalidated it.
+        expect(getWaveformCompare).toHaveBeenCalledOnce()
+    })
+
+    it('test_unsaved_run_without_saved_analysis_is_labelled_and_discardable', async () => {
+        vi.mocked(getAnalysis).mockRejectedValue({ response: { status: 404 } })
+        vi.mocked(runAnalysis).mockResolvedValue(PREVIEW as never)
+        const wrapper = await mountView()
+
+        await runFromDialog(wrapper, toggleSaving)
+
+        const notice = wrapper.find('[role="status"]')
+        expect(notice.text()).toContain('Showing an unsaved preview.')
+        expect(notice.text()).toContain('This session has no saved analysis.')
+        expect(notice.findAll('button').map((b) => b.text())).toEqual(['Discard preview'])
+        expect(modeRowAhi(wrapper, 'resmed')).toBe('9.9')
+        expect(getWaveformCompare).not.toHaveBeenCalled()
+
+        await notice.find('button').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('.empty-card').text()).toContain('No analysis results')
+    })
+
+    it('test_saved_run_after_a_preview_replaces_results_and_drops_the_preview', async () => {
+        vi.mocked(runAnalysis).mockResolvedValueOnce(PREVIEW as never)
+        const wrapper = await mountView()
+        await runFromDialog(wrapper, toggleSaving)
+        vi.mocked(runAnalysis).mockResolvedValueOnce(TWO_MODE_ANALYSIS as never)
+
+        // The dialog keeps its last choices, so saving is turned back on.
+        await runFromDialog(wrapper, toggleSaving)
+
+        expect(vi.mocked(runAnalysis).mock.calls[1]![1]).toMatchObject({ store_results: true })
+        expect(wrapper.find('[role="status"]').exists()).toBe(false)
+        expect(modeRowAhi(wrapper, 'resmed')).toBe('3.1')
+        // A saved run clears the comparison cache, so the comparison is fetched again.
+        expect(getWaveformCompare).toHaveBeenCalledTimes(2)
+    })
+
+    it('test_failed_run_keeps_the_page_and_shows_the_error_in_the_dialog', async () => {
+        vi.mocked(runAnalysis).mockRejectedValue(new Error('primary_mode must be in modes'))
+        const wrapper = await mountView()
+
+        await runFromDialog(wrapper)
+
+        expect(document.body.textContent).toContain('primary_mode must be in modes')
+        expect(modeRowAhi(wrapper, 'aasm')).toBe('4.2')
     })
 
     it('test_comparison_follows_the_selected_mode', async () => {

@@ -9,6 +9,7 @@ import type {
 import type { components } from '@/types/generated'
 
 type BatchAnalysisRequest = components['schemas']['BatchAnalysisRequest']
+type AnalysisRunRequest = components['schemas']['AnalysisRunRequest']
 export type BatchSelection = NonNullable<BatchAnalysisRequest['only']>
 export type AnalysisMode = NonNullable<BatchAnalysisRequest['modes']>[number]
 
@@ -30,12 +31,9 @@ export const getAnalysis = apiGet<AnalysisResult, [sessionId: number]>(
     (sessionId) => `/sessions/${sessionId}/analysis`,
 )
 
-export const runAnalysis = apiPost<
-    AnalysisResult,
-    [sessionId: number, body?: { modes?: string[]; store_results?: boolean }]
->(
+export const runAnalysis = apiPost<AnalysisResult, [sessionId: number, body: AnalysisRunRequest]>(
     (sessionId) => `/sessions/${sessionId}/analysis`,
-    (_sessionId, body = {}) => ({ data: { modes: ['aasm'], store_results: true, ...body } }),
+    (_sessionId, body) => ({ data: body }),
 )
 
 export const deleteAnalysis = apiDelete<

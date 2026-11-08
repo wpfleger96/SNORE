@@ -45,6 +45,7 @@ import {
 import { getExperimentalStats } from '@/api/stats'
 import { makeAuthMock } from './helpers/mockUseAuth'
 import { setMediaMatches } from './matchMedia'
+import { clickMode } from './helpers/modePicker'
 
 describe('AnalysisManagementView — analyze missing', () => {
     beforeEach(() => {
@@ -78,12 +79,9 @@ describe('AnalysisManagementView — analyze missing', () => {
         return wrapper
     }
 
-    async function clickBatchDialogButton(
-        label: string,
-        dates: { from?: string; to?: string } = {},
-    ): Promise<ReturnType<typeof mount>> {
-        // The batch dialog teleports to document.body, so its buttons are
-        // outside the wrapper; open it through the toolbar button first.
+    // The batch dialog teleports to document.body, so its controls are outside
+    // the wrapper; open it through the toolbar button first. The caller unmounts.
+    async function openBatchDialog(dates: { from?: string; to?: string } = {}) {
         const wrapper = mount(AnalysisManagementView, { attachTo: document.body })
         await flushPromises()
         const runBatch = wrapper.findAll('button').find((b) => b.text() === 'Run Batch')
@@ -94,11 +92,25 @@ describe('AnalysisManagementView — analyze missing', () => {
         if (dates.from) fromPicker.vm.$emit('update:modelValue', dates.from)
         if (dates.to) toPicker.vm.$emit('update:modelValue', dates.to)
         await flushPromises()
+        return wrapper
+    }
+
+    function dialogButton(label: string): HTMLButtonElement {
         const button = [...document.body.querySelectorAll('button')].find(
             (b) => b.textContent?.trim() === label,
         )
         expect(button, `dialog button "${label}"`).toBeDefined()
-        button!.click()
+        return button!
+    }
+
+    async function clickBatchDialogButton(
+        label: string,
+        dates: { from?: string; to?: string } = {},
+        pickModes?: (root: ParentNode) => Promise<void>,
+    ): Promise<ReturnType<typeof mount>> {
+        const wrapper = await openBatchDialog(dates)
+        await pickModes?.(document.body)
+        dialogButton(label).click()
         await flushPromises()
         wrapper.unmount()
         return wrapper
@@ -134,6 +146,7 @@ describe('AnalysisManagementView — analyze missing', () => {
             from_date: '2026-01-01',
             to_date: '2026-01-31',
             modes: ['aasm'],
+            primary_mode: 'aasm',
             store_results: true,
         })
     })
@@ -162,6 +175,51 @@ describe('AnalysisManagementView — analyze missing', () => {
             to_date: '2026-01-31',
             store_results: true,
         })
+    })
+
+    const RANGE = { from: '2026-01-01', to: '2026-01-31' }
+
+    it.each([
+        ['Run', RANGE],
+        ['Analyze Missing', {}],
+        ['Re-analyze Outdated', {}],
+    ])('test_%s_sends_selected_modes_and_primary_mode', async (label, dates) => {
+        await clickBatchDialogButton(label, dates, async (root) => {
+            await clickMode(root, 'Modes', 'AASM Relaxed')
+            await clickMode(root, 'Modes', 'ResMed')
+            await clickMode(root, 'Primary mode', 'ResMed')
+        })
+
+        expect(runBatchAnalysis).toHaveBeenCalledOnce()
+        const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
+        expect(body).toMatchObject({
+            modes: ['aasm', 'aasm_relaxed', 'resmed'],
+            primary_mode: 'resmed',
+        })
+    })
+
+    it('test_deselecting_primary_sends_a_still_selected_primary', async () => {
+        await clickBatchDialogButton('Analyze Missing', {}, async (root) => {
+            await clickMode(root, 'Modes', 'ResMed')
+            await clickMode(root, 'Modes', 'AASM')
+        })
+
+        const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
+        expect(body).toMatchObject({ modes: ['resmed'], primary_mode: 'resmed' })
+    })
+
+    it('test_batch_actions_are_disabled_with_no_modes', async () => {
+        const wrapper = await openBatchDialog(RANGE)
+        await clickMode(document.body, 'Modes', 'AASM')
+
+        for (const label of ['Run', 'Analyze Missing', 'Re-analyze Outdated']) {
+            expect(dialogButton(label).disabled, label).toBe(true)
+            dialogButton(label).click()
+        }
+        await flushPromises()
+        wrapper.unmount()
+
+        expect(runBatchAnalysis).not.toHaveBeenCalled()
     })
 
     it('test_handleCancelJob_409_silenced_and_list_still_refreshed', async () => {

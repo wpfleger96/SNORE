@@ -7,27 +7,32 @@
         <AlertTriangle class="inline h-4 w-4" /> {{ error }}
     </div>
 
-    <div v-else-if="noAnalysis" class="no-analysis">
+    <div v-else-if="!shown" class="no-analysis">
         <RouterLink :to="{ name: 'session-detail', params: { id: sessionId } }" class="back-link">
             <ArrowLeft class="inline h-4 w-4" /> Back to Session
         </RouterLink>
         <div class="empty-card border border-border bg-card">
             <BarChart3 class="empty-icon text-muted-foreground" />
             <p class="text-muted-foreground">No analysis results for this session.</p>
-            <Button :disabled="!canWrite || running" @click="handleRunAnalysis">
-                <Loader2 v-if="running" class="h-4 w-4 animate-spin" />
-                <Play v-else class="h-4 w-4" />
+            <Button :disabled="!canWrite" @click="openRunDialog">
+                <Play class="h-4 w-4" />
                 {{ canWrite ? 'Run Analysis' : 'Read-only mode' }}
             </Button>
         </div>
     </div>
 
-    <div v-else-if="analysis" class="analysis-view">
+    <div v-else class="analysis-view">
         <RouterLink :to="{ name: 'session-detail', params: { id: sessionId } }" class="back-link">
             <ArrowLeft class="inline h-4 w-4" /> Back to Session
         </RouterLink>
 
-        <h1 class="page-title">Analysis — Session #{{ sessionId }}</h1>
+        <div class="page-header">
+            <h1 class="page-title">Analysis — Session #{{ sessionId }}</h1>
+            <Button v-if="canWrite" variant="outline" size="sm" @click="openRunDialog">
+                <Play class="mr-2 h-4 w-4" />
+                Run Analysis
+            </Button>
+        </div>
 
         <ExperimentalBanner
             class="mb-5"
@@ -35,31 +40,60 @@
             body="Everything SNORE detects on this page (events, indices, flow-limitation classes, breathing patterns) is its own heuristic, not a clinically validated measurement. Device-scored events are the reference."
         />
 
+        <div v-if="preview" role="status" class="preview-notice">
+            <p>
+                <span class="font-medium">{{
+                    showingPreview ? 'Showing an unsaved preview.' : 'Showing saved results.'
+                }}</span>
+                The preview ({{ previewModes }}) was not saved and is lost when you leave this
+                page.<template v-if="!analysis"> This session has no saved analysis.</template>
+            </p>
+            <div class="preview-actions">
+                <ToggleGroup
+                    v-if="analysis"
+                    type="single"
+                    variant="outline"
+                    size="sm"
+                    aria-label="Results shown"
+                    :model-value="showingPreview ? 'preview' : 'saved'"
+                    @update:model-value="
+                        (v) => {
+                            if (v) previewSelected = v === 'preview'
+                        }
+                    "
+                >
+                    <ToggleGroupItem value="saved">Saved results</ToggleGroupItem>
+                    <ToggleGroupItem value="preview">Unsaved preview</ToggleGroupItem>
+                </ToggleGroup>
+                <Button variant="ghost" size="sm" @click="preview = null">Discard preview</Button>
+            </div>
+        </div>
+
         <!-- Summary -->
         <div class="summary-row">
             <StatCard
                 label="Duration"
-                :value="analysis.session_duration_hours"
+                :value="shown.session_duration_hours"
                 unit="hrs"
                 :decimals="1"
                 glossary-key="session_duration_hours"
             />
             <StatCard
                 label="Total Breaths"
-                :value="analysis.total_breaths"
+                :value="shown.total_breaths"
                 :decimals="0"
                 glossary-key="total_breaths"
             />
             <StatCard
                 label="Device-scored Events"
-                :value="analysis.machine_events?.length ?? 0"
+                :value="shown.machine_events?.length ?? 0"
                 :decimals="0"
                 glossary-key="machine_events"
             />
             <StatCard
-                v-if="analysis.pulse_change_count != null"
+                v-if="shown.pulse_change_count != null"
                 label="Pulse Changes"
-                :value="analysis.pulse_change_count"
+                :value="shown.pulse_change_count"
                 :decimals="0"
                 glossary-key="pulse_change_count"
             />
@@ -141,7 +175,7 @@
         <div class="section-card">
             <h2>Events by Mode</h2>
             <ToggleGroup
-                :model-value="selectedMode"
+                :model-value="activeMode"
                 type="single"
                 variant="outline"
                 class="mode-selector"
@@ -231,17 +265,17 @@
         </div>
 
         <!-- CSR / Periodic Breathing -->
-        <div v-if="analysis.csr_detection || analysis.periodic_breathing" class="section-card">
+        <div v-if="shown.csr_detection || shown.periodic_breathing" class="section-card">
             <h2>Breathing Patterns</h2>
-            <div v-if="analysis.csr_episodes?.length" class="pattern-info">
+            <div v-if="shown.csr_episodes?.length" class="pattern-info">
                 <strong>CSR Episodes:</strong>
                 <InfoHint glossary-key="csr" />
-                {{ analysis.csr_episodes.length }}
+                {{ shown.csr_episodes.length }}
             </div>
-            <div v-if="analysis.periodic_breathing_episodes?.length" class="pattern-info">
+            <div v-if="shown.periodic_breathing_episodes?.length" class="pattern-info">
                 <strong>Periodic Breathing Episodes:</strong>
                 <InfoHint glossary-key="periodic_breathing" />
-                {{ analysis.periodic_breathing_episodes.length }}
+                {{ shown.periodic_breathing_episodes.length }}
             </div>
         </div>
 
@@ -360,8 +394,14 @@
             </Collapsible>
         </div>
 
-        <!-- Event Comparison -->
-        <div v-if="comparisonLoading && !comparison" class="loading-state">
+        <!-- Event Comparison: the compare endpoint reads the saved analysis, so a preview has none -->
+        <div v-if="showingPreview" class="section-card">
+            <h2>Event Comparison</h2>
+            <p class="text-sm text-muted-foreground">
+                Event comparison is available for saved results only.
+            </p>
+        </div>
+        <div v-else-if="comparisonLoading && !comparison" class="loading-state">
             <Loader2 class="inline h-4 w-4 animate-spin" /> Loading event comparison...
         </div>
         <ErrorState
@@ -578,6 +618,43 @@
             </div>
         </div>
     </div>
+
+    <AlertDialog :open="runDialogOpen" @update:open="runDialogOpen = $event">
+        <AlertDialogContent class="max-w-[450px]">
+            <AlertDialogHeader>
+                <AlertDialogTitle>Run Analysis</AlertDialogTitle>
+                <AlertDialogDescription as-template>
+                    <div class="space-y-4">
+                        <AnalysisModePicker
+                            v-model:modes="runModes"
+                            v-model:primary-mode="runPrimaryMode"
+                        />
+                        <div>
+                            <Toggle v-model="saveResults" variant="outline"> Save results </Toggle>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                {{
+                                    saveResults
+                                        ? "The results become this session's saved analysis."
+                                        : 'The results are shown as a preview and not saved.'
+                                }}
+                            </p>
+                        </div>
+                        <p v-if="runError" class="text-sm text-destructive">
+                            <AlertTriangle class="inline h-4 w-4" /> {{ runError }}
+                        </p>
+                    </div>
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel :disabled="running">Cancel</AlertDialogCancel>
+                <Button :disabled="running || !runModes.length" @click="handleRunAnalysis">
+                    <Loader2 v-if="running" class="mr-2 h-4 w-4 animate-spin" />
+                    <Play v-else class="mr-2 h-4 w-4" />
+                    Run
+                </Button>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
 </template>
 
 <script setup lang="ts">
@@ -592,7 +669,17 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Loader2, AlertTriangle, ArrowLeft, BarChart3, Play, ChevronDown } from '@lucide/vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import StatCard from '@/components/StatCard.vue'
@@ -603,7 +690,9 @@ import FlowClassPopover from '@/components/FlowClassPopover.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import PaginationBar from '@/components/PaginationBar.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import AnalysisModePicker from '@/components/AnalysisModePicker.vue'
 import { getAnalysis, runAnalysis } from '@/api/analysis'
+import type { AnalysisMode } from '@/api/analysis'
 import { getWaveformCompare } from '@/api/waveforms'
 import { useAuth } from '@/composables/useAuth'
 import { useApiLoad } from '@/composables/useApiLoad'
@@ -621,15 +710,40 @@ const props = defineProps<{ sessionId: number }>()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-const noAnalysis = ref(false)
-const running = ref(false)
 const analysis = ref<AnalysisResult | null>(null)
+// The user's pick in the Events by Mode toggle; activeMode is what is shown.
 const selectedMode = ref('')
 const flLegendOpen = ref(false)
 
-// Results per mode; cleared when the session changes or an analysis run replaces them.
+const runDialogOpen = ref(false)
+const runModes = ref<AnalysisMode[]>(['aasm'])
+const runPrimaryMode = ref<AnalysisMode>('aasm')
+const saveResults = ref(true)
+const running = ref(false)
+const runError = ref<string | null>(null)
+
+// An unsaved run's results. They sit beside the saved analysis rather than
+// replacing it, so the saved results and their cached comparisons stay intact.
+const preview = ref<AnalysisResult | null>(null)
+const previewSelected = ref(false)
+const showingPreview = computed(
+    () => preview.value !== null && (previewSelected.value || analysis.value === null),
+)
+const shown = computed(() => (showingPreview.value ? preview.value : analysis.value))
+const previewModes = computed(() => Object.keys(preview.value?.mode_results ?? {}).join(', '))
+
+// Saved results per mode; cleared when the session changes or a saved run replaces them.
 // A null entry is a mode the server has no comparison for (404).
 const comparisonCache = new Map<string, EventComparisonResult | null>()
+
+const modeOptions = computed(() => Object.keys(shown.value?.mode_results ?? {}))
+
+// The picked mode when the shown results have it, else their first mode.
+const activeMode = computed(() =>
+    modeOptions.value.includes(selectedMode.value)
+        ? selectedMode.value
+        : (modeOptions.value[0] ?? ''),
+)
 
 const {
     data: comparisonData,
@@ -637,8 +751,8 @@ const {
     error: comparisonError,
     reload: loadComparison,
 } = useApiLoad(async () => {
-    const mode = selectedMode.value
-    if (!mode) return null
+    const mode = activeMode.value
+    if (!mode || showingPreview.value) return null
     const cached = comparisonCache.get(mode)
     if (cached !== undefined) return cached
     try {
@@ -657,17 +771,18 @@ const {
 
 // Data for another mode stays hidden until its own load lands.
 const comparison = computed(() =>
-    comparisonData.value?.mode === selectedMode.value ? comparisonData.value : null,
+    comparisonData.value?.mode === activeMode.value ? comparisonData.value : null,
 )
 
-// Mount, running an analysis and the mode toggle all land here.
-watch([analysis, selectedMode], () => void loadComparison())
+// Mount, running an analysis, the mode toggle and leaving a preview all land here.
+watch([analysis, activeMode, showingPreview], () => void loadComparison())
 watch(
     () => props.sessionId,
-    () => comparisonCache.clear(),
+    () => {
+        comparisonCache.clear()
+        preview.value = null
+    },
 )
-
-const modeOptions = computed(() => Object.keys(analysis.value?.mode_results ?? {}))
 
 const sensitivity = computed(() => {
     if (!comparison.value?.machine_event_count) return null
@@ -675,8 +790,8 @@ const sensitivity = computed(() => {
 })
 
 const selectedModeResult = computed(() => {
-    if (!analysis.value || !selectedMode.value) return null
-    return analysis.value.mode_results[selectedMode.value] ?? null
+    if (!shown.value || !activeMode.value) return null
+    return shown.value.mode_results[activeMode.value] ?? null
 })
 
 interface ModeRow {
@@ -689,8 +804,8 @@ interface ModeRow {
 }
 
 const modeRows = computed<ModeRow[]>(() => {
-    if (!analysis.value) return []
-    return Object.entries(analysis.value.mode_results ?? {}).map(([name, r]) => ({
+    if (!shown.value) return []
+    return Object.entries(shown.value.mode_results ?? {}).map(([name, r]) => ({
         mode: name,
         ahi: r.ahi,
         rdi: r.rdi,
@@ -757,9 +872,7 @@ interface FlDistRow {
     pct: number
 }
 
-const flowAnalysis = computed<SessionFlowAnalysis | null>(
-    () => analysis.value?.flow_analysis ?? null,
-)
+const flowAnalysis = computed<SessionFlowAnalysis | null>(() => shown.value?.flow_analysis ?? null)
 
 const flDistributionRows = computed<FlDistRow[]>(() => {
     const fa = flowAnalysis.value
@@ -808,35 +921,44 @@ const {
     setOffset: setFalseNegativesOffset,
 } = usePagedRows(sortedFalseNegatives)
 
+function openRunDialog(): void {
+    runError.value = null
+    runDialogOpen.value = true
+}
+
 async function handleRunAnalysis(): Promise<void> {
+    const store = saveResults.value
     running.value = true
+    runError.value = null
     try {
-        const result = await runAnalysis(props.sessionId)
-        comparisonCache.clear()
-        analysis.value = result
-        noAnalysis.value = false
-        if (modeOptions.value.length > 0) {
-            selectedMode.value = modeOptions.value[0]
+        const result = await runAnalysis(props.sessionId, {
+            modes: runModes.value,
+            primary_mode: runPrimaryMode.value,
+            store_results: store,
+        })
+        if (store) {
+            comparisonCache.clear()
+            analysis.value = result
+            preview.value = null
+        } else {
+            preview.value = result
+            previewSelected.value = true
         }
+        runDialogOpen.value = false
     } catch (err: unknown) {
-        error.value = err instanceof Error ? err.message : 'Failed to run analysis'
+        runError.value = err instanceof Error ? err.message : 'Failed to run analysis'
     } finally {
         running.value = false
     }
 }
 
-// useApiLoad skipped — 404 routes to noAnalysis state, not generic error
+// useApiLoad skipped — 404 routes to the empty state, not generic error
 onMounted(async () => {
     try {
         analysis.value = await getAnalysis(props.sessionId)
-        if (modeOptions.value.length > 0) {
-            selectedMode.value = modeOptions.value[0]
-        }
     } catch (err: unknown) {
         const status = (err as { response?: { status?: number } }).response?.status
-        if (status === 404) {
-            noAnalysis.value = true
-        } else {
+        if (status !== 404) {
             error.value = err instanceof Error ? err.message : 'Failed to load analysis'
         }
     } finally {
@@ -849,6 +971,41 @@ onMounted(async () => {
 .analysis-view,
 .no-analysis {
     max-width: 1200px;
+}
+
+.page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+}
+
+.preview-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 0.75rem 1rem;
+    border: 1px dashed var(--color-primary);
+    border-radius: 8px;
+    font-size: 0.875rem;
+}
+
+.preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+@media (max-width: 767.98px) {
+    .page-header :deep(button),
+    .preview-actions :deep(button) {
+        min-height: var(--tap-target);
+    }
 }
 
 .summary-row {
