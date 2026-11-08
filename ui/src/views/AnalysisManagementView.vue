@@ -186,33 +186,16 @@
                                     />
                                 </div>
                             </div>
-                            <div>
-                                <label class="text-sm font-medium">Mode</label>
-                                <ToggleGroup
-                                    type="single"
-                                    variant="outline"
-                                    class="mt-1"
-                                    :model-value="batchMode"
-                                    @update:model-value="
-                                        (v) => {
-                                            if (v) batchMode = v as AnalysisMode
-                                        }
-                                    "
-                                >
-                                    <ToggleGroupItem value="aasm">AASM</ToggleGroupItem>
-                                    <ToggleGroupItem value="resmed">ResMed</ToggleGroupItem>
-                                </ToggleGroup>
-                            </div>
+                            <AnalysisModePicker
+                                v-model:modes="batchModes"
+                                v-model:primary-mode="batchPrimaryMode"
+                            />
                         </div>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter class="sm:flex-wrap">
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <Button
-                        variant="outline"
-                        :disabled="pendingAction !== null"
-                        @click="queueBatch('missing')"
-                    >
+                    <Button variant="outline" :disabled="!canQueue" @click="queueBatch('missing')">
                         <Loader2
                             v-if="pendingAction === 'missing'"
                             class="mr-2 h-4 w-4 animate-spin"
@@ -220,11 +203,7 @@
                         <Play v-else class="mr-2 h-4 w-4" />
                         Analyze Missing
                     </Button>
-                    <Button
-                        variant="outline"
-                        :disabled="pendingAction !== null"
-                        @click="queueBatch('stale')"
-                    >
+                    <Button variant="outline" :disabled="!canQueue" @click="queueBatch('stale')">
                         <Loader2
                             v-if="pendingAction === 'stale'"
                             class="mr-2 h-4 w-4 animate-spin"
@@ -233,7 +212,7 @@
                         Re-analyze Outdated
                     </Button>
                     <Button
-                        :disabled="!batchFrom || !batchTo || pendingAction !== null"
+                        :disabled="!batchFrom || !batchTo || !canQueue"
                         @click="queueBatch('range')"
                     >
                         <Loader2
@@ -279,7 +258,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Toggle } from '@/components/ui/toggle'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -294,6 +272,7 @@ import DeleteConfirmDialog from '@/components/DeleteConfirmDialog.vue'
 import AnalysisJobsBanner from '@/components/AnalysisJobsBanner.vue'
 import DatePickerInput from '@/components/DatePickerInput.vue'
 import TherapyAssessmentCard from '@/components/TherapyAssessmentCard.vue'
+import AnalysisModePicker from '@/components/AnalysisModePicker.vue'
 import { Loader2, AlertTriangle, Play, Trash2 } from '@lucide/vue'
 import {
     getAnalysisSessions,
@@ -305,6 +284,7 @@ import {
 } from '@/api/analysis'
 import type { AnalysisMode, BatchSelection } from '@/api/analysis'
 import { formatDateShort } from '@/utils/formatting'
+import { effectivePrimaryMode } from '@/utils/analysisModes'
 import type { AnalysisListItem, AnalysisDeletePreview, AnalysisJobStatus } from '@/types'
 import { useAuth } from '@/composables/useAuth'
 import { useAvailableDates } from '@/composables/useAvailableDates'
@@ -328,10 +308,13 @@ const analyzedOnly = ref(false)
 const batchDialogOpen = ref(false)
 const batchFrom = ref('')
 const batchTo = ref('')
-const batchMode = ref<AnalysisMode>('aasm')
+const batchModes = ref<AnalysisMode[]>(['aasm'])
+// The explicit stored-RERA mode pick; null follows the default.
+const batchPrimaryMode = ref<AnalysisMode | null>(null)
 // 'range' is the plain date-range Run; a BatchSelection is Analyze Missing or
 // Re-analyze Outdated. Non-null while a batch request is in flight.
 const pendingAction = ref<'range' | BatchSelection | null>(null)
+const canQueue = computed(() => pendingAction.value === null && batchModes.value.length > 0)
 
 const analysisJobs = ref<AnalysisJobStatus[]>([])
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -425,7 +408,8 @@ async function queueBatch(action: 'range' | BatchSelection): Promise<void> {
             ...(from ? { from_date: from } : {}),
             ...(to ? { to_date: to } : {}),
             ...(action === 'range' ? {} : { only: action }),
-            modes: [batchMode.value],
+            modes: batchModes.value,
+            primary_mode: effectivePrimaryMode(batchModes.value, batchPrimaryMode.value),
             store_results: true,
         })
         void fetchJobs()

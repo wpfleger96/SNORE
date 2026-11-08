@@ -323,6 +323,17 @@
     background: var(--color-border);
 }
 
+/* ── Strong pressed state for toggle groups ─────────────────────────
+   The shared toggles mark "on" with a faint muted fill. Add this class to a
+   ToggleGroup whose selection must be unmistakable. Unlayered, so it wins over
+   the layered shadcn variant utilities (including hover). */
+
+.toggle-strong [data-state='on'] {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+}
+
 /* ── Mobile card-list pattern (table alternative on phones) ──────── */
 
 .card-list {
