@@ -77,24 +77,49 @@ describe('AnalysisManagementView — analyze missing', () => {
         return wrapper
     }
 
-    it('test_handleAnalyzeMissing_sends_missing_only_without_dates', async () => {
-        // Falsifiable: remove missing_only from the payload in handleAnalyzeMissing;
-        // objectContaining({ missing_only: true }) fails.
-        const wrapper = await mountView()
-        const vm = wrapper.vm as unknown as { handleAnalyzeMissing: () => Promise<void> }
-
-        await vm.handleAnalyzeMissing()
+    async function clickBatchDialogButton(label: string): Promise<void> {
+        // The batch dialog teleports to document.body, so its buttons are
+        // outside the wrapper; open it through the toolbar button first.
+        const wrapper = mount(AnalysisManagementView, { attachTo: document.body })
         await flushPromises()
+        const runBatch = wrapper.findAll('button').find((b) => b.text() === 'Run Batch')
+        await runBatch!.trigger('click')
+        await flushPromises()
+        const button = [...document.body.querySelectorAll('button')].find(
+            (b) => b.textContent?.trim() === label,
+        )
+        expect(button, `dialog button "${label}"`).toBeDefined()
+        button!.click()
+        await flushPromises()
+        wrapper.unmount()
+    }
+
+    it('test_analyze_missing_button_sends_only_missing_without_dates', async () => {
+        // Falsifiable: send only: 'stale' (or drop only) from the Analyze Missing
+        // button; toMatchObject({ only: 'missing' }) fails.
+        await clickBatchDialogButton('Analyze Missing')
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()
         const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
-        expect(body).toMatchObject({ missing_only: true, store_results: true })
+        expect(body).toMatchObject({ only: 'missing', store_results: true })
         expect(body).not.toHaveProperty('from_date')
         expect(body).not.toHaveProperty('to_date')
     })
 
-    it('test_handleBatchRun_does_not_include_missing_only', async () => {
-        // Guard: the existing batch-run path must not gain missing_only.
+    it('test_reanalyze_outdated_button_sends_only_stale_without_dates', async () => {
+        // Falsifiable: wire Re-analyze Outdated to handleBatchOnly('missing');
+        // toMatchObject({ only: 'stale' }) fails.
+        await clickBatchDialogButton('Re-analyze Outdated')
+
+        expect(runBatchAnalysis).toHaveBeenCalledOnce()
+        const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
+        expect(body).toMatchObject({ only: 'stale', store_results: true })
+        expect(body).not.toHaveProperty('from_date')
+        expect(body).not.toHaveProperty('to_date')
+    })
+
+    it('test_handleBatchRun_does_not_include_only', async () => {
+        // Guard: the date-range batch-run path must not gain an only filter.
         // batchFrom/batchTo start as empty strings; handleBatchRun proceeds without
         // the date-validation check (both falsy) and fires runBatchAnalysis.
         const wrapper = await mountView()
@@ -105,7 +130,7 @@ describe('AnalysisManagementView — analyze missing', () => {
 
         expect(runBatchAnalysis).toHaveBeenCalledOnce()
         const [body] = vi.mocked(runBatchAnalysis).mock.calls[0]
-        expect(body).not.toHaveProperty('missing_only')
+        expect(body).not.toHaveProperty('only')
         expect(body).toMatchObject({ store_results: true })
     })
 

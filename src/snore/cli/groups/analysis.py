@@ -36,8 +36,14 @@ from snore.cli.display import (
 )
 from snore.cli.display.analysis import display_analysis_result
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
+from snore.services.schemas import AnalysisSelection
 
 logger = logging.getLogger(__name__)
+
+_EMPTY_SELECTION_MESSAGES: dict[AnalysisSelection, str] = {
+    "missing": "No unanalyzed sessions",
+    "stale": "No sessions with outdated analysis",
+}
 
 
 @click.group()
@@ -54,6 +60,16 @@ def analysis() -> None:
     help="Analyze single session by date (YYYY-MM-DD)",
 )
 @date_range_options
+@click.option(
+    "--only",
+    type=click.Choice(["missing", "stale"]),
+    default=None,
+    help=(
+        "Batch only analyzable sessions: 'missing' = never analyzed, "
+        "'stale' = latest analysis is from an older algorithm version. "
+        "Covers the whole profile unless --from/--to narrow it."
+    ),
+)
 @click.option("--no-store", is_flag=True, help="Don't store results in database")
 @click.option(
     "--mode",
@@ -88,13 +104,20 @@ async def run(
     date: datetime | None,
     date_from: datetime | None,
     date_to: datetime | None,
+    only: AnalysisSelection | None,
     no_store: bool,
     mode: tuple[str, ...],
     all_modes: bool,
     primary_mode: str | None,
     plain: bool,
 ) -> int | None:
-    """Run analysis on CPAP sessions."""
+    """Run analysis on CPAP sessions.
+
+    Select a single session (--session-id or --date), a date range
+    (--from/--to), or a filtered batch (--only missing|stale, optionally
+    narrowed by --from/--to). After an algorithm version bump, re-run only
+    the outdated sessions with --only stale.
+    """
     if plain:
         use_plain_legend()
     single_session_flags = [session_id is not None, date is not None]
@@ -111,9 +134,15 @@ async def run(
             "Single session flags (--session-id, --date) cannot be used with batch flags (--from, --to)"
         )
 
-    if single_count == 0 and batch_count == 0:
+    if single_count > 0 and only is not None:
         raise click.ClickException(
-            "Must provide at least one selection flag (--session-id, --date, --from, or --to)"
+            "--only cannot be used with single session flags (--session-id, --date)"
+        )
+
+    if single_count == 0 and batch_count == 0 and only is None:
+        raise click.ClickException(
+            "Must provide at least one selection flag "
+            "(--session-id, --date, --from, --to, or --only)"
         )
 
     if single_count > 0:
@@ -139,6 +168,7 @@ async def run(
             all_modes,
             ctx.profile_id,
             primary_mode,
+            only,
         )
     return None
 
@@ -482,6 +512,7 @@ async def _analyze_batch(
     all_modes: bool,
     profile_id: int,
     primary_mode: str | None = None,
+    only: AnalysisSelection | None = None,
 ) -> None:
     from rich.progress import (  # noqa: PLC0415
         BarColumn,
@@ -503,6 +534,15 @@ async def _analyze_batch(
     to_date = None if analyze_all else end
 
     facade = AnalysisFacade(session, profile_id)
+    session_ids: list[int] | None = None
+    if only is not None:
+        session_ids = await facade.list_session_ids(
+            from_date=from_date, to_date=to_date, only=only
+        )
+        if not session_ids:
+            console.print(_EMPTY_SELECTION_MESSAGES[only])
+            return
+
     task_holder: list[Any] = []
 
     try:
@@ -523,6 +563,7 @@ async def _analyze_batch(
             result = await facade.run_batch_analysis(
                 from_date=from_date,
                 to_date=to_date,
+                session_ids=session_ids,
                 modes=modes,
                 primary_mode=primary_mode,
                 store_results=not no_store,

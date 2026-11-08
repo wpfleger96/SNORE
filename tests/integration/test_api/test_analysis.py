@@ -1,8 +1,14 @@
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 
+from sqlalchemy.orm import Session
+
 import snore.api.analysis_jobs as aj_store
+
+from snore.database import models
 
 
 def _assert_utc_timestamp(value: str) -> None:
@@ -235,7 +241,7 @@ class TestBatchAnalysis:
         )
         assert response.status_code == 422
 
-    def test_missing_only_no_dates_returns_202_for_unanalyzed_flow_sessions(
+    def test_only_missing_no_dates_returns_202_for_unanalyzed_flow_sessions(
         self, api_client, db_session, test_device, test_session_factory
     ):
         from snore.database.models import AnalysisResult, Day, Waveform
@@ -307,25 +313,21 @@ class TestBatchAnalysis:
         )
         db_session.flush()
 
-        response = api_client.post(
-            "/api/v1/analysis/batch", json={"missing_only": True}
-        )
+        response = api_client.post("/api/v1/analysis/batch", json={"only": "missing"})
         assert response.status_code == 202
         data = response.json()
         assert "job_id" in data
         assert data["session_count"] == 1
 
-    def test_no_dates_and_no_missing_only_returns_400(self, api_client):
-        response = api_client.post(
-            "/api/v1/analysis/batch", json={"missing_only": False}
-        )
+    def test_no_dates_and_no_only_returns_400(self, api_client):
+        response = api_client.post("/api/v1/analysis/batch", json={})
         assert response.status_code == 400
         assert (
             "from_date" in response.json()["detail"]
             or "to_date" in response.json()["detail"]
         )
 
-    def test_missing_only_with_date_range_filters_compose(
+    def test_only_missing_with_date_range_filters_compose(
         self, api_client, db_session, test_device, test_session_factory
     ):
         from snore.database.models import Day, Waveform
@@ -378,7 +380,7 @@ class TestBatchAnalysis:
         response = api_client.post(
             "/api/v1/analysis/batch",
             json={
-                "missing_only": True,
+                "only": "missing",
                 "from_date": "2025-04-01",
                 "to_date": "2025-04-30",
             },
@@ -386,6 +388,95 @@ class TestBatchAnalysis:
         assert response.status_code == 202
         data = response.json()
         assert data["session_count"] == 1
+
+    @staticmethod
+    def _add_flow_session_with_analysis(
+        db_session: Session,
+        device_id: int,
+        session_factory: Callable[..., models.Session],
+        day_date: date,
+        engine_versions_json: dict[str, Any],
+    ) -> models.Session:
+        from snore.database.models import AnalysisResult, Day, Waveform
+
+        day = Day(device_id=device_id, date=day_date, session_count=1)
+        db_session.add(day)
+        db_session.flush()
+        start = datetime.combine(day_date, datetime.min.time()).replace(hour=22)
+        session = session_factory(device_id, start_time=start)
+        session.day_id = day.id
+        db_session.flush()
+        db_session.add(
+            Waveform(
+                session_id=session.id,
+                waveform_type="flow",
+                sample_rate=1.0,
+                data_blob=b"",
+            )
+        )
+        db_session.add(
+            AnalysisResult(
+                session_id=session.id,
+                timestamp_start=start,
+                timestamp_end=start + timedelta(hours=8),
+                programmatic_result_json={},
+                engine_versions_json=engine_versions_json,
+            )
+        )
+        db_session.flush()
+        return session
+
+    def test_only_stale_no_dates_returns_202_for_outdated_sessions(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        from snore.analysis.shared.versioning import (
+            AlgorithmIdentity,
+            AlgoVersions,
+            AnalysisRunMetadata,
+        )
+
+        current = AlgoVersions(
+            identity=AlgorithmIdentity.current(),
+            run=AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"]),
+        ).model_dump()
+        self._add_flow_session_with_analysis(
+            db_session, test_device.id, test_session_factory, date(2025, 6, 1), current
+        )
+        self._add_flow_session_with_analysis(
+            db_session, test_device.id, test_session_factory, date(2025, 6, 2), {}
+        )
+
+        response = api_client.post("/api/v1/analysis/batch", json={"only": "stale"})
+
+        assert response.status_code == 202
+        assert response.json()["session_count"] == 1
+
+    def test_only_stale_with_nothing_outdated_returns_422(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        from snore.analysis.shared.versioning import (
+            AlgorithmIdentity,
+            AlgoVersions,
+            AnalysisRunMetadata,
+        )
+
+        current = AlgoVersions(
+            identity=AlgorithmIdentity.current(),
+            run=AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"]),
+        ).model_dump()
+        self._add_flow_session_with_analysis(
+            db_session, test_device.id, test_session_factory, date(2025, 6, 1), current
+        )
+
+        response = api_client.post("/api/v1/analysis/batch", json={"only": "stale"})
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "No sessions with outdated analysis"
+
+    def test_only_unknown_value_returns_422(self, api_client):
+        response = api_client.post("/api/v1/analysis/batch", json={"only": "all"})
+
+        assert response.status_code == 422
 
 
 class TestAnalysisJobsAPI:

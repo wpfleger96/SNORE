@@ -111,7 +111,8 @@ class AlgorithmIdentity(BaseModel):
     # equal to the current identity and silently stay OK.
     #
     # RELEASE NOTE: bumping format_version marks every stored AnalysisResult
-    # STALE_VERSION — the next batch analysis re-processes all sessions.
+    # STALE_VERSION; nothing re-analyzes automatically — re-run them with
+    # `snore analysis run --only stale`.
     # Call this out explicitly in release notes whenever format_version is bumped.
     format_version: int = 6
     segmenter: str = SEGMENTER_ALGO_VERSION

@@ -36,6 +36,7 @@ __all__ = [
     "AnalysisListItem",
     "AnalysisSessionDetail",
     "AnalysisDeletePreview",
+    "AnalysisSelection",
     "DeviceInfo",
     "SettingChangeEntry",
     "SettingsChange",
@@ -907,6 +908,11 @@ class WaveformInfo(BaseModel):
     duration_hours: float = provenance_field(
         Provenance.DEVICE, "Recorded duration in hours"
     )
+
+
+AnalysisSelection = Literal["missing", "stale"]
+"""Batch session selector: ``missing`` = never analyzed; ``stale`` = latest
+analysis came from an older algorithm version."""
 
 
 class AnalysisListItem(BaseModel):

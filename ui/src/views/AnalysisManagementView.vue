@@ -206,16 +206,25 @@
                         </div>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter>
+                <AlertDialogFooter class="sm:flex-wrap">
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <Button
                         variant="outline"
                         :disabled="batchRunning"
-                        @click="handleAnalyzeMissing"
+                        @click="handleBatchOnly('missing')"
                     >
                         <Loader2 v-if="batchRunning" class="mr-2 h-4 w-4 animate-spin" />
                         <Play v-else class="mr-2 h-4 w-4" />
                         Analyze Missing
+                    </Button>
+                    <Button
+                        variant="outline"
+                        :disabled="batchRunning"
+                        @click="handleBatchOnly('stale')"
+                    >
+                        <Loader2 v-if="batchRunning" class="mr-2 h-4 w-4 animate-spin" />
+                        <Play v-else class="mr-2 h-4 w-4" />
+                        Re-analyze Outdated
                     </Button>
                     <Button
                         :disabled="!batchFrom || !batchTo || batchRunning"
@@ -414,11 +423,11 @@ async function handleBatchRun(): Promise<void> {
     }
 }
 
-async function handleAnalyzeMissing(): Promise<void> {
+async function handleBatchOnly(only: 'missing' | 'stale'): Promise<void> {
     batchRunning.value = true
     try {
         await runBatchAnalysis({
-            missing_only: true,
+            only,
             modes: [batchMode.value],
             store_results: true,
         })

@@ -268,6 +268,195 @@ async def _create_session_with_mixed_analyses(
     return day, sess, stale_ar, current_ar
 
 
+def _outdated_engine_json() -> dict:
+    """Nested engine_versions_json whose identity differs from the current one."""
+    from snore.analysis.shared.versioning import (  # noqa: PLC0415
+        AlgorithmIdentity,
+        AlgoVersions,
+        AnalysisRunMetadata,
+    )
+
+    return AlgoVersions(
+        identity=AlgorithmIdentity.current().model_copy(update={"segmenter": "v0"}),
+        run=AnalysisRunMetadata(primary_mode="aasm", modes=["aasm"]),
+    ).model_dump()
+
+
+_SELECTION_BASE_TIME = datetime(2025, 6, 1, 12, 0, tzinfo=UTC)
+
+
+async def _create_selection_session(
+    db_session: AsyncSession,
+    device: Device,
+    day_date: date,
+    engine_jsons: list[dict] | None = None,
+    has_flow: bool = True,
+) -> Session:
+    """Create a session with optional flow waveform and analyses, oldest first.
+
+    ``engine_jsons[i]`` is stored with ``created_at = base + i minutes`` so the
+    last entry is deterministically the latest analysis.
+    """
+    from snore.database.models import Waveform  # noqa: PLC0415
+
+    day = Day(device_id=device.id, date=day_date, total_therapy_hours=8.0)
+    db_session.add(day)
+    await db_session.flush()
+    start = datetime.combine(day_date, datetime.min.time())
+    sess = Session(
+        device_id=device.id,
+        day_id=day.id,
+        device_session_id=f"select_{day_date.isoformat()}",
+        start_time=start,
+        end_time=start + timedelta(hours=8),
+        duration_seconds=28800,
+    )
+    db_session.add(sess)
+    await db_session.flush()
+    if has_flow:
+        db_session.add(
+            Waveform(
+                session_id=sess.id,
+                waveform_type="flow",
+                sample_rate=25.0,
+                data_blob=b"",
+            )
+        )
+    for i, engine_json in enumerate(engine_jsons or []):
+        db_session.add(
+            AnalysisResult(
+                session_id=sess.id,
+                timestamp_start=sess.start_time,
+                timestamp_end=sess.end_time,
+                engine_versions_json=engine_json,
+                created_at=_SELECTION_BASE_TIME + timedelta(minutes=i),
+            )
+        )
+    await db_session.flush()
+    return sess
+
+
+class TestListSessionIdsOnly:
+    """list_session_ids(only=...) selects missing or stale analyzable sessions."""
+
+    async def test_only_stale_selects_sessions_whose_latest_analysis_is_stale(
+        self, async_db_session, async_test_device
+    ):
+        """Only sessions whose latest row fails the identity check are returned."""
+        device = async_test_device
+        await _create_selection_session(async_db_session, device, date(2025, 1, 1))
+        await _create_selection_session(
+            async_db_session, device, date(2025, 1, 2), [_current_engine_json()]
+        )
+        latest_stale = await _create_selection_session(
+            async_db_session, device, date(2025, 1, 3), [_outdated_engine_json()]
+        )
+        await _create_selection_session(
+            async_db_session,
+            device,
+            date(2025, 1, 4),
+            [_outdated_engine_json(), _current_engine_json()],
+        )
+        stale_after_current = await _create_selection_session(
+            async_db_session,
+            device,
+            date(2025, 1, 5),
+            [_current_engine_json(), _outdated_engine_json()],
+        )
+        legacy_flat = await _create_selection_session(
+            async_db_session, device, date(2025, 1, 6), [_stale_engine_json()]
+        )
+        column_default = await _create_selection_session(
+            async_db_session, device, date(2025, 1, 7), [{}]
+        )
+        await _create_selection_session(
+            async_db_session,
+            device,
+            date(2025, 1, 8),
+            [_outdated_engine_json()],
+            has_flow=False,
+        )
+        await async_db_session.commit()
+
+        facade = AnalysisFacade(async_db_session, profile_id=1)
+        ids = await facade.list_session_ids(only="stale")
+
+        assert ids == [
+            latest_stale.id,
+            stale_after_current.id,
+            legacy_flat.id,
+            column_default.id,
+        ]
+
+    async def test_only_stale_with_date_range_excludes_out_of_range(
+        self, async_db_session, async_test_device
+    ):
+        """Date filters compose with the stale selector."""
+        device = async_test_device
+        in_range = await _create_selection_session(
+            async_db_session, device, date(2025, 2, 10), [_outdated_engine_json()]
+        )
+        await _create_selection_session(
+            async_db_session, device, date(2025, 3, 10), [_outdated_engine_json()]
+        )
+        await async_db_session.commit()
+
+        facade = AnalysisFacade(async_db_session, profile_id=1)
+        ids = await facade.list_session_ids(
+            from_date=datetime(2025, 2, 1),
+            to_date=datetime(2025, 2, 28, 23, 59, 59),
+            only="stale",
+        )
+
+        assert ids == [in_range.id]
+
+    async def test_only_stale_across_id_chunks_returns_all_stale(
+        self, async_db_session, async_test_device, monkeypatch
+    ):
+        """Stale classification merges results across id chunks."""
+        monkeypatch.setattr("snore.utils.db_chunk.ID_CHUNK_SIZE", 2)
+        device = async_test_device
+        stale = [
+            await _create_selection_session(
+                async_db_session,
+                device,
+                date(2025, 4, 1) + timedelta(days=i),
+                [_outdated_engine_json()],
+            )
+            for i in range(3)
+        ]
+        await _create_selection_session(
+            async_db_session, device, date(2025, 4, 10), [_current_engine_json()]
+        )
+        await async_db_session.commit()
+
+        facade = AnalysisFacade(async_db_session, profile_id=1)
+        ids = await facade.list_session_ids(only="stale")
+
+        assert ids == [s.id for s in stale]
+
+    async def test_only_missing_selects_unanalyzed_flow_sessions(
+        self, async_db_session, async_test_device
+    ):
+        """Missing excludes analyzed sessions of any version and flow-less sessions."""
+        device = async_test_device
+        unanalyzed = await _create_selection_session(
+            async_db_session, device, date(2025, 5, 1)
+        )
+        await _create_selection_session(
+            async_db_session, device, date(2025, 5, 2), [_outdated_engine_json()]
+        )
+        await _create_selection_session(
+            async_db_session, device, date(2025, 5, 3), has_flow=False
+        )
+        await async_db_session.commit()
+
+        facade = AnalysisFacade(async_db_session, profile_id=1)
+        ids = await facade.list_session_ids(only="missing")
+
+        assert ids == [unanalyzed.id]
+
+
 class TestDeleteStaleVersions:
     """Tests for get_delete_preview and delete_analysis with stale_versions=True."""
 

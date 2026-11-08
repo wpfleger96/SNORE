@@ -49,7 +49,7 @@ export const runBatchAnalysis = apiPost<
         body: {
             from_date?: string
             to_date?: string
-            missing_only?: boolean
+            only?: 'missing' | 'stale'
             modes?: string[]
             store_results?: boolean
         },

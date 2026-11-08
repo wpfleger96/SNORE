@@ -22,6 +22,7 @@ from snore.services import _base
 from snore.services.schemas import (
     AnalysisDeletePreview,
     AnalysisListItem,
+    AnalysisSelection,
     AnalysisSessionDetail,
     BatchAnalysisResult,
     BatchSessionResult,
@@ -605,16 +606,22 @@ class AnalysisFacade:
         self,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        missing_only: bool = False,
+        only: AnalysisSelection | None = None,
     ) -> list[int]:
         """Return session IDs for this profile, optionally filtered by date range.
 
         Cheaper than ``list_sessions_with_status``: selects only the ID column,
-        no ORM object hydration, no artificial row cap.
+        no ORM object hydration, no artificial row cap.  Ordered by ``Day.date``.
 
-        When ``missing_only`` is true, restrict to sessions that have a flow
-        waveform (sessions without flow data cannot be analyzed) but have no
-        existing analysis result.  Composable with date filters.
+        ``only`` narrows the result to sessions that have a flow waveform
+        (sessions without flow data cannot be analyzed) and either:
+
+        - ``"missing"``: no analysis result of any version yet.
+        - ``"stale"``: the latest analysis result (``created_at DESC, id DESC``)
+          fails the current-identity check (``_is_stale``).  Sessions with no
+          analysis at all are not stale.
+
+        Composable with date filters.
         """
         stmt = (
             select(models.Session.id)
@@ -626,21 +633,43 @@ class AnalysisFacade:
             stmt = stmt.where(models.Day.date >= from_date.date())
         if to_date:
             stmt = stmt.where(models.Day.date <= to_date.date())
-        if missing_only:
+        if only is not None:
             stmt = stmt.where(
                 select(models.Waveform.id)
                 .where(models.Waveform.session_id == models.Session.id)
                 .where(models.Waveform.waveform_type == "flow")
                 .exists()
             )
+        if only == "missing":
             stmt = stmt.where(
                 ~select(models.AnalysisResult.id)
                 .where(models.AnalysisResult.session_id == models.Session.id)
                 .exists()
             )
         stmt = stmt.order_by(models.Day.date)
-        result = await self._db.execute(stmt)
-        return list(result.scalars())
+        session_ids = list((await self._db.execute(stmt)).scalars())
+        if only == "stale":
+            stale = await self._stale_latest_session_ids(session_ids)
+            session_ids = [sid for sid in session_ids if sid in stale]
+        return session_ids
+
+    async def _stale_latest_session_ids(self, session_ids: list[int]) -> set[int]:
+        """Return the subset of ``session_ids`` whose latest analysis is stale."""
+        latest_ids = list((await latest_analysis_ids(self._db, session_ids)).values())
+        stale: set[int] = set()
+        for chunk in iter_id_chunks(latest_ids):
+            rows = await self._db.execute(
+                select(
+                    models.AnalysisResult.session_id,
+                    models.AnalysisResult.engine_versions_json,
+                ).where(models.AnalysisResult.id.in_(chunk))
+            )
+            stale.update(
+                session_id
+                for session_id, engine_versions_json in rows
+                if _is_stale(engine_versions_json)
+            )
+        return stale
 
     async def run_batch_analysis(
         self,

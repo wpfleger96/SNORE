@@ -268,6 +268,108 @@ class TestAnalyzeBatch:
 
 
 @pytest.mark.unit
+class TestAnalyzeBatchOnlySelector:
+    """Tests for `analysis run --only missing|stale`."""
+
+    @staticmethod
+    def _invoke(args: list[str], selected_ids: list[int]) -> tuple[Any, Any, Any, str]:
+        stdout_buf = StringIO()
+        stdout_console = Console(file=stdout_buf, force_terminal=False, width=120)
+        batch_result = BatchAnalysisResult(
+            total=len(selected_ids),
+            successful=len(selected_ids),
+            failed=0,
+            cancelled=0,
+            results=[],
+        )
+        list_ids = AsyncMock(return_value=selected_ids)
+        run_batch = AsyncMock(return_value=batch_result)
+        with (
+            patch("snore.database.session.init_database", new_callable=AsyncMock),
+            patch("snore.database.session.session_scope", _make_session_scope([])),
+            patch(
+                "snore.services.analysis_facade.AnalysisFacade.list_session_ids",
+                list_ids,
+            ),
+            patch(
+                "snore.services.analysis_facade.AnalysisFacade.run_batch_analysis",
+                run_batch,
+            ),
+            patch("snore.cli.display.console", stdout_console),
+            patch("snore.cli.groups.analysis.console", stdout_console),
+            patch(
+                "snore.auth.factory.resolve_cli_profile_id",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+        ):
+            result = CliRunner().invoke(analysis, args)
+        return result, list_ids, run_batch, stdout_buf.getvalue()
+
+    def test_only_stale_without_dates_analyzes_selected_sessions(self):
+        """--only stale needs no dates and analyzes exactly the selected ids."""
+        result, list_ids, run_batch, captured = self._invoke(
+            ["run", "--only", "stale"], [2, 5]
+        )
+
+        assert result.exit_code == 0, result.output
+        list_ids.assert_awaited_once_with(from_date=None, to_date=None, only="stale")
+        assert run_batch.await_args.kwargs["session_ids"] == [2, 5]
+        assert "Analyzed 2 sessions" in captured
+
+    def test_only_stale_with_date_range_passes_dates_to_selector(self):
+        """--from/--to narrow the --only selection."""
+        result, list_ids, _, _ = self._invoke(
+            ["run", "--only", "stale", "--from", "2024-01-01", "--to", "2024-01-31"],
+            [3],
+        )
+
+        assert result.exit_code == 0, result.output
+        kwargs = list_ids.await_args.kwargs
+        assert kwargs["only"] == "stale"
+        assert kwargs["from_date"].date() == date(2024, 1, 1)
+        assert kwargs["to_date"].date() == date(2024, 1, 31)
+
+    def test_only_stale_with_nothing_selected_prints_message_and_skips_run(self):
+        """An empty stale selection prints a filter-specific message, no batch run."""
+        result, _, run_batch, captured = self._invoke(["run", "--only", "stale"], [])
+
+        assert result.exit_code == 0, result.output
+        assert "No sessions with outdated analysis" in captured
+        run_batch.assert_not_awaited()
+
+    def test_only_missing_with_nothing_selected_prints_message(self):
+        """An empty missing selection prints the missing-specific message."""
+        result, _, run_batch, captured = self._invoke(["run", "--only", "missing"], [])
+
+        assert result.exit_code == 0, result.output
+        assert "No unanalyzed sessions" in captured
+        run_batch.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "single_flag", [["--session-id", "1"], ["--date", "2024-01-01"]]
+    )
+    def test_only_with_single_session_flag_errors(self, single_flag: list[str]) -> None:
+        """--only cannot be combined with --session-id or --date."""
+        result, list_ids, run_batch, _ = self._invoke(
+            ["run", "--only", "stale", *single_flag], [1]
+        )
+
+        assert result.exit_code != 0
+        assert "--only cannot be used" in result.output
+        list_ids.assert_not_awaited()
+        run_batch.assert_not_awaited()
+
+    def test_no_selection_flags_errors(self):
+        """Without any selection flag the command still refuses to run."""
+        result, _, run_batch, _ = self._invoke(["run"], [1])
+
+        assert result.exit_code != 0
+        assert "--only" in result.output
+        run_batch.assert_not_awaited()
+
+
+@pytest.mark.unit
 class TestBatchCoordinatorHandle:
     """AnalysisFacade exposes the BatchAnalysisCoordinator handle for cancellation.
 
