@@ -10,9 +10,8 @@ def apply_noon_split(dt: datetime) -> date:
     """Map a wall-clock datetime to its sleep-night date using a noon boundary.
 
     Sessions before noon belong to the previous calendar day.  This mirrors
-    ``DayManager.get_day_for_session`` / ``DEFAULT_SPLIT_TIME = time(12, 0)``
-    so that Apple Health sleep nights share the date convention with CPAP
-    ``Day.date``.
+    ``snore.parsers.base.night_date`` so that Apple Health sleep nights share
+    the date convention with CPAP ``Day.date``.
     """
     if dt.time() < time(12, 0):
         return dt.date() - timedelta(days=1)

@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from snore.parsers.base import night_date
+
 logger = logging.getLogger(__name__)
 
 # Matches ResMed DATALOG EDF filenames: YYYYMMDD_HHMMSS_TYPE.edf
@@ -41,11 +43,7 @@ def get_night_date(timestamp: datetime) -> str:
     Returns:
         Night date as YYYYMMDD string.
     """
-    if timestamp.hour < 12:
-        night_date = (timestamp - timedelta(days=1)).date()
-    else:
-        night_date = timestamp.date()
-    return night_date.strftime("%Y%m%d")
+    return night_date(timestamp).strftime("%Y%m%d")
 
 
 def scan_edf_files(datalog_dir: Path) -> list[Path]:
@@ -151,11 +149,11 @@ def flatten_night_files(
     structure, just all files for a given night.
     """
     result: dict[str, list[Path]] = {}
-    for night_date, sessions in grouped.items():
+    for night, sessions in grouped.items():
         files: list[Path] = []
         for file_map in sessions.values():
             files.extend(file_map.values())
-        result[night_date] = files
+        result[night] = files
     return result
 
 
@@ -288,16 +286,14 @@ def chain_session_segments(
             seg_end_lower = seg_start + timedelta(seconds=duration or 0)
             last_end = max(last_end, seg_end_lower)
         else:
-            night_date = get_night_date(
-                datetime.strptime(chain_first_id, "%Y%m%d_%H%M%S")
-            )
-            chains.append((night_date, chain_first_id, chain_segments))
+            night = get_night_date(datetime.strptime(chain_first_id, "%Y%m%d_%H%M%S"))
+            chains.append((night, chain_first_id, chain_segments))
             chain_first_id = session_id
             chain_segments = {session_id: files}
             duration = get_segment_duration_seconds(session_id, files)
             last_end = seg_start + timedelta(seconds=duration or 0)
 
-    night_date = get_night_date(datetime.strptime(chain_first_id, "%Y%m%d_%H%M%S"))
-    chains.append((night_date, chain_first_id, chain_segments))
+    night = get_night_date(datetime.strptime(chain_first_id, "%Y%m%d_%H%M%S"))
+    chains.append((night, chain_first_id, chain_segments))
 
     return chains

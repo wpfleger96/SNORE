@@ -158,7 +158,11 @@ def import_data(
     no_backup: bool,
     no_analyze: bool,
 ) -> None:
-    """Import CPAP data from device SD card or directory."""
+    """Import CPAP data from device SD card or directory.
+
+    --from/--to select sessions by night date: a session that starts before
+    noon belongs to the previous day's night.
+    """
     data_path = Path(path)
 
     init_db(db)

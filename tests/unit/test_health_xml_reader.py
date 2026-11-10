@@ -48,8 +48,8 @@ class TestNoonSplit:
     def test_noon_split_matches_day_manager_convention(self) -> None:
         """apply_noon_split must agree with DayManager.get_day_for_session on all boundaries.
 
-        DayManager.DEFAULT_SPLIT_TIME is time(12, 0).  Both functions use the
-        same strict-less-than comparison so they must produce identical results
+        DayManager delegates to snore.parsers.base.night_date.  Both functions
+        use the same strict-less-than noon comparison so they must produce identical results
         for any input datetime.
         """
         from snore.database.day_manager import DayManager  # noqa: PLC0415

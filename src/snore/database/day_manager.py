@@ -7,7 +7,7 @@ Handles day splitting logic and aggregation of session statistics into daily rec
 import logging
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 
 import numpy as np
 
@@ -25,6 +25,7 @@ from snore.metrics import (
     DAY_METRIC_STAT_COLUMNS,
     DayAgg,
 )
+from snore.parsers.base import night_date
 from snore.parsers.unified import SUMMARY_CHANNELS
 from snore.provenance import IndexSource
 from snore.therapy_hours import effective_session_hours
@@ -53,25 +54,13 @@ type ChannelSamples = dict[tuple[str, int], np.ndarray]
 class DayManager:
     """Manages day splitting and aggregation logic (OSCAR-compatible)."""
 
-    DEFAULT_SPLIT_TIME = time(12, 0)
-
     @classmethod
     def get_day_for_session(cls, session_start: datetime) -> date:
+        """Return the Day date a session belongs to: its ``night_date``.
+
+        OSCAR logic: sessions starting before noon belong to the previous day.
         """
-        Determine which calendar day a session belongs to based on split time.
-
-        OSCAR logic: Sessions before the split time belong to the previous day.
-        Split time is hardcoded to 12:00 noon.
-
-        Args:
-            session_start: Session start datetime
-
-        Returns:
-            Date the session belongs to
-        """
-        if session_start.time() < cls.DEFAULT_SPLIT_TIME:
-            return session_start.date() - timedelta(days=1)
-        return session_start.date()
+        return night_date(session_start)
 
     @classmethod
     async def get_or_create_day(

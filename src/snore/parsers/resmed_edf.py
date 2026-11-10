@@ -44,6 +44,8 @@ from snore.parsers.base import (
     ParserMetadata,
     RawFileManifest,
     build_root_metadata,
+    date_in_range,
+    night_date,
 )
 from snore.parsers.discovery import DataRoot, DataRootFinder
 from snore.parsers.event_labels import EVENT_TYPE_MAP, FILTERED_ANNOTATIONS
@@ -912,7 +914,7 @@ class ResmedEDFParser(DeviceParser):
 
     def _parse_single_session_bundle(
         self,
-        night_date: str,
+        night_id: str,
         chain_id: str,
         segments: dict[str, dict[str, Path]],
         device_info: DeviceInfo,
@@ -925,11 +927,14 @@ class ResmedEDFParser(DeviceParser):
         """
         Parse one session chain's file bundle into a finalized session.
 
-        Returns None when the chain has no valid segments or its actual
-        start date falls outside the requested date range.
+        Returns None when the chain has no valid segments or the night of its
+        parsed start time falls outside the requested date range.  The chain's
+        night-date ID comes from its filename, which can disagree with the EDF
+        header start around noon; re-checking the parsed start keeps the range
+        equal to the ``Day`` the session is filed under.
         """
         session = self._parse_night_session(
-            night_date,
+            night_id,
             chain_id,
             segments,
             device_info,
@@ -941,18 +946,14 @@ class ResmedEDFParser(DeviceParser):
         if session is None:
             return None
 
-        if date_from:
-            if session.start_time.date() < datetime.fromisoformat(date_from).date():
-                logger.warning(
-                    f"Night {night_date} has mismatched date in ID vs file contents"
-                )
-                return None
-        if date_to:
-            if session.start_time.date() > datetime.fromisoformat(date_to).date():
-                logger.warning(
-                    f"Night {night_date} has mismatched date in ID vs file contents"
-                )
-                return None
+        parsed_night = night_date(session.start_time)
+        if not date_in_range(parsed_night, date_from, date_to):
+            logger.warning(
+                f"Chain {chain_id} (night {night_id}): parsed start "
+                f"{session.start_time} is on night {parsed_night}, outside the "
+                "requested date range"
+            )
+            return None
 
         session.finalize_statistics()
         return session

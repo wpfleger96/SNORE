@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +34,35 @@ __all__ = [
     "ParserMetadata",
     "RawFileManifest",
     "build_root_metadata",
+    "date_in_range",
     "filter_units_by_date",
+    "night_date",
 ]
+
+# Sessions starting before this wall-clock time belong to the previous night.
+_NIGHT_SPLIT_TIME = time(12, 0)
+
+
+def night_date(start: datetime) -> date:
+    """Return the night a session starting at ``start`` belongs to.
+
+    Sessions starting before noon belong to the previous day's night; noon
+    itself starts a new night (OSCAR's day-split rule).  This is the date a
+    session's ``Day`` is filed under and the date import ranges select by.
+    """
+    if start.time() < _NIGHT_SPLIT_TIME:
+        return start.date() - timedelta(days=1)
+    return start.date()
+
+
+def date_in_range(value: date, date_from: str | None, date_to: str | None) -> bool:
+    """Whether ``value`` lies within the inclusive ISO-date range.
+
+    A None bound is open, so with both None every date is in range.
+    """
+    on_or_after = not date_from or value >= datetime.fromisoformat(date_from).date()
+    on_or_before = not date_to or value <= datetime.fromisoformat(date_to).date()
+    return on_or_after and on_or_before
 
 
 def build_root_metadata(roots: list[DataRoot]) -> dict[str, Any]:
@@ -69,28 +96,21 @@ def filter_units_by_date[Unit](
     date_from: str | None,
     date_to: str | None,
 ) -> list[Unit]:
-    """Filter parse units to those whose key date is within the range.
+    """Filter parse units to those whose night date is within the range.
 
-    ``key_date_fn`` maps a unit to its calendar date, or None when the date is
-    unknown/unparseable — such units are always kept (the caller logs why).
-    ``date_from``/``date_to`` are inclusive ISO dates; when both are None the
-    input list is returned unchanged.
+    ``key_date_fn`` maps a unit to its night date (see ``night_date``), or None
+    when the date is unknown/unparseable — such units are always kept (the
+    caller logs why).  ``date_from``/``date_to`` are inclusive ISO dates; when
+    both are None the input list is returned unchanged.
     """
     if not (date_from or date_to):
         return units
 
-    from_date = datetime.fromisoformat(date_from).date() if date_from else None
-    to_date = datetime.fromisoformat(date_to).date() if date_to else None
-
     kept: list[Unit] = []
     for unit in units:
         unit_date = key_date_fn(unit)
-        if unit_date is not None:
-            if from_date is not None and unit_date < from_date:
-                continue
-            if to_date is not None and unit_date > to_date:
-                continue
-        kept.append(unit)
+        if unit_date is None or date_in_range(unit_date, date_from, date_to):
+            kept.append(unit)
     return kept
 
 
@@ -396,7 +416,11 @@ class DeviceParser(ABC):
 
     @abstractmethod
     def _unit_date(self, unit: Any, timezone_name: str | None) -> date | None:
-        """Return a unit's calendar date for range filtering, or None."""
+        """Return a unit's night date for range filtering, or None.
+
+        The night date is ``night_date`` of the unit's session start, the same
+        date its ``Day`` is filed under, not the start's calendar date.
+        """
 
     @abstractmethod
     def _build_context(self, root: Any, timezone_name: str | None) -> Any:

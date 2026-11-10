@@ -14,7 +14,7 @@ import csv
 import json
 import uuid
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
@@ -479,9 +479,6 @@ class TestNightDateJoinConvention:
         ]
         for dt in boundary_datetimes:
             assert apply_noon_split(dt) == DayManager.get_day_for_session(dt), dt
-
-        # Both copies of the cutoff are the same noon constant.
-        assert time(12, 0) == DayManager.DEFAULT_SPLIT_TIME
 
     async def test_validator_joins_apple_bd_on_shared_night_date(
         self, async_db_session, monkeypatch
