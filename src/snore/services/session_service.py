@@ -159,7 +159,7 @@ class SessionService(ProfileScopedService):
     ) -> SessionDetail:
         """Get detailed information for a single session.
 
-        ``include_channel_stats=False`` skips decoding the FL and snore blobs and
+        ``include_channel_stats=False`` skips decoding the channel blobs and
         leaves ``channel_stats`` null, for callers that do not show them.
 
         Raises NotFoundError if the session doesn't exist or belongs to a

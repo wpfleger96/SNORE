@@ -175,8 +175,10 @@ def register(mcp: FastMCP) -> None:
         ``*_computed``. Event counts are device-scored; ``reras`` and
         ``unclassified_apneas`` are null, not zero, when the device has never
         scored one. Pressure, EPAP, leak and SpO2 values, ``channel_stats``
-        (device flow-limitation and snore channels, pooled over enabled
-        sessions) and ``mask_on_spans`` are derived from device data.
+        (median, 95th and max of the device flow-limitation, snore,
+        respiratory-rate, tidal-volume (mL), minute-ventilation, Ti and I:E
+        channels and the oximeter pulse, pooled over enabled sessions) and
+        ``mask_on_spans`` are derived from device data.
         ``device`` matches ``GET /days/{date}``: ``device.health_sleep`` is the
         Day page's Apple Health summary, and ``apple_health`` is the fuller
         Apple night.

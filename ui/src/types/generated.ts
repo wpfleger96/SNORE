@@ -3019,7 +3019,7 @@ export interface components {
              * @default 0
              */
             central_apneas: number
-            /** @description Flow-limitation and snore channel statistics over the pooled samples of the day's enabled sessions; null when none has either channel */
+            /** @description Device channel statistics over the pooled samples of the day's enabled sessions; null when none has any of the channels */
             channel_stats?: components['schemas']['DeviceChannelStats'] | null
             /**
              * Date
@@ -3299,7 +3299,7 @@ export interface components {
         }
         /**
          * DeviceChannelStats
-         * @description Distribution of the stored flow-limitation and snore waveform channels.
+         * @description Distribution of the stored FL, snore, respiratory and pulse waveforms.
          *
          *     Each statistic is taken over the samples pooled across the sessions of the
          *     parent response; a channel none of them has reads null.
@@ -3321,6 +3321,66 @@ export interface components {
              */
             device_flg_median?: number | null
             /**
+             * Ie Ratio 95Th
+             * @description [DERIVED] 95th percentile of the device I:E ratio channel (%), pooled
+             */
+            ie_ratio_95th?: number | null
+            /**
+             * Ie Ratio Max
+             * @description [DERIVED] Maximum of the device I:E ratio channel (%), pooled
+             */
+            ie_ratio_max?: number | null
+            /**
+             * Ie Ratio Median
+             * @description [DERIVED] Median of the device I:E ratio channel (%), pooled
+             */
+            ie_ratio_median?: number | null
+            /**
+             * Minute Ventilation 95Th
+             * @description [DERIVED] 95th percentile of the device minute ventilation channel (L/min), pooled
+             */
+            minute_ventilation_95th?: number | null
+            /**
+             * Minute Ventilation Max
+             * @description [DERIVED] Maximum of the device minute ventilation channel (L/min), pooled
+             */
+            minute_ventilation_max?: number | null
+            /**
+             * Minute Ventilation Median
+             * @description [DERIVED] Median of the device minute ventilation channel (L/min), pooled
+             */
+            minute_ventilation_median?: number | null
+            /**
+             * Pulse 95Th
+             * @description [DERIVED] 95th percentile of the oximeter pulse channel (beats/min), excluding invalid readings, pooled
+             */
+            pulse_95th?: number | null
+            /**
+             * Pulse Max
+             * @description [DERIVED] Maximum of the oximeter pulse channel (beats/min), excluding invalid readings, pooled
+             */
+            pulse_max?: number | null
+            /**
+             * Pulse Median
+             * @description [DERIVED] Median of the oximeter pulse channel (beats/min), excluding invalid readings, pooled
+             */
+            pulse_median?: number | null
+            /**
+             * Respiratory Rate 95Th
+             * @description [DERIVED] 95th percentile of the device respiratory rate channel (breaths/min), pooled
+             */
+            respiratory_rate_95th?: number | null
+            /**
+             * Respiratory Rate Max
+             * @description [DERIVED] Maximum of the device respiratory rate channel (breaths/min), pooled
+             */
+            respiratory_rate_max?: number | null
+            /**
+             * Respiratory Rate Median
+             * @description [DERIVED] Median of the device respiratory rate channel (breaths/min), pooled
+             */
+            respiratory_rate_median?: number | null
+            /**
              * Snore 95Th
              * @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), pooled
              */
@@ -3335,6 +3395,36 @@ export interface components {
              * @description [DERIVED] Median of the device snore channel (0-5 unitless), pooled
              */
             snore_median?: number | null
+            /**
+             * Ti 95Th
+             * @description [DERIVED] 95th percentile of the device inspiratory time channel (seconds), pooled
+             */
+            ti_95th?: number | null
+            /**
+             * Ti Max
+             * @description [DERIVED] Maximum of the device inspiratory time channel (seconds), pooled
+             */
+            ti_max?: number | null
+            /**
+             * Ti Median
+             * @description [DERIVED] Median of the device inspiratory time channel (seconds), pooled
+             */
+            ti_median?: number | null
+            /**
+             * Tidal Volume 95Th
+             * @description [DERIVED] 95th percentile of the device tidal volume channel (mL), pooled
+             */
+            tidal_volume_95th?: number | null
+            /**
+             * Tidal Volume Max
+             * @description [DERIVED] Maximum of the device tidal volume channel (mL), pooled
+             */
+            tidal_volume_max?: number | null
+            /**
+             * Tidal Volume Median
+             * @description [DERIVED] Median of the device tidal volume channel (mL), pooled
+             */
+            tidal_volume_median?: number | null
         }
         /**
          * DeviceDetail
@@ -5500,7 +5590,7 @@ export interface components {
          */
         SessionDetail: {
             active_mask?: components['schemas']['MaskLogEntryResponse'] | null
-            /** @description This session's flow-limitation and snore channel statistics, whether or not it is enabled; null when it has neither channel, and always null on PATCH responses, which omit it */
+            /** @description This session's device channel statistics, whether or not it is enabled; null when it has none of the channels, and always null on PATCH responses, which omit it */
             channel_stats?: components['schemas']['DeviceChannelStats'] | null
             /** Data Quality Notes */
             data_quality_notes?: string[]

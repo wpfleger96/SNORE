@@ -29,6 +29,7 @@ import numpy as np
 
 from snore.constants import (
     PARSER_MAX_SEARCH_DEPTH,
+    PULSE_VALID_RANGE,
     UNIT_BPM,
     UNIT_FLOW,
     UNIT_ML,
@@ -1787,7 +1788,7 @@ class ResmedEDFParser(DeviceParser):
                         pulse_signal,
                         WaveformType.PULSE,
                         UNIT_BPM,
-                        valid_range=(40, 200),
+                        valid_range=PULSE_VALID_RANGE,
                     )
                     if result is not None:
                         waveform, valid_data = result

@@ -371,6 +371,7 @@ class StatsService(ProfileScopedService):
         histograms = await load_channel_histograms(
             self.db_session,
             [sid for sids in sessions_by_period.values() for sid in sids],
+            ("fl", "snore"),
         )
         pooled = {
             pstart: pool_channel_stats(histograms, sids) or DeviceChannelStats()

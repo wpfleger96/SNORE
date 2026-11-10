@@ -150,7 +150,7 @@ describe('DayDetailView device channel and mask-on sections', () => {
             makeDay({ channel_stats: CHANNEL_STATS, mask_on_spans: SPANS }),
         )
 
-        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore', 'Mask-On Spans'])
+        expect(sectionHeadings(wrapper)).toEqual(['Device Channel Statistics', 'Mask-On Spans'])
     })
 
     it('test_unknown_channels_and_empty_spans_hide_both_sections', async () => {
@@ -167,7 +167,7 @@ describe('DayDetailView device channel and mask-on sections', () => {
             }),
         )
 
-        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore'])
+        expect(sectionHeadings(wrapper)).toEqual(['Device Channel Statistics'])
     })
 })
 

@@ -353,6 +353,19 @@ def _get_severity_color(severity: str) -> str:
         return "red"
 
 
+# DeviceChannelStats channels in display order: title and field prefix.
+_CHANNEL_TITLES = (
+    ("Flow Limitation", "device_flg"),
+    ("Snore", "snore"),
+    ("Respiratory Rate (breaths/min)", "respiratory_rate"),
+    ("Tidal Volume (mL)", "tidal_volume"),
+    ("Minute Ventilation (L/min)", "minute_ventilation"),
+    ("Inspiratory Time (s)", "ti"),
+    ("I:E Ratio (%)", "ie_ratio"),
+    ("Pulse (beats/min)", "pulse"),
+)
+
+
 def _print_channel_stats(title: str, stats: DeviceChannelStats, prefix: str) -> None:
     """Print a channel's median, 95th and max, skipping a channel with no data."""
     rows = [
@@ -619,8 +632,8 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
 
     if detail.channel_stats:
         console.print("\n  Device Channels:")
-        _print_channel_stats("Flow Limitation", detail.channel_stats, "device_flg")
-        _print_channel_stats("Snore", detail.channel_stats, "snore")
+        for title, prefix in _CHANNEL_TITLES:
+            _print_channel_stats(title, detail.channel_stats, prefix)
 
     if detail.mask_on_spans:
         console.print("\n  Mask-On Spans:")

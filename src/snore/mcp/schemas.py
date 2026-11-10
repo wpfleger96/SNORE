@@ -221,6 +221,13 @@ class NightlyChannelFields(BaseModel):
     snore_reason: str | None = None
 
 
+# Where each NightlyRow respiratory value comes from.
+_NIGHT_RESPIRATORY_SOURCE = (
+    "the device's daily summary value when all the night's enabled sessions "
+    "agree, otherwise the median of the night's pooled waveform samples"
+)
+
+
 class NightlyRow(NightlyChannelFields):
     """Per-night summary row returned by get_nightly_summary."""
 
@@ -340,19 +347,17 @@ class NightlyRow(NightlyChannelFields):
     )
     rr_mean_bpm: float | None = provenance_field(
         Provenance.DEVICE,
-        "Respiratory rate (breaths/min), device session summary of the night's "
-        "first session.",
+        f"Respiratory rate (breaths/min), {_NIGHT_RESPIRATORY_SOURCE}.",
         default=None,
     )
     tv_mean_ml: float | None = provenance_field(
         Provenance.DEVICE,
-        "Tidal volume (mL), device session summary of the night's first session.",
+        f"Tidal volume (mL), {_NIGHT_RESPIRATORY_SOURCE}.",
         default=None,
     )
     mv_mean_lpm: float | None = provenance_field(
         Provenance.DEVICE,
-        "Minute ventilation (L/min), device session summary of the night's "
-        "first session.",
+        f"Minute ventilation (L/min), {_NIGHT_RESPIRATORY_SOURCE}.",
         default=None,
     )
 
@@ -362,17 +367,17 @@ class NightlyRow(NightlyChannelFields):
 
     ti_median_s: float | None = provenance_field(
         Provenance.DEVICE,
-        "Median inspiratory time (s), device session summary of the night's "
-        "first session, coarse (observed values are 1.0 or 2.0 s); "
-        "ti_median_reason='channel_absent' when the device did "
-        "not report it, 'no_sessions' when the night has no enabled sessions.",
+        f"Median inspiratory time (s), {_NIGHT_RESPIRATORY_SOURCE}, coarse "
+        "(observed values are 1.0 or 2.0 s); ti_median_reason='channel_absent' "
+        "when neither exists, 'no_sessions' when the night has no enabled "
+        "sessions.",
         default=None,
     )
     ti_median_reason: str | None = None
     ie_ratio_median: float | None = provenance_field(
         Provenance.DEVICE,
-        "Median I:E ratio, device session summary of the night's first session; "
-        "ie_ratio_reason='channel_absent' when the device did not report it, "
+        f"Median I:E ratio, {_NIGHT_RESPIRATORY_SOURCE}; "
+        "ie_ratio_reason='channel_absent' when neither exists, "
         "'no_sessions' when the night has no enabled sessions. "
         "The STR header's physical dimension is '%' (gain 1, observed values "
         "about 44-54) and OSCAR reads it unconverted; how the device defines "

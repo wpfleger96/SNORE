@@ -1,4 +1,4 @@
-"""REST shape of the FL and snore statistics and mask-on spans."""
+"""REST shape of the device channel statistics and mask-on spans."""
 
 from datetime import date, datetime
 
@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession
 
 from snore.database.models import Day, Session, Waveform
+from snore.services.schemas import DeviceChannelStats
 
 _NIGHT = date(2025, 3, 1)
 
@@ -31,7 +32,7 @@ def _add_channel(
 
 @pytest.fixture
 def night(db_session, test_device, test_session_factory):
-    """One session on a Day row, with both channels and two mask-on segments."""
+    """One session on a Day row, with FL, snore and RR channels and two mask-on segments."""
     day = Day(
         device_id=test_device.id,
         date=_NIGHT,
@@ -48,16 +49,22 @@ def night(db_session, test_device, test_session_factory):
     db_session.flush()
     _add_channel(db_session, session, "fl", [-0.01, 0.0, 0.5])
     _add_channel(db_session, session, "snore", [0.0, 2.0])
+    _add_channel(db_session, session, "rr", [12.0, 16.0])
     return session
 
 
+# Channels the night has no waveform for serialize as null.
 _EXPECTED_STATS = {
+    **dict.fromkeys(DeviceChannelStats.model_fields),
     "device_flg_median": 0.25,
     "device_flg_95th": 0.5,
     "device_flg_max": 0.5,
     "snore_median": 1.0,
     "snore_95th": 2.0,
     "snore_max": 2.0,
+    "respiratory_rate_median": 14.0,
+    "respiratory_rate_95th": 16.0,
+    "respiratory_rate_max": 16.0,
 }
 
 

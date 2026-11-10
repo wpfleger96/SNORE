@@ -89,6 +89,10 @@ UNIT_SECONDS = "seconds"
 # Deliberately separate from LEAK_VALID_THRESHOLD_LPM, which is versioned analysis state.
 LEAK_REDLINE_LPM = 24.0
 
+# Plausible pulse readings (BPM, inclusive).  Stored pulse waveforms keep the
+# readings outside it, such as ResMed's -1 "no oximeter" value.
+PULSE_VALID_RANGE: tuple[float, float] = (40.0, 200.0)
+
 
 # ============================================================================
 # Analysis Algorithm Constants

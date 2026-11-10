@@ -326,12 +326,21 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
   EDF headers before full loads (`_preload_str_file`) and falling back to the next candidate when
   a winner is corrupt.
 
-**Device channel statistics** (FL and snore median, 95th, max) have no summary columns:
+**Device channel statistics** (median, 95th, max of the FL, snore, `rr`, `tv` (mL on every import
+source), `mv`, `ti`, `ie_ratio` and `pulse` waveforms; FL and snore have no summary columns, and
+ResMed stamps one STR value per day on every session's respiratory columns):
 `services/channel_stats.py` computes them on read from `Waveform.data_blob`, reducing each session
-to a value histogram. Pool every enabled session in scope; never average per-session percentiles.
-FL and snore are on detail models and `/stats/periods` only (in MCP, `get_night_detail`'s
-`device.channel_stats` and `get_period_stats`), not on trends, so list endpoints and
+to a value histogram (`CHANNEL_RANGES`: zeros count except on pulse, which keeps
+`PULSE_VALID_RANGE` only). Pool every enabled session in scope; never average per-session
+percentiles. They are on detail models, where session and day detail decode all eight channels (in
+MCP, `get_night_detail`'s `device.channel_stats`), and `/stats/periods` and `get_period_stats`
+carry only the FL and snore 95ths, so the period path passes `("fl", "snore")` to
+`load_channel_histograms`; keep it that narrow. They are not on trends, so list endpoints and
 `/stats/trends` stay blob-free; callers that do not show them pass `include_channel_stats=False`.
+`get_nightly_summary`'s `rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and
+`ie_ratio_median` are the stored Statistics value when every enabled session with a row agrees (TV
+compared in mL), otherwise the night's pooled waveform median (`night_respiratory_values` in
+`mcp/tools/summary.py`), which decodes only the nights and channels that fall back.
 The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_blobs`), and they
 also reduce each session to a histogram and read percentiles from the pooled histogram
 (`pool_histograms` returns a `PooledHistogram`, read with `value_at_rank`, `pooled_distribution`

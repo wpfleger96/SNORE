@@ -1453,6 +1453,11 @@ class TestSessionShowExpanded:
         assert "Median†: 1.00" in snore
         assert "95th percentile†: 2.00" in snore
         assert "Max†: 2.00" in snore
+        respiratory_rate = output[output.index("Respiratory Rate (breaths/min):") :]
+        assert "Median†: 14.00" in respiratory_rate
+        assert "95th percentile†: 16.00" in respiratory_rate
+        assert "Max†: 16.00" in respiratory_rate
+        assert "Pulse (beats/min):" not in output
 
     def test_session_show_displays_mask_on_spans(
         self, cli_runner, db_with_device_channels
@@ -1549,12 +1554,13 @@ class TestStatsEnhanced:
 
 @pytest.fixture
 async def db_with_device_channels(populated_test_db_full):
-    """``populated_test_db_full`` with FL and snore channels on the first session."""
+    """``populated_test_db_full`` with FL, snore and RR channels on the first session."""
     async with session_scope() as session:
         first = await session.get(models.Session, 1)
         first.mask_on_segments = [[0.0, 3600.0], [5400.0, 9000.0]]
         await _make_channel_waveform(session, first, "fl", [0.0, 0.25, 0.5])
         await _make_channel_waveform(session, first, "snore", [0.0, 1.0, 2.0])
+        await _make_channel_waveform(session, first, "rr", [12.0, 14.0, 16.0])
     return populated_test_db_full
 
 

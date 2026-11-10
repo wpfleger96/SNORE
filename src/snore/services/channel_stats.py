@@ -1,7 +1,9 @@
 """Device detail derived on read for session, day and period responses.
 
-The flow-limitation (``fl``) and snore channels have no summary columns, so
-their statistics decode the stored waveform blobs.  Samples are pooled across
+The flow-limitation (``fl``) and snore channels have no summary columns, and
+the respiratory and pulse columns hold one value per session (on ResMed, the
+day's), so their statistics decode the stored waveform blobs.  Samples are
+pooled across
 sessions, never averaged per session, as OSCAR's Statistics page does
 (``Profile::calcPercentile``); the definitions match the MCP nightly summary
 (``services/breath/nightly.py``).
@@ -27,6 +29,7 @@ import numpy as np
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.constants import PULSE_VALID_RANGE
 from snore.database.waveform_blobs import decode_channel_blobs
 from snore.services.schemas import DeviceChannelStats, MaskOnSpan
 from snore.therapy_hours import parse_mask_on_segments
@@ -35,7 +38,7 @@ from snore.utils.stats import nearest_rank_index
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "CHANNEL_FLOORS",
+    "CHANNEL_RANGES",
     "ChannelHistogram",
     "ChannelHistograms",
     "PooledHistogram",
@@ -52,16 +55,32 @@ __all__ = [
     "value_at_rank",
 ]
 
-# Lowest valid sample per channel: ``fl`` and ``leak`` blobs keep their negative
-# mask-off sentinels (``fl`` the raw -0.01).  Zeros are legitimate data on every
-# channel.  REST channel statistics cover the ``_CHANNEL_FIELDS`` channels only;
-# the MCP nightly summary also reduces ``leak``.
-CHANNEL_FLOORS = {"fl": 0.0, "snore": -math.inf, "leak": 0.0}
-# The channels REST channel statistics report, and their DeviceChannelStats fields.
-_CHANNEL_FIELDS = {
-    "fl": ("device_flg_median", "device_flg_95th", "device_flg_max"),
-    "snore": ("snore_median", "snore_95th", "snore_max"),
+# Valid samples per channel, inclusive: ``fl`` and ``leak`` blobs keep their
+# negative mask-off sentinels (``fl`` the raw -0.01), and pulse blobs keep their
+# invalid readings.  Zeros are legitimate data on every channel but pulse.
+# REST channel statistics cover the ``_CHANNEL_PREFIXES`` channels only; the
+# MCP nightly summary also reduces ``leak``.
+_NON_NEGATIVE = (0.0, math.inf)
+CHANNEL_RANGES: dict[str, tuple[float, float]] = {
+    "fl": _NON_NEGATIVE,
+    "snore": (-math.inf, math.inf),
+    "leak": _NON_NEGATIVE,
+    **dict.fromkeys(("rr", "tv", "mv", "ti", "ie_ratio"), _NON_NEGATIVE),
+    "pulse": PULSE_VALID_RANGE,
 }
+# The channels REST channel statistics report, and the prefix of each one's
+# DeviceChannelStats ``_median``, ``_95th`` and ``_max`` fields.
+_CHANNEL_PREFIXES = {
+    "fl": "device_flg",
+    "snore": "snore",
+    "rr": "respiratory_rate",
+    "tv": "tidal_volume",
+    "mv": "minute_ventilation",
+    "ti": "ti",
+    "ie_ratio": "ie_ratio",
+    "pulse": "pulse",
+}
+_STATISTICS = ("median", "95th", "max")
 _ROUND_DIGITS = 4
 
 # A session's usable samples as ascending distinct values and how often each occurs.
@@ -75,8 +94,9 @@ PooledHistogram = NewType("PooledHistogram", tuple[np.ndarray, np.ndarray])
 
 
 def channel_histogram(channel: str, values: np.ndarray) -> ChannelHistogram:
-    """Histogram of the finite ``values`` at or above the channel's floor."""
-    usable = values[np.isfinite(values) & (values >= CHANNEL_FLOORS[channel])]
+    """Histogram of the finite ``values`` within the channel's valid range."""
+    low, high = CHANNEL_RANGES[channel]
+    usable = values[np.isfinite(values) & (values >= low) & (values <= high)]
     unique_values, counts = np.unique(usable, return_counts=True)
     return unique_values, counts
 
@@ -157,17 +177,20 @@ def histogram_distribution(
 
 
 async def load_channel_histograms(
-    db: AsyncSession, session_ids: Sequence[int]
+    db: AsyncSession,
+    session_ids: Sequence[int],
+    channels: Sequence[str] = tuple(_CHANNEL_PREFIXES),
 ) -> ChannelHistograms:
-    """Histograms of the usable ``fl`` and ``snore`` samples of ``session_ids``.
+    """Histograms of the usable ``channels`` samples of ``session_ids``.
 
-    Both channels are keys of the result.  A session is absent from a channel
-    when it has no row for it, the blob is empty, or the blob is corrupt, which
-    logs a warning.  ``decode_channel_blobs`` does no ownership check, so callers
-    pass ids already scoped to the profile.
+    ``channels`` defaults to every channel ``DeviceChannelStats`` reports; each
+    is a key of the result.  A session is absent from a channel when it has no
+    row for it, the blob is empty, or the blob is corrupt, which logs a warning.
+    ``decode_channel_blobs`` does no ownership check, so callers pass ids
+    already scoped to the profile.
     """
     histograms, _ = await decode_channel_blobs(
-        db, session_ids, tuple(_CHANNEL_FIELDS), channel_histogram
+        db, session_ids, channels, channel_histogram
     )
     return histograms
 
@@ -177,17 +200,19 @@ def pool_channel_stats(
 ) -> DeviceChannelStats | None:
     """Statistics over the combined samples of ``session_ids``.
 
-    ``None`` when no session has a usable sample on either channel.
+    A channel not loaded into ``histograms`` reads null.  ``None`` when no
+    session has a usable sample on any loaded channel.
     """
     fields: dict[str, float] = {}
-    for channel, names in _CHANNEL_FIELDS.items():
-        by_session = histograms[channel]
+    for channel, by_session in histograms.items():
         distribution = histogram_distribution(
             [by_session[sid] for sid in session_ids if sid in by_session]
         )
         if distribution is not None:
-            for name, value in zip(names, distribution, strict=True):
-                fields[name] = round(value, _ROUND_DIGITS)
+            for stat, value in zip(_STATISTICS, distribution, strict=True):
+                fields[f"{_CHANNEL_PREFIXES[channel]}_{stat}"] = round(
+                    value, _ROUND_DIGITS
+                )
     return DeviceChannelStats.model_validate(fields) if fields else None
 
 

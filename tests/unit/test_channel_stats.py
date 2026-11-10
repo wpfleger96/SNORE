@@ -149,6 +149,65 @@ def test_leak_histogram_drops_negative_values_and_keeps_zeros() -> None:
     assert counts.tolist() == [1, 1]
 
 
+_RESPIRATORY_PREFIXES = {
+    "rr": "respiratory_rate",
+    "tv": "tidal_volume",
+    "mv": "minute_ventilation",
+    "ti": "ti",
+    "ie_ratio": "ie_ratio",
+}
+
+
+@pytest.mark.parametrize(("channel", "prefix"), _RESPIRATORY_PREFIXES.items())
+def test_respiratory_channel_pools_sessions_like_sorted_samples(
+    channel: str, prefix: str
+) -> None:
+    first = _samples(14.0, 0.0, 15.5, 22.0)
+    second = _samples(13.0, 16.0, 0.0)
+    histograms = {
+        channel: {
+            1: channel_histogram(channel, first),
+            2: channel_histogram(channel, second),
+        }
+    }
+
+    pooled = pool_channel_stats(histograms, [1, 2])
+
+    assert (
+        getattr(pooled, f"{prefix}_median"),
+        getattr(pooled, f"{prefix}_95th"),
+        getattr(pooled, f"{prefix}_max"),
+    ) == _sorted_sample_maths(first, second)
+    assert pooled.device_flg_median is None
+
+
+@pytest.mark.parametrize("channel", _RESPIRATORY_PREFIXES)
+def test_respiratory_histogram_keeps_zeros_and_drops_negative_and_nan(
+    channel: str,
+) -> None:
+    raw = _samples(-1.0, 0.0, 0.0, 12.5, float("nan"), float("inf"))
+
+    values, counts = channel_histogram(channel, raw)
+
+    assert values.tolist() == [0.0, 12.5]
+    assert counts.tolist() == [2, 1]
+
+
+def test_pulse_histogram_keeps_only_valid_readings() -> None:
+    raw = _samples(-1.0, 0.0, 39.0, 40.0, 72.0, 72.0, 200.0, 201.0, float("nan"))
+
+    values, counts = channel_histogram("pulse", raw)
+
+    assert values.tolist() == [40.0, 72.0, 200.0]
+    assert counts.tolist() == [1, 2, 1]
+
+
+def test_pulse_with_only_invalid_readings_pools_to_null() -> None:
+    histograms = {"pulse": {1: channel_histogram("pulse", _samples(-1.0, 0.0))}}
+
+    assert pool_channel_stats(histograms, [1]) is None
+
+
 def test_pooled_distribution_of_no_samples_is_none() -> None:
     assert pooled_distribution(pool_histograms([])) is None
 

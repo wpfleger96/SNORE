@@ -15,7 +15,7 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Breath, Event, Session, Statistics
+from snore.database.models import Breath, Event, Statistics
 from snore.provenance import IndexSource
 from tests.integration.conftest import (
     _make_analysis_result,
@@ -450,47 +450,6 @@ class TestGetNightlySummary:
         assert night.central_apneas == 2
         assert night.hypopneas == 7
         assert night.reras == 5
-
-    async def test_ti_and_ie_come_from_first_session_statistics(
-        self, async_db_session: AsyncSession, async_test_profile: Any
-    ) -> None:
-        """Device Ti and I:E are the first enabled session's STR values; a later
-        session's differing values do not leak in."""
-        from snore.mcp.tools.summary import get_nightly_summary
-
-        device = await _make_device(async_db_session, async_test_profile.id)
-        target_date = date(2024, 8, 1)
-        day, first = await _make_day_session(async_db_session, device, target_date)
-        second = Session(
-            device_id=device.id,
-            day_id=day.id,
-            device_session_id="second-session",
-            start_time=first.start_time + timedelta(hours=9),
-            end_time=first.start_time + timedelta(hours=10),
-            duration_seconds=3600.0,
-            enabled=True,
-        )
-        async_db_session.add(second)
-        await async_db_session.flush()
-        async_db_session.add_all(
-            [
-                Statistics(session_id=first.id, ti_median=1.1, ie_ratio_median=0.6),
-                Statistics(session_id=second.id, ti_median=9.9, ie_ratio_median=9.9),
-            ]
-        )
-        await async_db_session.flush()
-
-        result = await get_nightly_summary(
-            async_db_session,
-            target_date,
-            target_date,
-            profile_id=async_test_profile.id,
-        )
-        night = result.nights[0]
-        assert night.ti_median_s == pytest.approx(1.1)
-        assert night.ti_median_reason is None
-        assert night.ie_ratio_median == pytest.approx(0.6)
-        assert night.ie_ratio_reason is None
 
     async def test_ti_and_ie_null_with_channel_absent_reason(
         self, async_db_session: AsyncSession, async_test_profile: Any
