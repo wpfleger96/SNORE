@@ -68,8 +68,10 @@ describe('ArchiveRescanCard', () => {
         const wrapper = mountCard()
 
         const hint = wrapper.find('.archive-hint').text()
-        expect(hint).toContain("each session's start date")
-        expect(hint).toContain('include the following day')
+        expect(hint).toContain('Dates select nights')
+        expect(hint).toContain(
+            "a session that starts before noon belongs to the previous day's night",
+        )
     })
 
     it('test_sends_date_range_and_analysis_choice', async () => {
@@ -124,13 +126,13 @@ describe('ArchiveRescanCard', () => {
     it('test_forced_rescan_confirmation_repeats_date_hint_for_a_range', async () => {
         const wrapper = mountCard()
         await wrapper.find('[data-testid="force"]').setValue(true)
-        await setDates(wrapper, '2024-06-20', '2024-06-21')
+        await setDates(wrapper, '2024-06-20', '2024-06-20')
 
         await rescanButton(wrapper).trigger('click')
         await flushPromises()
 
         const dialog = document.body.querySelector('[role="alertdialog"]')!.textContent
-        expect(dialog).toContain('include the following day')
+        expect(dialog).toContain('Dates select nights')
     })
 
     it('test_confirmed_forced_rescan_sends_force_then_disarms_it', async () => {

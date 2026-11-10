@@ -19,7 +19,7 @@ import zipfile
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.constants import DEFAULT_RAW_BACKUP_DIR
 from snore.database import models
 from snore.metrics import EXPORT_STAT_KEYS
-from snore.parsers.base import RawFileManifest
+from snore.parsers.base import RawFileManifest, session_night
 from snore.provenance import Provenance, field_description, field_provenance
 from snore.services.backup_service import BackupService
 from snore.services.schemas import SessionDetail, SessionStatistics
@@ -71,13 +71,6 @@ def _columns_csv_rows() -> list[list[str]]:
         ["events.csv", Provenance.DEVICE, "Device-scored events, verbatim."],
         ["settings.csv", Provenance.DEVICE, "Device settings, verbatim."],
     ]
-
-
-def _night_of(start_time: datetime) -> date:
-    """Sleep night a session belongs to (sessions before noon count as the prior night)."""
-    if start_time.hour >= 12:
-        return start_time.date()
-    return (start_time - timedelta(days=1)).date()
 
 
 def _write_csv_rows(path: Path, rows: list[list[Any]], mode: str = "a") -> None:
@@ -371,7 +364,7 @@ class ExportService:
         ):
             found_any = True
             stats = s.get("statistics") or {}
-            nights.add(_night_of(s["start_time"]))
+            nights.add(session_night(s["start_time"]))
             session_date = s["start_time"].strftime("%Y-%m-%d")
 
             session_rows.append(
@@ -533,7 +526,7 @@ class ExportService:
         async for s, events, settings in self._build_export_rows(
             db_session, date_from, date_to, device_serial
         ):
-            nights.add(_night_of(s["start_time"]))
+            nights.add(session_night(s["start_time"]))
             if session_count:
                 pending.append(",\n")
             session_count += 1

@@ -14,7 +14,7 @@ import csv
 import json
 import uuid
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
@@ -22,14 +22,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.shared.versioning import DayAnalysisStatus, NullReason
-from snore.database.day_manager import DayManager
 from snore.database.models import (
     HealthNightlySummary,
     HealthSample,
     Profile,
     User,
 )
-from snore.parsers.apple_health.models import apply_noon_split
+from snore.parsers.base import session_night
 from snore.services.breath.dtos import (
     DeviceAmbiguityError,
     ExperimentalNightlyRange,
@@ -462,35 +461,14 @@ class TestAppleCrossValidator:
 
 
 class TestNightDateJoinConvention:
-    def test_noon_split_matches_day_manager_across_boundary(self):
-        """apply_noon_split must agree with DayManager.get_day_for_session.
-
-        The Apple axis (HealthSample.night_date / HealthNightlySummary.night_date)
-        and the SNORE axis (NightlyAnalysisSummary.therapy_date) key on two
-        independent copies of the noon cutoff.  Pin that they resolve identical
-        night dates across the boundary so the join can never silently drift.
-        """
-        boundary_datetimes = [
-            datetime(2024, 7, 2, 0, 0, 0),  # midnight → previous night
-            datetime(2024, 7, 2, 11, 59, 59),  # just before noon → previous night
-            datetime(2024, 7, 2, 12, 0, 0),  # noon exactly → today
-            datetime(2024, 7, 2, 12, 0, 1),  # just after noon → today
-            datetime(2024, 7, 2, 22, 0, 0),  # evening → today
-        ]
-        for dt in boundary_datetimes:
-            assert apply_noon_split(dt) == DayManager.get_day_for_session(dt), dt
-
-        # Both copies of the cutoff are the same noon constant.
-        assert time(12, 0) == DayManager.DEFAULT_SPLIT_TIME
-
     async def test_validator_joins_apple_bd_on_shared_night_date(
         self, async_db_session, monkeypatch
     ):
         """A watch sample at 23:00 keys to the same night as the SNORE summary."""
         profile_id = await _make_profile(async_db_session)
         night = date(2024, 8, 10)
-        # Sample recorded at 23:00 local → apply_noon_split keeps it on `night`.
-        sample_night = apply_noon_split(datetime(2024, 8, 10, 23, 0))
+        # Sample recorded at 23:00 local → session_night keeps it on `night`.
+        sample_night = session_night(datetime(2024, 8, 10, 23, 0))
         assert sample_night == night
         _stub_nights(monkeypatch, [_night(night, rera_index=1.0)])
         await _seed_apple_bd(async_db_session, profile_id, sample_night, 7.5)

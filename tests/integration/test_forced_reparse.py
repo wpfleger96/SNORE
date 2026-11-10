@@ -28,11 +28,11 @@ from tests.integration.conftest import _make_profile
 
 pytestmark = pytest.mark.integration
 
-# The recorded card holds one session, starting 2024-06-21 01:34.  The parser
-# keys it to the night of 06-20 and then checks its start date, so a range must
-# span both days to include it.
+# The recorded card holds one session, starting 2024-06-21 01:34.  Import date
+# ranges select by night (noon split), so it belongs to the night of 06-20: a
+# range of 06-20 alone includes it, and a range of 06-21 alone does not.
 _SESSION_NIGHT = date(2024, 6, 20)
-_SESSION_START = date(2024, 6, 21)
+_DAY_AFTER_NIGHT = date(2024, 6, 21)
 _STALE_PARSER_VERSION = "0.0.0"
 
 
@@ -120,15 +120,12 @@ def test_rescan_with_force_replaces_existing_sessions(archive):
     assert _stale_session_count() == 0
 
 
-def test_forced_rescan_outside_date_range_leaves_sessions_alone(archive):
+def test_forced_rescan_of_calendar_start_day_skips_session(archive):
     _rescan(archive)
     _mark_sessions_stale()
 
     job, _ = _rescan(
-        archive,
-        force=True,
-        date_from=date(2024, 7, 1),
-        date_to=date(2024, 7, 31),
+        archive, force=True, date_from=_DAY_AFTER_NIGHT, date_to=_DAY_AFTER_NIGHT
     )
 
     assert job.import_result_snapshot["total_imported"] == 0
@@ -140,7 +137,7 @@ def test_forced_rescan_inside_date_range_replaces_sessions(archive):
     _mark_sessions_stale()
 
     job, _ = _rescan(
-        archive, force=True, date_from=_SESSION_NIGHT, date_to=_SESSION_START
+        archive, force=True, date_from=_SESSION_NIGHT, date_to=_SESSION_NIGHT
     )
 
     assert job.import_result_snapshot["total_imported"] == 1
