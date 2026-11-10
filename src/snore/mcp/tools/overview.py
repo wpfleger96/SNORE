@@ -221,7 +221,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     @tool_error_boundary
     async def get_data_overview(ctx: Context) -> dict[str, Any]:
-        """Orient to the imported dataset: devices, date ranges, channels, analysis status.
+        """Orient to the imported dataset: devices, date ranges, channels, analysis status, Apple Health coverage.
 
         Call this first before any other tool. Returns everything needed to understand
         what data is available and which tools are applicable.

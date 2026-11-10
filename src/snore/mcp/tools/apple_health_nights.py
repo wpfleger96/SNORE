@@ -65,8 +65,9 @@ def register(mcp: FastMCP) -> None:
 
         A night's SpO2, respiratory rate and breathing disturbances are in
         ``get_night_detail``'s ``apple_health``, and its sleep-stage timeline
-        is ``get_apple_sleep_stages``. Night dates follow the Apple Health
-        night: samples before noon belong to the previous date.
+        is ``get_apple_sleep_stages``. Night dates use the same noon split
+        as CPAP nights (samples starting before noon belong to the previous
+        date), so an Apple night pairs with the device night of the same date.
 
         Omit ``start`` and/or ``end`` for an open range (all nights by default).
 

@@ -16,7 +16,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 ├──────────────┬──────────────┬──────────────┤
 │ FastAPI REST │   CLI (cli/) │  MCP Server  │
 │ API (api/)   │  Click cmds  │  (mcp/)      │
-│ 18 routers   │  snore cmds  │  13 tools    │
+│ 18 routers   │  snore cmds  │  18 tools    │
 ├──────────────┴──────────────┴──────────────┤
 │        Service Layer (services/)            │
 │  19 services: business logic between        │
@@ -570,7 +570,7 @@ StaticRuntime     — stdio path; profile_id resolved at startup
 ActorRuntime      — OAuth HTTP path; profile_id from per-request context var
 ```
 
-`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 11 of the 13 tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
+`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 16 of the 18 tools (all except the waveform pair): open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
 
 ### Tool Modules
 
