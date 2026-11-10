@@ -124,6 +124,7 @@ class WaveformRenderer:
         session_id: int | None = None,
         center_time: str | None = None,
         waveform_type: str = "flow",
+        programmatic_label: str = "Programmatic",
     ) -> None:
         """
         Generate high-resolution waveform visualization using plotext.
@@ -136,6 +137,8 @@ class WaveformRenderer:
             session_id: Session ID for title
             center_time: Center time for title
             waveform_type: Type of waveform (default: "flow")
+            programmatic_label: Row label for programmatic events, e.g. with a
+                provenance marker appended by the caller
 
         Note:
             All output, including the chart, goes to self.console. Returns None.
@@ -183,6 +186,9 @@ class WaveformRenderer:
         if self.show_events:
             self.console.print()
             self.console.print("Events in window:")
+            label_width = max(len("Machine"), len(programmatic_label)) + 2
+            machine = "Machine:".ljust(label_width)
+            programmatic = escape(f"{programmatic_label}:".ljust(label_width))
 
             if machine_events and len(machine_events) > 0:
                 for event in machine_events:
@@ -190,10 +196,10 @@ class WaveformRenderer:
                     event_type = getattr(event, "event_type", "Unknown")
                     duration = f" ({event.duration:.1f}s)" if event.duration else ""
                     self.console.print(
-                        f"  Machine:      {escape(str(event_type))} at {time_str}{duration}"
+                        f"  {machine}{escape(str(event_type))} at {time_str}{duration}"
                     )
             else:
-                self.console.print("  Machine:      (none)")
+                self.console.print(f"  {machine}(none)")
 
             if programmatic_events and len(programmatic_events) > 0:
                 for event in programmatic_events:
@@ -207,14 +213,14 @@ class WaveformRenderer:
                     flow_red = getattr(event, "flow_reduction", None)
                     if flow_red is not None:
                         self.console.print(
-                            f"  Programmatic: {escape(str(event_type))} at {time_str} ({event.duration:.1f}s, {flow_red * 100:.0f}% flow reduction)"
+                            f"  {programmatic}{escape(str(event_type))} at {time_str} ({event.duration:.1f}s, {flow_red * 100:.0f}% flow reduction)"
                         )
                     else:
                         self.console.print(
-                            f"  Programmatic: {escape(str(event_type))} at {time_str} ({event.duration:.1f}s)"
+                            f"  {programmatic}{escape(str(event_type))} at {time_str} ({event.duration:.1f}s)"
                         )
             else:
-                self.console.print("  Programmatic: (none)")
+                self.console.print(f"  {programmatic}(none)")
 
     def render_multi(
         self,

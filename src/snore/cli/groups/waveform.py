@@ -11,6 +11,7 @@ import click
 
 from rich.markup import escape
 
+from snore.analysis.modes.types import ModeResult
 from snore.cli.decorators import (
     CliCtx,
     profile_scoped_command,
@@ -242,6 +243,12 @@ async def show_waveform(
 
         if output_format == "plot":
             show_events = waveform_type_single == "flow"
+            # Marked only when the events section prints, so no legend goes stray.
+            programmatic_label = (
+                mark_field("Programmatic", ModeResult, "apnea_count")
+                if show_events
+                else "Programmatic"
+            )
             renderer = WaveformRenderer(
                 console=console, width=80, height=20, show_events=show_events
             )
@@ -253,6 +260,7 @@ async def show_waveform(
                 session_id=resolved_id,
                 center_time=time,
                 waveform_type=waveform_type_single,
+                programmatic_label=programmatic_label,
             )
 
         elif output_format == "csv":

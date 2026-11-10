@@ -38,6 +38,11 @@ from tests.integration.conftest import _make_channel_waveform
 _DERIVED_LEGEND = (
     f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
 )
+_EXPERIMENTAL_LEGEND = (
+    f"* {Provenance.EXPERIMENTAL.value}: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
+)
+# `snore stats` always prints its experimental leak assessment.
+_STATS_LEGEND = f"{_DERIVED_LEGEND}  {_EXPERIMENTAL_LEGEND}"
 
 
 @pytest.fixture
@@ -1014,6 +1019,15 @@ async def db_with_comparison(temp_db):
     return temp_db
 
 
+@pytest.fixture
+async def db_with_comparison_flow(db_with_comparison):
+    """``db_with_comparison`` with a flow waveform covering its first events."""
+    async with session_scope() as session:
+        sess = await session.get(models.Session, 1)
+        await _make_channel_waveform(session, sess, "flow", [1.0] * 101)
+    return db_with_comparison
+
+
 class TestWaveformCompareCommand:
     """Tests for the ``snore waveform compare`` command."""
 
@@ -1402,6 +1416,55 @@ class TestWaveformShowCommand:
         assert "Pressure (cmH2O)" in result.output
         assert has_drawn_braille(result.output)
 
+    def test_waveform_show_programmatic_events_marked_experimental(
+        self, cli_runner, db_with_comparison_flow
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "show",
+                "--db",
+                str(db_with_comparison_flow),
+                "--session-id",
+                "1",
+                "--time",
+                "00:01:40",
+                "--window",
+                "60",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        lines = result.output.splitlines()
+        assert "  Machine:       OA at 00:01:40 (10.0s)" in lines
+        assert "  Programmatic*: OA at 00:01:41 (10.0s, 90% flow reduction)" in lines
+        assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
+        assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)
+
+    def test_waveform_show_without_events_section_prints_no_legend(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "show",
+                "--db",
+                str(populated_test_db_full),
+                "--session-id",
+                "1",
+                "--time",
+                "00:00:01",
+                "--type",
+                "pressure",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Programmatic" not in result.output
+        assert _EXPERIMENTAL_LEGEND not in result.output
+
 
 class TestSessionShowExpanded:
     """Test expanded session show output with full statistics."""
@@ -1543,6 +1606,19 @@ class TestStatsEnhanced:
         assert result.exit_code == 0
         assert "Time below 90%:" in result.output or "below 90" in result.output
 
+    def test_stats_leak_assessment_marked_experimental(
+        self, cli_runner, populated_test_db_with_day_stats
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_with_day_stats)],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Assessment*: well controlled" in result.output
+        assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
+        assert result.output.rstrip().endswith(_STATS_LEGEND)
+
     def test_stats_omits_effectiveness(self, cli_runner, populated_test_db_full):
         """The effectiveness band is experimental, so `snore stats` does not show it."""
         result = cli_runner.invoke(
@@ -1646,7 +1722,7 @@ class TestStatsPeriod:
         assert "AHI Trend†" in result.output
         plotext_stub.figure.title.assert_called_once_with("AHI Over Time")
         assert result.output.count(_DERIVED_LEGEND) == 1
-        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
+        assert result.output.rstrip().endswith(_STATS_LEGEND)
 
     def test_stats_records_marks_derived_columns(
         self, cli_runner, populated_test_db_with_day_stats
@@ -1660,7 +1736,7 @@ class TestStatsPeriod:
         assert "Best AHI†" in result.output
         assert "Worst AHI†" in result.output
         assert result.output.count(_DERIVED_LEGEND) == 1
-        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
+        assert result.output.rstrip().endswith(_STATS_LEGEND)
 
     @pytest.mark.usefixtures("chart_terminal")
     def test_stats_trend_renders_chart(
