@@ -14,8 +14,11 @@ import io
 from typing import TYPE_CHECKING
 
 from snore.mcp.schemas import localize_wall_clock
+from snore.services.breath.dtos import CATEGORICAL_WAVEFORM_CHANNELS
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from snore.services.breath_service import WaveformWindow
 
 
@@ -60,24 +63,21 @@ _CHANNEL_LABELS: dict[str, str] = {
     # the trace for the instantaneous delivered pressure.
     "pressure": "mask pressure (cmH2O, 0.5 Hz avg)",
     "therapy_pressure": "therapy pressure (cmH2O, 0.5 Hz avg)",
+    "pressure_hr": "mask pressure (cmH2O, 25 Hz)",
+    "trigger_cycle": "trigger/cycle code (raw)",
 }
 
 
-def render_waveform_window(window: WaveformWindow) -> bytes:
-    """Render a ``WaveformWindow`` DTO as a PNG and return the raw bytes.
+def _build_figure(window: WaveformWindow) -> Figure:
+    """Lay out a ``WaveformWindow`` as a matplotlib figure.
 
     Layout: one subplot per channel, stacked vertically.  An empty-channel
-    window (``session_id == 0`` or no channels) produces a valid single-panel
-    PNG with a centered "No waveform data" label.
-
-    Args:
-        window: A fully-computed ``WaveformWindow`` from ``compute_waveform_window``.
-
-    Returns:
-        Raw PNG bytes (always starts with the PNG magic ``\\x89PNG\\r\\n\\x1a\\n``).
+    window (``session_id == 0`` or no channels) produces a single panel with a
+    centered "No waveform data" label.  Categorical channels are drawn as
+    steps holding each code until the next sample, with integer y ticks.
     """
-    from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: PLC0415
     from matplotlib.figure import Figure  # noqa: PLC0415
+    from matplotlib.ticker import MaxNLocator  # noqa: PLC0415
 
     channels = window.channels
     n = len(channels)
@@ -100,7 +100,15 @@ def render_waveform_window(window: WaveformWindow) -> bytes:
         fig = Figure(figsize=(12.0, max(4.0, 2.5 * n)), dpi=100)
         for idx, ch in enumerate(channels, start=1):
             ax = fig.add_subplot(n, 1, idx)
-            ax.plot(ch.offset_seconds, ch.values, linewidth=0.8)
+            categorical = ch.channel_type in CATEGORICAL_WAVEFORM_CHANNELS
+            ax.plot(
+                ch.offset_seconds,
+                ch.values,
+                linewidth=0.8,
+                drawstyle="steps-post" if categorical else "default",
+            )
+            if categorical:
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             y_label = _CHANNEL_LABELS.get(
                 ch.channel_type,
@@ -110,8 +118,9 @@ def render_waveform_window(window: WaveformWindow) -> bytes:
             ax.tick_params(labelsize=7)
 
             if ch.is_downsampled:
+                method = "run starts" if categorical else "LTTB"
                 ax.set_title(
-                    f"LTTB {len(ch.values)}/{ch.original_sample_count}",
+                    f"{method} {len(ch.values)}/{ch.original_sample_count}",
                     loc="right",
                     fontsize=7,
                 )
@@ -121,8 +130,21 @@ def render_waveform_window(window: WaveformWindow) -> bytes:
 
     fig.suptitle(_build_suptitle(window), fontsize=9)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
+    return fig
+
+
+def render_waveform_window(window: WaveformWindow) -> bytes:
+    """Render a ``WaveformWindow`` DTO as a PNG and return the raw bytes.
+
+    Args:
+        window: A fully-computed ``WaveformWindow`` from ``compute_waveform_window``.
+
+    Returns:
+        Raw PNG bytes (always starts with the PNG magic ``\\x89PNG\\r\\n\\x1a\\n``).
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: PLC0415
 
     buf = io.BytesIO()
-    canvas = FigureCanvasAgg(fig)
+    canvas = FigureCanvasAgg(_build_figure(window))
     canvas.print_png(buf)  # type: ignore[no-untyped-call]
     return buf.getvalue()
