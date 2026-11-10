@@ -595,7 +595,7 @@ class NightRecordsResponse(RecordsResponse):
     """Response from get_records: the web Stats page's Records.
 
     A metric is null when no qualifying night (>= 1 h therapy; any Apple Health
-    night for total_sleep_hours) has a value for it.
+    night with a total sleep time for total_sleep_hours) has a value for it.
     """
 
 

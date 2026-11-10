@@ -64,8 +64,9 @@ def register(mcp: FastMCP) -> None:
         - ``total_sleep_hours``: Apple Health total sleep per night, rounded
           to 0.01 h; highest is best.
 
-        The device metrics rank only nights with at least 1 h of therapy.
-        Disabled sessions count toward no night, so a night with only
+        The device metrics rank only device nights with at least 1 h of
+        therapy, each device night judged on its own therapy hours. Disabled
+        sessions count toward no device night, so a device night with only
         disabled sessions never qualifies. Every device of the profile is
         ranked together, one entry per device night, so a date can appear
         twice when two devices recorded it; entries do not name the device.
