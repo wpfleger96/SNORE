@@ -115,7 +115,7 @@ const props = defineProps<{ profileId: number | null }>()
 const emit = defineEmits<{ started: [] }>()
 
 const DATE_HINT =
-    "Dates match each session's start date. To cover a night, include the following day: a session that starts after midnight is dated the next day."
+    "Dates select nights, the date each night is filed under: a session that starts before noon belongs to the previous day's night."
 const FORCE_WARNING =
     'Every matched session that is already imported is deleted and recreated, including its analysis results and breath rows. Disabled sessions stay disabled.'
 

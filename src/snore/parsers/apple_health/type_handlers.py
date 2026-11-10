@@ -10,7 +10,8 @@ from __future__ import annotations
 from datetime import datetime
 from xml.etree.ElementTree import Element
 
-from snore.parsers.apple_health.models import RawHealthRecord, apply_noon_split
+from snore.parsers.apple_health.models import RawHealthRecord
+from snore.parsers.base import session_night
 
 SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 SPO2_TYPE = "HKQuantityTypeIdentifierOxygenSaturation"
@@ -106,6 +107,6 @@ def parse_xml_record(elem: Element) -> RawHealthRecord | None:
         value_num=value_num,
         unit=elem.get("unit") or None,
         utc_offset_seconds=utc_offset,
-        night_date=apply_noon_split(start_time),
+        night_date=session_night(start_time),
         ingest_channel="export_xml",
     )

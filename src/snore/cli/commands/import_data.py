@@ -38,6 +38,7 @@ from snore.cli.display import (
     print_success,
     print_warning,
 )
+from snore.parsers.base import session_night
 from snore.parsers.registry import parser_registry
 from snore.services.import_service import ImportService
 from snore.services.schemas import ImportResult, ImportSource
@@ -158,7 +159,11 @@ def import_data(
     no_backup: bool,
     no_analyze: bool,
 ) -> None:
-    """Import CPAP data from device SD card or directory."""
+    """Import CPAP data from device SD card or directory.
+
+    --from/--to select sessions by night date: a session that starts before
+    noon belongs to the previous day's night.
+    """
     data_path = Path(path)
 
     init_db(db)
@@ -332,7 +337,7 @@ def import_data(
             print_success(f"Found {len(sessions)} sessions")
             print_dry_run_header()
             console.print(
-                f"{'Date':<12} {'Time':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}"
+                f"{'Night':<12} {'Start':<8} {'Duration':<10} {'AHI':<6} {'Events':<8}"
             )
             print_footer()
 
@@ -363,7 +368,8 @@ def import_data(
                         ahi_str = f"{unified_session.statistics.ahi:.1f}"
 
                 console.print(
-                    f"{unified_session.start_time:%Y-%m-%d}   {unified_session.start_time:%H:%M:%S}  "
+                    f"{session_night(unified_session.start_time):%Y-%m-%d}   "
+                    f"{unified_session.start_time:%H:%M:%S}  "
                     f"{duration_hours:>6.1f}h    "
                     f"{ahi_str:>5}  "
                     f"{num_events:>6}"
@@ -375,10 +381,9 @@ def import_data(
             print_info(f"• Total duration: {total_duration:.1f} hours", indent=1)
             print_info(f"• Total events: {total_events}", indent=1)
             if sessions:
-                first_date = min(s.start_time for s in sessions)
-                last_date = max(s.start_time for s in sessions)
+                nights = [session_night(s.start_time) for s in sessions]
                 print_info(
-                    f"• Date range: {first_date:%Y-%m-%d} to {last_date:%Y-%m-%d}",
+                    f"• Nights: {min(nights):%Y-%m-%d} to {max(nights):%Y-%m-%d}",
                     indent=1,
                 )
             if len(selected_sources) == 1:

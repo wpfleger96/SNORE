@@ -65,6 +65,7 @@ from snore.parsers.base import (
     ParserError,
     ParserMetadata,
     build_root_metadata,
+    session_night,
 )
 from snore.parsers.discovery import DataRoot, DataRootFinder
 from snore.parsers.oscar_events import parse_events_file
@@ -546,11 +547,11 @@ class OscarDeviceParser(DeviceParser):
 
         return root, session_files
 
-    def _unit_date(
+    def _unit_nights(
         self, unit: tuple[int, Path | None, Path | None], timezone_name: str | None
-    ) -> date | None:
-        """Session-start epoch drives filtering with the same clock as parsing."""
-        return _epoch_to_wall_clock(unit[0], timezone_name).date()
+    ) -> tuple[date]:
+        """Night of the session-start epoch, on the same clock as parsing."""
+        return (session_night(_epoch_to_wall_clock(unit[0], timezone_name)),)
 
     def _unit_label(self, unit: tuple[int, Path | None, Path | None]) -> str:
         """Failure-log id: the session's epoch id."""

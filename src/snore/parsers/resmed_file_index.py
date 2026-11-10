@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from snore.parsers.base import session_night
+
 logger = logging.getLogger(__name__)
 
 # Matches ResMed DATALOG EDF filenames: YYYYMMDD_HHMMSS_TYPE.edf
@@ -41,11 +43,7 @@ def get_night_date(timestamp: datetime) -> str:
     Returns:
         Night date as YYYYMMDD string.
     """
-    if timestamp.hour < 12:
-        night_date = (timestamp - timedelta(days=1)).date()
-    else:
-        night_date = timestamp.date()
-    return night_date.strftime("%Y%m%d")
+    return session_night(timestamp).strftime("%Y%m%d")
 
 
 def scan_edf_files(datalog_dir: Path) -> list[Path]:

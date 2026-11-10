@@ -5285,14 +5285,14 @@ export interface components {
             force: boolean
             /**
              * From Date
-             * @description Only re-import sessions that start on or after this date. Dates match each session's start date, not its night: a night's sessions that start after midnight fall on the next day.
+             * @description Only re-import nights on or after this date. Dates are night dates, the date each night is filed under: a session that starts before noon belongs to the previous day's night.
              */
             from_date?: string | null
             /** Profile Id */
             profile_id?: number | null
             /**
              * To Date
-             * @description Only re-import sessions that start on or before this date. To cover a night, include the following day: sessions that start after midnight are dated the next day.
+             * @description Only re-import nights on or before this date. Dates are night dates, the date each night is filed under: a session that starts before noon belongs to the previous day's night.
              */
             to_date?: string | null
         }
