@@ -425,7 +425,10 @@ The Pydantic schemas are the single source of tiers. Every metric field in MCP/R
 back with `field_provenance(<Model>, "<field>")` and the prefix-free description with
 `field_description(<Model>, "<field>")`, from the response model that carries the value. Any value
 or column label backed by a tagged field must read its tier this way (or via `mark_field`);
-hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field.
+hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field, and
+for CLI-only judgements computed in the command with no schema field (such as the `snore stats` leak
+verdict), which cannot become fields because an Experimental field on a default REST response model
+like `TherapySummary` would break the REST gating rule.
 MCP responses get a top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
 `tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
 and enum or `Literal` response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that

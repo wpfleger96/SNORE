@@ -70,6 +70,19 @@ def test_render_prints_a_machine_event_duration_only_when_recorded():
     assert "  Machine:      OA at 01:00:20 (12.5s)" in lines
 
 
+def test_render_with_programmatic_label_aligns_event_rows():
+    timestamps, values = _sine_window()
+    console_out = io.StringIO()
+
+    _renderer(console_out, width=60, height=12).render(
+        timestamps, values, programmatic_label="Programmatic*"
+    )
+
+    lines = console_out.getvalue().splitlines()
+    assert "  Machine:       (none)" in lines
+    assert "  Programmatic*: (none)" in lines
+
+
 def test_render_with_infinite_values_draws_chart():
     timestamps, values = _sine_window()
     values[10] = np.inf
