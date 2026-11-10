@@ -31,16 +31,26 @@ WaveformSeries = tuple[np.ndarray, np.ndarray]
 
 
 def _run_starts(
-    offsets: np.ndarray, values: np.ndarray
+    offsets: np.ndarray, values: np.ndarray, sample_rate: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """First sample of each run of equal values, plus the final sample.
+    """First sample of each run of equal values, both edges of each recording
+    gap, and the final sample.
 
-    Lossless for a categorical channel read as a step that holds each value
-    until the next offset: every code and every change survives, unlike LTTB,
-    which keeps one sample per bucket.
+    A gap is a step between consecutive offsets wider than 1.5 sample periods
+    (a multi-segment night stores mask-off time as a jump in offsets); a
+    non-positive ``sample_rate`` disables gap detection.  Lossless within
+    contiguous recording for a categorical channel read as a step that holds
+    each value until the next offset: every code and every change survives,
+    unlike LTTB, which keeps one sample per bucket.  In the result, consecutive
+    kept values always differ except at the window's final sample and at the
+    two edges of a recording gap, so two equal consecutive values mark a gap
+    (or the end of the window).
     """
+    max_step = 1.5 / sample_rate if sample_rate > 0 else math.inf
+    # gap[i] is True when a recording gap lies between samples i and i + 1.
+    gap = np.diff(offsets) > max_step
     keep = np.ones(values.size, dtype=bool)
-    keep[1:-1] = values[1:-1] != values[:-2]
+    keep[1:-1] = (values[1:-1] != values[:-2]) | gap[:-1] | gap[1:]
     return offsets[keep], values[keep]
 
 
@@ -48,7 +58,8 @@ def compute_waveform_window(raw: RawWaveformWindow) -> WaveformWindow:
     """Pure — no DB access. Deserializes bytes, slices window, downsamples.
 
     Downsampling uses LTTB, except on categorical channels, which keep their
-    run starts (``_run_starts``) and may then exceed ``max_points``.
+    run starts and recording-gap edges (``_run_starts``) and may then exceed
+    ``max_points``.
     """
 
     request = raw.request
@@ -75,7 +86,7 @@ def compute_waveform_window(raw: RawWaveformWindow) -> WaveformWindow:
         original_count = int(len(ts_slice))
         if request.max_points is not None and original_count > request.max_points:
             if raw_ch.waveform_type in CATEGORICAL_WAVEFORM_CHANNELS:
-                ts_slice, v_slice = _run_starts(ts_slice, v_slice)
+                ts_slice, v_slice = _run_starts(ts_slice, v_slice, raw_ch.sample_rate)
             else:
                 # DTO bounds max_points to >= 2, which lttb_downsample requires
                 ts_slice, v_slice = lttb_downsample(

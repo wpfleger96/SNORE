@@ -588,6 +588,13 @@ class TestChannelVocabInSync:
         assert not missing_gw, f"get_waveform missing channels: {missing_gw}"
         assert not missing_rw, f"render_window missing channels: {missing_rw}"
 
+    def test_channel_names_match_stored_waveform_types(self) -> None:
+        """The MCP channel list is exactly the set of waveform types the parsers store."""
+        from snore.parsers.unified import WaveformType  # noqa: PLC0415
+        from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
+
+        assert {m.value for m in WaveformChannelName} == {m.value for m in WaveformType}
+
 
 class TestLifespanStartupFailure:
     """_lifespan calls cleanup_database and re-raises when startup fails."""

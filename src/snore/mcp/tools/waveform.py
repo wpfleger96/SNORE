@@ -85,9 +85,11 @@ Channel vocabulary (16 channels):
                            undecoded, no unit), 25 Hz from TCV.edf; ResMed VAuto
                            only.  Categorical: read each value as holding until
                            the next offset.  With ``max_points`` it keeps the first
-                           sample of each run of equal codes plus the last sample
-                           (never LTTB), so no code is lost, and it can return
-                           more than ``max_points`` values.
+                           sample of each run of equal codes, both edges of each
+                           recording (mask-off) gap, and the last sample (never
+                           LTTB), so no code is lost and two equal consecutive
+                           values mark a gap (or the window's end); it can
+                           return more than ``max_points`` values.
 The last four come only from direct ResMed SD-card imports; sessions without them
 list them in ``missing_channels``.  Samples are stored as recorded, including
 out-of-range or sentinel values."""
@@ -130,7 +132,9 @@ async def fetch_waveform_raw(
             multiple sessions on the date.
         channels: Waveform channel names to fetch (e.g. ["flow", "pressure"]).
             Defaults to [flow, pressure, leak] when empty or None.
-        max_points: LTTB target point count for downsampling (2–1000).
+        max_points: Per-channel target point count for LTTB thinning
+            (2–1000); categorical channels (``trigger_cycle``) keep their run
+            starts instead and may exceed it.
         window_cap_seconds: Maximum window width in seconds (enforced by caller).
     """
     from snore.services.breath_service import (  # noqa: PLC0415
@@ -286,7 +290,9 @@ def register(mcp: FastMCP) -> None:
         "    session_id: Filter to a specific session.  Required when the device had\n"
         "                multiple sessions on the date.\n"
         "    channels: Waveform channels to return.  Defaults to [flow, pressure, leak].\n"
-        f"    max_points: LTTB target sample count per channel ({_MAX_POINTS_RANGE}).\n\n"
+        "    max_points: Per-channel target sample count for LTTB thinning\n"
+        f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
+        "                keep their run starts and may exceed it.\n\n"
         "Returns:\n"
         "    WaveformWindowResponse.  ``session_id`` and ``session_start_wall_clock``\n"
         '    (tier-2 offset-free ISO 8601, ``timezone_status: "unknown" | "user_declared"``,\n'
@@ -369,7 +375,9 @@ def register(mcp: FastMCP) -> None:
         "    session_id: Filter to a specific session.  Required when the device had\n"
         "                multiple sessions on the date.\n"
         "    channels: Waveform channels to plot.  Defaults to [flow, pressure, leak].\n"
-        f"    max_points: LTTB target samples per channel to plot ({_MAX_POINTS_RANGE}).\n\n"
+        "    max_points: Per-channel target samples to plot for LTTB thinning\n"
+        f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
+        "                keep their run starts and may exceed it.\n\n"
         "Returns:\n"
         "    PNG image (not JSON) — one stacked subplot per channel.\n\n"
         "Error conditions:\n"

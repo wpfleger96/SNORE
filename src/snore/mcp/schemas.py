@@ -1196,11 +1196,18 @@ class WaveformChannelSchema(BaseModel):
     offset_seconds: list[float]  # tier-3 positions from session start
     values: list[float] = provenance_field(
         Provenance.DEVICE,
-        "Device samples; when is_downsampled, LTTB keeps a subset of them "
-        "(trigger_cycle keeps the first sample of each run of equal codes, plus "
-        "the last sample).",
+        "Device samples; when is_downsampled, LTTB keeps a subset of them. "
+        "Categorical channels (trigger_cycle) are never LTTB-thinned: with "
+        "max_points they keep the first sample of each run of equal codes, both "
+        "edges of each recording (mask-off) gap, and the last sample, so the "
+        "result may exceed max_points. Read each categorical value as holding "
+        "until the next offset; two equal consecutive values mark a gap (or the "
+        "window's end). sample_rate_hz is the device's recording rate, not the "
+        "spacing of the returned points.",
     )
-    original_sample_count: int  # pre-LTTB count within the window
+    original_sample_count: int  # pre-downsampling count within the window
+    # True when fewer samples were returned than the raw window held: a
+    # categorical window with no repeated codes stays false even with max_points.
     is_downsampled: bool
 
 

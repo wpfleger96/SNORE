@@ -338,30 +338,52 @@ class TestPureFunctions:
         assert result_ch.original_sample_count == n
 
 
-def _trigger_cycle_raw(codes: list[float], max_points: int) -> object:
-    """RawWaveformWindow holding one 25 Hz trigger_cycle channel of ``codes``."""
+def _trigger_cycle_channel(
+    codes: list[float], offsets: list[float] | None = None
+) -> object:
+    """RawWaveformChannel for 25 Hz trigger_cycle; offsets default to contiguous."""
     from snore.services.breath_service import (  # noqa: PLC0415
         RawWaveformChannel,
         WaveformChannelName,
     )
 
-    offsets = [i / 25.0 for i in range(len(codes))]
+    if offsets is None:
+        offsets = [i / 25.0 for i in range(len(codes))]
     blob, count = _make_blob(offsets, codes)
-    channel = RawWaveformChannel(
+    return RawWaveformChannel(
         waveform_type=WaveformChannelName.TRIGGER_CYCLE,
         unit="",
         sample_rate=25.0,
         sample_count=count,
         raw_bytes=blob,
     )
+
+
+def _trigger_cycle_raw(
+    codes: list[float],
+    max_points: int,
+    offsets: list[float] | None = None,
+    offset_start: float = 0.0,
+) -> object:
+    """RawWaveformWindow holding one 25 Hz trigger_cycle channel of ``codes``."""
+    from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
+
+    channel = _trigger_cycle_channel(codes, offsets)
+    last_offset = offsets[-1] if offsets else (len(codes) - 1) / 25.0
     return _make_raw(
         channels=[channel],
         request=_make_request(
-            offset_end=len(codes) / 25.0,
+            offset_start=offset_start,
+            offset_end=last_offset + 1 / 25.0,
             channels=[WaveformChannelName.TRIGGER_CYCLE],
             max_points=max_points,
         ),
     )
+
+
+def _gapped_offsets() -> list[float]:
+    """25 samples at 0–0.96 s, a 10 s recording gap, 25 samples at 11–11.96 s."""
+    return [i / 25.0 for i in range(25)] + [11.0 + i / 25.0 for i in range(25)]
 
 
 class TestTriggerCycleDownsampling:
@@ -398,6 +420,79 @@ class TestTriggerCycleDownsampling:
 
         assert channel.is_downsampled is False
         assert channel.values == codes
+
+    def test_gap_with_same_code_on_both_sides_keeps_both_gap_edges(self) -> None:
+        """Equal codes across a mask-off gap stay two runs: the pre-gap run's last
+        sample and the post-gap run's first sample are both kept."""
+        offsets = _gapped_offsets()
+        codes = [0.0] * len(offsets)
+        raw = _trigger_cycle_raw(codes, max_points=5, offsets=offsets)
+
+        channel = waveform_response_from_raw(raw).channels[0]
+
+        assert channel.offset_seconds == pytest.approx([0.0, 0.96, 11.0, 11.96])
+        assert channel.values == [0.0, 0.0, 0.0, 0.0]
+        kept = np.array(channel.offset_seconds)
+        # Stepping through the kept offsets, the pre-gap run ends at its last
+        # sample (0.96 s) and the next step starts at the post-gap edge (11 s).
+        pre_gap_end = kept[np.searchsorted(kept, 0.96 + 1e-4) - 1]
+        assert pre_gap_end == pytest.approx(0.96)
+        assert np.diff(kept).max() == pytest.approx(11.0 - 0.96)
+
+    def test_gap_with_different_codes_keeps_both_gap_edges(self) -> None:
+        """A code change across a gap keeps the pre-gap edge as well as the change."""
+        offsets = _gapped_offsets()
+        codes = [1.0] * 25 + [2.0] * 25
+        raw = _trigger_cycle_raw(codes, max_points=5, offsets=offsets)
+
+        channel = waveform_response_from_raw(raw).channels[0]
+
+        assert channel.offset_seconds == pytest.approx([0.0, 0.96, 11.0, 11.96])
+        assert channel.values == [1.0, 1.0, 2.0, 2.0]
+
+    def test_window_starting_mid_run_keeps_first_in_window_sample(self) -> None:
+        """offset_start inside a run: the first kept sample is the first one in the window."""
+        codes = [0.0] * 50 + [1.0] * 50
+        raw = _trigger_cycle_raw(codes, max_points=5, offset_start=1.0)
+
+        channel = waveform_response_from_raw(raw).channels[0]
+
+        assert channel.offset_seconds == pytest.approx([1.0, 2.0, 3.96])
+        assert channel.values == [0.0, 1.0, 1.0]
+        assert channel.original_sample_count == 75
+
+    def test_mixed_request_downsamples_flow_with_lttb_and_trigger_cycle_to_run_starts(
+        self,
+    ) -> None:
+        """One max_points request picks the reduction per channel."""
+        from snore.services.breath_service import (  # noqa: PLC0415
+            WaveformChannelName,
+            compute_waveform_window,
+        )
+
+        n = 250
+        flow = _flow_channel(n=n, time_start=0.0, time_end=9.96, sample_rate=25.0)
+        codes = [0.0] * 100 + [3.0] * 100 + [0.0] * 50
+        trigger = _trigger_cycle_channel(codes)
+        raw = _make_raw(
+            channels=[flow, trigger],
+            request=_make_request(
+                offset_end=10.0,
+                channels=[WaveformChannelName.FLOW, WaveformChannelName.TRIGGER_CYCLE],
+                max_points=10,
+            ),
+        )
+
+        window = compute_waveform_window(raw)
+
+        by_type = {ch.channel_type: ch for ch in window.channels}
+        flow_out = by_type[WaveformChannelName.FLOW]
+        assert len(flow_out.values) == 10
+        assert flow_out.is_downsampled is True
+        trigger_out = by_type[WaveformChannelName.TRIGGER_CYCLE]
+        assert trigger_out.offset_seconds == pytest.approx([0.0, 4.0, 8.0, 9.96])
+        assert trigger_out.values == [0.0, 3.0, 0.0, 0.0]
+        assert trigger_out.is_downsampled is True
 
 
 # ---------------------------------------------------------------------------
