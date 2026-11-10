@@ -466,8 +466,8 @@ class TestValidateMinDuration:
 class TestStage2ToolsRegistered:
     """The breath-level tools appear in make_server() tool listing."""
 
-    async def test_make_server_registers_exactly_sixteen_tools(self) -> None:
-        """make_server() registers exactly sixteen tools (eleven default + five experimental)."""
+    async def test_make_server_registers_exactly_seventeen_tools(self) -> None:
+        """make_server() registers exactly seventeen tools (twelve default + five experimental)."""
         from unittest.mock import patch
 
         import fastmcp
@@ -496,11 +496,12 @@ class TestStage2ToolsRegistered:
         assert "get_waveform" in tool_names
         assert "render_window" in tool_names
         assert "get_ca_analysis" not in tool_names
-        # Web Day and Stats page mirrors
+        # Web Day, Apple Health night and Stats page mirrors
         assert "get_night_detail" in tool_names
+        assert "get_apple_sleep_stages" in tool_names
         assert "get_period_stats" in tool_names
         assert "get_records" in tool_names
-        assert len(tool_names) == 16
+        assert len(tool_names) == 17
 
     async def test_compare_epochs_schema_has_epochs_parameter(self) -> None:
         """compare_epochs tool schema includes an 'epochs' parameter."""

@@ -463,7 +463,8 @@ def _register_resources(mcp: FastMCP) -> None:
         Available schema_types: device_capabilities, device_info, data_overview,
         settings_epoch, settings_timeline, settings_change_entry, settings_changes,
         nightly_row, compliance_fields, nightly_summary, night_session,
-        night_detail, period_stats, night_records, experimental_nightly_row,
+        night_detail, apple_sleep_stages, period_stats, night_records,
+        experimental_nightly_row,
         experimental_nightly_metrics, event_context, event_row, events_response,
         experimental_event_context_row, experimental_event_context_response,
         capability_entry, breath_table_query, breath_table_row, breath_table_bin,
@@ -559,6 +560,7 @@ def _register_resources(mcp: FastMCP) -> None:
 
 def _register_tools(mcp: FastMCP) -> None:
     from snore.mcp.tools import (  # noqa: PLC0415
+        apple_sleep_stages,
         breath_table,
         changes,
         epochs,
@@ -580,6 +582,7 @@ def _register_tools(mcp: FastMCP) -> None:
     changes.register(mcp)
     summary.register(mcp)
     night_detail.register(mcp)
+    apple_sleep_stages.register(mcp)
     events.register(mcp)
     breath_table.register(mcp)
     windows.register(mcp)

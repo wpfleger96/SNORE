@@ -1111,7 +1111,12 @@ class HealthSampleRead(BaseModel):
     source_name: str
     start_time: datetime
     end_time: datetime
-    value_text: str | None = None
+    value_text: str | None = provenance_field(
+        Provenance.DEVICE,
+        "Sleep stage for sleep-analysis samples (InBed, Awake, AsleepCore, "
+        "AsleepDeep, AsleepREM or AsleepUnspecified); null for quantity samples",
+        default=None,
+    )
     value_num: float | None = provenance_field(
         Provenance.DEVICE,
         "Numeric sample value as recorded; SpO2 recorded as a fraction is "

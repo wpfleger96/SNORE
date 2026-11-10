@@ -38,6 +38,7 @@ from snore.database.models import Breath, Setting, Statistics, Waveform
 from snore.mcp.server import StaticRuntime, make_server
 from tests.integration.conftest import (
     _make_analysis_result,
+    _make_apple_night,
     _make_day_session,
     _make_device,
     _make_event,
@@ -945,12 +946,14 @@ class TestDefaultToolsReadNoBreaths:
             "get_records": day_range,
             "get_nightly_summary": day_range,
             "get_night_detail": {"date": d.isoformat()},
+            "get_apple_sleep_stages": {"date": d.isoformat()},
             "get_events": {"date": d.isoformat()},
             "compare_epochs": {"epochs": [_epoch("A", d, d).model_dump()]},
             "get_waveform": waveform_window,
             "render_window": waveform_window,
         }
         _, sess = await _make_day_session(async_db_session, device, d, ahi=4.2)
+        await _make_apple_night(async_db_session, async_test_profile.id, d, 25200.0)
         for channel in ("flow", "pressure", "mv", "leak", "fl", "snore"):
             await _add_waveform(async_db_session, sess.id, channel, [0.5] * 600)
         await _make_event(async_db_session, sess)

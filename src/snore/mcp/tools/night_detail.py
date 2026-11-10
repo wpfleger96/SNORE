@@ -198,7 +198,8 @@ def register(mcp: FastMCP) -> None:
         ``apple_health`` is the Apple Health night (null when the date has
         none): the Day page's Apple summary (sleep stages, efficiency) plus
         SpO2 and respiratory rate derived from Apple Health samples, and
-        Apple's breathing disturbances.
+        Apple's breathing disturbances. The night's sleep-stage timeline is
+        in ``get_apple_sleep_stages``.
 
         Times are device wall-clock with no UTC offset. The tool errors when
         several devices have a night on this date and ``device_id`` is omitted

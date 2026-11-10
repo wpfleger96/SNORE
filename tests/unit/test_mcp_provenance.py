@@ -31,6 +31,7 @@ import snore.mcp.tools
 from snore.mcp.profiles import ClinicalProfile, get_profile
 from snore.mcp.schemas import (
     SCHEMA_MODEL_MAP,
+    AppleSleepStagesResponse,
     BreathTableRow,
     CompareEpochsResponse,
     DataOverviewResponse,
@@ -87,6 +88,7 @@ DEFAULT_TOOLS: dict[str, type[BaseModel] | None] = {
     "get_records": NightRecordsResponse,
     "get_nightly_summary": NightlySummaryResponse,
     "get_night_detail": NightDetailResponse,
+    "get_apple_sleep_stages": AppleSleepStagesResponse,
     "get_events": EventsResponse,
     "compare_epochs": CompareEpochsResponse,
     "get_waveform": WaveformWindowResponse,
