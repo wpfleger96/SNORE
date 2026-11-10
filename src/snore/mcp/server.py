@@ -463,7 +463,7 @@ def _register_resources(mcp: FastMCP) -> None:
         Available schema_types: device_capabilities, device_info, data_overview,
         settings_epoch, settings_timeline, settings_change_entry, settings_changes,
         nightly_row, compliance_fields, nightly_summary, night_session,
-        night_detail, period_stats, experimental_nightly_row,
+        night_detail, period_stats, night_records, experimental_nightly_row,
         experimental_nightly_metrics, event_context, event_row, events_response,
         experimental_event_context_row, experimental_event_context_response,
         capability_entry, breath_table_query, breath_table_row, breath_table_bin,
@@ -566,6 +566,7 @@ def _register_tools(mcp: FastMCP) -> None:
         night_detail,
         overview,
         period_stats,
+        records,
         settings,
         summary,
         waveform,
@@ -574,6 +575,7 @@ def _register_tools(mcp: FastMCP) -> None:
 
     overview.register(mcp)
     period_stats.register(mcp)
+    records.register(mcp)
     settings.register(mcp)
     changes.register(mcp)
     summary.register(mcp)

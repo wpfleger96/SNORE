@@ -44,6 +44,7 @@ from snore.services.schemas import (
     HealthNightDetailRead,
     MergedSettingsChange,
     PeriodStatistics,
+    RecordsResponse,
     SessionStatistics,
 )
 
@@ -588,6 +589,14 @@ class PeriodStatsResponse(BaseModel):
     """Response from get_period_stats."""
 
     periods: list[PeriodStatistics]
+
+
+class NightRecordsResponse(RecordsResponse):
+    """Response from get_records: the web Stats page's Records.
+
+    A metric is null when no qualifying night (>= 1 h therapy; any Apple Health
+    night with a total sleep time for total_sleep_hours) has a value for it.
+    """
 
 
 class ExperimentalNightlyResponse(BaseModel):
@@ -1244,6 +1253,7 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "night_session": NightSession,
     "night_detail": NightDetailResponse,
     "period_stats": PeriodStatsResponse,
+    "night_records": NightRecordsResponse,
     "experimental_nightly_row": ExperimentalNightlyRow,
     "experimental_nightly_metrics": ExperimentalNightlyResponse,
     "event_context": EventContext,

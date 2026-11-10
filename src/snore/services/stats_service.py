@@ -512,17 +512,25 @@ class StatsService(ProfileScopedService):
         return TrendsResponse.model_validate(trends)
 
     async def get_records(
-        self, days_limit: int | None = None, top_n: int = 5
+        self,
+        days_limit: int | None = None,
+        top_n: int = 5,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> RecordsResponse:
         """Calculate top best/worst days for key metrics.
 
         Metrics without a qualifying day are left unset (not ``None``), so
         ``exclude_unset`` serialization omits their keys.
         """
-        day_records = await self._query_days(days_limit)
+        day_records = await self._query_days(
+            days_limit, from_date=from_date, to_date=to_date
+        )
         records = calculate_records(day_records, top_n)
 
-        health_nights = await self._query_health_nights(days_limit)
+        health_nights = await self._query_health_nights(
+            days_limit, from_date=from_date, to_date=to_date
+        )
         sleep_pairs = [
             (n.night_date, round(n.total_sleep_seconds / 3600, 2))
             for n in health_nights
