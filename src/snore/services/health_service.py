@@ -12,6 +12,7 @@ from snore.exceptions import NotFoundError
 from snore.parsers.apple_health.type_handlers import SLEEP_TYPE, SPO2_TYPE
 from snore.services._base import ProfileScopedService
 from snore.services.schemas import (
+    HealthNightCoverage,
     HealthNightDetailRead,
     HealthNightSummaryRead,
     HealthSampleRead,
@@ -86,6 +87,22 @@ class HealthService(ProfileScopedService):
         )
         rows = (await self.db_session.execute(query)).scalars().all()
         return list(rows)
+
+    async def get_night_coverage(self) -> HealthNightCoverage | None:
+        """Return the first and last night dates and the night count, or None with no nights."""
+        night_date = models.HealthNightlySummary.night_date
+        count, first, last = (
+            await self.db_session.execute(
+                select(func.count(), func.min(night_date), func.max(night_date)).where(
+                    models.HealthNightlySummary.profile_id == self.profile_id
+                )
+            )
+        ).one()
+        if not count:
+            return None
+        return HealthNightCoverage(
+            first_night_date=first, last_night_date=last, night_count=count
+        )
 
     async def get_night_detail(self, night_date: date) -> HealthNightDetailRead:
         """Return nightly sleep summary with SpO2, respiratory rate and breathing disturbances.

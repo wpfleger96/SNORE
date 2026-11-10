@@ -84,7 +84,8 @@ class TestGetDataOverviewRoundtrip:
     ) -> None:
         """get_data_overview with one device returns device info.
 
-        Query order in get_data_overview (after list_devices):
+        Query order in get_data_overview (after list_devices and the timezone):
+          0. Apple Health night coverage → .one()  row: (count, min, max)
           1. analysis-session-count → .scalar_one()
           2. bulk session stats GROUP BY → .all()  rows: (device_id, count, min, max)
           3. bulk therapy modes DISTINCT → .all()  rows: (device_id, therapy_mode)
@@ -100,6 +101,10 @@ class TestGetDataOverviewRoundtrip:
         # Query 0: BreathService.resolve_timezone() — select(Profile.timezone)
         tz_result = MagicMock()
         tz_result.scalar_one_or_none.return_value = None  # no timezone declared
+
+        # Query 0b: HealthService.get_night_coverage() — no Apple Health nights
+        apple_result = MagicMock()
+        apple_result.one.return_value = (0, None, None)
 
         # Query 1: analysis session count
         count_result = MagicMock()
@@ -124,6 +129,7 @@ class TestGetDataOverviewRoundtrip:
         mock_db_session.execute = AsyncMock(
             side_effect=[
                 tz_result,
+                apple_result,
                 count_result,
                 stats_result,
                 mode_result,

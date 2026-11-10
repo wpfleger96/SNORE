@@ -946,6 +946,7 @@ class TestDefaultToolsReadNoBreaths:
             "get_records": day_range,
             "get_nightly_summary": day_range,
             "get_night_detail": {"date": d.isoformat()},
+            "get_apple_health_nights": day_range,
             "get_apple_sleep_stages": {"date": d.isoformat()},
             "get_events": {"date": d.isoformat()},
             "compare_epochs": {"epochs": [_epoch("A", d, d).model_dump()]},

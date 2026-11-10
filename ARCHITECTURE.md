@@ -583,6 +583,11 @@ Each tool module in `src/snore/mcp/tools/` owns a `register(mcp: FastMCP) -> Non
 | `changes.py` | `get_settings_changes` | `_scope_and_run` |
 | `summary.py` | `get_nightly_summary` | `_scope_and_run` |
 | `summary.py` | `experimental_get_nightly_metrics` | `_scope_and_run` |
+| `night_detail.py` | `get_night_detail` | `_scope_and_run` |
+| `apple_health_nights.py` | `get_apple_health_nights` | `_scope_and_run` |
+| `apple_sleep_stages.py` | `get_apple_sleep_stages` | `_scope_and_run` |
+| `period_stats.py` | `get_period_stats` | `_scope_and_run` |
+| `records.py` | `get_records` | `_scope_and_run` |
 | `events.py` | `get_events` | `_scope_and_run` |
 | `events.py` | `experimental_get_event_context` | `_scope_and_run` |
 | `epochs.py` | `compare_epochs` | `_scope_and_run` |
@@ -598,7 +603,8 @@ Default tools return device data plus arithmetic of the kind OSCAR does. They do
 
 | Surface | Tools | Content |
 |---------|-------|---------|
-| Default: summaries | `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_events`, `compare_epochs` | Device-scored events and counts, device summaries, settings, and arithmetic on device channels |
+| Default: summaries | `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_night_detail`, `get_period_stats`, `get_records`, `get_events`, `compare_epochs` | Device-scored events and counts, device summaries, settings, and arithmetic on device channels |
+| Default: Apple Health | `get_apple_health_nights`, `get_apple_sleep_stages` | The nights with Apple Health sleep data and their sleep summaries; one night's sleep-stage samples |
 | Default: charts | `render_window` | PNG charts of device waveforms, windows ≤15 min |
 | Default: raw samples | `get_waveform` | Per-sample device arrays, windows ≤2 min and ≤1000 points |
 | Experimental | `experimental_get_nightly_metrics`, `experimental_get_event_context`, `experimental_compare_epochs`, `experimental_get_breath_table`, `experimental_find_windows` | Per-night FL, RERA-proxy, segmented-breath and periodic-breathing metrics; MV slope and stability per event; breath-feature distributions across epochs; per-breath rows and bins; window search |

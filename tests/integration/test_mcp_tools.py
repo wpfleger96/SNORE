@@ -19,9 +19,11 @@ from snore.database.models import Breath, Event, Statistics
 from snore.provenance import IndexSource
 from tests.integration.conftest import (
     _make_analysis_result,
+    _make_apple_night,
     _make_day_session,
     _make_device,
     _make_event,
+    _make_profile,
 )
 from tests.integration.test_mcp_waveform import _make_waveform
 
@@ -42,6 +44,7 @@ class TestGetDataOverview:
         assert result.devices == []
         assert result.total_sessions == 0
         assert not result.analysis_run
+        assert result.apple_health is None
 
     async def test_device_and_sessions_appear_in_overview(
         self, async_db_session: AsyncSession, async_test_profile: Any
@@ -76,6 +79,46 @@ class TestGetDataOverview:
         )
         assert not result.analysis_run
         assert result.analysis_session_count == 0
+
+    async def test_apple_health_coverage_without_devices(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.overview import get_data_overview
+
+        other = await _make_profile(async_db_session)
+        await _make_apple_night(async_db_session, other.id, date(2024, 1, 1), 25200.0)
+        for night in (date(2024, 8, 3), date(2024, 8, 1), date(2024, 8, 9)):
+            await _make_apple_night(
+                async_db_session, async_test_profile.id, night, 25200.0
+            )
+
+        result = await get_data_overview(
+            async_db_session, profile_id=async_test_profile.id
+        )
+        assert result.devices == []
+        assert result.apple_health is not None
+        assert result.apple_health.first_night_date == date(2024, 8, 1)
+        assert result.apple_health.last_night_date == date(2024, 8, 9)
+        assert result.apple_health.night_count == 3
+
+    async def test_apple_health_coverage_alongside_devices(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        from snore.mcp.tools.overview import get_data_overview
+
+        device = await _make_device(async_db_session, async_test_profile.id)
+        await _make_day_session(async_db_session, device, date(2024, 8, 1))
+        await _make_apple_night(
+            async_db_session, async_test_profile.id, date(2024, 7, 30), 25200.0
+        )
+
+        result = await get_data_overview(
+            async_db_session, profile_id=async_test_profile.id
+        )
+        assert len(result.devices) == 1
+        assert result.apple_health is not None
+        assert result.apple_health.night_count == 1
+        assert result.apple_health.first_night_date == date(2024, 7, 30)
 
 
 # ---------------------------------------------------------------------------

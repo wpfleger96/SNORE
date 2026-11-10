@@ -80,6 +80,7 @@ __all__ = [
     # Apple Health import schema
     "HealthImportResult",
     # Apple Health read schemas
+    "HealthNightCoverage",
     "HealthNightSummaryRead",
     "HealthNightDetailRead",
     "HealthSampleRead",
@@ -1040,6 +1041,14 @@ class DeviceDetail(DeviceInfo):
     usage: DeviceUsageSummary
     current_settings: dict[str, str] | None
     settings_history: list[SettingsChange]
+
+
+class HealthNightCoverage(BaseModel):
+    """The span and count of a profile's Apple Health nights (nightly sleep summaries)."""
+
+    first_night_date: date
+    last_night_date: date
+    night_count: int
 
 
 class HealthNightSummaryRead(BaseModel):
