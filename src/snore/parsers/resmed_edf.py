@@ -28,7 +28,12 @@ from typing import Any, NamedTuple
 import numpy as np
 
 from snore.constants import (
+    IE_RATIO_VALID_RANGE,
     PARSER_MAX_SEARCH_DEPTH,
+    PULSE_VALID_RANGE,
+    RESPIRATORY_RATE_VALID_RANGE,
+    TI_VALID_RANGE_S,
+    TIDAL_VOLUME_VALID_RANGE_ML,
     UNIT_BPM,
     UNIT_FLOW,
     UNIT_ML,
@@ -1796,7 +1801,7 @@ class ResmedEDFParser(DeviceParser):
                         pulse_signal,
                         WaveformType.PULSE,
                         UNIT_BPM,
-                        valid_range=(40, 200),
+                        valid_range=PULSE_VALID_RANGE,
                     )
                     if result is not None:
                         waveform, valid_data = result
@@ -2061,7 +2066,7 @@ class ResmedEDFParser(DeviceParser):
             ["RespRate.2s", "RespRate"],
             WaveformType.RESPIRATORY_RATE,
             UNIT_BPM,
-            valid_range=(0.0, 90.0),
+            valid_range=RESPIRATORY_RATE_VALID_RANGE,
         ),
         # TidVol is stored in L on the device; scale to mL (range applied after).
         _PldSignal(
@@ -2069,7 +2074,7 @@ class ResmedEDFParser(DeviceParser):
             ["TidVol.2s", "TidVol"],
             WaveformType.TIDAL_VOLUME,
             UNIT_ML,
-            valid_range=(0.0, 4000.0),
+            valid_range=TIDAL_VOLUME_VALID_RANGE_ML,
             scale_factor=1000.0,
         ),
         _PldSignal(
@@ -2077,7 +2082,7 @@ class ResmedEDFParser(DeviceParser):
             ["IERatio.2s", "IERatio"],
             WaveformType.IE_RATIO,
             UNIT_PERCENT,
-            valid_range=(0.0, 400.0),
+            valid_range=IE_RATIO_VALID_RANGE,
         ),
         # R5Ti.2s preferred over Ti.2s where both appear (OSCAR
         # resmed_loader.cpp:4173); excludes the claimed TidVol signal only.
@@ -2086,7 +2091,7 @@ class ResmedEDFParser(DeviceParser):
             ["R5Ti.2s", "Ti.2s", "Ti"],
             WaveformType.TI,
             UNIT_SECONDS,
-            valid_range=(0.0, 10.0),
+            valid_range=TI_VALID_RANGE_S,
             exclude=("tidvol",),
         ),
     )

@@ -160,6 +160,11 @@ _NON_METRIC_MODEL_FIELDS = {
     ("DayDetail", "index_source"),
     ("DayListItem", "index_source"),
     ("NightlyRow", "index_source"),
+    ("NightlyRow", "rr_mean_source"),
+    ("NightlyRow", "tv_mean_source"),
+    ("NightlyRow", "mv_mean_source"),
+    ("NightlyRow", "ti_median_source"),
+    ("NightlyRow", "ie_ratio_source"),
     ("EventComparisonDetail", "source"),
 }
 

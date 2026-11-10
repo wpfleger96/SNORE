@@ -53,7 +53,7 @@ class Provenance(StrEnum):
 
 
 class IndexSource(StrEnum):
-    """Which source a source-dependent day index came from; values mirror the matching Provenance tiers."""
+    """Which source a source-dependent value came from; values mirror the matching Provenance tiers."""
 
     DEVICE = "device"
     DERIVED = "derived"

@@ -4,6 +4,9 @@ export interface GlossaryEntry {
     long?: string // optional fuller detail
 }
 
+const POOLED_CHANNEL_NOTE =
+    "Median, 95th percentile and maximum are computed from the recorded samples, pooled across the night's enabled sessions (or the one session on a session page), not averaged per session. The device's stored summary values shown elsewhere on the page are not computed this way (on ResMed they cover the whole therapy day), so the two can differ."
+
 export const GLOSSARY: Record<string, GlossaryEntry> = {
     session_duration_hours: {
         label: 'Duration',
@@ -293,6 +296,36 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Snore (device)',
         short: 'ResMed device snore index, 0 (absent) to 5 (severe), sampled every 2 seconds.',
         long: "The device's own signal: a unitless severity score derived from the high-frequency vibration component of mask pressure. Not equivalent to decibel snore measurements.",
+    },
+    resp_rate_device: {
+        label: 'Respiratory Rate (br/min)',
+        short: "Breaths per minute from the device's recorded respiratory rate channel.",
+        long: POOLED_CHANNEL_NOTE,
+    },
+    tidal_volume_device: {
+        label: 'Tidal Volume (mL)',
+        short: "Air volume moved per breath from the device's recorded tidal volume channel, in mL.",
+        long: POOLED_CHANNEL_NOTE,
+    },
+    mv_device: {
+        label: 'Minute Ventilation (L/min)',
+        short: "Air volume breathed per minute from the device's recorded minute ventilation channel, in L/min.",
+        long: POOLED_CHANNEL_NOTE,
+    },
+    ti_device: {
+        label: 'Inspiratory Time (s)',
+        short: "Duration of each breath's inspiratory phase from the device's recorded inspiratory time channel, in seconds. The ResMed signal tops out at 2.0 s, so a 95th or max of 2.00 is that ceiling, not a measurement.",
+        long: POOLED_CHANNEL_NOTE,
+    },
+    ie_ratio_device: {
+        label: 'I:E Ratio (%)',
+        short: "Inspiratory-to-expiratory time ratio from the device's recorded I:E ratio channel, shown as the device records it, in percent. How the device defines that percentage is unconfirmed.",
+        long: POOLED_CHANNEL_NOTE,
+    },
+    pulse_device: {
+        label: 'Pulse (bpm)',
+        short: 'Heart rate from the pulse oximeter channel the device recorded, in beats per minute. Absent when no oximeter was connected.',
+        long: POOLED_CHANNEL_NOTE,
     },
     ie_ratio_waveform: {
         label: 'I:E Ratio',

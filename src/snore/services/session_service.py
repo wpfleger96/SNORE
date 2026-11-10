@@ -18,6 +18,7 @@ from snore.services._base import (
     session_device_join,
 )
 from snore.services.channel_stats import (
+    REPORTED_CHANNELS,
     load_channel_histograms,
     mask_on_spans,
     pool_channel_stats,
@@ -159,7 +160,7 @@ class SessionService(ProfileScopedService):
     ) -> SessionDetail:
         """Get detailed information for a single session.
 
-        ``include_channel_stats=False`` skips decoding the FL and snore blobs and
+        ``include_channel_stats=False`` skips decoding the channel blobs and
         leaves ``channel_stats`` null, for callers that do not show them.
 
         Raises NotFoundError if the session doesn't exist or belongs to a
@@ -262,7 +263,9 @@ class SessionService(ProfileScopedService):
 
         channel_stats = None
         if include_channel_stats:
-            histograms = await load_channel_histograms(self.db_session, [session.id])
+            histograms = await load_channel_histograms(
+                self.db_session, [session.id], REPORTED_CHANNELS
+            )
             channel_stats = pool_channel_stats(histograms, [session.id])
 
         duration_seconds = session.duration_seconds or 0.0

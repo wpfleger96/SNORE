@@ -269,6 +269,7 @@ class NullReason(StrEnum):
     PRIMARY_MODE_MISMATCH = "primary_mode_mismatch"
     CHANNEL_ABSENT = "channel_absent"
     CHANNEL_CORRUPT = "channel_corrupt"
+    SESSIONS_DISAGREE = "sessions_disagree"
     CHANNEL_UNALIGNED = "channel_unaligned"
     NOT_AVAILABLE = "not_available"
     SMART_RAMP_INDETERMINATE = "smart_ramp_indeterminate"

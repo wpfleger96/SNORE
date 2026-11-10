@@ -353,7 +353,23 @@ def _get_severity_color(severity: str) -> str:
         return "red"
 
 
-def _print_channel_stats(title: str, stats: DeviceChannelStats, prefix: str) -> None:
+# DeviceChannelStats channels in display order: title, field prefix and decimals,
+# matching the web UI's DeviceChannelStatsTable.
+_CHANNELS = (
+    ("Flow Limitation", "device_flg", 2),
+    ("Snore", "snore", 2),
+    ("Respiratory Rate (breaths/min)", "respiratory_rate", 1),
+    ("Tidal Volume (mL)", "tidal_volume", 0),
+    ("Minute Ventilation (L/min)", "minute_ventilation", 1),
+    ("Inspiratory Time (s)", "ti", 2),
+    ("I:E Ratio (%)", "ie_ratio", 1),
+    ("Pulse (bpm)", "pulse", 0),
+)
+
+
+def _print_channel_stats(
+    title: str, stats: DeviceChannelStats, prefix: str, decimals: int
+) -> None:
     """Print a channel's median, 95th and max, skipping a channel with no data."""
     rows = [
         (label, field, value)
@@ -368,7 +384,11 @@ def _print_channel_stats(title: str, stats: DeviceChannelStats, prefix: str) -> 
         return
     console.print(f"    {title}:")
     for label, field, value in rows:
-        print_kv(mark_field(label, DeviceChannelStats, field), f"{value:.2f}", indent=3)
+        print_kv(
+            mark_field(label, DeviceChannelStats, field),
+            f"{value:.{decimals}f}",
+            indent=3,
+        )
 
 
 def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
@@ -619,8 +639,8 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
 
     if detail.channel_stats:
         console.print("\n  Device Channels:")
-        _print_channel_stats("Flow Limitation", detail.channel_stats, "device_flg")
-        _print_channel_stats("Snore", detail.channel_stats, "snore")
+        for title, prefix, decimals in _CHANNELS:
+            _print_channel_stats(title, detail.channel_stats, prefix, decimals)
 
     if detail.mask_on_spans:
         console.print("\n  Mask-On Spans:")

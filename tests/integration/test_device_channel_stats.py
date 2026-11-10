@@ -1,4 +1,5 @@
-"""FL and snore statistics and mask-on spans on the session, day and period surfaces."""
+"""Device channel statistics and mask-on spans on the session, day, period and
+MCP nightly surfaces."""
 
 from __future__ import annotations
 
@@ -19,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from snore.analysis.calculations import PeriodType
 from snore.database.models import Day, Device, Session, Statistics
 from snore.database.waveform_blobs import decode_channel_blobs
-from snore.mcp.schemas import EpochSpec
+from snore.mcp.schemas import EpochSpec, NightlyRow
 from snore.mcp.tools.epochs import compare_epochs
+from snore.mcp.tools.night_detail import get_night_detail
+from snore.mcp.tools.summary import get_nightly_summary
 from snore.services.breath_service import BreathService
 from snore.services.day_service import DayService
 from snore.services.report_service import ReportService
@@ -35,6 +38,8 @@ from tests.integration.conftest import (
 
 _NIGHT = date(2025, 3, 1)
 _NEXT_NIGHT = date(2025, 3, 2)
+# The waveform channels DeviceChannelStats reports.
+_REPORTED_CHANNELS = {"fl", "snore", "rr", "tv", "mv", "ti", "ie_ratio", "pulse"}
 
 
 async def _add_session(
@@ -740,7 +745,7 @@ async def test_loader_fetches_blobs_in_batches(
     assert values["fl"] == dict.fromkeys(session_ids, 1)
 
 
-async def test_session_detail_loads_only_the_two_channels(
+async def test_session_detail_loads_only_the_reported_channels(
     async_db_session: AsyncSession, profile_device: tuple[int, Device]
 ) -> None:
     profile_id, device = profile_device
@@ -753,9 +758,54 @@ async def test_session_detail_loads_only_the_two_channels(
 
     [(statement, parameters)] = _blob_queries(captured)
     assert "waveform_type IN" in statement
-    assert {"fl", "snore"} <= set(parameters)
-    assert "flow" not in parameters
-    assert "leak" not in parameters
+    assert set(parameters) - {session.id} == _REPORTED_CHANNELS
+
+
+async def test_day_pools_respiratory_and_pulse_channels(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    day, first = await _make_day_session(async_db_session, device, _NIGHT)
+    second = await _add_session(
+        async_db_session, device, day, start=datetime(2025, 3, 2, 3, 0)
+    )
+    await _make_channel_waveform(async_db_session, first, "rr", [12.0, 0.0, -1.0])
+    await _make_channel_waveform(async_db_session, second, "rr", [16.0, 14.0, 20.0])
+    await _make_channel_waveform(async_db_session, first, "tv", [450.0, 500.0])
+    await _make_channel_waveform(async_db_session, second, "pulse", [-1.0, 60.0, 70.0])
+
+    stats = (
+        await DayService(async_db_session, profile_id).get_day(_NIGHT)
+    ).channel_stats
+
+    # rr pools [0, 12, 14, 16, 20]: the zero counts, the -1 sentinel does not.
+    assert (
+        stats.respiratory_rate_median,
+        stats.respiratory_rate_95th,
+        stats.respiratory_rate_max,
+    ) == (14.0, 20.0, 20.0)
+    assert (stats.tidal_volume_median, stats.tidal_volume_max) == (475.0, 500.0)
+    assert (stats.pulse_median, stats.pulse_max) == (65.0, 70.0)
+    assert stats.minute_ventilation_median is None
+    assert stats.device_flg_median is None
+
+
+async def test_period_statistics_decode_only_fl_and_snore(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    _, session = await _make_day_session(async_db_session, device, _NIGHT)
+    await _make_channel_waveform(async_db_session, session, "fl", [0.2])
+    await _make_channel_waveform(async_db_session, session, "rr", [15.0])
+
+    with _captured_sql(async_db_session) as captured:
+        [period] = await StatsService(
+            async_db_session, profile_id
+        ).get_period_statistics("month")
+
+    [(_, parameters)] = _blob_queries(captured)
+    assert set(parameters) - {session.id} == {"fl", "snore"}
+    assert period.device_flg_95th == pytest.approx(0.2)
 
 
 async def test_list_endpoints_do_not_read_blobs(
@@ -829,6 +879,361 @@ async def test_compare_epochs_values_equal_day_values(
     # The floors agree: FL drops its two sentinels, snore keeps its negative sample.
     assert epoch.device_flg.n_samples == 11
     assert epoch.snore_dist.n_samples == 10
+
+
+_RESPIRATORY_CHANNELS = {"rr", "tv", "mv", "ti", "ie_ratio"}
+_AGREED_STATISTICS = {
+    "respiratory_rate_mean": 15.0,
+    "tidal_volume_mean": 0.5,
+    "minute_ventilation_mean": 7.5,
+    "ti_median": 1.0,
+    "ie_ratio_median": 50.0,
+}
+
+
+async def _two_session_night(
+    db: AsyncSession,
+    device: Device,
+    first_stats: dict[str, float | None],
+    second_stats: dict[str, float | None],
+) -> tuple[Session, Session]:
+    """A night of two enabled sessions with the given Statistics columns."""
+    day, first = await _make_day_session(db, device, _NIGHT)
+    second = await _add_session(db, device, day, start=datetime(2025, 3, 2, 3, 0))
+    db.add_all(
+        [
+            Statistics(session_id=first.id, **first_stats),
+            Statistics(session_id=second.id, **second_stats),
+        ]
+    )
+    await db.flush()
+    return first, second
+
+
+async def _nightly_row(db: AsyncSession, profile_id: int) -> NightlyRow:
+    [night] = (await get_nightly_summary(db, _NIGHT, _NIGHT, profile_id)).nights
+    return night
+
+
+_SOURCE_FIELDS = (
+    "rr_mean_source",
+    "tv_mean_source",
+    "mv_mean_source",
+    "ti_median_source",
+    "ie_ratio_source",
+)
+
+
+def _sources(night: NightlyRow) -> dict[str, str | None]:
+    return {field: getattr(night, field) for field in _SOURCE_FIELDS}
+
+
+def _respiratory_blob_queries(captured: list[tuple[str, Any]]) -> list[set[Any]]:
+    """Parameters of the blob queries that read a respiratory channel."""
+    return [
+        set(params)
+        for _, params in _blob_queries(captured)
+        if _RESPIRATORY_CHANNELS & set(params)
+    ]
+
+
+async def test_nightly_summary_agreeing_sessions_use_the_stored_value(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, _ = await _two_session_night(
+        async_db_session, device, _AGREED_STATISTICS, _AGREED_STATISTICS
+    )
+    await _make_channel_waveform(async_db_session, first, "rr", [30.0])
+
+    with _captured_sql(async_db_session) as captured:
+        night = await _nightly_row(async_db_session, profile_id)
+
+    assert (
+        night.rr_mean_bpm,
+        night.tv_mean_ml,
+        night.mv_mean_lpm,
+        night.ti_median_s,
+        night.ie_ratio_median,
+    ) == (15.0, 500.0, 7.5, 1.0, 50.0)
+    assert _sources(night) == dict.fromkeys(_SOURCE_FIELDS, "device")
+    assert night.ti_median_reason is None
+    assert night.ie_ratio_reason is None
+    assert not _respiratory_blob_queries(captured)
+
+
+async def test_nightly_summary_disagreeing_sessions_use_the_pooled_median(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, second = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "respiratory_rate_mean": 14.0, "ti_median": 1.0},
+        {**_AGREED_STATISTICS, "respiratory_rate_mean": 16.0, "ti_median": 2.0},
+    )
+    await _make_channel_waveform(async_db_session, first, "rr", [10.0, 12.0])
+    await _make_channel_waveform(async_db_session, second, "rr", [20.0])
+    await _make_channel_waveform(async_db_session, first, "ti", [1.5])
+    await _make_channel_waveform(async_db_session, second, "ti", [1.5, 2.0])
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert night.rr_mean_bpm == 12.0
+    assert night.ti_median_s == 1.5
+    assert night.ti_median_reason is None
+    assert night.mv_mean_lpm == 7.5
+    assert (night.rr_mean_source, night.ti_median_source) == ("derived", "derived")
+    assert night.mv_mean_source == "device"
+
+
+async def test_nightly_summary_one_null_session_uses_the_pooled_median(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, second = await _two_session_night(
+        async_db_session,
+        device,
+        _AGREED_STATISTICS,
+        {**_AGREED_STATISTICS, "minute_ventilation_mean": None},
+    )
+    await _make_channel_waveform(async_db_session, first, "mv", [6.0])
+    await _make_channel_waveform(async_db_session, second, "mv", [9.0, 10.0])
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert night.mv_mean_lpm == 9.0
+
+
+async def test_nightly_summary_disagreeing_sessions_without_waveforms_are_null(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    await _two_session_night(
+        async_db_session,
+        device,
+        {"respiratory_rate_mean": 14.0, "ti_median": 1.0, "ie_ratio_median": 40.0},
+        {"respiratory_rate_mean": 16.0, "ti_median": 2.0, "ie_ratio_median": 50.0},
+    )
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert night.rr_mean_bpm is None
+    assert night.ti_median_s is None
+    assert night.ti_median_reason == "sessions_disagree"
+    assert night.ie_ratio_median is None
+    assert night.ie_ratio_reason == "sessions_disagree"
+    assert _sources(night) == dict.fromkeys(_SOURCE_FIELDS)
+
+
+async def test_nightly_summary_without_stored_values_or_waveforms_is_channel_absent(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    await _two_session_night(async_db_session, device, {}, {})
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.ti_median_s, night.ti_median_reason) == (None, "channel_absent")
+    assert (night.ie_ratio_median, night.ie_ratio_reason) == (None, "channel_absent")
+
+
+async def test_nightly_summary_corrupt_fallback_waveform_nulls_the_value(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, second = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "ti_median": 1.0},
+        {**_AGREED_STATISTICS, "ti_median": 2.0},
+    )
+    await _make_channel_waveform(async_db_session, first, "ti", [1.5])
+    corrupt = await _make_channel_waveform(async_db_session, second, "ti", [1.2])
+    corrupt.data_blob = b"not a whole sample"
+    await async_db_session.flush()
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.ti_median_s, night.ti_median_source) == (None, None)
+    assert night.ti_median_reason == "channel_corrupt"
+
+
+async def test_nightly_summary_night_of_disabled_sessions_is_no_sessions(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    day, session = await _make_day_session(async_db_session, device, _NIGHT)
+    session.enabled = False
+    async_db_session.add(Statistics(session_id=session.id, **_AGREED_STATISTICS))
+    await _make_channel_waveform(async_db_session, session, "rr", [15.0])
+    await async_db_session.flush()
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.rr_mean_bpm, night.ti_median_s, night.ie_ratio_median) == (
+        None,
+        None,
+        None,
+    )
+    assert _sources(night) == dict.fromkeys(_SOURCE_FIELDS)
+    assert night.ti_median_reason == "no_sessions"
+    assert night.ie_ratio_reason == "no_sessions"
+
+
+async def test_nightly_summary_disabled_session_is_left_out_of_agreement_and_pooling(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    day, enabled = await _make_day_session(async_db_session, device, _NIGHT)
+    disabled = await _add_session(
+        async_db_session, device, day, start=datetime(2025, 3, 2, 3, 0), enabled=False
+    )
+    async_db_session.add_all(
+        [
+            Statistics(
+                session_id=enabled.id,
+                **{**_AGREED_STATISTICS, "minute_ventilation_mean": None},
+            ),
+            Statistics(
+                session_id=disabled.id,
+                **{
+                    **_AGREED_STATISTICS,
+                    "respiratory_rate_mean": 20.0,
+                    "minute_ventilation_mean": 9.0,
+                },
+            ),
+        ]
+    )
+    await _make_channel_waveform(async_db_session, enabled, "mv", [6.0])
+    await _make_channel_waveform(async_db_session, disabled, "mv", [20.0, 30.0])
+    await _make_channel_waveform(async_db_session, disabled, "rr", [40.0])
+    await async_db_session.flush()
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.rr_mean_bpm, night.rr_mean_source) == (15.0, "device")
+    assert (night.mv_mean_lpm, night.mv_mean_source) == (6.0, "derived")
+
+
+async def test_nightly_summary_disagreeing_tidal_volume_pools_the_waveform_in_ml(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, second = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "tidal_volume_mean": 0.45},
+        {**_AGREED_STATISTICS, "tidal_volume_mean": 0.55},
+    )
+    await _make_channel_waveform(async_db_session, first, "tv", [450.0, 500.0])
+    await _make_channel_waveform(async_db_session, second, "tv", [520.0])
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.tv_mean_ml, night.tv_mean_source) == (500.0, "derived")
+
+
+async def test_nightly_summary_pools_only_the_sessions_with_a_waveform(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, _ = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "respiratory_rate_mean": 14.0},
+        {**_AGREED_STATISTICS, "respiratory_rate_mean": 16.0},
+    )
+    await _make_channel_waveform(async_db_session, first, "rr", [10.0, 12.0])
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.rr_mean_bpm, night.rr_mean_source) == (11.0, "derived")
+
+
+async def test_nightly_summary_session_without_statistics_forces_the_fallback(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    day, summarized = await _make_day_session(async_db_session, device, _NIGHT)
+    unsummarized = await _add_session(
+        async_db_session, device, day, start=datetime(2025, 3, 2, 3, 0)
+    )
+    async_db_session.add(Statistics(session_id=summarized.id, **_AGREED_STATISTICS))
+    await _make_channel_waveform(async_db_session, summarized, "rr", [18.0])
+    await _make_channel_waveform(async_db_session, unsummarized, "rr", [20.0])
+    await async_db_session.flush()
+
+    night = await _nightly_row(async_db_session, profile_id)
+
+    assert (night.rr_mean_bpm, night.rr_mean_source) == (19.0, "derived")
+    assert night.ti_median_reason == "sessions_disagree"
+
+
+async def test_nightly_fallback_median_equals_night_detail_channel_median(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    first, second = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "ie_ratio_median": 40.0},
+        {**_AGREED_STATISTICS, "ie_ratio_median": 50.0},
+    )
+    await _make_channel_waveform(async_db_session, first, "ie_ratio", [41.3, 47.1])
+    await _make_channel_waveform(async_db_session, second, "ie_ratio", [52.9, 44.4])
+
+    night = await _nightly_row(async_db_session, profile_id)
+    detail = await get_night_detail(async_db_session, _NIGHT, profile_id)
+
+    assert night.ie_ratio_source == "derived"
+    assert night.ie_ratio_median == detail.device.channel_stats.ie_ratio_median
+
+
+async def test_nightly_summary_compares_tidal_volume_in_ml(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    resmed, oscar = await _two_session_night(
+        async_db_session,
+        device,
+        {**_AGREED_STATISTICS, "tidal_volume_mean": 0.45},
+        {**_AGREED_STATISTICS, "tidal_volume_mean": 450.0},
+    )
+    resmed.import_source = "resmed_edf"
+    oscar.import_source = "oscar_binary"
+    await async_db_session.flush()
+
+    with _captured_sql(async_db_session) as captured:
+        night = await _nightly_row(async_db_session, profile_id)
+
+    assert night.tv_mean_ml == 450.0
+    assert not _respiratory_blob_queries(captured)
+
+
+async def test_nightly_summary_decodes_only_the_nights_that_fall_back(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    _, agreed = await _make_day_session(async_db_session, device, _NIGHT)
+    async_db_session.add(Statistics(session_id=agreed.id, **_AGREED_STATISTICS))
+    _, unsummarized = await _make_day_session(async_db_session, device, _NEXT_NIGHT)
+    await _make_channel_waveform(async_db_session, agreed, "rr", [30.0])
+    await _make_channel_waveform(async_db_session, unsummarized, "rr", [18.0])
+    await async_db_session.flush()
+
+    with _captured_sql(async_db_session) as captured:
+        result = await get_nightly_summary(
+            async_db_session, _NIGHT, _NEXT_NIGHT, profile_id
+        )
+
+    assert {night.date: night.rr_mean_bpm for night in result.nights} == {
+        _NIGHT: 15.0,
+        _NEXT_NIGHT: 18.0,
+    }
+    queries = _respiratory_blob_queries(captured)
+    assert queries
+    assert all(agreed.id not in params for params in queries)
 
 
 @contextmanager

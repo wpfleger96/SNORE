@@ -4,7 +4,7 @@ These models define the contract between services and consumers (CLI/API).
 """
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -110,12 +110,22 @@ RERA_PROXY_FALLBACK_NOTE = (
     "modes or pressure-support levels)."
 )
 
-# What the stored fl and snore waveform channels measure, for every statistic
-# computed over them.  Each statistic pools samples, never averages per session.
+# What each stored waveform channel measures, for every statistic computed over
+# it.  Each statistic pools samples, never averages per session.
 _FL_CHANNEL = (
     "device flow-limitation channel (0-1 unitless), excluding mask-off sentinels"
 )
 _SNORE_CHANNEL = "device snore channel (0-5 unitless)"
+_RR_CHANNEL = (
+    "device respiratory rate channel (breaths/min), excluding out-of-range samples"
+)
+_TV_CHANNEL = "device tidal volume channel (mL), excluding out-of-range samples"
+_MV_CHANNEL = "device minute ventilation channel (L/min)"
+_TI_CHANNEL = (
+    "device inspiratory time channel (seconds), excluding out-of-range samples"
+)
+_IE_CHANNEL = "device I:E ratio channel (%), excluding out-of-range samples"
+_PULSE_CHANNEL = "oximeter pulse channel (bpm), excluding invalid readings"
 
 
 class PeriodStatistics(BaseModel):
@@ -700,8 +710,26 @@ class SessionSetting(BaseModel):
     value: str | None = Field(default=None, description="Setting value")
 
 
+def _pooled_field(statistic: str, channel: str, note: str = "") -> Any:
+    """A null-by-default Derived statistic of ``channel``'s pooled samples."""
+    return provenance_field(
+        Provenance.DERIVED, f"{statistic} of the {channel}, pooled{note}", default=None
+    )
+
+
+def _waveform_field(statistic: str, channel: str) -> Any:
+    """``_pooled_field`` of a channel that ``SessionStatistics`` also summarizes."""
+    return _pooled_field(
+        statistic,
+        channel,
+        "; computed from the recorded waveform samples, unlike the same-named "
+        "stored summary in session statistics (on ResMed, one STR value for the "
+        "whole therapy day), so the two can differ in value and unit",
+    )
+
+
 class DeviceChannelStats(BaseModel):
-    """Distribution of the stored flow-limitation and snore waveform channels.
+    """Distribution of the stored FL, snore, respiratory and pulse waveforms.
 
     Each statistic is taken over the samples pooled across the sessions of the
     parent response; a channel none of them has reads null.
@@ -709,28 +737,34 @@ class DeviceChannelStats(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    device_flg_median: float | None = provenance_field(
-        Provenance.DERIVED, f"Median of the {_FL_CHANNEL}, pooled", default=None
+    device_flg_median: float | None = _pooled_field("Median", _FL_CHANNEL)
+    device_flg_95th: float | None = _pooled_field("95th percentile", _FL_CHANNEL)
+    device_flg_max: float | None = _pooled_field("Maximum", _FL_CHANNEL)
+    snore_median: float | None = _pooled_field("Median", _SNORE_CHANNEL)
+    snore_95th: float | None = _pooled_field("95th percentile", _SNORE_CHANNEL)
+    snore_max: float | None = _pooled_field("Maximum", _SNORE_CHANNEL)
+    respiratory_rate_median: float | None = _waveform_field("Median", _RR_CHANNEL)
+    respiratory_rate_95th: float | None = _waveform_field(
+        "95th percentile", _RR_CHANNEL
     )
-    device_flg_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        f"95th percentile of the {_FL_CHANNEL}, pooled",
-        default=None,
+    respiratory_rate_max: float | None = _waveform_field("Maximum", _RR_CHANNEL)
+    tidal_volume_median: float | None = _waveform_field("Median", _TV_CHANNEL)
+    tidal_volume_95th: float | None = _waveform_field("95th percentile", _TV_CHANNEL)
+    tidal_volume_max: float | None = _waveform_field("Maximum", _TV_CHANNEL)
+    minute_ventilation_median: float | None = _waveform_field("Median", _MV_CHANNEL)
+    minute_ventilation_95th: float | None = _waveform_field(
+        "95th percentile", _MV_CHANNEL
     )
-    device_flg_max: float | None = provenance_field(
-        Provenance.DERIVED, f"Maximum of the {_FL_CHANNEL}, pooled", default=None
-    )
-    snore_median: float | None = provenance_field(
-        Provenance.DERIVED, f"Median of the {_SNORE_CHANNEL}, pooled", default=None
-    )
-    snore_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        f"95th percentile of the {_SNORE_CHANNEL}, pooled",
-        default=None,
-    )
-    snore_max: float | None = provenance_field(
-        Provenance.DERIVED, f"Maximum of the {_SNORE_CHANNEL}, pooled", default=None
-    )
+    minute_ventilation_max: float | None = _waveform_field("Maximum", _MV_CHANNEL)
+    ti_median: float | None = _waveform_field("Median", _TI_CHANNEL)
+    ti_95th: float | None = _waveform_field("95th percentile", _TI_CHANNEL)
+    ti_max: float | None = _waveform_field("Maximum", _TI_CHANNEL)
+    ie_ratio_median: float | None = _waveform_field("Median", _IE_CHANNEL)
+    ie_ratio_95th: float | None = _waveform_field("95th percentile", _IE_CHANNEL)
+    ie_ratio_max: float | None = _waveform_field("Maximum", _IE_CHANNEL)
+    pulse_median: float | None = _waveform_field("Median", _PULSE_CHANNEL)
+    pulse_95th: float | None = _waveform_field("95th percentile", _PULSE_CHANNEL)
+    pulse_max: float | None = _waveform_field("Maximum", _PULSE_CHANNEL)
 
 
 class MaskOnSpan(BaseModel):
@@ -778,9 +812,9 @@ class SessionDetail(BaseModel):
     active_mask: MaskLogEntryResponse | None = None
     channel_stats: DeviceChannelStats | None = Field(
         default=None,
-        description="This session's flow-limitation and snore channel statistics, "
-        "whether or not it is enabled; null when it has neither channel, and "
-        "always null on PATCH responses, which omit it",
+        description="This session's device channel statistics, whether or not it "
+        "is enabled; null when it has none of the channels, and always null on "
+        "PATCH responses, which omit it",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,
@@ -1252,8 +1286,8 @@ class DayDetail(DayListItem):
     health_sleep: HealthNightSummaryRead | None = None
     channel_stats: DeviceChannelStats | None = Field(
         default=None,
-        description="Flow-limitation and snore channel statistics over the pooled "
-        "samples of the day's enabled sessions; null when none has either channel",
+        description="Device channel statistics over the pooled samples of the "
+        "day's enabled sessions; null when none has any of the channels",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,

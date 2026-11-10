@@ -90,11 +90,22 @@ DEFAULT_TOOLS: dict[str, type[BaseModel] | None] = {
     "get_waveform": WaveformWindowResponse,
     "render_window": None,  # PNG of device samples
 }
-# The only sibling field that may set a default tool's per-value tier: the Day
-# headline indices' index_source.
-INDEX_SOURCE_FIELDS: dict[type[BaseModel], str] = {
-    NightlySummaryResponse: "nights[].index_source",
-    NightDetailResponse: "device.index_source",
+# Nightly respiratory values and the source field that sets each one's tier.
+NIGHTLY_RESPIRATORY_SOURCES = {
+    "rr_mean_bpm": "rr_mean_source",
+    "tv_mean_ml": "tv_mean_source",
+    "mv_mean_lpm": "mv_mean_source",
+    "ti_median_s": "ti_median_source",
+    "ie_ratio_median": "ie_ratio_source",
+}
+# The only sibling fields that may set a default tool's per-value tier: the Day
+# headline indices' index_source and the nightly respiratory values' sources.
+SOURCE_FIELDS: dict[type[BaseModel], set[str]] = {
+    NightlySummaryResponse: {
+        "nights[].index_source",
+        *(f"nights[].{source}" for source in NIGHTLY_RESPIRATORY_SOURCES.values()),
+    },
+    NightDetailResponse: {"device.index_source"},
 }
 
 
@@ -215,8 +226,8 @@ class TestDefaultToolGate:
 
         assert not block.get("experimental")
         assert not _has_experimental_tag(model.model_json_schema(mode="serialization"))
-        assert set(block.get("source_dependent", {}).values()) <= (
-            {INDEX_SOURCE_FIELDS[model]} if model in INDEX_SOURCE_FIELDS else set()
+        assert set(block.get("source_dependent", {}).values()) <= SOURCE_FIELDS.get(
+            model, set()
         )
 
     def test_schema_scan_catches_experimental_parent_of_untagged_leaf(self) -> None:
@@ -423,9 +434,20 @@ class TestResponseProvenanceBlock:
         assert "experimental" not in payload["provenance"]
         assert "nights[].usage_hours" in payload["provenance"]["derived"]
         assert "nights[].leak_above_24_pct" in payload["provenance"]["derived"]
-        assert "nights[].rr_mean_bpm" not in json.dumps(payload["provenance"])
+        assert "nights[].rr_mean_bpm" not in payload["provenance"]["derived"]
         assert "nights[].reras" not in json.dumps(payload["provenance"])
-        assert "nights[].ti_median_s" not in json.dumps(payload["provenance"])
+        assert "nights[].ti_median_s" not in payload["provenance"]["derived"]
+
+    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
+        self,
+    ) -> None:
+        block = response_provenance(NightlySummaryResponse)
+
+        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
+            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
+            assert block["source_dependent"][f"nights[].{value}"] == (
+                f"nights[].{source}"
+            )
 
     async def test_experimental_nightly_response_lists_only_experimental_paths(
         self,

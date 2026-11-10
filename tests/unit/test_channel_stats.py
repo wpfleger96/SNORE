@@ -7,7 +7,15 @@ from datetime import datetime
 import numpy as np
 import pytest
 
+from snore.constants import (
+    IE_RATIO_VALID_RANGE,
+    RESPIRATORY_RATE_VALID_RANGE,
+    TI_VALID_RANGE_S,
+    TIDAL_VOLUME_VALID_RANGE_ML,
+)
 from snore.services.channel_stats import (
+    _CHANNEL_PREFIXES,
+    _STATISTICS,
     ChannelHistograms,
     channel_histogram,
     histogram_distribution,
@@ -17,6 +25,7 @@ from snore.services.channel_stats import (
     pooled_distribution,
     pooled_share_above,
 )
+from snore.services.schemas import DeviceChannelStats
 from snore.utils.stats import percentile_nearest_rank
 
 pytestmark = pytest.mark.unit
@@ -147,6 +156,106 @@ def test_leak_histogram_drops_negative_values_and_keeps_zeros() -> None:
 
     assert values.tolist() == [0.0, 30.0]
     assert counts.tolist() == [1, 1]
+
+
+_RESPIRATORY_PREFIXES = {
+    "rr": "respiratory_rate",
+    "tv": "tidal_volume",
+    "mv": "minute_ventilation",
+    "ti": "ti",
+    "ie_ratio": "ie_ratio",
+}
+
+
+@pytest.mark.parametrize(("channel", "prefix"), _RESPIRATORY_PREFIXES.items())
+def test_respiratory_channel_pools_sessions_like_sorted_samples(
+    channel: str, prefix: str
+) -> None:
+    first = _samples(1.25, 0.0, 1.5, 2.25)
+    second = _samples(1.0, 1.75, 0.0)
+    histograms = {
+        channel: {
+            1: channel_histogram(channel, first),
+            2: channel_histogram(channel, second),
+        }
+    }
+
+    pooled = pool_channel_stats(histograms, [1, 2])
+
+    assert (
+        getattr(pooled, f"{prefix}_median"),
+        getattr(pooled, f"{prefix}_95th"),
+        getattr(pooled, f"{prefix}_max"),
+    ) == _sorted_sample_maths(first, second)
+    assert pooled.device_flg_median is None
+
+
+@pytest.mark.parametrize("channel", _RESPIRATORY_PREFIXES)
+def test_respiratory_histogram_keeps_zeros_and_drops_negative_and_nan(
+    channel: str,
+) -> None:
+    raw = _samples(-1.0, 0.0, 0.0, 2.5, float("nan"), float("inf"))
+
+    values, counts = channel_histogram(channel, raw)
+
+    assert values.tolist() == [0.0, 2.5]
+    assert counts.tolist() == [2, 1]
+
+
+@pytest.mark.parametrize(
+    ("channel", "prefix", "valid_range"),
+    [
+        ("rr", "respiratory_rate", RESPIRATORY_RATE_VALID_RANGE),
+        ("tv", "tidal_volume", TIDAL_VOLUME_VALID_RANGE_ML),
+        ("ti", "ti", TI_VALID_RANGE_S),
+        ("ie_ratio", "ie_ratio", IE_RATIO_VALID_RANGE),
+    ],
+)
+def test_respiratory_sample_above_the_parser_range_is_left_out_of_the_max(
+    channel: str, prefix: str, valid_range: tuple[float, float]
+) -> None:
+    _, high = valid_range
+    histograms = {channel: {1: channel_histogram(channel, _samples(1.0, high + 1))}}
+
+    pooled = pool_channel_stats(histograms, [1])
+
+    assert getattr(pooled, f"{prefix}_max") == 1.0
+
+
+def test_channel_registry_names_every_device_channel_stats_field() -> None:
+    assert {
+        f"{prefix}_{stat}"
+        for prefix in _CHANNEL_PREFIXES.values()
+        for stat in _STATISTICS
+    } == set(DeviceChannelStats.model_fields)
+
+
+def test_pool_ignores_a_loaded_channel_it_does_not_report() -> None:
+    histograms = {
+        "leak": {1: channel_histogram("leak", _samples(30.0))},
+        "fl": {1: channel_histogram("fl", _samples(0.2))},
+    }
+
+    pooled = pool_channel_stats(histograms, [1])
+
+    assert pooled == DeviceChannelStats(
+        device_flg_median=0.2, device_flg_95th=0.2, device_flg_max=0.2
+    )
+
+
+def test_pulse_histogram_keeps_only_valid_readings() -> None:
+    raw = _samples(-1.0, 0.0, 39.0, 40.0, 72.0, 72.0, 200.0, 201.0, float("nan"))
+
+    values, counts = channel_histogram("pulse", raw)
+
+    assert values.tolist() == [40.0, 72.0, 200.0]
+    assert counts.tolist() == [1, 2, 1]
+
+
+def test_pulse_with_only_invalid_readings_pools_to_null() -> None:
+    histograms = {"pulse": {1: channel_histogram("pulse", _samples(-1.0, 0.0))}}
+
+    assert pool_channel_stats(histograms, [1]) is None
 
 
 def test_pooled_distribution_of_no_samples_is_none() -> None:

@@ -6,6 +6,7 @@ import math
 
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -18,6 +19,7 @@ from snore.analysis.shared.versioning import (
     TimezoneStatus,
 )
 from snore.constants import RERAProxyConstants
+from snore.provenance import IndexSource
 
 # ---------------------------------------------------------------------------
 # Analysis-status/versioning types re-exported from versioning (single source of truth)
@@ -671,6 +673,27 @@ class NightlyAnalysisSummary(BaseModel):
     pb_reason: NullReason | None = None
 
 
+# Waveform channels behind the nightly respiratory values.
+RespiratoryChannel = Literal["rr", "tv", "mv", "ti", "ie_ratio"]
+
+
+class NightlyRespiratoryValue(BaseModel):
+    """One of a night's respiratory values and where it came from.
+
+    ``source`` is ``DEVICE`` for the stored summary value every enabled session
+    agrees on and ``DERIVED`` for the median of the night's pooled waveform
+    samples.  A null value has no source and says why in ``reason``:
+    ``SESSIONS_DISAGREE`` (stored values exist but the sessions disagree or one
+    has no Statistics row, and no waveform to pool), ``CHANNEL_ABSENT`` (no
+    stored value and no waveform) or ``CHANNEL_CORRUPT`` (a session's waveform
+    could not be decoded).
+    """
+
+    value: float | None = None
+    source: IndexSource | None = None
+    reason: NullReason | None = None
+
+
 class NightlyDeviceStats(BaseModel):
     """Compliance and device-channel statistics for one therapy night.
 
@@ -705,6 +728,11 @@ class NightlyDeviceStats(BaseModel):
     # when the channel was not recorded or any session's blob could not be decoded.
     leak_above_24_pct: float | None = None
     leak_above_24_pct_reason: NullReason | None = None
+
+    # Every respiratory channel's value: the stored Statistics value when every
+    # enabled session stores the same one (tidal volume compared in mL),
+    # otherwise the median of the night's pooled waveform samples.
+    respiratory: dict[RespiratoryChannel, NightlyRespiratoryValue]
 
 
 class _NightlyRangeBase(BaseModel):

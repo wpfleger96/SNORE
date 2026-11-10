@@ -16,6 +16,7 @@ from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.services._base import ProfileScopedService, paginate
 from snore.services.channel_stats import (
+    REPORTED_CHANNELS,
     load_channel_histograms,
     mask_on_spans,
     pool_channel_stats,
@@ -197,7 +198,9 @@ class DayService(ProfileScopedService):
         # Like the Day aggregates, device detail covers enabled sessions only.
         enabled_rows = [row for row in session_rows if row.enabled]
         enabled_ids = [row.id for row in enabled_rows]
-        histograms = await load_channel_histograms(self.db_session, enabled_ids)
+        histograms = await load_channel_histograms(
+            self.db_session, enabled_ids, REPORTED_CHANNELS
+        )
         spans = _day_mask_on_spans(
             [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
         )

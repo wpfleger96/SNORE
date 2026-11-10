@@ -3,7 +3,7 @@
 Timestamp contract (A6): date fields are Python ``date`` objects serialized as
 ``YYYY-MM-DD`` — no timezone issue since dates have no time component.
 
-``get_nightly_summary`` is device-only: Day and Statistics rows plus
+``get_nightly_summary`` is device-only: Day rows plus
 BreathService.get_nightly_device_summary(), so it answers identically whether or
 not analysis has run.  ``experimental_get_nightly_metrics`` serves SNORE's own
 heuristics from BreathService.get_experimental_nightly_range().  Compliance
@@ -23,8 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.shared.versioning import NullReason
 from snore.database import models
+from snore.services.breath.dtos import NightlyRespiratoryValue, RespiratoryChannel
 from snore.services.event_service import device_event_types, reported_counts
-from snore.services.tidal_volume import tidal_volume_ml
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -63,6 +63,15 @@ _DEFAULT_COMPLIANCE_THRESHOLD_HOURS = 4.0
 _NIGHTLY_INDEX_FIELDS = tuple(
     f"{index}{suffix}" for index in DAY_INDEX_FIELDS for suffix in ("", "_computed")
 )
+# Each respiratory channel's NightlyRow value and source fields, and its reason
+# field where it has one.
+_RESPIRATORY_FIELDS: dict[RespiratoryChannel, tuple[str, str, str | None]] = {
+    "rr": ("rr_mean_bpm", "rr_mean_source", None),
+    "tv": ("tv_mean_ml", "tv_mean_source", None),
+    "mv": ("mv_mean_lpm", "mv_mean_source", None),
+    "ti": ("ti_median_s", "ti_median_source", "ti_median_reason"),
+    "ie_ratio": ("ie_ratio_median", "ie_ratio_source", "ie_ratio_reason"),
+}
 
 
 async def get_nightly_summary(
@@ -81,9 +90,10 @@ async def get_nightly_summary(
     trusted, otherwise SNORE's recount; index_source says which.  The recount,
     when computable, is in *_computed.  Channel statistics come from
     BreathService.get_nightly_device_summary(), decoded for the page's nights
-    only; absent entries are null with reason (A2).  Compliance covers the
-    whole range and uses n_calendar_nights as denominator.  No analysis data is
-    read, except _has_analysis for capability bookkeeping.
+    only, and so do the respiratory values; absent entries are null with reason
+    (A2).  Compliance covers the whole range and uses n_calendar_nights as
+    denominator.  No analysis data is read, except _has_analysis for capability
+    bookkeeping.
 
     Raises ValidationError when BreathService reports device ownership problems
     (DeviceAmbiguityError, DeviceNotOwnedError).  The server boundary converts
@@ -122,8 +132,8 @@ async def get_nightly_summary(
         day_q = day_q.where(models.Day.device_id == device_id)
     day_rows = (await db_session.execute(day_q)).scalars().all()
 
-    # Compliance covers the whole range; channel statistics only this page's
-    # nights, so only their waveforms are decoded.
+    # Compliance covers the whole range; channel statistics and respiratory
+    # values only this page's nights, so only their waveforms are decoded.
     # ValueError (end < start or > 90 nights) is pre-validated/rejected upstream.
     try:
         bs_range = await BreathService(
@@ -153,73 +163,13 @@ async def get_nightly_summary(
             compliance=_compliance_fields(bs_range) if start != end else None,
         )
 
-    day_ids = [int(d.id) for d in day_rows]
-
-    # For each day get the earliest enabled session (representative for stats).
-    # Defense-in-depth: join through Device.profile_id even though day_ids are
-    # already profile-scoped by the Day query above.
-    session_rows = (
-        await db_session.execute(
-            select(
-                models.Session.id, models.Session.day_id, models.Session.import_source
-            )
-            .join(models.Device, models.Session.device_id == models.Device.id)
-            .where(
-                models.Session.day_id.in_(day_ids),
-                models.Session.enabled.is_(True),
-                models.Device.profile_id == profile_id,
-            )
-            .order_by(models.Session.day_id, models.Session.start_time)
-        )
-    ).all()
-
-    day_to_session: dict[int, int] = {}
-    import_source_by_session: dict[int, str | None] = {}
-    for row_session_id, s_day_id, import_source in session_rows:
-        if s_day_id is None:  # excluded by the day_id IN filter
-            continue
-        day_to_session.setdefault(int(s_day_id), int(row_session_id))
-        import_source_by_session[int(row_session_id)] = import_source
-
-    session_ids = list(day_to_session.values())
-
-    # Statistics rows for MV/RR/TV/Ti/I:E — defense-in-depth join through Device.profile_id.
-    stats_by_session: dict[int, models.Statistics] = {}
-    if session_ids:
-        stat_rows = (
-            (
-                await db_session.execute(
-                    select(models.Statistics)
-                    .join(
-                        models.Session,
-                        models.Statistics.session_id == models.Session.id,
-                    )
-                    .join(
-                        models.Device,
-                        models.Session.device_id == models.Device.id,
-                    )
-                    .where(
-                        models.Statistics.session_id.in_(session_ids),
-                        models.Device.profile_id == profile_id,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for stat in stat_rows:
-            stats_by_session[int(stat.session_id)] = stat
-
     reported_by_device = await device_event_types(
         db_session, {d.device_id for d in day_rows}
     )
     nights: list[NightlyRow] = []
 
     for day in day_rows:
-        session_id = day_to_session.get(int(day.id))
-        stats = stats_by_session.get(session_id) if session_id else None
-        ti_median_s = stats.ti_median if stats else None
-        ie_ratio_median = stats.ie_ratio_median if stats else None
+        night = bs_by_night.get((day.device_id, day.date))
         usage_h = day.total_therapy_hours
 
         nights.append(
@@ -238,25 +188,10 @@ async def get_nightly_summary(
                 epap_median_cmh2o=day.epap_median,
                 leak_median_lpm=day.leak_median,
                 leak_95th_lpm=day.leak_95th,
-                rr_mean_bpm=stats.respiratory_rate_mean if stats else None,
-                tv_mean_ml=(
-                    tidal_volume_ml(
-                        stats.tidal_volume_mean,
-                        import_source_by_session.get(int(stats.session_id)),
-                    )
-                    if stats
-                    else None
-                ),
-                mv_mean_lpm=stats.minute_ventilation_mean if stats else None,
                 spo2_mean_pct=day.spo2_mean,
-                ti_median_s=ti_median_s,
-                ti_median_reason=_absent_reason(ti_median_s, session_id),
-                ie_ratio_median=ie_ratio_median,
-                ie_ratio_reason=_absent_reason(ie_ratio_median, session_id),
                 device_id=day.device_id,
-                **_device_stat_fields(
-                    bs_by_night.get((day.device_id, day.date))
-                ).model_dump(),
+                **_respiratory_fields(night),
+                **_device_stat_fields(night).model_dump(),
             )
         )
 
@@ -334,14 +269,6 @@ def _rounded(value: float | None, ndigits: int) -> float | None:
     return None if value is None else round(value, ndigits)
 
 
-def _absent_reason(value: float | None, session_id: int | None) -> str | None:
-    """Why a device summary value is null; ``session_id`` is the night's first enabled session."""
-    if value is not None:
-        return None
-    reason = NullReason.NO_SESSIONS if session_id is None else NullReason.CHANNEL_ABSENT
-    return reason.value
-
-
 def _compliance_fields(bs_range: NightlyDeviceRange) -> ComplianceFields:
     return ComplianceFields(
         threshold_hours=bs_range.compliance_threshold_hours,
@@ -392,6 +319,26 @@ def _device_stat_fields(night: NightlyDeviceStats | None) -> NightlyChannelField
         snore_pct_time=_rounded(night.snore_pct_time, 4),
         snore_reason=str_or_none(night.snore_reason),
     )
+
+
+def _respiratory_fields(night: NightlyDeviceStats | None) -> dict[str, Any]:
+    """NightlyRow respiratory fields; ``night`` is None for a Day with no enabled sessions."""
+    fields: dict[str, Any] = {}
+    for channel, (
+        value_field,
+        source_field,
+        reason_field,
+    ) in _RESPIRATORY_FIELDS.items():
+        respiratory = (
+            night.respiratory[channel]
+            if night is not None
+            else NightlyRespiratoryValue(reason=NullReason.NO_SESSIONS)
+        )
+        fields[value_field] = respiratory.value
+        fields[source_field] = respiratory.source
+        if reason_field is not None:
+            fields[reason_field] = str_or_none(respiratory.reason)
+    return fields
 
 
 def _experimental_row(night: NightlyAnalysisSummary) -> ExperimentalNightlyRow:
@@ -480,12 +427,21 @@ def register(mcp: FastMCP) -> None:
         no partial value.
 
         ``rr_mean_bpm``, ``tv_mean_ml``, ``mv_mean_lpm``, ``ti_median_s`` and
-        ``ie_ratio_median`` are device summary values of the night's first
-        session. ``ti_median_reason`` and ``ie_ratio_reason`` are
-        ``"channel_absent"`` when the device did not report the value and
-        ``"no_sessions"`` when the night has no enabled sessions. The device
-        I:E scale is unconfirmed, so ``ie_ratio_median`` is not comparable to
-        ``segmented_ie_ratio``.
+        ``ie_ratio_median`` are the stored summary value when every enabled
+        session of the night stores the same one (the STR daily value on
+        direct ResMed imports, the session summary on OSCAR-profile imports),
+        otherwise the median of the night's pooled waveform samples; each
+        value's ``*_source`` field (``rr_mean_source``, ``tv_mean_source``,
+        ``mv_mean_source``, ``ti_median_source``, ``ie_ratio_source``) is
+        ``"device"`` or ``"derived"`` respectively. When ``ti_median_s`` or
+        ``ie_ratio_median`` is null, its reason is ``"sessions_disagree"``
+        (stored values exist but disagree, or a session has no statistics,
+        and there is no waveform to pool), ``"channel_absent"`` (neither
+        exists), ``"channel_corrupt"`` (a session's waveform could not be
+        decoded) or ``"no_sessions"`` (the night has no enabled sessions).
+        The ResMed stored Ti is whole seconds while the waveform median is
+        fine-grained. The device I:E scale is unconfirmed, so
+        ``ie_ratio_median`` is not comparable to ``segmented_ie_ratio``.
 
         The ``compliance`` block is present whenever ``start != end`` (range
         mode), even when the range contains no night data rows; it is ``null``

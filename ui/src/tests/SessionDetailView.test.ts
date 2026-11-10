@@ -186,7 +186,7 @@ describe('SessionDetailView device channel and mask-on sections', () => {
             { channel_stats: CHANNEL_STATS, mask_on_spans: SPANS },
         )
 
-        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore', 'Mask-On Spans'])
+        expect(sectionHeadings(wrapper)).toEqual(['Device Channel Statistics', 'Mask-On Spans'])
     })
 
     it('test_sections_do_not_depend_on_session_statistics', async () => {
@@ -195,7 +195,7 @@ describe('SessionDetailView device channel and mask-on sections', () => {
             mask_on_spans: SPANS,
         })
 
-        expect(sectionHeadings(wrapper)).toEqual(['Flow Limitation & Snore', 'Mask-On Spans'])
+        expect(sectionHeadings(wrapper)).toEqual(['Device Channel Statistics', 'Mask-On Spans'])
     })
 
     it('test_null_fields_hide_both_sections', async () => {

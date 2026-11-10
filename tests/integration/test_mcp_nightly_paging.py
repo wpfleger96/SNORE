@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 
+from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -52,18 +53,24 @@ async def _seed_nights(db: AsyncSession, profile_id: int) -> dict[date, int]:
 
 
 @contextmanager
-def _recorded_decodes(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[int]]:
-    """Session ids the nightly service hands to the blob decoder."""
+def _recorded_decodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[dict[str, list[int]]]:
+    """Session ids the nightly service hands to the blob decoder, by channel."""
     from snore.services.breath import nightly  # noqa: PLC0415
 
-    decoded: list[int] = []
+    decoded: defaultdict[str, list[int]] = defaultdict(list)
     real_decode = nightly.decode_channel_blobs
 
     async def recording(
-        db: AsyncSession, session_ids: Sequence[int], *args: Any
+        db: AsyncSession,
+        session_ids: Sequence[int],
+        channels: Sequence[str],
+        *args: Any,
     ) -> Any:
-        decoded.extend(session_ids)
-        return await real_decode(db, session_ids, *args)
+        for channel in channels:
+            decoded[channel].extend(session_ids)
+        return await real_decode(db, session_ids, channels, *args)
 
     monkeypatch.setattr(nightly, "decode_channel_blobs", recording)
     yield decoded
@@ -95,9 +102,9 @@ class TestNightlySummaryPaging:
             n.model_dump() for n in unpaged.nights[2:4]
         ]
         assert page_two.nights[0].device_flg_max == 0.5
-        assert sorted(decoded) == sorted(
-            session_by_date[n.date] for n in page_two.nights
-        )
+        page_sessions = sorted(session_by_date[n.date] for n in page_two.nights)
+        assert decoded
+        assert all(sorted(ids) == page_sessions for ids in decoded.values())
 
     async def test_compliance_is_full_range_on_every_page(
         self,
@@ -123,7 +130,8 @@ class TestNightlySummaryPaging:
         assert [page.total_nights for page in pages] == [_N_NIGHTS] * 4
         assert pages[3].nights == []
         # Pages 1-3 hold the five nights; the empty fourth page decodes nothing.
-        assert len(decoded) == _N_NIGHTS
+        assert decoded
+        assert all(len(ids) == _N_NIGHTS for ids in decoded.values())
 
 
 @pytest.mark.integration
