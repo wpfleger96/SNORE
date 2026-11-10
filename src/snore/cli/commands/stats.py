@@ -18,7 +18,8 @@ from snore.cli.display import (
     print_subsection,
     print_table,
 )
-from snore.provenance import field_provenance
+from snore.constants import LEAK_REDLINE_LPM
+from snore.provenance import Provenance, field_provenance
 from snore.services.schemas import (
     PeriodStatistics,
     RecordsResponse,
@@ -100,8 +101,11 @@ async def stats(
     if summary.avg_leak is not None:
         print_subsection("Leak")
         _summary_kv("Average", "avg_leak", f"{summary.avg_leak:.1f} L/min")
-        leak_assessment = "well controlled" if summary.avg_leak < 24 else "elevated"
-        _summary_kv("Assessment", "avg_leak", leak_assessment)
+        # A SNORE judgement with no schema field behind it, so the tier is set here.
+        leak_assessment = (
+            "well controlled" if summary.avg_leak < LEAK_REDLINE_LPM else "elevated"
+        )
+        print_kv("Assessment", leak_assessment, provenance=Provenance.EXPERIMENTAL)
 
     if summary.avg_spo2 is not None:
         print_subsection("SpO₂")
