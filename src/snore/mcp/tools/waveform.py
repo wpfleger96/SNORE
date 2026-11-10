@@ -51,14 +51,14 @@ _MAX_POINTS_RANGE = f"{MAX_POINTS_MIN}–{MAX_POINTS_MAX}"
 
 # Shared channel vocabulary block for get_waveform and render_window tool descriptions.
 _CHANNEL_VOCAB_DOC = """\
-Channel vocabulary (12 channels):
+Channel vocabulary (16 channels):
     ``flow``             — inspiratory/expiratory flow (L/min), 25 Hz from BRP.edf
     ``pressure``         — mask pressure (cmH2O), 0.5 Hz duty-cycle average from
                            PLD.edf.  Reads approximately the time-weighted mean of
                            IPAP/EPAP — NOT the instantaneous bilevel square wave —
-                           so it sits between EPAP and IPAP.  No higher-resolution
-                           pressure channel exists in ResMed source data.  Plot
-                           alongside ``therapy_pressure`` for delivered-vs-target
+                           so it sits between EPAP and IPAP.  Use ``pressure_hr``
+                           for instantaneous mask pressure.  Plot alongside
+                           ``therapy_pressure`` for delivered-vs-target
                            comparison.
     ``therapy_pressure`` — therapy-algorithm target pressure (cmH2O), 0.5 Hz
                            duty-cycle average from PLD.edf; same averaging caveat
@@ -71,7 +71,26 @@ Channel vocabulary (12 channels):
     ``spo2``             — pulse-oximetry oxygen saturation (%)
     ``pulse``            — pulse rate (bpm)
     ``fl``               — flow-limitation index (dimensionless)
-    ``snore``            — snore-intensity signal (arbitrary units)"""
+    ``snore``            — snore-intensity signal (arbitrary units)
+    ``pressure_hr``      — mask pressure (cmH2O), 25 Hz from BRP.edf, recorded
+                           alongside ``flow``; shows the instantaneous IPAP/EPAP
+                           swing that ``pressure`` averages away.
+    ``ti``               — device-reported inspiratory time (seconds), 0.5 Hz from
+                           PLD.edf; ResMed VAuto/AirCurve only.
+    ``ie_ratio``         — device-reported I:E ratio in % (the EDF's unit, stored
+                           unconverted; how the device defines that percentage is
+                           unconfirmed, so do not read it as Ti/Te), 0.5 Hz from
+                           PLD.edf; ResMed VAuto/AirCurve only.
+    ``trigger_cycle``    — raw device trigger/cycle event codes (integers 0–16,
+                           undecoded, no unit), 25 Hz from TCV.edf; ResMed VAuto
+                           only.  Categorical: read each value as holding until
+                           the next offset.  With ``max_points`` it keeps the first
+                           sample of each run of equal codes plus the last sample
+                           (never LTTB), so no code is lost, and it can return
+                           more than ``max_points`` values.
+The last four come only from direct ResMed SD-card imports; sessions without them
+list them in ``missing_channels``.  Samples are stored as recorded, including
+out-of-range or sentinel values."""
 
 
 async def fetch_waveform_raw(
@@ -252,7 +271,8 @@ def register(mcp: FastMCP) -> None:
         + "\n\n"
         "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
         f"``max_points`` ({_MAX_POINTS_RANGE}): when set, applies LTTB downsampling per\n"
-        "channel so the visual shape is preserved while reducing data volume.  Omit for\n"
+        "channel (categorical channels excepted, see above) so the visual shape is\n"
+        "preserved while reducing data volume.  Omit for\n"
         "raw unmodified samples.  Channels with no more samples than ``max_points``\n"
         "are returned raw with ``is_downsampled: false``.  Many-channel raw requests often exceed the 500,000-byte\n"
         "response limit — use ``max_points`` or fewer channels if that happens.\n\n"
@@ -329,7 +349,8 @@ def register(mcp: FastMCP) -> None:
         + "\n\n"
         "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
         f"``max_points`` ({_MAX_POINTS_RANGE}): thins dense windows before plotting,\n"
-        "preserving visual shape while speeding rendering.  Channels with no more\n"
+        "preserving visual shape while speeding rendering (categorical channels are\n"
+        "drawn as steps and thinned as described above).  Channels with no more\n"
         "samples than ``max_points`` are plotted raw.  Omit for raw unmodified samples.\n\n"
         "Missing channels (not recorded by the device) are noted in the image title\n"
         "rather than causing an error.\n\n"

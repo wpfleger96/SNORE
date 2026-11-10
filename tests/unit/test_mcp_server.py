@@ -541,24 +541,12 @@ class TestChannelVocabInSync:
     @staticmethod
     def _extract_channel_lines(description: str) -> list[str]:
         """Extract lines from the channel vocabulary block (lines that name a channel)."""
-        channel_names = [
-            "flow",
-            "pressure",
-            "therapy_pressure",
-            "epap",
-            "leak",
-            "mv",
-            "rr",
-            "tv",
-            "spo2",
-            "pulse",
-            "fl",
-            "snore",
-        ]
+        from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
+
         return [
             line.strip()
             for line in description.splitlines()
-            if any(f"`{name}`" in line for name in channel_names)
+            if any(f"`{name.value}`" in line for name in WaveformChannelName)
         ]
 
     async def test_channel_vocab_in_sync(self) -> None:

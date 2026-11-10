@@ -520,6 +520,18 @@ class WaveformChannelName(StrEnum):
     PULSE = "pulse"
     FL = "fl"
     SNORE = "snore"
+    IE_RATIO = "ie_ratio"
+    TI = "ti"
+    PRESSURE_HR = "pressure_hr"
+    TRIGGER_CYCLE = "trigger_cycle"
+
+
+# Channels whose samples are codes, not magnitudes: LTTB and line
+# interpolation would drop or invent codes, so they are reduced to run starts
+# and drawn as steps.
+CATEGORICAL_WAVEFORM_CHANNELS: frozenset[WaveformChannelName] = frozenset(
+    {WaveformChannelName.TRIGGER_CYCLE}
+)
 
 
 class RawWaveformChannel(BaseModel):

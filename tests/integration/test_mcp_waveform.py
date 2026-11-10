@@ -307,3 +307,98 @@ class TestRenderPng:
 
         assert isinstance(png_bytes, bytes)
         assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# ---------------------------------------------------------------------------
+# TestResmedOnlyChannels — pressure_hr, ti, ie_ratio, trigger_cycle
+# ---------------------------------------------------------------------------
+
+_RESMED_ONLY_CHANNELS = ["pressure_hr", "ti", "ie_ratio", "trigger_cycle"]
+
+
+class TestResmedOnlyChannels:
+    @pytest.mark.parametrize(
+        ("channel", "sample_rate", "unit", "value"),
+        [
+            ("pressure_hr", 25.0, "cmH2O", 9.5),
+            ("ti", 0.5, "seconds", 1.25),
+            ("ie_ratio", 0.5, "%", 50.0),
+            ("trigger_cycle", 25.0, "", 3.0),
+        ],
+    )
+    async def test_stored_channel_fetch_returns_its_samples(
+        self,
+        async_db_session: AsyncSession,
+        async_test_profile: Any,
+        channel: str,
+        sample_rate: float,
+        unit: str,
+        value: float,
+    ) -> None:
+        """Each channel is returned with its stored unit, rate and samples."""
+        from snore.mcp.tools.waveform import (  # noqa: PLC0415
+            fetch_waveform_raw,
+            waveform_response_from_raw,
+        )
+
+        target_date = date(2024, 3, 7)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        await _make_waveform(
+            async_db_session,
+            sess,
+            channel,
+            sample_rate,
+            unit,
+            int(30 * sample_rate),
+            constant_value=value,
+        )
+
+        raw = await fetch_waveform_raw(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            offset_start=0.0,
+            offset_end=30.0,
+            channels=[channel],
+            window_cap_seconds=120.0,
+        )
+        response = waveform_response_from_raw(raw)
+
+        assert [ch.channel_type for ch in response.channels] == [channel]
+        returned = response.channels[0]
+        assert returned.unit == unit
+        assert returned.sample_rate_hz == sample_rate
+        assert len(returned.values) == int(30 * sample_rate)
+        assert all(v == pytest.approx(value) for v in returned.values)
+        assert response.missing_channels == []
+        assert response.missing_channel_reason is None
+
+    async def test_session_without_them_lists_them_as_missing(
+        self, async_db_session: AsyncSession, async_test_profile: Any
+    ) -> None:
+        """Flow-only session → the four channels are missing, flow is returned."""
+        from snore.mcp.tools.waveform import (  # noqa: PLC0415
+            fetch_waveform_raw,
+            waveform_response_from_raw,
+        )
+
+        target_date = date(2024, 3, 8)
+        device = await _make_device(async_db_session, async_test_profile.id)
+        _, sess = await _make_day_session(async_db_session, device, target_date)
+        await _make_waveform(async_db_session, sess, "flow", 25.0, "L/min", 750)
+
+        raw = await fetch_waveform_raw(
+            async_db_session,
+            target_date,
+            profile_id=async_test_profile.id,
+            offset_start=0.0,
+            offset_end=30.0,
+            channels=["flow", *_RESMED_ONLY_CHANNELS],
+            window_cap_seconds=120.0,
+        )
+        response = waveform_response_from_raw(raw)
+
+        assert [ch.channel_type for ch in response.channels] == ["flow"]
+        assert response.missing_channels == _RESMED_ONLY_CHANNELS
+        assert response.missing_channel_reason == "channel_absent"

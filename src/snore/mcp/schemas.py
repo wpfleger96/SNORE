@@ -1196,7 +1196,9 @@ class WaveformChannelSchema(BaseModel):
     offset_seconds: list[float]  # tier-3 positions from session start
     values: list[float] = provenance_field(
         Provenance.DEVICE,
-        "Device samples; LTTB keeps a subset of them when is_downsampled.",
+        "Device samples; when is_downsampled, LTTB keeps a subset of them "
+        "(trigger_cycle keeps the first sample of each run of equal codes, plus "
+        "the last sample).",
     )
     original_sample_count: int  # pre-LTTB count within the window
     is_downsampled: bool

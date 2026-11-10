@@ -158,6 +158,42 @@ def test_render_does_not_mutate_input_dto() -> None:
     assert snapshot_before == snapshot_after
 
 
+def test_trigger_cycle_panel_draws_steps_with_integer_ticks() -> None:
+    """Codes are drawn as held steps on an integer axis; magnitudes stay lines."""
+    from snore.mcp.rendering import _build_figure  # noqa: PLC0415
+
+    window = _make_window(
+        channels=[
+            _make_channel(channel_type="flow"),
+            _make_channel(channel_type="trigger_cycle", unit=""),
+        ]
+    )
+
+    flow_ax, codes_ax = _build_figure(window).axes
+
+    assert flow_ax.get_lines()[0].get_drawstyle() == "default"
+    assert codes_ax.get_lines()[0].get_drawstyle() == "steps-post"
+    assert all(float(tick).is_integer() for tick in codes_ax.get_yticks())
+    assert codes_ax.get_ylabel() == "trigger/cycle code (raw)"
+
+
+def test_downsampled_trigger_cycle_title_names_run_starts() -> None:
+    """A reduced trigger_cycle panel says it kept run starts, not LTTB points."""
+    from snore.mcp.rendering import _build_figure  # noqa: PLC0415
+
+    channel = _make_channel(
+        channel_type="trigger_cycle",
+        unit="",
+        n_points=50,
+        is_downsampled=True,
+        original_sample_count=500,
+    )
+
+    (ax,) = _build_figure(_make_window(channels=[channel])).axes
+
+    assert ax.get_title(loc="right") == "run starts 50/500"
+
+
 # ---------------------------------------------------------------------------
 # Tests for _build_suptitle — pure helper, no PNG rendering needed
 # ---------------------------------------------------------------------------

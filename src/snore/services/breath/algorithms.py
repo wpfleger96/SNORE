@@ -16,6 +16,7 @@ from snore.database.waveform_blobs import deserialize_waveform_blob
 from snore.services.lttb import lttb_downsample
 
 from .dtos import (
+    CATEGORICAL_WAVEFORM_CHANNELS,
     RawWaveformWindow,
     VentilatoryContext,
     WaveformChannel,
@@ -29,8 +30,26 @@ logger = logging.getLogger(__name__)
 WaveformSeries = tuple[np.ndarray, np.ndarray]
 
 
+def _run_starts(
+    offsets: np.ndarray, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """First sample of each run of equal values, plus the final sample.
+
+    Lossless for a categorical channel read as a step that holds each value
+    until the next offset: every code and every change survives, unlike LTTB,
+    which keeps one sample per bucket.
+    """
+    keep = np.ones(values.size, dtype=bool)
+    keep[1:-1] = values[1:-1] != values[:-2]
+    return offsets[keep], values[keep]
+
+
 def compute_waveform_window(raw: RawWaveformWindow) -> WaveformWindow:
-    """Pure — no DB access. Deserializes bytes, slices window, applies LTTB."""
+    """Pure — no DB access. Deserializes bytes, slices window, downsamples.
+
+    Downsampling uses LTTB, except on categorical channels, which keep their
+    run starts (``_run_starts``) and may then exceed ``max_points``.
+    """
 
     request = raw.request
     channels_out: list[WaveformChannel] = []
@@ -54,11 +73,15 @@ def compute_waveform_window(raw: RawWaveformWindow) -> WaveformWindow:
         v_slice = values[mask]
 
         original_count = int(len(ts_slice))
-        is_downsampled = False
         if request.max_points is not None and original_count > request.max_points:
-            # DTO bounds max_points to >= 2, which lttb_downsample requires
-            ts_slice, v_slice = lttb_downsample(ts_slice, v_slice, request.max_points)
-            is_downsampled = True
+            if raw_ch.waveform_type in CATEGORICAL_WAVEFORM_CHANNELS:
+                ts_slice, v_slice = _run_starts(ts_slice, v_slice)
+            else:
+                # DTO bounds max_points to >= 2, which lttb_downsample requires
+                ts_slice, v_slice = lttb_downsample(
+                    ts_slice, v_slice, request.max_points
+                )
+        is_downsampled = len(ts_slice) < original_count
 
         channels_out.append(
             WaveformChannel(

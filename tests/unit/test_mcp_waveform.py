@@ -338,6 +338,68 @@ class TestPureFunctions:
         assert result_ch.original_sample_count == n
 
 
+def _trigger_cycle_raw(codes: list[float], max_points: int) -> object:
+    """RawWaveformWindow holding one 25 Hz trigger_cycle channel of ``codes``."""
+    from snore.services.breath_service import (  # noqa: PLC0415
+        RawWaveformChannel,
+        WaveformChannelName,
+    )
+
+    offsets = [i / 25.0 for i in range(len(codes))]
+    blob, count = _make_blob(offsets, codes)
+    channel = RawWaveformChannel(
+        waveform_type=WaveformChannelName.TRIGGER_CYCLE,
+        unit="",
+        sample_rate=25.0,
+        sample_count=count,
+        raw_bytes=blob,
+    )
+    return _make_raw(
+        channels=[channel],
+        request=_make_request(
+            offset_end=len(codes) / 25.0,
+            channels=[WaveformChannelName.TRIGGER_CYCLE],
+            max_points=max_points,
+        ),
+    )
+
+
+class TestTriggerCycleDownsampling:
+    def test_max_points_keeps_every_code_as_a_step(self) -> None:
+        """Run-start reduction is lossless: holding each kept value until the next
+        kept offset reproduces every raw sample, even past max_points."""
+        codes = [0.0] * 3000
+        codes[100:105] = [1.0] * 5
+        codes[105:110] = [3.0] * 5  # adjacent distinct codes
+        codes[2000:2005] = [4.0] * 5
+        codes[2500] = 5.0  # single-sample code
+        raw = _trigger_cycle_raw(codes, max_points=5)
+
+        channel = waveform_response_from_raw(raw).channels[0]
+
+        assert channel.is_downsampled is True
+        assert channel.original_sample_count == 3000
+        assert channel.values == [0.0, 1.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0, 0.0]
+        kept = np.array(channel.offset_seconds)
+        raw_offsets = np.arange(3000) / 25.0
+        held = np.array(channel.values)[
+            np.searchsorted(kept, raw_offsets + 1e-4, side="right") - 1
+        ]
+        assert held.tolist() == codes
+
+    def test_max_points_on_code_changing_every_sample_returns_all_raw(
+        self,
+    ) -> None:
+        """No run longer than one sample → nothing to drop, is_downsampled false."""
+        codes = [float(i % 2) for i in range(20)]
+        raw = _trigger_cycle_raw(codes, max_points=5)
+
+        channel = waveform_response_from_raw(raw).channels[0]
+
+        assert channel.is_downsampled is False
+        assert channel.values == codes
+
+
 # ---------------------------------------------------------------------------
 # TestPureErrors — fetch_waveform_raw input validation
 # ---------------------------------------------------------------------------
