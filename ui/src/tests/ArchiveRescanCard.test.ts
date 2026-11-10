@@ -69,7 +69,9 @@ describe('ArchiveRescanCard', () => {
 
         const hint = wrapper.find('.archive-hint').text()
         expect(hint).toContain('Dates select nights')
-        expect(hint).toContain("belongs to the previous day's night")
+        expect(hint).toContain(
+            "a session that starts before noon belongs to the previous day's night",
+        )
     })
 
     it('test_sends_date_range_and_analysis_choice', async () => {

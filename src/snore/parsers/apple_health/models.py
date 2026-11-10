@@ -3,19 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
-
-
-def apply_noon_split(dt: datetime) -> date:
-    """Map a wall-clock datetime to its sleep-night date using a noon boundary.
-
-    Sessions before noon belong to the previous calendar day.  This mirrors
-    ``snore.parsers.base.night_date`` so that Apple Health sleep nights share
-    the date convention with CPAP ``Day.date``.
-    """
-    if dt.time() < time(12, 0):
-        return dt.date() - timedelta(days=1)
-    return dt.date()
+from datetime import date, datetime
 
 
 @dataclass
@@ -55,7 +43,7 @@ class RawHealthRecord:
     utc_offset_seconds: int | None
 
     night_date: date
-    """Noon split applied to ``start_time``."""
+    """``session_night`` of ``start_time`` (noon split), the CPAP ``Day.date`` rule."""
 
     ingest_channel: str
     """Provenance tag; currently always ``"export_xml"``.  Future channels may add values."""

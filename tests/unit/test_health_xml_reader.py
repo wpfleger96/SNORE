@@ -13,7 +13,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from snore.parsers.apple_health.models import RawHealthRecord, apply_noon_split
+from snore.parsers.apple_health.models import RawHealthRecord
 from snore.parsers.apple_health.type_handlers import parse_xml_record
 from snore.parsers.apple_health.xml_reader import iter_records
 
@@ -24,47 +24,6 @@ SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 
 def _all_records(source: Path, **kwargs: object) -> list[RawHealthRecord]:
     return list(iter_records(source, **kwargs))
-
-
-class TestNoonSplit:
-    """apply_noon_split boundary behaviour."""
-
-    def test_noon_split_23_30_same_date(self) -> None:
-        """23:30 start stays on the same calendar date."""
-        assert apply_noon_split(datetime(2024, 1, 15, 23, 30)) == date(2024, 1, 15)
-
-    def test_noon_split_02_00_previous_date(self) -> None:
-        """02:00 start belongs to the previous calendar date."""
-        assert apply_noon_split(datetime(2024, 1, 16, 2, 0)) == date(2024, 1, 15)
-
-    def test_noon_split_11_30_previous_date(self) -> None:
-        """11:30 start belongs to the previous calendar date."""
-        assert apply_noon_split(datetime(2024, 1, 15, 11, 30)) == date(2024, 1, 14)
-
-    def test_noon_split_12_00_same_date(self) -> None:
-        """Exactly noon is not before noon, so it stays on the same date."""
-        assert apply_noon_split(datetime(2024, 1, 16, 12, 0)) == date(2024, 1, 16)
-
-    def test_noon_split_matches_day_manager_convention(self) -> None:
-        """apply_noon_split must agree with DayManager.get_day_for_session on all boundaries.
-
-        DayManager delegates to snore.parsers.base.night_date.  Both functions
-        use the same strict-less-than noon comparison so they must produce identical results
-        for any input datetime.
-        """
-        from snore.database.day_manager import DayManager  # noqa: PLC0415
-
-        test_dts = [
-            datetime(2024, 1, 16, 11, 59, 59),
-            datetime(2024, 1, 16, 12, 0, 0),
-            datetime(2024, 1, 16, 12, 0, 1),
-            datetime(2024, 1, 16, 0, 0, 0),
-            datetime(2024, 1, 16, 23, 59, 59),
-        ]
-        for dt in test_dts:
-            assert apply_noon_split(dt) == DayManager.get_day_for_session(dt), (
-                f"apply_noon_split({dt}) != DayManager.get_day_for_session({dt})"
-            )
 
 
 class TestDTDTolerance:

@@ -13,10 +13,10 @@ waveforms), so it runs synchronously everywhere.
 Night-date join
 ---------------
 ``HealthSample.night_date`` and ``HealthNightlySummary.night_date`` are assigned
-by ``apply_noon_split`` (noon boundary), which by construction mirrors
-``snore.parsers.base.night_date`` (behind ``DayManager.get_day_for_session``) —
-the same convention behind ``NightlyAnalysisSummary.therapy_date``.  The two axes
-therefore key on identical night dates and are joined directly.
+by ``snore.parsers.base.session_night`` (noon boundary), the same function
+``DayManager.get_day_for_session`` uses and so the convention behind
+``NightlyAnalysisSummary.therapy_date``.  The two axes therefore key on
+identical night dates and are joined directly.
 """
 
 from __future__ import annotations

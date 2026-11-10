@@ -14,7 +14,7 @@ import logging
 import os
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from concurrent.futures import as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
@@ -36,14 +36,15 @@ __all__ = [
     "build_root_metadata",
     "date_in_range",
     "filter_units_by_date",
-    "night_date",
+    "parse_iso_date",
+    "session_night",
 ]
 
 # Sessions starting before this wall-clock time belong to the previous night.
 _NIGHT_SPLIT_TIME = time(12, 0)
 
 
-def night_date(start: datetime) -> date:
+def session_night(start: datetime) -> date:
     """Return the night a session starting at ``start`` belongs to.
 
     Sessions starting before noon belong to the previous day's night; noon
@@ -55,14 +56,16 @@ def night_date(start: datetime) -> date:
     return start.date()
 
 
-def date_in_range(value: date, date_from: str | None, date_to: str | None) -> bool:
-    """Whether ``value`` lies within the inclusive ISO-date range.
+def parse_iso_date(value: str | None) -> date | None:
+    """Parse an ISO date (or datetime) range bound; None or empty is open."""
+    return datetime.fromisoformat(value).date() if value else None
 
-    A None bound is open, so with both None every date is in range.
-    """
-    on_or_after = not date_from or value >= datetime.fromisoformat(date_from).date()
-    on_or_before = not date_to or value <= datetime.fromisoformat(date_to).date()
-    return on_or_after and on_or_before
+
+def date_in_range(value: date, date_from: date | None, date_to: date | None) -> bool:
+    """Whether ``value`` lies within the inclusive range; a None bound is open."""
+    return (date_from is None or value >= date_from) and (
+        date_to is None or value <= date_to
+    )
 
 
 def build_root_metadata(roots: list[DataRoot]) -> dict[str, Any]:
@@ -92,24 +95,28 @@ def build_root_metadata(roots: list[DataRoot]) -> dict[str, Any]:
 
 def filter_units_by_date[Unit](
     units: list[Unit],
-    key_date_fn: Callable[[Unit], date | None],
+    nights_fn: Callable[[Unit], Collection[date] | None],
     date_from: str | None,
     date_to: str | None,
 ) -> list[Unit]:
-    """Filter parse units to those whose night date is within the range.
+    """Keep the parse units that have a candidate night within the range.
 
-    ``key_date_fn`` maps a unit to its night date (see ``night_date``), or None
-    when the date is unknown/unparseable — such units are always kept (the
-    caller logs why).  ``date_from``/``date_to`` are inclusive ISO dates; when
-    both are None the input list is returned unchanged.
+    ``nights_fn`` maps a unit to the nights its session may be filed under
+    (see ``session_night``), or None when they are unknown/unparseable; such
+    units are always kept (the caller logs why).  A unit is kept when any of
+    its candidate nights is in range, so this is a pre-filter: a parser whose
+    unit has several candidates must re-check the parsed session's night.
+    ``date_from``/``date_to`` are inclusive ISO dates; when both are None the
+    input list is returned unchanged.
     """
     if not (date_from or date_to):
         return units
 
+    lower, upper = parse_iso_date(date_from), parse_iso_date(date_to)
     kept: list[Unit] = []
     for unit in units:
-        unit_date = key_date_fn(unit)
-        if unit_date is None or date_in_range(unit_date, date_from, date_to):
+        nights = nights_fn(unit)
+        if nights is None or any(date_in_range(n, lower, upper) for n in nights):
             kept.append(unit)
     return kept
 
@@ -319,7 +326,7 @@ class DeviceParser(ABC):
 
         root, units = self._resolve_units(path, sort_by, timezone_name)
         units = filter_units_by_date(
-            units, lambda u: self._unit_date(u, timezone_name), date_from, date_to
+            units, lambda u: self._unit_nights(u, timezone_name), date_from, date_to
         )
         if limit is not None and not self._unit_may_yield_nothing:
             units = units[:limit]
@@ -415,11 +422,19 @@ class DeviceParser(ABC):
         """
 
     @abstractmethod
-    def _unit_date(self, unit: Any, timezone_name: str | None) -> date | None:
-        """Return a unit's night date for range filtering, or None.
+    def _unit_nights(
+        self, unit: Any, timezone_name: str | None
+    ) -> Collection[date] | None:
+        """Return the nights a unit's session may be filed under, or None.
 
-        The night date is ``night_date`` of the unit's session start, the same
-        date its ``Day`` is filed under, not the start's calendar date.
+        A night is ``session_night`` of a session start: the date its ``Day``
+        is filed under, not the start's calendar date.  ``parse_sessions``
+        keeps a unit when any returned night is in the requested range, and
+        always when None (unknown).  When the start is known before parsing,
+        return exactly its night.  When it is only known after parsing, return
+        every night it could fall on, and have the per-unit hooks (which get
+        ``date_from``/``date_to``) drop a session whose parsed night is out of
+        range.
         """
 
     @abstractmethod

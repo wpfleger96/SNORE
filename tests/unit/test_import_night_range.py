@@ -52,7 +52,7 @@ def _resmed_start_times(
     """
 
     def fake_parse_night(
-        self: ResmedEDFParser, night_id: str, chain_id: str, *args: object
+        self: ResmedEDFParser, night_date: str, chain_id: str, *args: object
     ) -> MagicMock:
         session = MagicMock()
         session.start_time = (header_starts or {}).get(
@@ -61,14 +61,12 @@ def _resmed_start_times(
         return session
 
     with (
+        ThreadPoolExecutor(max_workers=2) as pool,
         patch.object(ResmedEDFParser, "_parse_night_session", fake_parse_night),
         patch.object(ResmedEDFParser, "_load_str_caches", return_value=({}, {})),
         patch.object(ResmedEDFParser, "_detect_series11", return_value=False),
         patch.object(ResmedEDFParser, "get_device_info", return_value=MagicMock()),
-        patch(
-            "snore.parsers.base.get_pool",
-            return_value=ThreadPoolExecutor(max_workers=2),
-        ),
+        patch("snore.parsers.base.get_pool", return_value=pool),
     ):
         sessions = ResmedEDFParser().parse_sessions(
             card, date_from=date_from, date_to=date_to, parallel=parallel
@@ -131,6 +129,79 @@ class TestResmedNightRange:
         )
 
         assert starts == [datetime(2024, 6, 20, 20, 0)]
+
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_chain_with_pre_noon_stub_is_imported_on_parsed_night(
+        self, tmp_path, parallel
+    ):
+        """A stub at 11:59:50 chained to therapy that starts at 12:00:05.
+
+        The chain's first segment is on the 06-20 night, but the session starts
+        at its first valid segment, so it is filed under Day 2024-06-21: the
+        06-21 range imports it and the 06-20 range does not.
+        """
+        card = _resmed_card(
+            tmp_path,
+            "20240620_200000",
+            "20240621_115950",
+            "20240621_120005",
+            "20240621_200000",
+        )
+        header_starts = {"20240621_115950": datetime(2024, 6, 21, 12, 0, 5)}
+
+        night_21 = _resmed_start_times(
+            card,
+            "2024-06-21",
+            "2024-06-21",
+            parallel=parallel,
+            header_starts=header_starts,
+        )
+        night_20 = _resmed_start_times(
+            card,
+            "2024-06-20",
+            "2024-06-20",
+            parallel=parallel,
+            header_starts=header_starts,
+        )
+
+        assert night_21 == [datetime(2024, 6, 21, 12, 0, 5), datetime(2024, 6, 21, 20)]
+        assert night_20 == [datetime(2024, 6, 20, 20)]
+
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_chain_with_pre_noon_stub_is_skipped_on_stub_night(
+        self, tmp_path, parallel
+    ):
+        """The same noon-spanning chain one night earlier, seen from the stub side.
+
+        Filed under Day 2024-06-20 by its 12:00:05 start, so the 06-20 range
+        imports it and the 06-19 range (the stub's night) does not.
+        """
+        card = _resmed_card(
+            tmp_path,
+            "20240619_200000",
+            "20240620_115950",
+            "20240620_120005",
+            "20240620_200000",
+        )
+        header_starts = {"20240620_115950": datetime(2024, 6, 20, 12, 0, 5)}
+
+        night_20 = _resmed_start_times(
+            card,
+            "2024-06-20",
+            "2024-06-20",
+            parallel=parallel,
+            header_starts=header_starts,
+        )
+        night_19 = _resmed_start_times(
+            card,
+            "2024-06-19",
+            "2024-06-19",
+            parallel=parallel,
+            header_starts=header_starts,
+        )
+
+        assert night_20 == [datetime(2024, 6, 20, 12, 0, 5), datetime(2024, 6, 20, 20)]
+        assert night_19 == [datetime(2024, 6, 19, 20)]
 
 
 def _oscar_start_times(

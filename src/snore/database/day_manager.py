@@ -25,7 +25,7 @@ from snore.metrics import (
     DAY_METRIC_STAT_COLUMNS,
     DayAgg,
 )
-from snore.parsers.base import night_date
+from snore.parsers.base import session_night
 from snore.parsers.unified import SUMMARY_CHANNELS
 from snore.provenance import IndexSource
 from snore.therapy_hours import effective_session_hours
@@ -56,11 +56,11 @@ class DayManager:
 
     @classmethod
     def get_day_for_session(cls, session_start: datetime) -> date:
-        """Return the Day date a session belongs to: its ``night_date``.
+        """Return the Day date a session belongs to: its ``session_night``.
 
         OSCAR logic: sessions starting before noon belong to the previous day.
         """
-        return night_date(session_start)
+        return session_night(session_start)
 
     @classmethod
     async def get_or_create_day(

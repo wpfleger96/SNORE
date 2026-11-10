@@ -45,7 +45,8 @@ from snore.parsers.base import (
     RawFileManifest,
     build_root_metadata,
     date_in_range,
-    night_date,
+    parse_iso_date,
+    session_night,
 )
 from snore.parsers.discovery import DataRoot, DataRootFinder
 from snore.parsers.event_labels import EVENT_TYPE_MAP, FILTERED_ANNOTATIONS
@@ -774,7 +775,7 @@ class ResmedEDFParser(DeviceParser):
     # device-local wall-clock and need no conversion.
     # ------------------------------------------------------------------
 
-    # A chain can be dropped by the ID-vs-contents date re-filter or a parse
+    # A chain can be dropped by the post-parse night re-check or a parse
     # failure, so `limit` must count yielded sessions, not pre-slice nights.
     _unit_may_yield_nothing = True
 
@@ -784,13 +785,28 @@ class ResmedEDFParser(DeviceParser):
         """Resolve the data root and discover proximity-chained night items."""
         return self._discover_session_files(path, sort_by)
 
-    def _unit_date(
+    def _unit_nights(
         self,
         unit: tuple[str, str, dict[str, dict[str, Path]]],
         timezone_name: str | None,
-    ) -> date | None:
-        """Chain night-date ID drives range filtering (device-local already)."""
-        return self._night_item_date(unit)
+    ) -> set[date] | None:
+        """Nights of every segment id in the chain; None (kept) if unparseable.
+
+        The parsed session starts at its first valid segment's id
+        (``_parse_session_group``), and ``_parse_night_session`` skips CSL/EVE
+        stubs and zero-record segments, so the parsed start's night is one of
+        these but not necessarily the chain's first segment's.  The bundle
+        guard drops a chain whose parsed night is out of range.
+        """
+        _, chain_id, segments = unit
+        try:
+            return {
+                session_night(datetime.strptime(segment_id, "%Y%m%d_%H%M%S"))
+                for segment_id in segments
+            }
+        except ValueError as e:
+            logger.warning(f"Could not parse segment ids of chain {chain_id}: {e}")
+            return None
 
     def _unit_label(self, unit: tuple[str, str, dict[str, dict[str, Path]]]) -> str:
         """Failure-log id: the chain id (not the file-dict-bearing segments)."""
@@ -900,21 +916,9 @@ class ResmedEDFParser(DeviceParser):
 
         return path, night_items
 
-    @staticmethod
-    def _night_item_date(
-        item: tuple[str, str, dict[str, dict[str, Path]]],
-    ) -> date | None:
-        """Parse a chain item's night-date ID; None (kept) if unparseable."""
-        night_date = item[0]
-        try:
-            return datetime.strptime(night_date, "%Y%m%d").date()
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Could not parse night date {night_date}: {e}")
-            return None
-
     def _parse_single_session_bundle(
         self,
-        night_id: str,
+        night_date: str,
         chain_id: str,
         segments: dict[str, dict[str, Path]],
         device_info: DeviceInfo,
@@ -928,13 +932,15 @@ class ResmedEDFParser(DeviceParser):
         Parse one session chain's file bundle into a finalized session.
 
         Returns None when the chain has no valid segments or the night of its
-        parsed start time falls outside the requested date range.  The chain's
-        night-date ID comes from its filename, which can disagree with the EDF
-        header start around noon; re-checking the parsed start keeps the range
-        equal to the ``Day`` the session is filed under.
+        parsed start time falls outside the requested date range.  The range
+        pre-filter (``_unit_nights``) keeps a chain when any of its segments'
+        nights is in range; this guard makes the exact decision on the parsed
+        start.  That start is the first valid segment's, not necessarily the
+        chain's first segment's, so a chain spanning noon can pass the
+        pre-filter and still be dropped here.
         """
         session = self._parse_night_session(
-            night_id,
+            night_date,
             chain_id,
             segments,
             device_info,
@@ -946,10 +952,12 @@ class ResmedEDFParser(DeviceParser):
         if session is None:
             return None
 
-        parsed_night = night_date(session.start_time)
-        if not date_in_range(parsed_night, date_from, date_to):
-            logger.warning(
-                f"Chain {chain_id} (night {night_id}): parsed start "
+        parsed_night = session_night(session.start_time)
+        if not date_in_range(
+            parsed_night, parse_iso_date(date_from), parse_iso_date(date_to)
+        ):
+            logger.debug(
+                f"Chain {chain_id} (night {night_date}): parsed start "
                 f"{session.start_time} is on night {parsed_night}, outside the "
                 "requested date range"
             )
