@@ -41,7 +41,9 @@ from snore.services.schemas import (
     INDEX_SOURCE_DESCRIPTION,
     RERA_PROXY_FALLBACK_NOTE,
     DayDetail,
+    HealthNightCoverage,
     HealthNightDetailRead,
+    HealthNightSummaryRead,
     HealthSampleRead,
     MergedSettingsChange,
     PeriodStatistics,
@@ -121,6 +123,11 @@ class DataOverviewResponse(BaseModel):
     available_event_types: list[str] = []
     analysis_run: bool = False
     analysis_session_count: int = 0
+    apple_health: HealthNightCoverage | None = Field(
+        default=None,
+        description="The first and last night dates and the number of nights with "
+        "Apple Health sleep data; null when the profile has none",
+    )
     timezone_status: str = "unknown"
     timezone_name: str | None = None
 
@@ -594,6 +601,18 @@ class AppleSleepStagesResponse(BaseModel):
         description="The night's Apple Health sleep-stage samples by start time; "
         "value_text is the stage. Apple Health local wall-clock times"
     )
+
+
+class AppleHealthNightsResponse(BaseModel):
+    """Response from get_apple_health_nights."""
+
+    nights: list[HealthNightSummaryRead] = Field(
+        description="Nights with Apple Health sleep data, newest first, as the web "
+        "Apple Health page lists them"
+    )
+    total_nights: int
+    page: int
+    page_size: int
 
 
 class PeriodStatsResponse(BaseModel):
@@ -1254,6 +1273,7 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "device_capabilities": DeviceCapabilities,
     "device_info": DeviceInfo,
     "data_overview": DataOverviewResponse,
+    "apple_health_coverage": HealthNightCoverage,
     "settings_epoch": SettingsEpoch,
     "settings_timeline": SettingsTimelineResponse,
     "settings_change_entry": SettingsChangeEntry,
@@ -1264,6 +1284,7 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "night_session": NightSession,
     "night_detail": NightDetailResponse,
     "apple_sleep_stages": AppleSleepStagesResponse,
+    "apple_health_nights": AppleHealthNightsResponse,
     "period_stats": PeriodStatsResponse,
     "night_records": NightRecordsResponse,
     "experimental_nightly_row": ExperimentalNightlyRow,

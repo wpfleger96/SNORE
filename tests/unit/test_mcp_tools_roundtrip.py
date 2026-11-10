@@ -85,11 +85,13 @@ class TestGetDataOverviewRoundtrip:
         """get_data_overview with one device returns device info.
 
         Query order in get_data_overview (after list_devices):
-          1. analysis-session-count → .scalar_one()
-          2. bulk session stats GROUP BY → .all()  rows: (device_id, count, min, max)
-          3. bulk therapy modes DISTINCT → .all()  rows: (device_id, therapy_mode)
-          4. waveform types → .scalars().all()
-          5. event types → .scalars().all()
+          1. timezone → .scalar_one_or_none()
+          2. Apple Health night coverage → .one()  row: (count, min, max)
+          3. analysis-session-count → .scalar_one()
+          4. bulk session stats GROUP BY → .all()  rows: (device_id, count, min, max)
+          5. bulk therapy modes DISTINCT → .all()  rows: (device_id, therapy_mode)
+          6. waveform types → .scalars().all()
+          7. event types → .scalars().all()
         """
         mock_device = MagicMock()
         mock_device.id = 1
@@ -97,33 +99,38 @@ class TestGetDataOverviewRoundtrip:
         mock_device.model = "AirCurve 11"
         mock_device.serial_number = "SN123"
 
-        # Query 0: BreathService.resolve_timezone() — select(Profile.timezone)
+        # Query 1: BreathService.resolve_timezone() — select(Profile.timezone)
         tz_result = MagicMock()
         tz_result.scalar_one_or_none.return_value = None  # no timezone declared
 
-        # Query 1: analysis session count
+        # Query 2: HealthService.get_night_coverage() — no Apple Health nights
+        apple_result = MagicMock()
+        apple_result.one.return_value = (0, None, None)
+
+        # Query 3: analysis session count
         count_result = MagicMock()
         count_result.scalar_one.return_value = 0
 
-        # Query 2: bulk session stats — rows shaped (device_id, count, min_start, max_start)
+        # Query 4: bulk session stats — rows shaped (device_id, count, min_start, max_start)
         stats_result = MagicMock()
         stats_result.all.return_value = [(1, 2, None, None)]
 
-        # Query 3: bulk therapy modes — rows shaped (device_id, therapy_mode)
+        # Query 5: bulk therapy modes — rows shaped (device_id, therapy_mode)
         mode_result = MagicMock()
         mode_result.all.return_value = []
 
-        # Query 4: waveform types
+        # Query 6: waveform types
         waveform_result = MagicMock()
         waveform_result.scalars.return_value.all.return_value = []
 
-        # Query 5: event types
+        # Query 7: event types
         event_result = MagicMock()
         event_result.scalars.return_value.all.return_value = []
 
         mock_db_session.execute = AsyncMock(
             side_effect=[
                 tz_result,
+                apple_result,
                 count_result,
                 stats_result,
                 mode_result,
@@ -153,6 +160,7 @@ class TestGetDataOverviewRoundtrip:
         payload = json.loads(result.content[0].text)
         assert len(payload["devices"]) == 1
         assert payload["devices"][0]["manufacturer"] == "ResMed"
+        assert payload["apple_health"] is None
         assert payload["timezone_status"] == "unknown"
         assert payload["timezone_name"] is None
 

@@ -17,6 +17,7 @@ from snore.mcp.schemas import DataOverviewResponse, DeviceInfo, tz_fields
 from snore.mcp.tools._capabilities import build_device_capabilities
 from snore.mcp.tools._scaffold import _scope_and_run, tool_error_boundary
 from snore.services.device_service import DeviceService
+from snore.services.health_service import HealthService
 
 
 async def get_data_overview(
@@ -25,11 +26,12 @@ async def get_data_overview(
     """Return a comprehensive overview of all imported data.
 
     Called by the get_data_overview MCP tool. Provides device inventory,
-    date ranges, available waveform channels, event types, and analysis status
-    — everything an LLM needs to orient itself to a cold database.
+    date ranges, available waveform channels, event types, analysis status and
+    Apple Health night coverage — everything an LLM needs to orient itself to a
+    cold database.
 
-    All queries are scoped through Device.profile_id so no cross-profile data
-    leaks into the response.
+    Device queries are scoped through Device.profile_id and the Apple Health
+    query by profile_id, so no cross-profile data leaks into the response.
     """
     from snore.services.breath_service import BreathService  # noqa: PLC0415
 
@@ -37,9 +39,12 @@ async def get_data_overview(
     raw_devices = await device_svc.list_devices()
     bs = BreathService(db_session, profile_id)
     tz = await bs.resolve_timezone()
+    apple_health = await HealthService(db_session, profile_id).get_night_coverage()
 
     if not raw_devices:
-        return DataOverviewResponse(devices=[], **tz_fields(tz))
+        return DataOverviewResponse(
+            devices=[], apple_health=apple_health, **tz_fields(tz)
+        )
 
     # Analysis status — run once; derive both the bool flag and the count from
     # the same query to avoid two round-trips over the same three-join path.
@@ -207,6 +212,7 @@ async def get_data_overview(
         available_event_types=list(event_types),
         analysis_run=analysis_run,
         analysis_session_count=analysis_session_count,
+        apple_health=apple_health,
         **tz_fields(tz),
     )
 
@@ -215,14 +221,18 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     @tool_error_boundary
     async def get_data_overview(ctx: Context) -> dict[str, Any]:
-        """Orient to the imported dataset: devices, date ranges, channels, analysis status.
+        """Orient to the imported dataset: devices, date ranges, channels, analysis status, Apple Health coverage.
 
         Call this first before any other tool. Returns everything needed to understand
         what data is available and which tools are applicable.
 
+        ``apple_health`` holds the first and last night dates and the number
+        of nights with Apple Health sleep data, or null when there are none;
+        ``get_apple_health_nights`` lists those nights.
+
         Returns:
             DataOverviewResponse with devices, date ranges, waveform channels,
-            event types, and analysis status.
+            event types, analysis status, and Apple Health night coverage.
         """
         from snore.mcp.tools.overview import get_data_overview as _impl  # noqa: PLC0415
 

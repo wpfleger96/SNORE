@@ -103,6 +103,7 @@ _NON_METRIC_MODEL_FIELDS = {
     # Pagination / page-size totals
     ("EventsResponse", "total_events"),
     ("ExperimentalEventContextResponse", "total_events"),
+    ("AppleHealthNightsResponse", "total_nights"),
     ("ExperimentalNightlyResponse", "total_nights"),
     ("NightlySummaryResponse", "total_nights"),
     ("SettingsChangesResponse", "total_changes"),
@@ -116,6 +117,7 @@ _NON_METRIC_MODEL_FIELDS = {
     ("NightlyRow", "session_count"),
     ("DataOverviewResponse", "analysis_session_count"),
     ("DataOverviewResponse", "total_sessions"),
+    ("HealthNightCoverage", "night_count"),
     ("SessionDetail", "event_count"),
     ("SessionDetail", "waveform_count"),
     ("MaskEpochResponse", "days_count"),

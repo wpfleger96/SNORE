@@ -16,7 +16,7 @@ Technical documentation for the SNORE system architecture, components, and desig
 ├──────────────┬──────────────┬──────────────┤
 │ FastAPI REST │   CLI (cli/) │  MCP Server  │
 │ API (api/)   │  Click cmds  │  (mcp/)      │
-│ 18 routers   │  snore cmds  │  13 tools    │
+│ 18 routers   │  snore cmds  │  18 tools    │
 ├──────────────┴──────────────┴──────────────┤
 │        Service Layer (services/)            │
 │  19 services: business logic between        │
@@ -570,7 +570,7 @@ StaticRuntime     — stdio path; profile_id resolved at startup
 ActorRuntime      — OAuth HTTP path; profile_id from per-request context var
 ```
 
-`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 11 of the 13 tools: open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
+`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 16 of the 18 tools (all except the waveform pair): open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
 
 ### Tool Modules
 
@@ -583,6 +583,11 @@ Each tool module in `src/snore/mcp/tools/` owns a `register(mcp: FastMCP) -> Non
 | `changes.py` | `get_settings_changes` | `_scope_and_run` |
 | `summary.py` | `get_nightly_summary` | `_scope_and_run` |
 | `summary.py` | `experimental_get_nightly_metrics` | `_scope_and_run` |
+| `night_detail.py` | `get_night_detail` | `_scope_and_run` |
+| `apple_health_nights.py` | `get_apple_health_nights` | `_scope_and_run` |
+| `apple_sleep_stages.py` | `get_apple_sleep_stages` | `_scope_and_run` |
+| `period_stats.py` | `get_period_stats` | `_scope_and_run` |
+| `records.py` | `get_records` | `_scope_and_run` |
 | `events.py` | `get_events` | `_scope_and_run` |
 | `events.py` | `experimental_get_event_context` | `_scope_and_run` |
 | `epochs.py` | `compare_epochs` | `_scope_and_run` |
@@ -598,7 +603,8 @@ Default tools return device data plus arithmetic of the kind OSCAR does. They do
 
 | Surface | Tools | Content |
 |---------|-------|---------|
-| Default: summaries | `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_events`, `compare_epochs` | Device-scored events and counts, device summaries, settings, and arithmetic on device channels |
+| Default: summaries | `get_data_overview`, `get_settings_timeline`, `get_settings_changes`, `get_nightly_summary`, `get_night_detail`, `get_period_stats`, `get_records`, `get_events`, `compare_epochs` | Device-scored events and counts, device summaries, settings, and arithmetic on device channels |
+| Default: Apple Health | `get_apple_health_nights`, `get_apple_sleep_stages` | The nights with Apple Health sleep data and their sleep summaries; one night's sleep-stage samples |
 | Default: charts | `render_window` | PNG charts of device waveforms, windows ≤15 min |
 | Default: raw samples | `get_waveform` | Per-sample device arrays, windows ≤2 min and ≤1000 points |
 | Experimental | `experimental_get_nightly_metrics`, `experimental_get_event_context`, `experimental_compare_epochs`, `experimental_get_breath_table`, `experimental_find_windows` | Per-night FL, RERA-proxy, segmented-breath and periodic-breathing metrics; MV slope and stability per event; breath-feature distributions across epochs; per-breath rows and bins; window search |
