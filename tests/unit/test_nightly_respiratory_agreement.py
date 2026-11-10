@@ -2,7 +2,7 @@
 
 import pytest
 
-from snore.mcp.tools.summary import agreed_value
+from snore.services.breath.nightly import _agreed_value
 
 pytestmark = pytest.mark.unit
 
@@ -27,10 +27,10 @@ pytestmark = pytest.mark.unit
         "later-null",
         "first-null",
         "all-null",
-        "no-statistics-rows",
+        "no-sessions",
     ],
 )
 def test_agreed_value_is_the_shared_non_null_value_or_none(
     values: list[float | None], expected: float | None
 ) -> None:
-    assert agreed_value(values) == expected
+    assert _agreed_value(values) == expected

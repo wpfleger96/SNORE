@@ -152,7 +152,7 @@ src/snore/
 │   ├── schemas.py      # Service response schemas (Pydantic)
 │   ├── analysis_facade.py   # Analysis orchestration
 │   ├── backup_service.py    # Raw file backup
-│   ├── channel_stats.py     # FL/snore stats pooled from waveform blobs on read; mask-on spans
+│   ├── channel_stats.py     # Device channel stats pooled from waveform blobs on read; mask-on spans
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_recompute.py     # recompute_all_days: shared by `db recompute-days` and the admin job
 │   ├── day_service.py       # Day aggregation
@@ -330,17 +330,28 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
 source), `mv`, `ti`, `ie_ratio` and `pulse` waveforms; FL and snore have no summary columns, and
 ResMed stamps one STR value per day on every session's respiratory columns):
 `services/channel_stats.py` computes them on read from `Waveform.data_blob`, reducing each session
-to a value histogram (`CHANNEL_RANGES`: zeros count except on pulse, which keeps
-`PULSE_VALID_RANGE` only). Pool every enabled session in scope; never average per-session
-percentiles. They are on detail models, where session and day detail decode all eight channels (in
-MCP, `get_night_detail`'s `device.channel_stats`), and `/stats/periods` and `get_period_stats`
-carry only the FL and snore 95ths, so the period path passes `("fl", "snore")` to
-`load_channel_histograms`; keep it that narrow. They are not on trends, so list endpoints and
-`/stats/trends` stay blob-free; callers that do not show them pass `include_channel_stats=False`.
+to a value histogram (`CHANNEL_RANGES`: zeros count except on pulse; pulse, `rr`, `tv`, `ti` and
+`ie_ratio` keep only the valid range the ResMed parser applies to session statistics, shared through
+`PULSE_VALID_RANGE` and the `*_VALID_RANGE*` constants in `constants.py`). Pool every enabled session
+in scope; never average per-session percentiles. They are on detail models, where session and day
+detail pass all eight channels (`REPORTED_CHANNELS`) to `load_channel_histograms` (in MCP,
+`get_night_detail`'s `device.channel_stats`), and `/stats/periods` and `get_period_stats` carry
+only the FL and snore 95ths, so the period path passes `("fl", "snore")`; keep it that narrow.
+`channels` has no default, so every caller names what it decodes. They are not on trends, so list
+endpoints and `/stats/trends` stay blob-free; callers that do not show them pass
+`include_channel_stats=False`.
 `get_nightly_summary`'s `rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and
-`ie_ratio_median` are the stored Statistics value when every enabled session with a row agrees (TV
-compared in mL), otherwise the night's pooled waveform median (`night_respiratory_values` in
-`mcp/tools/summary.py`), which decodes only the nights and channels that fall back.
+`ie_ratio_median` come from `BreathService.get_nightly_device_summary` (`_night_respiratory` in
+`services/breath/nightly.py`): the stored Statistics value when every enabled session of the night
+stores the same one (TV compared in mL), otherwise the night's pooled waveform median, computed by
+`pooled_channel_distribution`, the code behind the day's `DeviceChannelStats` median. A session
+with no Statistics row forces the fallback. Stored values are read first, so blobs are decoded
+only for the nights and channels that fall back, and a corrupt fallback blob nulls the night's
+value (`channel_corrupt`). Each value has a source field (`rr_mean_source`, `tv_mean_source`,
+`mv_mean_source`, `ti_median_source`, `ie_ratio_source`: `device` for the stored value, `derived`
+for the waveform median). `ti_median_reason` and `ie_ratio_reason` are `sessions_disagree` (stored
+values exist but disagree or a session has none, and there is no waveform), `channel_absent`,
+`channel_corrupt` or `no_sessions`; rr, tv and mv have no reason fields.
 The MCP nightly summary and `compare_epochs` share the loader (`decode_channel_blobs`), and they
 also reduce each session to a histogram and read percentiles from the pooled histogram
 (`pool_histograms` returns a `PooledHistogram`, read with `value_at_rank`, `pooled_distribution`
@@ -390,7 +401,10 @@ STR median. Day-level and MCP `NightlyRow` pressure/EPAP/leak values are aggrega
 Day-level `ahi/oai/cai/hi` (`Day` rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are
 source-dependent headlines: the device-reported daily value when trusted, otherwise SNORE's recount;
 `index_source` (`IndexSource.DEVICE`/`DERIVED`) says which. They are tagged Device with
-`source_field="index_source"` — copy that pattern for any new source-dependent field. Aggregates over
+`source_field="index_source"` — copy that pattern for any new source-dependent field. MCP
+`NightlyRow`'s `rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and `ie_ratio_median`
+follow it: Device-tagged, each with its own `IndexSource` field (`rr_mean_source` etc.) that is
+`derived` when the value is the pooled waveform median. Aggregates over
 them (period, Rx, trends, records) stay Derived and can mix device-reported and recounted days. The
 recount, when computable, is in `*_computed` (`DayListItem` carries only `ahi_computed`;
 `DayDetail` and MCP `NightlyRow` carry all four).

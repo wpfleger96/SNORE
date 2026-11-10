@@ -221,11 +221,32 @@ class NightlyChannelFields(BaseModel):
     snore_reason: str | None = None
 
 
-# Where each NightlyRow respiratory value comes from.
+# Where each NightlyRow respiratory value comes from; its *_source field says which.
 _NIGHT_RESPIRATORY_SOURCE = (
-    "the device's daily summary value when all the night's enabled sessions "
-    "agree, otherwise the median of the night's pooled waveform samples"
+    "the stored summary value when every enabled session of the night stores "
+    "the same one (on direct ResMed imports the STR daily value, a median "
+    "stamped on every session; on OSCAR-profile imports the session summary, "
+    "an average for RR, TV and MV), otherwise the median of the night's pooled "
+    "waveform samples"
 )
+# Why ti_median_s or ie_ratio_median is null.
+_NIGHT_RESPIRATORY_REASONS = (
+    "'sessions_disagree' (stored values exist but the sessions disagree or one "
+    "has no statistics, and there is no waveform to pool), 'channel_absent' "
+    "(neither a stored value nor a waveform), 'channel_corrupt' (a session's "
+    "waveform could not be decoded, so no partial median is reported) or "
+    "'no_sessions' (the night has no enabled sessions)"
+)
+
+
+def _respiratory_source(value_field: str) -> Any:
+    """The source field of a NightlyRow respiratory value."""
+    return Field(
+        default=None,
+        description=f"Source of {value_field}: 'device' (the stored summary "
+        "value) or 'derived' (the median of the night's pooled waveform "
+        f"samples); null when {value_field} is null.",
+    )
 
 
 class NightlyRow(NightlyChannelFields):
@@ -347,19 +368,27 @@ class NightlyRow(NightlyChannelFields):
     )
     rr_mean_bpm: float | None = provenance_field(
         Provenance.DEVICE,
-        f"Respiratory rate (breaths/min), {_NIGHT_RESPIRATORY_SOURCE}.",
+        f"Respiratory rate (breaths/min): {_NIGHT_RESPIRATORY_SOURCE}; "
+        "rr_mean_source says which.",
+        source_field="rr_mean_source",
         default=None,
     )
+    rr_mean_source: IndexSource | None = _respiratory_source("rr_mean_bpm")
     tv_mean_ml: float | None = provenance_field(
         Provenance.DEVICE,
-        f"Tidal volume (mL), {_NIGHT_RESPIRATORY_SOURCE}.",
+        f"Tidal volume (mL): {_NIGHT_RESPIRATORY_SOURCE}; tv_mean_source says which.",
+        source_field="tv_mean_source",
         default=None,
     )
+    tv_mean_source: IndexSource | None = _respiratory_source("tv_mean_ml")
     mv_mean_lpm: float | None = provenance_field(
         Provenance.DEVICE,
-        f"Minute ventilation (L/min), {_NIGHT_RESPIRATORY_SOURCE}.",
+        f"Minute ventilation (L/min): {_NIGHT_RESPIRATORY_SOURCE}; "
+        "mv_mean_source says which.",
+        source_field="mv_mean_source",
         default=None,
     )
+    mv_mean_source: IndexSource | None = _respiratory_source("mv_mean_lpm")
 
     spo2_mean_pct: float | None = provenance_field(
         Provenance.DERIVED, "Mean SpO₂ (%).", default=None
@@ -367,24 +396,29 @@ class NightlyRow(NightlyChannelFields):
 
     ti_median_s: float | None = provenance_field(
         Provenance.DEVICE,
-        f"Median inspiratory time (s), {_NIGHT_RESPIRATORY_SOURCE}, coarse "
-        "(observed values are 1.0 or 2.0 s); ti_median_reason='channel_absent' "
-        "when neither exists, 'no_sessions' when the night has no enabled "
-        "sessions.",
+        f"Median inspiratory time (s): {_NIGHT_RESPIRATORY_SOURCE}; "
+        "ti_median_source says which. The ResMed stored value is whole "
+        "seconds (STR Ti; observed values are 1.0 or 2.0 s) while the pooled "
+        "waveform median is fine-grained, so the two sources can differ by "
+        "several tenths of a second. When null, ti_median_reason is "
+        f"{_NIGHT_RESPIRATORY_REASONS}.",
+        source_field="ti_median_source",
         default=None,
     )
+    ti_median_source: IndexSource | None = _respiratory_source("ti_median_s")
     ti_median_reason: str | None = None
     ie_ratio_median: float | None = provenance_field(
         Provenance.DEVICE,
-        f"Median I:E ratio, {_NIGHT_RESPIRATORY_SOURCE}; "
-        "ie_ratio_reason='channel_absent' when neither exists, "
-        "'no_sessions' when the night has no enabled sessions. "
+        f"Median I:E ratio: {_NIGHT_RESPIRATORY_SOURCE}; ie_ratio_source says "
+        f"which. When null, ie_ratio_reason is {_NIGHT_RESPIRATORY_REASONS}. "
         "The STR header's physical dimension is '%' (gain 1, observed values "
         "about 44-54) and OSCAR reads it unconverted; how the device defines "
         "that percentage is unconfirmed, so do not compare this value to "
         "segmented_ie_ratio.",
+        source_field="ie_ratio_source",
         default=None,
     )
+    ie_ratio_source: IndexSource | None = _respiratory_source("ie_ratio_median")
     ie_ratio_reason: str | None = None
 
     device_id: int | None = None

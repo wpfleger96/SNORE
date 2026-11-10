@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
@@ -13,6 +13,7 @@ import numpy as np
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.orm import InstrumentedAttribute
 
 from snore.analysis.queries import latest_analysis_row
 from snore.analysis.shared.versioning import (
@@ -27,15 +28,18 @@ from snore.constants import LEAK_REDLINE_LPM
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
 from snore.database.waveform_blobs import decode_channel_blobs
+from snore.provenance import IndexSource
 from snore.services.channel_stats import (
     ChannelHistogram,
     ChannelHistograms,
     PooledHistogram,
     channel_histogram,
     pool_histograms,
+    pooled_channel_distribution,
     pooled_distribution,
     pooled_share_above,
 )
+from snore.services.tidal_volume import tidal_volume_ml
 from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import nearest_rank_index
@@ -50,7 +54,9 @@ from .dtos import (
     NightlyAnalysisSummary,
     NightlyDeviceRange,
     NightlyDeviceStats,
+    NightlyRespiratoryValue,
     NoSessionsInRangeError,
+    RespiratoryChannel,
     SessionCoverage,
 )
 
@@ -60,9 +66,31 @@ logger = logging.getLogger(__name__)
 # Longer ranges must be paged by the caller (e.g. AppleCrossValidator).
 MAX_NIGHTS_PER_CALL = 90
 
-# Device channels the nightly summary decodes; ``channel_histogram`` applies
-# each one's floor.
+# Device channels the nightly summary decodes for every night;
+# ``channel_histogram`` applies each one's valid range.
 _NIGHT_CHANNELS = ("fl", "snore", "leak")
+
+
+def _as_stored(value: float | None, _import_source: str | None) -> float | None:
+    """A stored value already in its waveform channel's unit."""
+    return value
+
+
+# Each respiratory channel's stored Statistics column, and the conversion of a
+# stored value (and the session's import source) to the channel's waveform unit.
+_RESPIRATORY_COLUMNS: dict[
+    RespiratoryChannel,
+    tuple[
+        InstrumentedAttribute[float | None],
+        Callable[[float | None, str | None], float | None],
+    ],
+] = {
+    "rr": (models.Statistics.respiratory_rate_mean, _as_stored),
+    "tv": (models.Statistics.tidal_volume_mean, tidal_volume_ml),
+    "mv": (models.Statistics.minute_ventilation_mean, _as_stored),
+    "ti": (models.Statistics.ti_median, _as_stored),
+    "ie_ratio": (models.Statistics.ie_ratio_median, _as_stored),
+}
 
 # Every breath column the experimental night reads, in the row order of the
 # arrays ``_reduce_night_run`` reduces.
@@ -258,6 +286,38 @@ def _pool_night(
     )
 
 
+def _agreed_value(values: Sequence[float | None]) -> float | None:
+    """The value every entry of ``values`` holds; None when they differ, one is
+    null, or there are none."""
+    first = values[0] if values else None
+    return first if first is not None and all(v == first for v in values) else None
+
+
+def _pooled_respiratory(
+    by_session: Mapping[int, ChannelHistogram],
+    corrupt_sessions: Collection[int],
+    session_ids: Sequence[int],
+    stored: Sequence[float | None],
+) -> NightlyRespiratoryValue:
+    """A night's fallback respiratory value: its pooled waveform median.
+
+    ``stored`` holds the sessions' stored values, which did not agree.  A
+    session in ``corrupt_sessions`` nulls the value: the surviving sessions'
+    samples would be a partial median.
+    """
+    if any(sid in corrupt_sessions for sid in session_ids):
+        return NightlyRespiratoryValue(reason=NullReason.CHANNEL_CORRUPT)
+    distribution = pooled_channel_distribution(by_session, session_ids)
+    if distribution is not None:
+        return NightlyRespiratoryValue(
+            value=distribution[0], source=IndexSource.DERIVED
+        )
+    any_stored = any(value is not None for value in stored)
+    return NightlyRespiratoryValue(
+        reason=NullReason.SESSIONS_DISAGREE if any_stored else NullReason.CHANNEL_ABSENT
+    )
+
+
 def _device_night_stats(
     *,
     therapy_date: date,
@@ -266,6 +326,7 @@ def _device_night_stats(
     day_row: Any | None,
     compliance_threshold_hours: float,
     channel_histograms: ChannelHistograms,
+    respiratory: dict[RespiratoryChannel, NightlyRespiratoryValue],
     corrupt_leak_sessions: Collection[int] = frozenset(),
 ) -> NightlyDeviceStats:
     """Build a NightlyDeviceStats from per-session channel histograms. No I/O.
@@ -274,7 +335,8 @@ def _device_night_stats(
     ``fl`` and ``leak`` negative sentinels (e.g. −0.01 from digital −1 at
     mask-off) are already dropped.  The stored leak waveform is already L/min.
     A session in ``corrupt_leak_sessions`` nulls the night's leak share: the
-    surviving sessions' samples would be a partial value.
+    surviving sessions' samples would be a partial value.  ``respiratory`` is
+    the night's ``_night_respiratory`` result.
     """
     fl = _pool_night(day_sessions, channel_histograms["fl"])
     snore = _pool_night(day_sessions, channel_histograms["snore"])
@@ -312,6 +374,7 @@ def _device_night_stats(
         snore_reason=snore_reason,
         leak_above_24_pct=leak_above_24_pct,
         leak_above_24_pct_reason=leak_above_24_pct_reason,
+        respiratory=respiratory,
     )
 
 
@@ -676,7 +739,7 @@ class NightlyMixin(_BreathServiceCore):
         device's Day, or a Day whose sessions are all disabled); such a date
         simply builds no night.
 
-        Reads Day rows and waveform channels only, so it answers identically
+        Reads Day, Statistics and Waveform rows only, so it answers identically
         whether or not analysis has run.
         """
         resolved_device_id, sessions_by_date, day_by_date = await self._range_context(
@@ -693,6 +756,9 @@ class NightlyMixin(_BreathServiceCore):
             _NIGHT_CHANNELS,
             channel_histogram,
         )
+        respiratory = await self._night_respiratory(
+            {d: sessions_by_date[d] for d in built_dates}
+        )
         nights = [
             _device_night_stats(
                 therapy_date=therapy_date,
@@ -701,6 +767,7 @@ class NightlyMixin(_BreathServiceCore):
                 day_row=day_by_date.get(therapy_date),
                 compliance_threshold_hours=compliance_threshold_hours,
                 channel_histograms=channel_histograms,
+                respiratory=respiratory[therapy_date],
                 corrupt_leak_sessions=corrupt_sessions["leak"],
             )
             for therapy_date in built_dates
@@ -724,6 +791,77 @@ class NightlyMixin(_BreathServiceCore):
             compliance_pct=days_compliant / n_calendar * 100.0,
             nights=nights,
         )
+
+    async def _night_respiratory(
+        self, nights: Mapping[date, Sequence[Any]]
+    ) -> dict[date, dict[RespiratoryChannel, NightlyRespiratoryValue]]:
+        """Every respiratory value of ``nights`` (date -> enabled sessions).
+
+        A value is the stored Statistics value when every session stores the
+        same one, otherwise the median of the night's pooled waveform samples,
+        computed as the day's ``DeviceChannelStats`` median is.  Stored values
+        are read first, so blobs are decoded only for the nights and channels
+        that fall back.
+        """
+        stored = await self._stored_respiratory(
+            [s for sessions in nights.values() for s in sessions]
+        )
+        session_ids = {
+            d: [int(s.id) for s in sessions] for d, sessions in nights.items()
+        }
+        values: dict[date, dict[RespiratoryChannel, NightlyRespiratoryValue]] = {
+            d: {} for d in nights
+        }
+        for channel in _RESPIRATORY_COLUMNS:
+            fallback: dict[date, list[float | None]] = {}
+            for d, sids in session_ids.items():
+                # A session with no Statistics row stores nothing to agree on.
+                night_stored = [stored.get(sid, {}).get(channel) for sid in sids]
+                agreed = _agreed_value(night_stored)
+                if agreed is None:
+                    fallback[d] = night_stored
+                else:
+                    values[d][channel] = NightlyRespiratoryValue(
+                        value=agreed, source=IndexSource.DEVICE
+                    )
+            if not fallback:
+                continue
+            histograms, corrupt = await decode_channel_blobs(
+                self._db,
+                [sid for d in fallback for sid in session_ids[d]],
+                (channel,),
+                channel_histogram,
+            )
+            for d, night_stored in fallback.items():
+                values[d][channel] = _pooled_respiratory(
+                    histograms[channel], corrupt[channel], session_ids[d], night_stored
+                )
+        return values
+
+    async def _stored_respiratory(
+        self, sessions: Sequence[Any]
+    ) -> dict[int, dict[RespiratoryChannel, float | None]]:
+        """Session id -> its stored respiratory values, in waveform units.
+
+        A session with no Statistics row is absent.
+        """
+        import_sources = {int(s.id): s.import_source for s in sessions}
+        columns = [column for column, _ in _RESPIRATORY_COLUMNS.values()]
+        stored: dict[int, dict[RespiratoryChannel, float | None]] = {}
+        for sid_chunk in iter_id_chunks(list(import_sources)):
+            rows = await self._db.execute(
+                select(models.Statistics.session_id, *columns).where(
+                    models.Statistics.session_id.in_(sid_chunk)
+                )
+            )
+            for session_id, *row_values in rows:
+                stored[session_id] = {
+                    channel: convert(value, import_sources[session_id])
+                    for (channel, (_, convert)), value in zip(
+                        _RESPIRATORY_COLUMNS.items(), row_values, strict=True
+                    )
+                }
+        return stored
 
     async def get_experimental_nightly_range(
         self,

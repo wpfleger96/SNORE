@@ -110,18 +110,22 @@ RERA_PROXY_FALLBACK_NOTE = (
     "modes or pressure-support levels)."
 )
 
-# What the stored fl and snore waveform channels measure, for every statistic
-# computed over them.  Each statistic pools samples, never averages per session.
+# What each stored waveform channel measures, for every statistic computed over
+# it.  Each statistic pools samples, never averages per session.
 _FL_CHANNEL = (
     "device flow-limitation channel (0-1 unitless), excluding mask-off sentinels"
 )
 _SNORE_CHANNEL = "device snore channel (0-5 unitless)"
-_RR_CHANNEL = "device respiratory rate channel (breaths/min)"
-_TV_CHANNEL = "device tidal volume channel (mL)"
+_RR_CHANNEL = (
+    "device respiratory rate channel (breaths/min), excluding out-of-range samples"
+)
+_TV_CHANNEL = "device tidal volume channel (mL), excluding out-of-range samples"
 _MV_CHANNEL = "device minute ventilation channel (L/min)"
-_TI_CHANNEL = "device inspiratory time channel (seconds)"
-_IE_CHANNEL = "device I:E ratio channel (%)"
-_PULSE_CHANNEL = "oximeter pulse channel (beats/min), excluding invalid readings"
+_TI_CHANNEL = (
+    "device inspiratory time channel (seconds), excluding out-of-range samples"
+)
+_IE_CHANNEL = "device I:E ratio channel (%), excluding out-of-range samples"
+_PULSE_CHANNEL = "oximeter pulse channel (bpm), excluding invalid readings"
 
 
 class PeriodStatistics(BaseModel):
@@ -706,10 +710,21 @@ class SessionSetting(BaseModel):
     value: str | None = Field(default=None, description="Setting value")
 
 
-def _pooled_field(statistic: str, channel: str) -> Any:
+def _pooled_field(statistic: str, channel: str, note: str = "") -> Any:
     """A null-by-default Derived statistic of ``channel``'s pooled samples."""
     return provenance_field(
-        Provenance.DERIVED, f"{statistic} of the {channel}, pooled", default=None
+        Provenance.DERIVED, f"{statistic} of the {channel}, pooled{note}", default=None
+    )
+
+
+def _waveform_field(statistic: str, channel: str) -> Any:
+    """``_pooled_field`` of a channel that ``SessionStatistics`` also summarizes."""
+    return _pooled_field(
+        statistic,
+        channel,
+        "; computed from the recorded waveform samples, unlike the same-named "
+        "stored summary in session statistics (on ResMed, one STR value for the "
+        "whole therapy day), so the two can differ in value and unit",
     )
 
 
@@ -728,26 +743,28 @@ class DeviceChannelStats(BaseModel):
     snore_median: float | None = _pooled_field("Median", _SNORE_CHANNEL)
     snore_95th: float | None = _pooled_field("95th percentile", _SNORE_CHANNEL)
     snore_max: float | None = _pooled_field("Maximum", _SNORE_CHANNEL)
-    respiratory_rate_median: float | None = _pooled_field("Median", _RR_CHANNEL)
-    respiratory_rate_95th: float | None = _pooled_field("95th percentile", _RR_CHANNEL)
-    respiratory_rate_max: float | None = _pooled_field("Maximum", _RR_CHANNEL)
-    tidal_volume_median: float | None = _pooled_field("Median", _TV_CHANNEL)
-    tidal_volume_95th: float | None = _pooled_field("95th percentile", _TV_CHANNEL)
-    tidal_volume_max: float | None = _pooled_field("Maximum", _TV_CHANNEL)
-    minute_ventilation_median: float | None = _pooled_field("Median", _MV_CHANNEL)
-    minute_ventilation_95th: float | None = _pooled_field(
+    respiratory_rate_median: float | None = _waveform_field("Median", _RR_CHANNEL)
+    respiratory_rate_95th: float | None = _waveform_field(
+        "95th percentile", _RR_CHANNEL
+    )
+    respiratory_rate_max: float | None = _waveform_field("Maximum", _RR_CHANNEL)
+    tidal_volume_median: float | None = _waveform_field("Median", _TV_CHANNEL)
+    tidal_volume_95th: float | None = _waveform_field("95th percentile", _TV_CHANNEL)
+    tidal_volume_max: float | None = _waveform_field("Maximum", _TV_CHANNEL)
+    minute_ventilation_median: float | None = _waveform_field("Median", _MV_CHANNEL)
+    minute_ventilation_95th: float | None = _waveform_field(
         "95th percentile", _MV_CHANNEL
     )
-    minute_ventilation_max: float | None = _pooled_field("Maximum", _MV_CHANNEL)
-    ti_median: float | None = _pooled_field("Median", _TI_CHANNEL)
-    ti_95th: float | None = _pooled_field("95th percentile", _TI_CHANNEL)
-    ti_max: float | None = _pooled_field("Maximum", _TI_CHANNEL)
-    ie_ratio_median: float | None = _pooled_field("Median", _IE_CHANNEL)
-    ie_ratio_95th: float | None = _pooled_field("95th percentile", _IE_CHANNEL)
-    ie_ratio_max: float | None = _pooled_field("Maximum", _IE_CHANNEL)
-    pulse_median: float | None = _pooled_field("Median", _PULSE_CHANNEL)
-    pulse_95th: float | None = _pooled_field("95th percentile", _PULSE_CHANNEL)
-    pulse_max: float | None = _pooled_field("Maximum", _PULSE_CHANNEL)
+    minute_ventilation_max: float | None = _waveform_field("Maximum", _MV_CHANNEL)
+    ti_median: float | None = _waveform_field("Median", _TI_CHANNEL)
+    ti_95th: float | None = _waveform_field("95th percentile", _TI_CHANNEL)
+    ti_max: float | None = _waveform_field("Maximum", _TI_CHANNEL)
+    ie_ratio_median: float | None = _waveform_field("Median", _IE_CHANNEL)
+    ie_ratio_95th: float | None = _waveform_field("95th percentile", _IE_CHANNEL)
+    ie_ratio_max: float | None = _waveform_field("Maximum", _IE_CHANNEL)
+    pulse_median: float | None = _waveform_field("Median", _PULSE_CHANNEL)
+    pulse_95th: float | None = _waveform_field("95th percentile", _PULSE_CHANNEL)
+    pulse_max: float | None = _waveform_field("Maximum", _PULSE_CHANNEL)
 
 
 class MaskOnSpan(BaseModel):

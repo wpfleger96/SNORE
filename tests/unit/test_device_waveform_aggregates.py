@@ -65,6 +65,7 @@ def _call_build(
             }
             for channel, by_session in samples.items()
         },
+        respiratory={},
         corrupt_leak_sessions=corrupt_leak_sessions,
     )
 

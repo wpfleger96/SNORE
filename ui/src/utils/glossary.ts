@@ -5,7 +5,7 @@ export interface GlossaryEntry {
 }
 
 const POOLED_CHANNEL_NOTE =
-    "Median, 95th percentile and maximum are taken over the samples pooled across all of the night's sessions (or the one session on a session page), not averaged per session."
+    "Median, 95th percentile and maximum are computed from the recorded samples, pooled across the night's enabled sessions (or the one session on a session page), not averaged per session. The device's stored summary values shown elsewhere on the page are not computed this way (on ResMed they cover the whole therapy day), so the two can differ."
 
 export const GLOSSARY: Record<string, GlossaryEntry> = {
     session_duration_hours: {
@@ -314,12 +314,12 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     },
     ti_device: {
         label: 'Inspiratory Time (s)',
-        short: "Duration of each breath's inspiratory phase from the device's recorded inspiratory time channel, in seconds.",
+        short: "Duration of each breath's inspiratory phase from the device's recorded inspiratory time channel, in seconds. The ResMed signal tops out at 2.0 s, so a 95th or max of 2.00 is that ceiling, not a measurement.",
         long: POOLED_CHANNEL_NOTE,
     },
     ie_ratio_device: {
         label: 'I:E Ratio (%)',
-        short: "Inspiratory-to-expiratory time ratio from the device's recorded I:E ratio channel, as a percentage (100 = 1:1, 50 = 1:2).",
+        short: "Inspiratory-to-expiratory time ratio from the device's recorded I:E ratio channel, shown as the device records it, in percent. How the device defines that percentage is unconfirmed.",
         long: POOLED_CHANNEL_NOTE,
     },
     pulse_device: {
