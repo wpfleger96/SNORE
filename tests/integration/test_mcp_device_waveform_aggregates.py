@@ -942,6 +942,7 @@ class TestDefaultToolsReadNoBreaths:
             "get_settings_timeline": day_range,
             "get_settings_changes": day_range,
             "get_period_stats": day_range,
+            "get_records": day_range,
             "get_nightly_summary": day_range,
             "get_night_detail": {"date": d.isoformat()},
             "get_events": {"date": d.isoformat()},
