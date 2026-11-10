@@ -16,7 +16,11 @@ from snore.analysis.calculations import PeriodType
 from snore.mcp.errors import ValidationError
 from snore.mcp.schemas import PeriodStatsResponse
 from snore.mcp.tools._scaffold import _scope_and_run, tool_error_boundary
-from snore.mcp.validation import parse_date, parse_date_range, validate_nightly_span
+from snore.mcp.validation import (
+    parse_date_range,
+    parse_open_date_range,
+    validate_nightly_span,
+)
 from snore.services.stats_service import StatsService
 
 if TYPE_CHECKING:
@@ -41,17 +45,13 @@ def _parse_range(
     period_type: PeriodType, start: str | None, end: str | None
 ) -> tuple[date | None, date | None]:
     """Parse the bounds; a ``day`` range needs both and a capped span."""
-    if start is not None and end is not None:
-        start_d, end_d = parse_date_range(start, end)
-        if period_type == "day":
-            validate_nightly_span(start_d, end_d)
-        return start_d, end_d
-    if period_type == "day":
+    if period_type != "day":
+        return parse_open_date_range(start, end)
+    if start is None or end is None:
         raise ValidationError('period_type "day" requires both start and end')
-    return (
-        parse_date(start, "start") if start is not None else None,
-        parse_date(end, "end") if end is not None else None,
-    )
+    start_d, end_d = parse_date_range(start, end)
+    validate_nightly_span(start_d, end_d)
+    return start_d, end_d
 
 
 def register(mcp: FastMCP) -> None:

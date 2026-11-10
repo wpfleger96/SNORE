@@ -71,6 +71,18 @@ def parse_date_range(
     return start_date, end_date
 
 
+def parse_open_date_range(
+    start: str | None, end: str | None
+) -> tuple[date | None, date | None]:
+    """Parse optional ``start``/``end`` bounds; when both are given, start <= end."""
+    if start is not None and end is not None:
+        return parse_date_range(start, end)
+    return (
+        parse_date(start, "start") if start is not None else None,
+        parse_date(end, "end") if end is not None else None,
+    )
+
+
 _PAGE_SIZE_CAP = 90
 _MAX_PAGE = MAX_PAGE
 
