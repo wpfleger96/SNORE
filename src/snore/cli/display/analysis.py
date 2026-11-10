@@ -15,9 +15,15 @@ from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import console, mark_field, mark_provenance, print_kv
-from snore.constants import FLOW_LIMITATION_CLASSES
+from snore.constants import FLOW_LIMITATION_CLASSES, LEAK_REDLINE_LPM
 from snore.provenance import Provenance
-from snore.services.schemas import DeviceChannelStats, MaskOnSpan, SessionStatistics
+from snore.services.schemas import (
+    DeviceChannelStats,
+    LargeLeakSpan,
+    LeakRedlineStats,
+    MaskOnSpan,
+    SessionStatistics,
+)
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
@@ -391,6 +397,34 @@ def _print_channel_stats(
         )
 
 
+def _print_leak_redline(leak: LeakRedlineStats) -> None:
+    """Print the time over the leak redline and the Large Leak spans."""
+    console.print(f"\n  Leak Redline ({LEAK_REDLINE_LPM:g} L/min):")
+    for label, field, value, decimals in (
+        ("Time over redline", "leak_above_24_pct", leak.leak_above_24_pct, 1),
+        ("Large Leak", "large_leak_pct", leak.large_leak_pct, 2),
+    ):
+        if value is not None:
+            print_kv(
+                mark_field(label, LeakRedlineStats, field),
+                f"{value:.{decimals}f}%",
+                indent=2,
+            )
+    count = leak.large_leak_span_count
+    listed = len(leak.large_leak_spans)
+    print_kv(
+        mark_field("Large Leak spans", LeakRedlineStats, "large_leak_span_count"),
+        f"{count} (showing the {listed} longest)" if listed < count else str(count),
+        indent=2,
+    )
+    duration_label = mark_field("Duration", LargeLeakSpan, "duration_seconds")
+    for span in leak.large_leak_spans:
+        console.print(
+            f"    {span.start:%Y-%m-%d %H:%M:%S} to {span.end:%H:%M:%S}, "
+            f"{duration_label}: {span.duration_seconds:.0f}s"
+        )
+
+
 def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
     """Print a full session detail view to stdout."""
     import pint
@@ -641,6 +675,9 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         console.print("\n  Device Channels:")
         for title, prefix, decimals in _CHANNELS:
             _print_channel_stats(title, detail.channel_stats, prefix, decimals)
+
+    if detail.leak_redline:
+        _print_leak_redline(detail.leak_redline)
 
     if detail.mask_on_spans:
         console.print("\n  Mask-On Spans:")

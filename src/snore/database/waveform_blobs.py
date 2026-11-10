@@ -9,6 +9,7 @@ encode and decode blobs without importing the analysis or service packages.
 
 import asyncio
 import logging
+import math
 
 from collections.abc import Callable, Sequence
 from itertools import batched
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Blob layout: float32 (timestamp, value) pairs; see deserialize_waveform_blob.
 WAVEFORM_BLOB_BYTES_PER_SAMPLE = 2 * np.dtype(np.float32).itemsize
+
+# A step between consecutive sample offsets wider than this many sample periods
+# is a recording gap (``recording_gaps``).
+RECORDING_GAP_PERIODS = 1.5
 
 # Sessions fetched per query.  The blobs of a batch are buffered in memory until
 # decoded, so this bounds that buffer, at one blob per session per channel.
@@ -115,9 +120,26 @@ def deserialize_waveform_blob(
         raise ValueError(f"Invalid waveform blob data: {e}") from e
 
 
+# A sample reducer given the channel, the sample offsets in seconds from session
+# start, the raw samples and the stored sample rate.  Raising ValueError marks
+# the session's blob unusable.
+type SeriesReducer[T] = Callable[[str, np.ndarray, np.ndarray, float], T]
+
+
+def recording_gaps(offsets: np.ndarray, sample_rate: float) -> np.ndarray:
+    """``gaps[i]`` is True when a recording gap lies between samples i and i + 1.
+
+    A multi-segment session stores its mask-off time as a jump in offsets: a
+    step wider than ``RECORDING_GAP_PERIODS`` sample periods.  A non-positive
+    ``sample_rate`` finds no gaps.
+    """
+    max_step = RECORDING_GAP_PERIODS / sample_rate if sample_rate > 0 else math.inf
+    return np.diff(offsets) > max_step
+
+
 def _decode_rows[T](
-    rows: Sequence[tuple[int, str, bytes | None, int | None]],
-    reduce: Callable[[str, np.ndarray], T],
+    rows: Sequence[tuple[int, str, bytes | None, int | None, float | None]],
+    reduce: SeriesReducer[T],
     values: dict[str, dict[int, T]],
     corrupt: dict[str, set[int]],
 ) -> None:
@@ -125,18 +147,19 @@ def _decode_rows[T](
 
     Runs on a worker thread, so ``rows`` holds plain values, never ORM objects.
     """
-    for session_id, channel, blob, sample_count in rows:
+    for session_id, channel, blob, sample_count, sample_rate in rows:
         if not blob or not sample_count:
             continue
         try:
-            _, samples = deserialize_waveform_blob(blob, sample_count)
+            timestamps, samples = deserialize_waveform_blob(blob, sample_count)
+            values[channel][session_id] = reduce(
+                channel, timestamps, samples, sample_rate or 0.0
+            )
         except ValueError as e:
             logger.warning(
                 "Skipping corrupt %s waveform of session %s: %s", channel, session_id, e
             )
             corrupt[channel].add(session_id)
-            continue
-        values[channel][session_id] = reduce(channel, samples)
 
 
 async def decode_channel_blobs[T](
@@ -145,16 +168,34 @@ async def decode_channel_blobs[T](
     channels: Sequence[str],
     reduce: Callable[[str, np.ndarray], T],
 ) -> tuple[dict[str, dict[int, T]], dict[str, set[int]]]:
+    """``decode_channel_series`` for a reducer of the samples alone."""
+    return await decode_channel_series(
+        db,
+        session_ids,
+        channels,
+        lambda channel, _timestamps, samples, _rate: reduce(channel, samples),
+    )
+
+
+async def decode_channel_series[T](
+    db: AsyncSession,
+    session_ids: Sequence[int],
+    channels: Sequence[str],
+    reduce: SeriesReducer[T],
+) -> tuple[dict[str, dict[int, T]], dict[str, set[int]]]:
     """``(values, corrupt)`` of ``channels`` for ``session_ids``.
 
-    ``values`` is channel -> session_id -> ``reduce(channel, samples)``, the raw
-    samples including sentinels; ``corrupt`` is channel -> ids of sessions whose
-    blob could not be decoded, each logged once as a warning.  Every requested
-    channel is a key of both, and a session without a usable row for a channel
-    is absent from its ``values`` map.
+    ``values`` is channel -> session_id -> ``reduce(channel, timestamps,
+    samples, sample_rate)``, the raw samples including sentinels.  ``corrupt``
+    is channel -> ids of sessions whose blob could not be decoded or whose
+    reducer raised ``ValueError``, each logged once as a warning.  Every
+    requested channel is a key of both, and a session without a usable row for
+    a channel is absent from its ``values`` map.
 
     Blobs are fetched in batches and decoded off the event loop.  There is no
     ownership check here: callers pass ids already scoped to the profile.
+    ``sample_rate`` is stored before ``data_blob``, so selecting it adds no
+    overflow-chain walk (``sample_count``, stored after, already walks it).
     """
     values: dict[str, dict[int, T]] = {channel: {} for channel in channels}
     corrupt: dict[str, set[int]] = {channel: set() for channel in channels}
@@ -165,6 +206,7 @@ async def decode_channel_blobs[T](
                 Waveform.waveform_type,
                 Waveform.data_blob,
                 Waveform.sample_count,
+                Waveform.sample_rate,
             ).where(
                 Waveform.session_id.in_(batch),
                 Waveform.waveform_type.in_(channels),
@@ -172,7 +214,10 @@ async def decode_channel_blobs[T](
         )
         await asyncio.to_thread(
             _decode_rows,
-            [(sid, channel, blob, count) for sid, channel, blob, count in result],
+            [
+                (sid, channel, blob, count, rate)
+                for sid, channel, blob, count, rate in result
+            ],
             reduce,
             values,
             corrupt,

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections import defaultdict
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import date, timedelta
 from statistics import median
 from typing import TYPE_CHECKING, Literal
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 from snore.constants import EVENT_TYPE_RERA, AhiTrendDirection, TherapyEffectiveness
 from snore.database import models
 from snore.metrics import reported_count
+from snore.therapy_hours import compliance_pct, is_compliant_night
 from snore.utils.stats import weighted_mean
 
 if TYPE_CHECKING:
@@ -72,6 +74,30 @@ def calculate_average_hours_per_day(days: list[models.Day]) -> float:
 
     total_hours = sum(day.total_therapy_hours for day in days_with_usage)
     return total_hours / len(days_with_usage)
+
+
+def therapy_date_range(days: Sequence[models.Day]) -> tuple[date, date]:
+    """First and last date with therapy hours from enabled sessions.
+
+    Falls back to every day's date when none has hours.  ``days`` must not be
+    empty.  Compliance counts calendar days within this range, as OSCAR clips
+    its Statistics columns to its first and last CPAP day
+    (``statistics.cpp:1517-1520``).
+    """
+    used = [day.date for day in days if (day.total_therapy_hours or 0.0) > 0]
+    dates = used or [day.date for day in days]
+    return min(dates), max(dates)
+
+
+def count_compliant_days(days: Iterable[models.Day]) -> int:
+    """Nights whose mask-on hours, summed across devices, reach the threshold.
+
+    OSCAR counts a date's hours over every CPAP device (``profiles.cpp:1858-1861``).
+    """
+    hours_by_date: defaultdict[date, float] = defaultdict(float)
+    for day in days:
+        hours_by_date[day.date] += day.total_therapy_hours or 0.0
+    return sum(1 for hours in hours_by_date.values() if is_compliant_night(hours))
 
 
 def assess_therapy_effectiveness(avg_ahi: float | None) -> TherapyEffectiveness:
@@ -221,6 +247,7 @@ def calculate_period_statistics(
     dates = [day.date for day in day_records]
     start_date = min(dates)
     end_date = max(dates)
+    first_therapy, last_therapy = therapy_date_range(day_records)
 
     periods = _get_period_boundaries(period_type, start_date, end_date)
     results = []
@@ -245,6 +272,9 @@ def calculate_period_statistics(
 
         days_used = len(days_in_period)
         days_in_period_count = (period_end - period_start).days + 1
+        days_compliant = count_compliant_days(days_in_period)
+        counted_from = max(period_start, first_therapy)
+        counted_to = min(period_end, last_therapy)
 
         avg_hours_per_day = calculate_average_hours_per_day(days_in_period)
         avg_ahi = calculate_average_ahi(days_in_period)
@@ -279,6 +309,17 @@ def calculate_period_statistics(
                 period_end=period_end,
                 days_used=days_used,
                 days_in_period=days_in_period_count,
+                days_compliant=days_compliant,
+                compliance_pct=(
+                    round(
+                        compliance_pct(
+                            days_compliant, (counted_to - counted_from).days + 1
+                        ),
+                        1,
+                    )
+                    if counted_from <= counted_to
+                    else None
+                ),
                 avg_hours_per_day=avg_hours_per_day if avg_hours_per_day > 0 else None,
                 avg_ahi=avg_ahi,
                 median_ahi=median_ahi,

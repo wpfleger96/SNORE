@@ -166,7 +166,12 @@
 
         <!-- Leak group -->
         <div
-            v-if="data.avg_leak != null || data.leak_min != null || data.leak_95th != null"
+            v-if="
+                data.avg_leak != null ||
+                data.leak_min != null ||
+                data.leak_95th != null ||
+                data.leak_redline
+            "
             class="stats-grid mb-6"
         >
             <StatCard
@@ -198,6 +203,22 @@
                 unit="L/min"
                 :decimals="1"
             />
+            <template v-if="data.leak_redline">
+                <StatCard
+                    label="Time Over Redline"
+                    :value="data.leak_redline.leak_above_24_pct ?? null"
+                    unit="%"
+                    :decimals="1"
+                    glossary-key="leak_redline"
+                />
+                <StatCard
+                    label="Large Leak"
+                    :value="data.leak_redline.large_leak_pct ?? null"
+                    unit="%"
+                    :decimals="2"
+                    glossary-key="large_leak"
+                />
+            </template>
         </div>
 
         <!-- SpO₂ group -->
@@ -231,6 +252,11 @@
 
         <DeviceChannelStatsTable :stats="data.channel_stats" />
         <MaskOnSpansTable :spans="data.mask_on_spans" />
+        <MaskOnSpansTable
+            title="Large Leak Spans"
+            :spans="data.leak_redline?.large_leak_spans"
+            :total="data.leak_redline?.large_leak_span_count"
+        />
 
         <!-- Apple Health group -->
         <template v-if="data.health_sleep">

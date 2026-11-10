@@ -53,6 +53,51 @@ class TestStatsSummary:
         assert data["total_hours"] == pytest.approx(7.0)
         assert not {"effectiveness", "ahi_trend_direction"} & data.keys()
 
+    def test_summary_and_periods_report_compliance(
+        self, api_client, db_session, test_device
+    ):
+        # Jan 1-4: 4 h exactly, 3.5 h, no data, 6 h.
+        for day_of_month, hours in ((1, 4.0), (2, 3.5), (4, 6.0)):
+            db_session.add(
+                Day(
+                    device_id=test_device.id,
+                    date=date(2024, 1, day_of_month),
+                    session_count=1,
+                    total_therapy_hours=hours,
+                )
+            )
+        db_session.flush()
+
+        summary = api_client.get("/api/v1/stats/summary").json()
+        [period] = api_client.get(
+            "/api/v1/stats/periods", params={"period_type": "month"}
+        ).json()
+
+        assert (summary["days_compliant"], summary["compliance_pct"]) == (2, 50.0)
+        assert (period["days_compliant"], period["compliance_pct"]) == (2, 50.0)
+
+    def test_disabled_only_edge_day_is_outside_both_compliance_ranges(
+        self, api_client, db_session, test_device
+    ):
+        # 8 h on Mar 1 and 2; Mar 10's sessions are all disabled (0 hours).
+        for day_of_month, hours in ((1, 8.0), (2, 8.0), (10, 0.0)):
+            db_session.add(
+                Day(
+                    device_id=test_device.id,
+                    date=date(2024, 3, day_of_month),
+                    session_count=1,
+                    total_therapy_hours=hours,
+                )
+            )
+        db_session.flush()
+
+        summary = api_client.get("/api/v1/stats/summary").json()
+        [period] = api_client.get(
+            "/api/v1/stats/periods", params={"period_type": "month"}
+        ).json()
+
+        assert summary["compliance_pct"] == period["compliance_pct"] == 100.0
+
 
 class TestStatsExperimental:
     def test_range_with_data(self, api_client, db_session, test_device):

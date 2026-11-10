@@ -8,7 +8,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from snore.constants import AhiTrendDirection, TherapyEffectiveness
+from snore.constants import (
+    COMPLIANCE_THRESHOLD_HOURS,
+    AhiTrendDirection,
+    TherapyEffectiveness,
+)
 from snore.metrics import (
     COVERAGE_TOLERANCE_FRACTION,
     COVERAGE_TOLERANCE_HOURS,
@@ -29,6 +33,8 @@ __all__ = [
     "SessionSetting",
     "DeviceChannelStats",
     "MaskOnSpan",
+    "LargeLeakSpan",
+    "LeakRedlineStats",
     "DeletePreview",
     "TherapySummary",
     "EventTypeCount",
@@ -96,6 +102,14 @@ HEADLINE_INDEX_DESCRIPTION = (
     f"the larger of {COVERAGE_TOLERANCE_HOURS * 60:g} min or "
     f"{COVERAGE_TOLERANCE_FRACTION:.0%} of the device's"
 )
+# Large Leak spans listed at most per response (about 53 KB of JSON, well under
+# the MCP response size limit); a night over it lists its longest.
+MAX_LARGE_LEAK_SPANS = 500
+
+COMPLIANT_DAYS_DESCRIPTION = (
+    f"Nights with at least {COMPLIANCE_THRESHOLD_HOURS:g} mask-on hours from enabled "
+    "sessions, summed across devices"
+)
 INDEX_SOURCE_DESCRIPTION = (
     "Source of the headline ahi/oai/cai/hi: 'device' (device-reported daily "
     "value) or 'derived' (SNORE's recount); null when the day has no index"
@@ -140,6 +154,17 @@ class PeriodStatistics(BaseModel):
         Provenance.DERIVED, "Number of days with therapy", default=0
     )
     days_in_period: int = Field(default=0, description="Total days in period")
+    days_compliant: int = provenance_field(
+        Provenance.DERIVED, COMPLIANT_DAYS_DESCRIPTION, default=0
+    )
+    compliance_pct: float | None = provenance_field(
+        Provenance.DERIVED,
+        "days_compliant as a percent of the period's calendar days (to 0.1), "
+        "leaving out days before the range's first or after its last day with "
+        "therapy hours from enabled sessions, as OSCAR's Statistics page does; "
+        "null when the period has no calendar day in that span",
+        default=None,
+    )
     avg_hours_per_day: float | None = provenance_field(
         Provenance.DERIVED, "Average hours per day used", default=None
     )
@@ -779,6 +804,58 @@ class MaskOnSpan(BaseModel):
     )
 
 
+class LargeLeakSpan(BaseModel):
+    """One stretch of leak at or above the 24 L/min redline (OSCAR's Large Leak)."""
+
+    session_id: int
+    offset_seconds: float = Field(
+        description="Seconds from the session's start to the span's start"
+    )
+    start: datetime = Field(
+        description="Device wall-clock time of the first sample at or above the redline"
+    )
+    end: datetime = Field(
+        description="Device wall-clock time of the first sample below the redline (a "
+        "sentinel or missing sample counts as below), or one sample period after "
+        "the last sample when the recording ends or pauses first"
+    )
+    duration_seconds: float = provenance_field(
+        Provenance.DERIVED, "Span length in seconds (end minus start)"
+    )
+
+
+class LeakRedlineStats(BaseModel):
+    """OSCAR's leak redline views of the stored leak channel (24 L/min).
+
+    Every field covers the same sessions: those of the parent response with at
+    least one valid leak sample.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    leak_above_24_pct: float = provenance_field(
+        Provenance.DERIVED,
+        "Percent of the pooled valid leak samples at or above 24 L/min (to 0.1). "
+        "OSCAR's time over the leak redline is time-weighted over the day's hours, "
+        "so the two agree only approximately",
+    )
+    large_leak_pct: float | None = provenance_field(
+        Provenance.DERIVED,
+        "OSCAR's Large Leak index: the summed durations of every Large Leak span "
+        "(not only the listed ones) as a percent of the covered sessions' mask-on "
+        "hours (to 0.01); null when those hours are zero",
+        default=None,
+    )
+    large_leak_span_count: int = provenance_field(
+        Provenance.DERIVED, "Number of Large Leak spans, listed or not"
+    )
+    large_leak_spans: list[LargeLeakSpan] = Field(
+        description="Stretches of leak at or above 24 L/min, ascending by start; a "
+        f"span never crosses a recording gap. At most {MAX_LARGE_LEAK_SPANS} are "
+        "listed: when large_leak_span_count is higher, these are the longest",
+    )
+
+
 class SessionDetail(BaseModel):
     """Detailed view of a single session with all metadata."""
 
@@ -816,6 +893,12 @@ class SessionDetail(BaseModel):
         description="This session's device channel statistics, whether or not it "
         "is enabled; null when it has none of the channels, and always null on "
         "PATCH responses, which omit it",
+    )
+    leak_redline: LeakRedlineStats | None = Field(
+        default=None,
+        description="This session's time over the leak redline and Large Leak "
+        "spans; null when it has no valid leak sample or its leak data is "
+        "unusable, and always null on PATCH responses",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,
@@ -864,6 +947,15 @@ class TherapySummary(BaseModel):
     )
     days_with_data: int = provenance_field(
         Provenance.DERIVED, "Days with therapy hours from enabled sessions"
+    )
+    days_compliant: int = provenance_field(
+        Provenance.DERIVED, COMPLIANT_DAYS_DESCRIPTION, default=0
+    )
+    compliance_pct: float = provenance_field(
+        Provenance.DERIVED,
+        "days_compliant as a percent of the calendar days from first_date to "
+        "last_date (to 0.1)",
+        default=0.0,
     )
     avg_ahi: float | None = provenance_field(
         Provenance.DERIVED,
@@ -1302,6 +1394,12 @@ class DayDetail(DayListItem):
         default=None,
         description="Device channel statistics over the pooled samples of the "
         "day's enabled sessions; null when none has any of the channels",
+    )
+    leak_redline: LeakRedlineStats | None = Field(
+        default=None,
+        description="Time over the leak redline and Large Leak spans of the day's "
+        "enabled sessions with leak data; null when none has a valid leak sample "
+        "or any one's leak data is unusable",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,

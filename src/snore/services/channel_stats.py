@@ -68,7 +68,8 @@ __all__ = [
 # pulse blobs keep the out-of-range samples the parser leaves out of session
 # statistics.  Zeros are legitimate data on every channel but pulse.
 # ``DeviceChannelStats`` covers the ``_CHANNEL_PREFIXES`` channels only; the
-# MCP nightly summary also reduces ``leak``.
+# MCP nightly summary and the session and day ``leak_redline``
+# (``services/leak_redline.py``) also reduce ``leak``.
 _NON_NEGATIVE = (0.0, math.inf)
 CHANNEL_RANGES: dict[str, tuple[float, float]] = {
     "fl": _NON_NEGATIVE,

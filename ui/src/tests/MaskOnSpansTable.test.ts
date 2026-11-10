@@ -21,8 +21,8 @@ const SPANS: MaskOnSpan[] = [
     },
 ]
 
-function mountSpans(spans: MaskOnSpan[] | null | undefined): VueWrapper {
-    return mount(MaskOnSpansTable, { props: { spans } })
+function mountSpans(spans: MaskOnSpan[] | null | undefined, total?: number): VueWrapper {
+    return mount(MaskOnSpansTable, { props: { spans, total } })
 }
 
 describe('MaskOnSpansTable', () => {
@@ -91,5 +91,11 @@ describe('MaskOnSpansTable', () => {
         ])
         expect(secondCardRows[0].find('.data-card-value').text()).toContain('03:14:30')
         expect(secondCardRows[2].find('.data-card-value').text()).toBe('0:30:30')
+    })
+
+    it('test_partial_list_says_how_many_it_shows', () => {
+        expect(mountSpans(SPANS, 7200).text()).toContain('Showing the 2 longest of 7,200')
+        expect(mountSpans(SPANS, 2).text()).not.toContain('Showing')
+        expect(mountSpans(SPANS).text()).not.toContain('Showing')
     })
 })

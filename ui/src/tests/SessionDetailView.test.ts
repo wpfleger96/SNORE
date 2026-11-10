@@ -203,4 +203,20 @@ describe('SessionDetailView device channel and mask-on sections', () => {
 
         expect(sectionHeadings(wrapper)).toEqual([])
     })
+
+    it('test_large_leak_spans_render_after_mask_on_spans', async () => {
+        const wrapper = await mountSession(
+            {},
+            {
+                mask_on_spans: SPANS,
+                leak_redline: {
+                    leak_above_24_pct: 0.8,
+                    large_leak_pct: 0.82,
+                    large_leak_spans: [{ ...SPANS[0], duration_seconds: 210 }],
+                },
+            },
+        )
+
+        expect(sectionHeadings(wrapper)).toEqual(['Mask-On Spans', 'Large Leak Spans'])
+    })
 })

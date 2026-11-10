@@ -24,6 +24,7 @@ from snore.services.channel_stats import (
     pool_channel_stats,
 )
 from snore.services.event_service import device_reported_types, reported_counts
+from snore.services.leak_redline import LeakSource, load_leak_redline
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
     DeletePreview,
@@ -35,6 +36,7 @@ from snore.services.schemas import (
 )
 from snore.services.tidal_volume import tidal_volume_ml
 from snore.services.waveform_service import clear_waveform_array_cache
+from snore.therapy_hours import effective_session_hours
 from snore.utils.db_chunk import iter_id_chunks
 
 __all__ = ["SessionService", "session_statistics"]
@@ -161,7 +163,8 @@ class SessionService(ProfileScopedService):
         """Get detailed information for a single session.
 
         ``include_channel_stats=False`` skips decoding the channel blobs and
-        leaves ``channel_stats`` null, for callers that do not show them.
+        leaves ``channel_stats`` and ``leak_redline`` null, for callers that do
+        not show them.
 
         Raises NotFoundError if the session doesn't exist or belongs to a
         different profile (foreign ID → 404, not 403, to avoid oracle attacks).
@@ -262,11 +265,25 @@ class SessionService(ProfileScopedService):
         )
 
         channel_stats = None
+        leak_redline = None
         if include_channel_stats:
             histograms = await load_channel_histograms(
                 self.db_session, [session.id], REPORTED_CHANNELS
             )
             channel_stats = pool_channel_stats(histograms, [session.id])
+            leak_redline = await load_leak_redline(
+                self.db_session,
+                [
+                    LeakSource(
+                        session_id=session.id,
+                        start_time=session.start_time,
+                        mask_on_hours=effective_session_hours(
+                            stats_record.usage_hours if stats_record else None,
+                            session.duration_seconds,
+                        ),
+                    )
+                ],
+            )
 
         duration_seconds = session.duration_seconds or 0.0
         return SessionDetail(
@@ -298,6 +315,7 @@ class SessionService(ProfileScopedService):
             settings=settings_list,
             active_mask=active_mask,
             channel_stats=channel_stats,
+            leak_redline=leak_redline,
             mask_on_spans=mask_on_spans(
                 session.id, session.start_time, session.mask_on_segments
             ),

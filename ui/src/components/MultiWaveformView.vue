@@ -60,6 +60,7 @@
                 :label="WAVEFORM_LABELS[chart.type] ?? chart.type"
                 :waveform-type="chart.type"
                 :events="chart.type === 'flow' ? events : undefined"
+                :bands="chart.type === 'leak' ? largeLeakBands : undefined"
                 :sync-key="syncKey"
                 :start-epoch="startEpoch"
                 :refetching="chart.loading"
@@ -93,13 +94,15 @@ import { getWaveformData } from '@/api/waveforms'
 import { prefetchAdjacentWindows } from '@/utils/waveformPrefetch'
 import { buildWaveformParams } from '@/utils/waveformCache'
 import { WAVEFORM_LABELS, WAVEFORM_GLOSSARY_MAP } from '@/types'
-import type { EventItem, WaveformType } from '@/types'
+import type { ChartBand, EventItem, WaveformType } from '@/types'
 import type { WaveformCacheRegistry, WaveformSlice } from '@/utils/waveformCache'
 
 const props = defineProps<{
     sessionId: number
     availableTypes: string[]
     events?: EventItem[]
+    // Large Leak spans in session-relative seconds, banded on the leak chart.
+    largeLeakBands?: ChartBand[]
     initialTypes?: string[]
     startEpoch: number
     cacheRegistry: WaveformCacheRegistry

@@ -39,6 +39,7 @@ vi.mock('@/components/WaveformChart.vue', () => ({
             'startEpoch',
             'refetching',
             'events',
+            'bands',
         ],
         emits: ['zoom'],
         // Viewport methods the parent drives via chartRefs (no-ops for the stub).
@@ -379,5 +380,25 @@ describe('MultiWaveformView', () => {
         // Assert: flow's pending prefetch was aborted; the surviving chart's prefetch is untouched.
         expect(flowPrefetch!.aborted).toBe(true)
         expect(pressurePrefetch!.aborted).toBe(false)
+    })
+
+    it('test_large_leak_bands_reach_only_the_leak_chart', async () => {
+        mockGetWaveformData.mockResolvedValue(makeResponse())
+        const bands = [{ start: 40, end: 60 }]
+
+        const wrapper = mount(MultiWaveformView, {
+            props: makeProps({
+                availableTypes: ['flow', 'leak'],
+                initialTypes: ['flow', 'leak'],
+                largeLeakBands: bands,
+            }),
+        })
+        await flushPromises()
+
+        const charts = wrapper.findAllComponents({ name: 'WaveformChart' })
+        const bandsByType = Object.fromEntries(
+            charts.map((c) => [c.props('waveformType'), c.props('bands')]),
+        )
+        expect(bandsByType).toEqual({ flow: undefined, leak: bands })
     })
 })

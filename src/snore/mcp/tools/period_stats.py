@@ -76,6 +76,11 @@ def register(mcp: FastMCP) -> None:
         nightly headline indices, which
         can mix device-reported and recounted nights. ``avg_rera`` is null
         when no device in the period has ever scored a RERA.
+        ``days_compliant`` counts nights with at least 4 mask-on hours, and
+        ``compliance_pct`` is that as a percent of the period's calendar days
+        between the range's first and last therapy day (OSCAR's Statistics
+        page), so it can differ from ``get_nightly_summary``'s ``compliance``,
+        whose denominator is every calendar night requested.
         ``device_flg_95th`` and ``snore_95th`` are the 95th percentiles of the
         device flow-limitation and snore channels over the period's pooled
         samples; null when no session has the channel. An open or long range

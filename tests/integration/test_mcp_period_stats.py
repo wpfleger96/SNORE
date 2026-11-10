@@ -42,6 +42,22 @@ async def test_month_periods_include_apple_sleep_averages(
     assert result.periods[1].avg_sleep_efficiency_pct == 90.0
 
 
+async def test_periods_carry_compliance_days_and_percentage(
+    async_db_session: AsyncSession, async_test_profile: Any
+) -> None:
+    device = await _make_device(async_db_session, async_test_profile.id)
+    for night, hours in ((date(2026, 3, 2), 4.0), (date(2026, 3, 4), 3.0)):
+        await _make_day_session(async_db_session, device, night, duration_hours=hours)
+
+    [march] = (
+        await get_period_stats(async_db_session, profile_id=async_test_profile.id)
+    ).periods
+
+    # One of the 3 calendar days from March 2 to March 4.
+    assert march.days_compliant == 1
+    assert march.compliance_pct == 33.3
+
+
 async def test_range_bounds_and_profile_scope_apply(
     async_db_session: AsyncSession, async_test_profile: Any
 ) -> None:

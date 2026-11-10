@@ -3092,6 +3092,8 @@ export interface components {
              * @description [DERIVED] Min leak (L/min)
              */
             leak_min?: number | null
+            /** @description Time over the leak redline and Large Leak spans of the day's enabled sessions with leak data; null when none has a valid leak sample or any one's leak data is unusable */
+            leak_redline?: components['schemas']['LeakRedlineStats'] | null
             /**
              * Mask On Spans
              * @description Mask-on spans of the day's enabled sessions, ascending by start; null when any of them has unknown segments, empty when the day has no enabled session
@@ -4355,6 +4357,65 @@ export interface components {
             /** Job Id */
             job_id: string
         }
+        /**
+         * LargeLeakSpan
+         * @description One stretch of leak at or above the 24 L/min redline (OSCAR's Large Leak).
+         */
+        LargeLeakSpan: {
+            /**
+             * Duration Seconds
+             * @description [DERIVED] Span length in seconds (end minus start)
+             */
+            duration_seconds: number
+            /**
+             * End
+             * Format: date-time
+             * @description Device wall-clock time of the first sample below the redline (a sentinel or missing sample counts as below), or one sample period after the last sample when the recording ends or pauses first
+             */
+            end: string
+            /**
+             * Offset Seconds
+             * @description Seconds from the session's start to the span's start
+             */
+            offset_seconds: number
+            /** Session Id */
+            session_id: number
+            /**
+             * Start
+             * Format: date-time
+             * @description Device wall-clock time of the first sample at or above the redline
+             */
+            start: string
+        }
+        /**
+         * LeakRedlineStats
+         * @description OSCAR's leak redline views of the stored leak channel (24 L/min).
+         *
+         *     Every field covers the same sessions: those of the parent response with at
+         *     least one valid leak sample.
+         */
+        LeakRedlineStats: {
+            /**
+             * Large Leak Pct
+             * @description [DERIVED] OSCAR's Large Leak index: the summed durations of every Large Leak span (not only the listed ones) as a percent of the covered sessions' mask-on hours (to 0.01); null when those hours are zero
+             */
+            large_leak_pct?: number | null
+            /**
+             * Large Leak Span Count
+             * @description [DERIVED] Number of Large Leak spans, listed or not
+             */
+            large_leak_span_count: number
+            /**
+             * Large Leak Spans
+             * @description Stretches of leak at or above 24 L/min, ascending by start; a span never crosses a recording gap. At most 500 are listed: when large_leak_span_count is higher, these are the longest
+             */
+            large_leak_spans: components['schemas']['LargeLeakSpan'][]
+            /**
+             * Leak Above 24 Pct
+             * @description [DERIVED] Percent of the pooled valid leak samples at or above 24 L/min (to 0.1). OSCAR's time over the leak redline is time-weighted over the day's hours, so the two agree only approximately
+             */
+            leak_above_24_pct: number
+        }
         /** LinkedAnalysisSummary */
         LinkedAnalysisSummary: {
             /** Error Message */
@@ -4763,6 +4824,17 @@ export interface components {
              * @description [DERIVED] Average total sleep hours per night (Apple Health)
              */
             avg_total_sleep_hours?: number | null
+            /**
+             * Compliance Pct
+             * @description [DERIVED] days_compliant as a percent of the period's calendar days (to 0.1), leaving out days before the range's first or after its last day with therapy hours from enabled sessions, as OSCAR's Statistics page does; null when the period has no calendar day in that span
+             */
+            compliance_pct?: number | null
+            /**
+             * Days Compliant
+             * @description [DERIVED] Nights with at least 4 mask-on hours from enabled sessions, summed across devices
+             * @default 0
+             */
+            days_compliant: number
             /**
              * Days In Period
              * @description Total days in period
@@ -5632,6 +5704,8 @@ export interface components {
             id: number
             /** Import Source */
             import_source?: string | null
+            /** @description This session's time over the leak redline and Large Leak spans; null when it has no valid leak sample or its leak data is unusable, and always null on PATCH responses */
+            leak_redline?: components['schemas']['LeakRedlineStats'] | null
             /**
              * Mask On Spans
              * @description This session's mask-on spans; null when its mask-on segments are unknown (sessions imported before segments were stored, or a malformed stored value), empty when it is known to have none
@@ -6358,6 +6432,18 @@ export interface components {
              * @description [DERIVED] Average tidal volume (mL)
              */
             avg_tidal_volume?: number | null
+            /**
+             * Compliance Pct
+             * @description [DERIVED] days_compliant as a percent of the calendar days from first_date to last_date (to 0.1)
+             * @default 0
+             */
+            compliance_pct: number
+            /**
+             * Days Compliant
+             * @description [DERIVED] Nights with at least 4 mask-on hours from enabled sessions, summed across devices
+             * @default 0
+             */
+            days_compliant: number
             /**
              * Days Since Last
              * @description [DERIVED] Days since the last therapy day

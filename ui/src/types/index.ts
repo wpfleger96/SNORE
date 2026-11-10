@@ -25,6 +25,7 @@ export type SessionSetting = Schemas['SessionSetting']
 export type SessionDetail = Schemas['SessionDetail']
 export type DeviceChannelStats = Schemas['DeviceChannelStats']
 export type MaskOnSpan = Schemas['MaskOnSpan']
+export type LargeLeakSpan = Schemas['LargeLeakSpan']
 
 // Waveforms
 export type WaveformInfo = Schemas['WaveformInfo']
@@ -172,6 +173,12 @@ export type BulkDeletePreviewRequest = Schemas['BulkDeletePreviewRequest']
 // /stats/trends and /stats/records (generated: TrendsResponse, RecordsResponse).
 // WaveformType, WAVEFORM_LABELS, EVENT_COLORS are pure UI constants.
 // ---------------------------------------------------------------------------
+
+// A shaded stretch of a waveform chart, in seconds from session start.
+export interface ChartBand {
+    start: number
+    end: number
+}
 
 // Waveform type and display labels
 export type WaveformType =

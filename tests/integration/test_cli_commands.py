@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from click.testing import CliRunner
@@ -133,7 +134,6 @@ async def populated_test_db(temp_db):
 @pytest.fixture
 async def populated_test_db_full(temp_db):
     """Create a database populated with full Statistics and Waveform records."""
-    import numpy as np
 
     await init_database(str(temp_db))
 
@@ -1568,6 +1568,19 @@ class TestSessionShowExpanded:
             in result.output
         )
 
+    def test_session_show_displays_leak_redline(
+        self, cli_runner, db_with_device_channels
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(db_with_device_channels)],
+        )
+
+        assert result.exit_code == 0
+        leak = result.output[result.output.index("Leak Redline (24 L/min):") :]
+        assert "Time over redline†: 50.0%" in leak
+        assert "2025-10-01 22:00:02 to 22:00:06, Duration†: 4s" in leak
+
     def test_session_show_omits_absent_device_detail(
         self, cli_runner, db_with_device_channels
     ):
@@ -1653,6 +1666,16 @@ class TestStatsEnhanced:
         assert "Assessment" not in result.output
         assert _EXPERIMENTAL_LEGEND not in result.output
 
+    def test_stats_shows_compliance(self, cli_runner, populated_test_db_full):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_full)],
+        )
+
+        assert result.exit_code == 0
+        assert "Days >= 4 hrs†:" in result.output
+        assert "Compliance (all days)†:" in result.output
+
     def test_stats_omits_effectiveness(self, cli_runner, populated_test_db_full):
         """The effectiveness band is experimental, so `snore stats` does not show it."""
         result = cli_runner.invoke(
@@ -1667,7 +1690,8 @@ class TestStatsEnhanced:
 
 @pytest.fixture
 async def db_with_device_channels(populated_test_db_full):
-    """``populated_test_db_full`` with FL, snore, RR and TV channels on the first session."""
+    """``populated_test_db_full`` with FL, snore, RR and TV channels and a large leak
+    on the first session."""
     async with session_scope() as session:
         first = await session.get(models.Session, 1)
         first.mask_on_segments = [[0.0, 3600.0], [5400.0, 9000.0]]
@@ -1675,6 +1699,16 @@ async def db_with_device_channels(populated_test_db_full):
         await _make_channel_waveform(session, first, "snore", [0.0, 1.0, 2.0])
         await _make_channel_waveform(session, first, "rr", [12.0, 14.0, 16.0])
         await _make_channel_waveform(session, first, "tv", [450.0, 475.0, 500.0])
+        leak = await session.scalar(
+            select(models.Waveform).where(
+                models.Waveform.session_id == first.id,
+                models.Waveform.waveform_type == "leak",
+            )
+        )
+        leak.data_blob = np.array(
+            [(0.0, 10.0), (2.0, 30.0), (4.0, 30.0), (6.0, 5.0)], dtype=np.float32
+        ).tobytes()
+        leak.sample_count = 4
     return populated_test_db_full
 
 

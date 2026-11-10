@@ -86,3 +86,32 @@ describe('PeriodStatsTable device channel columns', () => {
         expect(rows.some((r) => r.find('.data-card-label').text() === 'Snore 95th')).toBe(false)
     })
 })
+
+describe('PeriodStatsTable compliance column', () => {
+    afterEach(() => {
+        setMediaMatches(false)
+    })
+
+    it('test_compliance_shows_days_and_percent', () => {
+        const wrapper = mountPeriods([makePeriod({ days_compliant: 5, compliance_pct: 83.33 })])
+
+        expect(columnCell(wrapper, 'Days ≥ 4 h')).toBe('5 (83%)')
+    })
+
+    it('test_zero_compliance_shows_zero_percent', () => {
+        const wrapper = mountPeriods([makePeriod({ days_compliant: 0, compliance_pct: 0 })])
+
+        expect(columnCell(wrapper, 'Days ≥ 4 h')).toBe('0 (0%)')
+    })
+
+    it('test_mobile_cards_show_compliance', async () => {
+        setMediaMatches(true)
+        const wrapper = mountPeriods([makePeriod({ days_compliant: 5, compliance_pct: 83.33 })])
+        await nextTick()
+
+        const row = wrapper
+            .findAll('.data-card-row')
+            .find((r) => r.find('.data-card-label').text() === 'Days ≥ 4 h')
+        expect(row?.find('.data-card-value').text()).toBe('5 (83%)')
+    })
+})
