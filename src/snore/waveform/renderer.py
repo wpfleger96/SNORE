@@ -115,6 +115,15 @@ class WaveformRenderer:
         self.height = height
         self.show_events = show_events
 
+    @staticmethod
+    def can_render(timestamps: np.ndarray, values: np.ndarray) -> bool:
+        """Whether ``render`` can draw this window (2+ samples over nonzero time)."""
+        return (
+            len(timestamps) >= 2
+            and len(values) >= 2
+            and timestamps[-1] != timestamps[0]
+        )
+
     def render(
         self,
         timestamps: np.ndarray,
@@ -137,13 +146,13 @@ class WaveformRenderer:
             session_id: Session ID for title
             center_time: Center time for title
             waveform_type: Type of waveform (default: "flow")
-            programmatic_label: Row label for programmatic events, e.g. with a
-                provenance marker appended by the caller
+            programmatic_label: Plain-text row label for programmatic events,
+                e.g. with a provenance marker appended; the renderer escapes it
 
         Note:
             All output, including the chart, goes to self.console. Returns None.
         """
-        if len(timestamps) < 2 or len(values) < 2 or timestamps[-1] == timestamps[0]:
+        if not self.can_render(timestamps, values):
             self.console.print("No data in window")
             return
 
@@ -186,7 +195,7 @@ class WaveformRenderer:
         if self.show_events:
             self.console.print()
             self.console.print("Events in window:")
-            label_width = max(len("Machine"), len(programmatic_label)) + 2
+            label_width = max(len("Machine:"), len(f"{programmatic_label}:")) + 1
             machine = "Machine:".ljust(label_width)
             programmatic = escape(f"{programmatic_label}:".ljust(label_width))
 

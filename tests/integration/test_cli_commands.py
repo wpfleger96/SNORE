@@ -41,7 +41,7 @@ _DERIVED_LEGEND = (
 _EXPERIMENTAL_LEGEND = (
     f"* {Provenance.EXPERIMENTAL.value}: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
 )
-# `snore stats` always prints its experimental leak assessment.
+# `snore stats` on data with a leak average, which adds the experimental leak assessment.
 _STATS_LEGEND = f"{_DERIVED_LEGEND}  {_EXPERIMENTAL_LEGEND}"
 
 
@@ -1442,6 +1442,30 @@ class TestWaveformShowCommand:
         assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
         assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)
 
+    def test_waveform_show_undrawable_window_errors_without_legend(
+        self, cli_runner, db_with_comparison_flow
+    ):
+        result = cli_runner.invoke(
+            cli,
+            [
+                "waveform",
+                "show",
+                "--db",
+                str(db_with_comparison_flow),
+                "--session-id",
+                "1",
+                "--time",
+                "00:01:40",
+                "--window",
+                "1",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Error: No data in window" in result.output
+        assert "Programmatic" not in result.output
+        assert _EXPERIMENTAL_LEGEND not in result.output
+
     def test_waveform_show_without_events_section_prints_no_legend(
         self, cli_runner, populated_test_db_full
     ):
@@ -1618,6 +1642,16 @@ class TestStatsEnhanced:
         assert "Assessment*: well controlled" in result.output
         assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
         assert result.output.rstrip().endswith(_STATS_LEGEND)
+
+    def test_stats_without_leak_data_prints_no_assessment(
+        self, cli_runner, populated_test_db
+    ):
+        result = cli_runner.invoke(cli, ["stats", "--db", str(populated_test_db)])
+
+        assert result.exit_code == 0, result.output
+        assert "Average AHI" in result.output
+        assert "Assessment" not in result.output
+        assert _EXPERIMENTAL_LEGEND not in result.output
 
     def test_stats_omits_effectiveness(self, cli_runner, populated_test_db_full):
         """The effectiveness band is experimental, so `snore stats` does not show it."""
