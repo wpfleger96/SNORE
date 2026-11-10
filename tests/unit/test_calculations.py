@@ -19,6 +19,7 @@ from snore.analysis.calculations import (
     calculate_period_statistics,
     calculate_trends,
     calculate_trends_extended,
+    count_compliant_days,
 )
 from snore.database.day_manager import DayManager
 from snore.database.models import Day, Device
@@ -981,3 +982,64 @@ class TestNullGuardInPeriodStatistics:
 
         assert len(result) == 1
         assert result[0].avg_rera is None
+
+
+class TestCompliance:
+    """Days at or above 4 mask-on hours, and their share of calendar days."""
+
+    @staticmethod
+    def _day(day_date: date, hours: float | None, device_id: int = 1) -> Day:
+        return Day(device_id=device_id, date=day_date, total_therapy_hours=hours)
+
+    def test_exactly_four_hours_is_compliant(self) -> None:
+        days = [
+            self._day(date(2024, 3, 1), 4.0),
+            self._day(date(2024, 3, 2), 3.99),
+            self._day(date(2024, 3, 3), None),
+        ]
+
+        assert count_compliant_days(days) == 1
+
+    def test_hours_of_one_date_add_up_across_devices(self) -> None:
+        days = [
+            self._day(date(2024, 3, 1), 2.5, device_id=1),
+            self._day(date(2024, 3, 1), 1.5, device_id=2),
+        ]
+
+        assert count_compliant_days(days) == 1
+
+    def test_unused_days_count_against_period_compliance(self) -> None:
+        # March 2, 4 and 5 have no Day row: 2 compliant of the 6 calendar days.
+        days = [
+            self._day(date(2024, 3, 1), 8.0),
+            self._day(date(2024, 3, 3), 2.0),
+            self._day(date(2024, 3, 6), 6.0),
+        ]
+
+        [march] = _periods(days, "month")
+
+        assert (march.days_compliant, march.compliance_pct) == (2, 33.3)
+
+    def test_period_denominator_leaves_out_days_outside_the_data(self) -> None:
+        # Weeks start on Monday 2024-03-04; data runs Wednesday to next Tuesday.
+        days = [
+            self._day(date(2024, 3, 6), 8.0),
+            self._day(date(2024, 3, 8), 8.0),
+            self._day(date(2024, 3, 12), 1.0),
+        ]
+
+        first, second = _periods(days, "week")
+
+        # Wednesday to Sunday is 5 days; the next Monday and Tuesday are 2.
+        assert (first.days_compliant, first.compliance_pct) == (2, 40.0)
+        assert (second.days_compliant, second.compliance_pct) == (0, 0.0)
+        assert first.days_in_period == 7
+
+    def test_period_after_the_last_therapy_day_has_no_compliance_pct(self) -> None:
+        # April holds only a day whose sessions are all disabled.
+        days = [self._day(date(2024, 3, 30), 8.0), self._day(date(2024, 4, 2), 0.0)]
+
+        march, april = _periods(days, "month")
+
+        assert march.compliance_pct == 100.0
+        assert (april.days_compliant, april.compliance_pct) == (0, None)

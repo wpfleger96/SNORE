@@ -70,6 +70,11 @@ vi.mock('uplot', () => {
         unsub: vi.fn(),
     }))
     ;(UPlotMock as unknown as Record<string, unknown>).pxRatio = 1
+    // Real uPlot pads the extent to round numbers; the mock passes it through.
+    ;(UPlotMock as unknown as Record<string, unknown>).rangeNum = (min: number, max: number) => [
+        min,
+        max,
+    ]
     return { default: UPlotMock }
 })
 
@@ -253,6 +258,94 @@ describe('WaveformChart', () => {
 
             expect(ctx.fillRect).toHaveBeenCalledTimes(1)
             expect(ctx.fillText).toHaveBeenCalledWith('UA', 0, 0)
+        })
+    })
+
+    describe('leak redline and Large Leak bands', () => {
+        const BBOX = { left: 0, top: 0, width: 1000, height: 200 }
+        const START_EPOCH = 1000
+        const REDLINE_Y = 77
+
+        /** Run the band and redline hooks on a fake canvas, 1 px per second. */
+        function drawLeakLayers() {
+            const ctx = {
+                save: vi.fn(),
+                restore: vi.fn(),
+                beginPath: vi.fn(),
+                moveTo: vi.fn(),
+                lineTo: vi.fn(),
+                stroke: vi.fn(),
+                fillRect: vi.fn(),
+                setLineDash: vi.fn(),
+            }
+            const u = {
+                ctx,
+                bbox: BBOX,
+                valToPos: (value: number, scale: string) =>
+                    scale === 'y' ? (value === 24 ? REDLINE_Y : NaN) : value - START_EPOCH,
+            }
+            const { plugins } = mockState.lastOpts as unknown as {
+                plugins: { hooks: Record<'drawClear' | 'draw', Array<(u: unknown) => void>> }[]
+            }
+            for (const hook of plugins[0].hooks.drawClear) hook(u)
+            for (const hook of plugins[0].hooks.draw) hook(u)
+            return ctx
+        }
+
+        function mountLeak(waveformType: string, bands?: { start: number; end: number }[]) {
+            return mount(WaveformChart, {
+                props: { ...LONG_PROPS, startEpoch: START_EPOCH, waveformType, bands },
+            })
+        }
+
+        it('test_leak_chart_draws_dashed_redline_at_24_lpm', () => {
+            const wrapper = mountLeak('leak')
+
+            const ctx = drawLeakLayers()
+
+            expect(ctx.setLineDash).toHaveBeenCalled()
+            expect(ctx.moveTo).toHaveBeenCalledWith(BBOX.left, REDLINE_Y)
+            expect(ctx.lineTo).toHaveBeenCalledWith(BBOX.left + BBOX.width, REDLINE_Y)
+            expect(wrapper.text()).toContain('Dashed red line: 24 L/min leak redline')
+        })
+
+        it('test_other_channels_have_no_redline', () => {
+            const wrapper = mountLeak('pressure')
+
+            const ctx = drawLeakLayers()
+
+            expect(ctx.setLineDash).not.toHaveBeenCalled()
+            expect(wrapper.text()).not.toContain('redline')
+        })
+
+        it('test_leak_y_range_always_reaches_the_redline', () => {
+            mountLeak('leak')
+            const { scales } = mockState.lastOpts as unknown as {
+                scales: { y: { range: (u: unknown, min: number, max: number) => [number, number] } }
+            }
+
+            const [low, high] = scales.y.range(null, 2, 8)
+
+            expect(low).toBeLessThanOrEqual(0)
+            expect(high).toBeGreaterThanOrEqual(24)
+        })
+
+        it('test_leak_y_range_follows_data_above_the_redline', () => {
+            mountLeak('leak')
+            const { scales } = mockState.lastOpts as unknown as {
+                scales: { y: { range: (u: unknown, min: number, max: number) => [number, number] } }
+            }
+
+            expect(scales.y.range(null, 0, 60)[1]).toBeGreaterThanOrEqual(60)
+        })
+
+        it('test_large_leak_bands_shade_their_span', () => {
+            const wrapper = mountLeak('leak', [{ start: 40, end: 60 }])
+
+            const ctx = drawLeakLayers()
+
+            expect(ctx.fillRect).toHaveBeenCalledWith(40, BBOX.top, 20, BBOX.height)
+            expect(wrapper.text()).toContain('gray bands: Large Leak')
         })
     })
 

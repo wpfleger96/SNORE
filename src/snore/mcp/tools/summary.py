@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.analysis.shared.versioning import NullReason
+from snore.constants import COMPLIANCE_THRESHOLD_HOURS
 from snore.database import models
 from snore.services.breath.dtos import NightlyRespiratoryValue, RespiratoryChannel
 from snore.services.event_service import device_event_types, reported_counts
@@ -58,7 +59,6 @@ from snore.mcp.tools._service_errors import (
 from snore.metrics import DAY_INDEX_FIELDS
 
 _DEFAULT_PAGE_SIZE = 30
-_DEFAULT_COMPLIANCE_THRESHOLD_HOURS = 4.0
 # Day columns copied onto NightlyRow: the headline indices and their recounts.
 _NIGHTLY_INDEX_FIELDS = tuple(
     f"{index}{suffix}" for index in DAY_INDEX_FIELDS for suffix in ("", "_computed")
@@ -82,7 +82,7 @@ async def get_nightly_summary(
     device_id: int | None = None,
     page: int = 1,
     page_size: int = _DEFAULT_PAGE_SIZE,
-    compliance_threshold_hours: float = _DEFAULT_COMPLIANCE_THRESHOLD_HOURS,
+    compliance_threshold_hours: float = COMPLIANCE_THRESHOLD_HOURS,
 ) -> NightlySummaryResponse:
     """Return per-night device summary for a date range.
 
@@ -400,7 +400,7 @@ def register(mcp: FastMCP) -> None:
         device_id: int | None = None,
         page: int = 1,
         page_size: int = 30,
-        compliance_threshold_hours: float = _DEFAULT_COMPLIANCE_THRESHOLD_HOURS,
+        compliance_threshold_hours: float = COMPLIANCE_THRESHOLD_HOURS,
     ) -> dict[str, Any]:
         """Return per-night device data and compliance for a date range.
 

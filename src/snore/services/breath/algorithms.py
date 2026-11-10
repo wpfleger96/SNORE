@@ -12,7 +12,7 @@ import numpy as np
 
 from snore.analysis.shared.versioning import NullReason
 from snore.constants import RERAProxyConstants
-from snore.database.waveform_blobs import deserialize_waveform_blob
+from snore.database.waveform_blobs import deserialize_waveform_blob, recording_gaps
 from snore.services.lttb import lttb_downsample
 
 from .dtos import (
@@ -36,19 +36,16 @@ def _run_starts(
     """First sample of each run of equal values, both edges of each recording
     gap, and the final sample.
 
-    A gap is a step between consecutive offsets wider than 1.5 sample periods
-    (a multi-segment night stores mask-off time as a jump in offsets); a
-    non-positive ``sample_rate`` disables gap detection.  Lossless within
-    contiguous recording for a categorical channel read as a step that holds
+    Gaps are ``recording_gaps``: a step between consecutive offsets wider than
+    1.5 sample periods; a non-positive ``sample_rate`` disables gap detection.
+    Lossless within contiguous recording for a categorical channel read as a step that holds
     each value until the next offset: every code and every change survives,
     unlike LTTB, which keeps one sample per bucket.  In the result, consecutive
     kept values always differ except at the window's final sample and at the
     two edges of a recording gap, so two equal consecutive values mark a gap
     (or the end of the window).
     """
-    max_step = 1.5 / sample_rate if sample_rate > 0 else math.inf
-    # gap[i] is True when a recording gap lies between samples i and i + 1.
-    gap = np.diff(offsets) > max_step
+    gap = recording_gaps(offsets, sample_rate)
     keep = np.ones(values.size, dtype=bool)
     keep[1:-1] = (values[1:-1] != values[:-2]) | gap[:-1] | gap[1:]
     return offsets[keep], values[keep]

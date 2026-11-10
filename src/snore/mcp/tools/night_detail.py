@@ -177,8 +177,13 @@ def register(mcp: FastMCP) -> None:
         scored one. Pressure, EPAP, leak and SpO2 values, ``channel_stats``
         (median, 95th and max of the device flow-limitation, snore,
         respiratory-rate, tidal-volume (mL), minute-ventilation, Ti and I:E
-        channels and the oximeter pulse, pooled over enabled sessions) and
-        ``mask_on_spans`` are derived from device data.
+        channels and the oximeter pulse, pooled over enabled sessions),
+        ``leak_redline`` and ``mask_on_spans`` are derived from device data.
+        ``leak_redline`` (null without a leak channel) holds OSCAR's leak
+        redline views at 24 L/min: ``leak_above_24_pct`` (the same value as
+        ``get_nightly_summary``), the Large Leak spans (leak at or above the
+        redline) and ``large_leak_pct``, their total duration as a percent of
+        mask-on hours.
         ``device`` matches ``GET /days/{date}``: ``device.health_sleep`` is the
         Day page's Apple Health summary, and ``apple_health`` is the fuller
         Apple night.

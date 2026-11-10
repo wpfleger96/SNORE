@@ -18,7 +18,7 @@ from snore.cli.display import (
     print_subsection,
     print_table,
 )
-from snore.constants import LEAK_REDLINE_LPM
+from snore.constants import COMPLIANCE_THRESHOLD_HOURS, LEAK_REDLINE_LPM
 from snore.provenance import Provenance, field_provenance
 from snore.services.schemas import (
     PeriodStatistics,
@@ -74,6 +74,14 @@ async def stats(
     _summary_kv("Total therapy hours", "total_hours", f"{summary.total_hours:,.1f} hrs")
     _summary_kv("Average per night", "avg_hours", f"{summary.avg_hours:.1f} hrs")
     _summary_kv("Days with data", "days_with_data", str(summary.days_with_data))
+    _summary_kv(
+        f"Days >= {COMPLIANCE_THRESHOLD_HOURS:g} hrs",
+        "days_compliant",
+        str(summary.days_compliant),
+    )
+    _summary_kv(
+        "Compliance (all days)", "compliance_pct", f"{summary.compliance_pct:.1f}%"
+    )
 
     print_subsection("Clinical")
     _summary_kv(
@@ -209,6 +217,7 @@ async def stats(
                         period_label,
                         days_str,
                         hours_str,
+                        _percent_cell(period_stat.compliance_pct),
                         avg_ahi_str,
                         med_ahi_str,
                         _channel_cell(period_stat.device_flg_95th),
@@ -228,6 +237,11 @@ async def stats(
                         "Avg Hours",
                         11,
                         field_provenance(PeriodStatistics, "avg_hours_per_day"),
+                    ),
+                    Column(
+                        f">={COMPLIANCE_THRESHOLD_HOURS:g}h",
+                        6,
+                        field_provenance(PeriodStatistics, "compliance_pct"),
                     ),
                     Column("Avg AHI", 9, field_provenance(PeriodStatistics, "avg_ahi")),
                     Column(
@@ -343,6 +357,11 @@ async def stats(
     console.print()
     print_footer()
     console.print()
+
+
+def _percent_cell(value: float | None) -> str:
+    """Format a whole-number percent cell, ``N/A`` when there is no value."""
+    return f"{value:.0f}%" if value is not None else "N/A"
 
 
 def _channel_cell(value: float | None) -> str:

@@ -85,9 +85,13 @@ UNIT_BPM = "bpm"
 UNIT_ML = "mL"
 UNIT_SECONDS = "seconds"
 
-# OSCAR's default large-leak redline (L/min), the threshold for time over leak.
+# OSCAR's default leak redline (L/min, ``profiles.h:641``), the threshold for time
+# over the redline and for Large Leak spans.
 # Deliberately separate from LEAK_VALID_THRESHOLD_LPM, which is versioned analysis state.
 LEAK_REDLINE_LPM = 24.0
+
+# OSCAR's default compliance threshold (hours of use per night, ``profiles.h:620``).
+COMPLIANCE_THRESHOLD_HOURS = 4.0
 
 # Plausible pulse readings (BPM, inclusive).  Stored pulse waveforms keep the
 # readings outside it, such as ResMed's -1 "no oximeter" value.

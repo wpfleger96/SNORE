@@ -229,3 +229,44 @@ describe('DayDetailView date changes', () => {
         expect(wrapper.text()).not.toContain('No CPAP data recorded')
     })
 })
+
+describe('DayDetailView leak redline', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('test_leak_redline_cards_and_large_leak_spans_render', async () => {
+        const wrapper = await mountDay(
+            makeDay({
+                leak_redline: {
+                    leak_above_24_pct: 1.4,
+                    large_leak_pct: 0.82,
+                    large_leak_spans: [
+                        {
+                            session_id: 1,
+                            start: '2026-05-04T01:12:10',
+                            end: '2026-05-04T01:15:40',
+                            duration_seconds: 210,
+                        },
+                    ],
+                },
+            }),
+        )
+
+        expect(findCard(wrapper, 'Time Over Redline')?.text()).toContain('1.4')
+        expect(findCard(wrapper, 'Large Leak')?.text()).toContain('0.82')
+        const section = wrapper
+            .findAll('section')
+            .find((s) => s.find('h2').text() === 'Large Leak Spans')
+        expect(section?.findAll('tbody tr')).toHaveLength(1)
+        expect(section?.find('tbody tr').findAll('td')[2].text()).toBe('0:03:30')
+    })
+
+    it('test_night_without_leak_channel_shows_no_redline_cards', async () => {
+        const wrapper = await mountDay(makeDay({ leak_redline: null }))
+
+        expect(findCard(wrapper, 'Time Over Redline')).toBeUndefined()
+        expect(findCard(wrapper, 'Large Leak')).toBeUndefined()
+        expect(wrapper.text()).not.toContain('Large Leak Spans')
+    })
+})

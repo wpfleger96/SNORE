@@ -14,6 +14,8 @@ from snore.analysis.calculations import (
     calculate_period_statistics,
     calculate_records,
     calculate_trends_extended,
+    count_compliant_days,
+    therapy_date_range,
 )
 from snore.database import models
 from snore.services._base import ProfileScopedService
@@ -30,6 +32,7 @@ from snore.services.schemas import (
     TrendsResponse,
 )
 from snore.services.tidal_volume import tidal_volume_ml
+from snore.therapy_hours import compliance_pct
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import usage_weighted_means, weighted_mean
 
@@ -189,10 +192,9 @@ class StatsService(ProfileScopedService):
 
         # The date range reports therapy use; an all-disabled range still
         # reports the dates it spans.
-        dates = [d.date for d in used_days or day_records]
-        first_date = min(dates)
-        last_date = max(dates)
+        first_date, last_date = therapy_date_range(day_records)
         days_since_last = (date.today() - last_date).days
+        days_compliant = count_compliant_days(used_days)
 
         # Averages are usage-weighted by Day.total_therapy_hours; min/max stay
         # over the raw per-day values.
@@ -298,6 +300,10 @@ class StatsService(ProfileScopedService):
             total_hours=total_hours,
             avg_hours=avg_hours,
             days_with_data=days_with_data,
+            days_compliant=days_compliant,
+            compliance_pct=round(
+                compliance_pct(days_compliant, (last_date - first_date).days + 1), 1
+            ),
             avg_ahi=calculate_average_ahi(day_records),
             avg_rei=usage_means["rei"],
             avg_pressure=avg_pressure,

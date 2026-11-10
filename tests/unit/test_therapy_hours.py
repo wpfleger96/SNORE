@@ -10,7 +10,26 @@ from snore.parsers.unified import (
     RespiratoryEventType,
     UnifiedSession,
 )
-from snore.therapy_hours import TherapyHoursBasis, therapy_hours
+from snore.therapy_hours import (
+    TherapyHoursBasis,
+    compliance_pct,
+    is_compliant_night,
+    therapy_hours,
+)
+
+# ---------------------------------------------------------------------------
+# Compliance
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("hours", "compliant"), [(4.0, True), (3.999, False)])
+def test_compliance_threshold_is_inclusive(hours: float, compliant: bool) -> None:
+    assert is_compliant_night(hours) is compliant
+
+
+def test_compliance_pct_is_share_of_calendar_days() -> None:
+    assert compliance_pct(3, 4) == 75.0
+
 
 # ---------------------------------------------------------------------------
 # MASK_ON

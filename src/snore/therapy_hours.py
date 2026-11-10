@@ -21,6 +21,8 @@ import math
 from collections.abc import Sequence
 from enum import StrEnum
 
+from snore.constants import COMPLIANCE_THRESHOLD_HOURS
+
 logger = logging.getLogger(__name__)
 
 _SECONDS_PER_HOUR = 3600.0
@@ -194,3 +196,22 @@ def parse_mask_on_segments(
         parsed.append((start, end))
         previous_end = end
     return parsed
+
+
+def is_compliant_night(
+    hours: float, threshold_hours: float = COMPLIANCE_THRESHOLD_HOURS
+) -> bool:
+    """Whether a night's mask-on ``hours`` reach the compliance threshold.
+
+    The threshold is inclusive, as OSCAR counts it (``profiles.cpp:1861``).
+    """
+    return hours >= threshold_hours
+
+
+def compliance_pct(days_compliant: int, days_total: int) -> float:
+    """``days_compliant`` as a percent of ``days_total`` calendar days.
+
+    OSCAR's "Percent Total Days" (``statistics.cpp:2133-2137``): days without
+    use count against compliance.  ``days_total`` must be positive.
+    """
+    return days_compliant / days_total * 100.0

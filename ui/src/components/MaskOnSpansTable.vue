@@ -1,6 +1,10 @@
 <template>
     <section v-if="spans?.length" class="section-card">
-        <h2>Mask-On Spans</h2>
+        <h2>{{ title ?? 'Mask-On Spans' }}</h2>
+        <p v-if="total != null && total > spans.length" class="mb-2 text-sm text-muted-foreground">
+            Showing the {{ spans.length.toLocaleString() }} longest of {{ total.toLocaleString() }},
+            in time order.
+        </p>
         <div v-if="isMobile" class="card-list">
             <div v-for="span in spans" :key="spanKey(span)" class="data-card">
                 <div class="data-card-row">
@@ -51,7 +55,9 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import { formatDateTimeSeconds, formatTimeOffset } from '@/utils/formatting'
 import type { MaskOnSpan } from '@/types'
 
-defineProps<{ spans?: MaskOnSpan[] | null }>()
+// Also lists Large Leak spans, which carry the same fields. `total` is the
+// full count when the API lists only some of them.
+defineProps<{ spans?: MaskOnSpan[] | null; title?: string; total?: number }>()
 
 const { isMobile } = useIsMobile()
 

@@ -161,6 +161,7 @@ src/snore/
 │   ├── day_service.py       # Day aggregation
 │   ├── event_service.py     # Event queries, device_event_types, reported_counts
 │   ├── export_service.py    # Data export (CSV, JSON)
+│   ├── leak_redline.py      # Time over the 24 L/min leak redline and OSCAR Large Leak spans, on read
 │   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
 │   ├── stats_service.py     # Statistics calculations
@@ -365,7 +366,17 @@ write time with linear `np.percentile` over the day's raw waveform samples, the 
 session-level `finalize_statistics`, so a one-session day equals its session value; do not move
 them onto nearest-rank histograms. When a contributing session has no usable stored waveform, the
 day falls back to a usage-weighted mean of the session values.
-`tests/integration/test_device_channel_stats.py` pins these values equal. The nightly summary decodes
+`tests/integration/test_device_channel_stats.py` pins these values equal. The leak redline views
+(`services/leak_redline.py`, `LEAK_REDLINE_LPM`) sit beside the channel statistics on session and
+day detail only, as `leak_redline` (`LeakRedlineStats`, so MCP `get_night_detail` carries it):
+`leak_above_24_pct` comes from `leak_redline_pct`, the same function as `get_nightly_summary`'s
+value (`tests/integration/test_leak_redline.py` pins them equal); `large_leak_spans` follow OSCAR's
+`flagLargeLeaks` and need sample times and the sample rate, so the loader uses
+`decode_channel_series`, the timestamped form of `decode_channel_blobs`; a recording gap is
+`recording_gaps` (`database/waveform_blobs.py`), shared with `_run_starts`. A response lists at most
+`MAX_LARGE_LEAK_SPANS` spans (the longest), while `large_leak_pct` and `large_leak_span_count` cover
+all of them. Callers passing `include_channel_stats=False` skip it, and list, trend and period paths
+never decode leak. The nightly summary decodes
 only the nights on the requested page, while compliance still covers the whole range. Each
 `compare_epochs` call decodes the union of its epochs' sessions once. Both epoch tools cap an epoch
 at `MAX_EPOCH_NIGHTS` (`services/breath/dtos.py`), in the service and at the MCP boundary.
@@ -379,6 +390,12 @@ on worker threads, and the RERA proxy uses `count_fl_run_reras_arrays`, which
 `tests/unit/test_nightly_breath_arrays.py` pins the nightly array reduction equal to the row-based one. Keep `Row` objects from living across an `await`: when they survive several
 young-generation collections they trigger full collections, which stall the shared event loop for
 over 100 ms each.
+
+**Compliance** (`days_compliant`, `compliance_pct` on `TherapySummary` and `PeriodStatistics`)
+reads Day rows only: `COMPLIANCE_THRESHOLD_HOURS` with `is_compliant_night` and `compliance_pct` in
+`therapy_hours.py`, and `therapy_date_range` in `analysis/calculations.py` for the calendar days
+both count (first to last day with therapy hours). The MCP nightly summary's `compliance` block
+shares the threshold and percent but keeps its own denominator (every calendar night requested).
 
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.

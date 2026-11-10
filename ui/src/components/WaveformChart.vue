@@ -7,19 +7,24 @@
         <p v-if="events?.length" class="mt-1 text-xs text-muted-foreground">
             Shaded bands: device-scored events
         </p>
+        <p v-if="showsRedline" class="mt-1 text-xs text-muted-foreground">
+            Dashed red line: {{ LEAK_REDLINE_LPM }} L/min leak redline<template v-if="bands?.length"
+                >; gray bands: Large Leak</template
+            >
+        </p>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { Loader2 } from '@lucide/vue'
 import { EVENT_COLORS, EVENT_SOLID_COLORS } from '@/types'
-import type { EventItem } from '@/types'
+import type { ChartBand, EventItem } from '@/types'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { formatWallClockTime } from '@/utils/formatting'
-import { MIN_ZOOM_WINDOW_SEC, ZOOM_FETCH_DEBOUNCE_MS } from '@/constants/waveform'
+import { LEAK_REDLINE_LPM, MIN_ZOOM_WINDOW_SEC, ZOOM_FETCH_DEBOUNCE_MS } from '@/constants/waveform'
 
 const { isDark } = useDarkMode()
 
@@ -31,6 +36,8 @@ const props = defineProps<{
     startEpoch: number
     waveformType?: string
     events?: EventItem[]
+    // Gray background bands, session-relative seconds (Large Leak on the leak chart).
+    bands?: ChartBand[]
     syncKey?: uPlot.SyncPubSub
     refetching?: boolean
 }>()
@@ -47,6 +54,9 @@ const emit = defineEmits<{
 // Viewport invariant: data swaps NEVER move the viewport. The data watch calls
 // setData(..., false) so a cache miss's interim slice cannot rescale the x range; every
 // viewport change comes from a user gesture or an explicit setScaleX/resetZoom call.
+
+// OSCAR draws its leak redline on the leak chart (daily.cpp:566-570).
+const showsRedline = computed(() => props.waveformType === 'leak')
 
 const containerRef = ref<HTMLDivElement>()
 let chart: uPlot | null = null
@@ -92,6 +102,37 @@ function eventSpan(u: uPlot, evt: EventItem): [number, number] {
     ]
 }
 
+function drawBands(u: uPlot): void {
+    if (!props.bands?.length) return
+    const ctx = u.ctx
+    const { left, top, width, height } = u.bbox
+    ctx.save()
+    ctx.fillStyle = bandColor()
+    for (const band of props.bands) {
+        const x0 = Math.max(u.valToPos(band.start + props.startEpoch, 'x', true), left)
+        const x1 = Math.min(u.valToPos(band.end + props.startEpoch, 'x', true), left + width)
+        if (x1 < left || x0 > left + width) continue
+        ctx.fillRect(x0, top, Math.max(x1 - x0, 2 * uPlot.pxRatio), height)
+    }
+    ctx.restore()
+}
+
+function drawRedline(u: uPlot): void {
+    if (!showsRedline.value) return
+    const ctx = u.ctx
+    const { left, width } = u.bbox
+    const y = u.valToPos(LEAK_REDLINE_LPM, 'y', true)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(220, 38, 38, 0.85)'
+    ctx.lineWidth = uPlot.pxRatio
+    ctx.setLineDash([6 * uPlot.pxRatio, 4 * uPlot.pxRatio])
+    ctx.beginPath()
+    ctx.moveTo(left, y)
+    ctx.lineTo(left + width, y)
+    ctx.stroke()
+    ctx.restore()
+}
+
 function buildEventPlugin(): uPlot.Plugin {
     return {
         hooks: {
@@ -122,6 +163,7 @@ function buildEventPlugin(): uPlot.Plugin {
                     }
                     ctx.restore()
                 },
+                drawBands,
             ],
             draw: [
                 (u: uPlot) => {
@@ -174,9 +216,14 @@ function buildEventPlugin(): uPlot.Plugin {
 
                     ctx.restore()
                 },
+                drawRedline,
             ],
         },
     }
+}
+
+function bandColor(): string {
+    return isDark.value ? 'rgba(161, 161, 170, 0.25)' : 'rgba(113, 113, 122, 0.18)'
 }
 
 function chartColors() {
@@ -207,12 +254,23 @@ function createChart(): void {
             x: { time: true, range: (_u: uPlot, min: number, max: number) => clampSpan(min, max) },
             // Pin y-axis for channels that have a known fixed range so a quiet
             // night doesn't auto-scale to a misleadingly wide or narrow extent.
+            // The leak axis always reaches the redline, so the line stays in view.
             y:
                 props.waveformType === 'fl'
                     ? { min: 0, max: 1 }
                     : props.waveformType === 'snore'
                       ? { min: 0, max: 5 }
-                      : {},
+                      : showsRedline.value
+                        ? {
+                              range: (_u: uPlot, min: number, max: number) =>
+                                  uPlot.rangeNum(
+                                      Math.min(min, 0),
+                                      Math.max(max, LEAK_REDLINE_LPM),
+                                      0.1,
+                                      true,
+                                  ),
+                          }
+                        : {},
         },
         axes: [
             {
@@ -317,9 +375,9 @@ watch(
     },
 )
 
-// Redraw when events change (overlay update)
+// Redraw when events or bands change (overlay update)
 watch(
-    () => props.events,
+    () => [props.events, props.bands],
     () => chart?.redraw(),
     { deep: false },
 )

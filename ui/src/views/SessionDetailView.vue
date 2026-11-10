@@ -132,6 +132,7 @@
                     :label="selectedType"
                     :waveform-type="selectedType"
                     :events="selectedType === 'flow' ? events : undefined"
+                    :bands="selectedType === 'leak' ? largeLeakBands : undefined"
                     :start-epoch="startEpoch"
                     :refetching="waveformLoading"
                     @zoom="handleZoom"
@@ -150,6 +151,7 @@
                 :session-id="session.id"
                 :available-types="session.waveform_types"
                 :events="events"
+                :large-leak-bands="largeLeakBands"
                 :initial-types="[selectedType]"
                 :start-epoch="startEpoch"
                 :cache-registry="cacheRegistry"
@@ -425,6 +427,22 @@
                             unit="L/min"
                             :decimals="1"
                         />
+                        <template v-if="session.leak_redline">
+                            <StatCard
+                                label="Time Over Redline"
+                                :value="session.leak_redline.leak_above_24_pct ?? null"
+                                unit="%"
+                                :decimals="1"
+                                glossary-key="leak_redline"
+                            />
+                            <StatCard
+                                label="Large Leak"
+                                :value="session.leak_redline.large_leak_pct ?? null"
+                                unit="%"
+                                :decimals="2"
+                                glossary-key="large_leak"
+                            />
+                        </template>
                     </div>
                 </CollapsibleContent>
             </Collapsible>
@@ -844,6 +862,11 @@
 
         <DeviceChannelStatsTable :stats="session.channel_stats" />
         <MaskOnSpansTable :spans="session.mask_on_spans" />
+        <MaskOnSpansTable
+            title="Large Leak Spans"
+            :spans="session.leak_redline?.large_leak_spans"
+            :total="session.leak_redline?.large_leak_span_count"
+        />
 
         <!-- Apple Health -->
         <Collapsible v-model:open="healthOpen" class="settings-panel">
@@ -1053,7 +1076,7 @@ import {
     secToHours,
 } from '@/utils/formatting'
 import { maskEntryName, styleLabel } from '@/utils/maskOptions'
-import type { SessionDetail, EventItem, HealthNightDetailRead } from '@/types'
+import type { ChartBand, SessionDetail, EventItem, HealthNightDetailRead } from '@/types'
 
 const props = defineProps<{ sessionId: number }>()
 const route = useRoute()
@@ -1174,6 +1197,15 @@ const startEpoch = computed(() => {
 })
 
 const fullDuration = computed(() => (session.value ? session.value.duration_hours * 3600 : 0))
+
+// Large Leak spans as session-relative seconds, the leak chart's band positions.
+// Offsets come from the API, so a daylight-saving change cannot shift them.
+const largeLeakBands = computed((): ChartBand[] =>
+    (session.value?.leak_redline?.large_leak_spans ?? []).map((span) => ({
+        start: span.offset_seconds,
+        end: span.offset_seconds + span.duration_seconds,
+    })),
+)
 
 // One registry per mounted view; shared by the single-mode composable and every multi-mode
 // chart, persists across type switches and mode toggles, cleared only on session change.

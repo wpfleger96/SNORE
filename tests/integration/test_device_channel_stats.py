@@ -756,9 +756,11 @@ async def test_session_detail_loads_only_the_reported_channels(
             session.id
         )
 
-    [(statement, parameters)] = _blob_queries(captured)
+    # The reported channels, then the leak channel for the leak redline.
+    [(statement, parameters), (_, leak_parameters)] = _blob_queries(captured)
     assert "waveform_type IN" in statement
     assert set(parameters) - {session.id} == _REPORTED_CHANNELS
+    assert set(leak_parameters) - {session.id} == {"leak"}
 
 
 async def test_day_pools_respiratory_and_pulse_channels(

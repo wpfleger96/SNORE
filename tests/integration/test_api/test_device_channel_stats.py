@@ -191,3 +191,75 @@ def test_day_with_invalid_stored_segments_json_returns_200(
     assert data["mask_on_spans"] is None
     assert data["channel_stats"] == _EXPECTED_STATS
     assert f"Session {night.id}" in caplog.text
+
+
+def _expected_leak_redline(session_id: int) -> dict[str, object]:
+    # Leak samples [10, 30, 30, 5] every 2 s: one span from 2 s to 6 s.
+    return {
+        "leak_above_24_pct": 50.0,
+        "large_leak_pct": round(100 * 4 / (8 * 3600), 2),
+        "large_leak_span_count": 1,
+        "large_leak_spans": [
+            {
+                "session_id": session_id,
+                "offset_seconds": 2.0,
+                "start": "2025-03-01T22:00:02",
+                "end": "2025-03-01T22:00:06",
+                "duration_seconds": 4.0,
+            }
+        ],
+    }
+
+
+def test_session_and_day_detail_serialize_leak_redline(api_client, db_session, night):
+    _add_channel(db_session, night, "leak", [10.0, 30.0, 30.0, 5.0])
+
+    session = api_client.get(f"/api/v1/sessions/{night.id}").json()
+    day = api_client.get(f"/api/v1/days/{_NIGHT}").json()
+
+    # No usage hours are stored, so the 8 h session span is the mask-on time.
+    assert session["leak_redline"] == _expected_leak_redline(night.id)
+    assert day["leak_redline"] == _expected_leak_redline(night.id)
+
+
+def test_leak_redline_is_null_without_leak_channel_and_on_patch(
+    api_client, db_session, night
+):
+    day = api_client.get(f"/api/v1/days/{_NIGHT}").json()
+    _add_channel(db_session, night, "leak", [30.0])
+    patched = api_client.patch(f"/api/v1/sessions/{night.id}", json={"enabled": True})
+
+    assert day["leak_redline"] is None
+    assert patched.json()["leak_redline"] is None
+
+
+def test_list_items_carry_no_leak_redline(api_client, db_session, night):
+    _add_channel(db_session, night, "leak", [30.0])
+
+    days = api_client.get("/api/v1/days/").json()
+    sessions = api_client.get("/api/v1/sessions/").json()
+
+    assert "leak_redline" not in days["items"][0]
+    assert "leak_redline" not in sessions["items"][0]
+
+
+def test_leak_with_unusable_sample_times_serializes_null(api_client, db_session, night):
+    db_session.add(
+        Waveform(
+            session_id=night.id,
+            waveform_type="leak",
+            sample_rate=0.5,
+            data_blob=np.array(
+                [(0.0, 30.0), (float("nan"), 30.0)], dtype=np.float32
+            ).tobytes(),
+            sample_count=2,
+        )
+    )
+    db_session.flush()
+
+    session = api_client.get(f"/api/v1/sessions/{night.id}")
+    day = api_client.get(f"/api/v1/days/{_NIGHT}")
+
+    assert (session.status_code, day.status_code) == (200, 200)
+    assert session.json()["leak_redline"] is None
+    assert day.json()["leak_redline"] is None

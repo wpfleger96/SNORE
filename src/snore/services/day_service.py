@@ -22,6 +22,7 @@ from snore.services.channel_stats import (
     pool_channel_stats,
 )
 from snore.services.event_service import device_reported_types, reported_counts
+from snore.services.leak_redline import LeakSource, load_leak_redline
 from snore.services.schemas import (
     DayDetail,
     DayExperimentalMetrics,
@@ -29,6 +30,7 @@ from snore.services.schemas import (
     HealthNightSummaryRead,
     MaskOnSpan,
 )
+from snore.therapy_hours import effective_session_hours
 
 if TYPE_CHECKING:
     from snore.analysis.shared.versioning import NullReason
@@ -190,6 +192,12 @@ class DayService(ProfileScopedService):
                     type_coerce(models.Session.mask_on_segments, Text).label(
                         "mask_on_segments"
                     ),
+                    models.Session.duration_seconds,
+                    models.Statistics.usage_hours,
+                )
+                .outerjoin(
+                    models.Statistics,
+                    models.Statistics.session_id == models.Session.id,
                 )
                 .where(models.Session.day_id == day.id)
                 .order_by(models.Session.start_time)
@@ -200,6 +208,19 @@ class DayService(ProfileScopedService):
         enabled_ids = [row.id for row in enabled_rows]
         histograms = await load_channel_histograms(
             self.db_session, enabled_ids, REPORTED_CHANNELS
+        )
+        leak_redline = await load_leak_redline(
+            self.db_session,
+            [
+                LeakSource(
+                    session_id=row.id,
+                    start_time=row.start_time,
+                    mask_on_hours=effective_session_hours(
+                        row.usage_hours, row.duration_seconds
+                    ),
+                )
+                for row in enabled_rows
+            ],
         )
         spans = _day_mask_on_spans(
             [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
@@ -235,6 +256,7 @@ class DayService(ProfileScopedService):
                 "session_ids": [row.id for row in session_rows],
                 "health_sleep": health_sleep,
                 "channel_stats": pool_channel_stats(histograms, enabled_ids),
+                "leak_redline": leak_redline,
                 "mask_on_spans": spans,
             }
         )

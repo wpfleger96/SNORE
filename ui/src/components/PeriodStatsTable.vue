@@ -24,6 +24,12 @@
                     </div>
                     <div class="data-card-row">
                         <span class="data-card-label"
+                            >Days ≥ 4 h <InfoHint glossary-key="compliance"
+                        /></span>
+                        <span class="data-card-value">{{ complianceText(row) }}</span>
+                    </div>
+                    <div class="data-card-row">
+                        <span class="data-card-label"
                             >Avg Hours <InfoHint glossary-key="usage"
                         /></span>
                         <span class="data-card-value">{{
@@ -108,6 +114,9 @@
                 <TableRow>
                     <TableHead>Period</TableHead>
                     <TableHead class="w-[90px]">Days Used</TableHead>
+                    <TableHead class="w-[110px] whitespace-nowrap"
+                        >Days ≥ 4 h <InfoHint glossary-key="compliance"
+                    /></TableHead>
                     <TableHead class="w-[90px] whitespace-nowrap"
                         >Avg Hours <InfoHint glossary-key="usage"
                     /></TableHead>
@@ -155,6 +164,7 @@
                             </template>
                         </TableCell>
                         <TableCell>{{ row.days_used }}</TableCell>
+                        <TableCell>{{ complianceText(row) }}</TableCell>
                         <TableCell>{{ row.avg_hours_per_day?.toFixed(1) ?? '---' }}</TableCell>
                         <TableCell>
                             <span :class="ahiClass(row.avg_ahi)">
@@ -181,7 +191,7 @@
                 </template>
                 <TableRow v-else>
                     <TableCell
-                        :colspan="showSleepColumns ? 10 : 8"
+                        :colspan="showSleepColumns ? 11 : 9"
                         class="h-24 text-center text-muted-foreground"
                     >
                         {{ emptyMessage ?? 'No period data available.' }}
@@ -206,7 +216,7 @@ import {
 import InfoHint from '@/components/InfoHint.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 import type { PeriodStatistics } from '@/types'
-import { ahiClass, formatDateMonthDay } from '@/utils/formatting'
+import { ahiClass, formatDateMonthDay, formatPercent } from '@/utils/formatting'
 
 const props = defineProps<{
     periods: PeriodStatistics[]
@@ -219,4 +229,10 @@ const { isMobile } = useIsMobile()
 
 const showFlColumn = computed(() => props.periods.some((p) => p.device_flg_95th != null))
 const showSnoreColumn = computed(() => props.periods.some((p) => p.snore_95th != null))
+
+// Compliant days and their share of the period's calendar days, e.g. "29 (94%)".
+function complianceText(row: PeriodStatistics): string {
+    if (row.compliance_pct == null) return '---'
+    return `${row.days_compliant} (${formatPercent(row.compliance_pct / 100, 0)})`
+}
 </script>

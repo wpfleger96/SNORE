@@ -24,7 +24,7 @@ from snore.analysis.shared.versioning import (
     DayAnalysisStatus,
     NullReason,
 )
-from snore.constants import LEAK_REDLINE_LPM
+from snore.constants import COMPLIANCE_THRESHOLD_HOURS
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
 from snore.database.waveform_blobs import decode_channel_blobs
@@ -39,8 +39,13 @@ from snore.services.channel_stats import (
     pooled_distribution,
     pooled_share_above,
 )
+from snore.services.leak_redline import leak_redline_pct
 from snore.services.tidal_volume import tidal_volume_ml
-from snore.therapy_hours import effective_session_hours
+from snore.therapy_hours import (
+    compliance_pct,
+    effective_session_hours,
+    is_compliant_night,
+)
 from snore.utils.db_chunk import iter_id_chunks
 from snore.utils.stats import nearest_rank_index
 
@@ -273,7 +278,7 @@ def _is_compliant(
     day_sessions: Sequence[models.Session], day_row: Any | None, threshold: float
 ) -> bool:
     """Whether the night's therapy hours reach the compliance ``threshold``."""
-    return _total_therapy_hours(day_sessions, day_row) >= threshold
+    return is_compliant_night(_total_therapy_hours(day_sessions, day_row), threshold)
 
 
 def _pool_night(
@@ -349,13 +354,8 @@ def _device_night_stats(
         snore, NullReason.CHANNEL_ABSENT
     )
     leak_corrupt = any(int(s.id) in corrupt_leak_sessions for s in day_sessions)
-    leak_fraction = (
-        None
-        if leak_corrupt
-        else pooled_share_above(leak, LEAK_REDLINE_LPM, inclusive=True)
-    )
     leak_above_24_pct, leak_above_24_pct_reason = _stat_pair(
-        round(100.0 * leak_fraction, 1) if leak_fraction is not None else None,
+        None if leak_corrupt else leak_redline_pct(leak),
         NullReason.CHANNEL_CORRUPT if leak_corrupt else NullReason.CHANNEL_ABSENT,
     )
 
@@ -721,7 +721,7 @@ class NightlyMixin(_BreathServiceCore):
         date_start: date,
         date_end: date,
         device_id: int | None = None,
-        compliance_threshold_hours: float = 4.0,
+        compliance_threshold_hours: float = COMPLIANCE_THRESHOLD_HOURS,
         night_dates: Collection[date] | None = None,
     ) -> NightlyDeviceRange:
         """Per-night device-channel stats + aggregate compliance.
@@ -788,7 +788,7 @@ class NightlyMixin(_BreathServiceCore):
             compliance_threshold_hours=compliance_threshold_hours,
             n_calendar_nights=n_calendar,
             days_compliant=days_compliant,
-            compliance_pct=days_compliant / n_calendar * 100.0,
+            compliance_pct=compliance_pct(days_compliant, n_calendar),
             nights=nights,
         )
 

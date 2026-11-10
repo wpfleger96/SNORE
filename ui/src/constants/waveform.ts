@@ -6,3 +6,6 @@ export const MIN_INVIEW_POINTS = 1000 // density threshold for serving a window 
 export const MAX_CACHED_CHUNKS = 16 // per-type LRU depth (excludes the full-night overview)
 export const SERVER_MAX_POINTS = 10000 // must match the backend max_points le= bound
 export const ZOOM_FETCH_DEBOUNCE_MS = 120 // coalesces a drag gesture's setScale burst into one zoom emit
+
+// OSCAR's default leak redline (L/min); must match LEAK_REDLINE_LPM in src/snore/constants.py.
+export const LEAK_REDLINE_LPM = 24

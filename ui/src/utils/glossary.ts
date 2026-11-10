@@ -166,6 +166,21 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Unintentional air leak rate from the mask, in L/min.',
         long: 'Sustained large leaks reduce therapy effectiveness and can hide events from detection. Percentile variants summarize the night’s leak distribution.',
     },
+    leak_redline: {
+        label: 'Time Over Leak Redline',
+        short: 'Share of the leak samples at or above 24 L/min, OSCAR’s default leak redline.',
+        long: 'Computed from the recorded leak samples, pooled across the night’s enabled sessions (or the one session on a session page). The leak chart draws the redline as a dashed red line.',
+    },
+    large_leak: {
+        label: 'Large Leak',
+        short: 'Time in Large Leak spans as a percent of mask-on time, as OSCAR’s Daily page shows it.',
+        long: 'A Large Leak span starts at the first leak sample at or above 24 L/min and ends at the next sample below it, or one sample period after the last sample when the recording stops or pauses first. Only sessions with leak data count toward the mask-on time. The leak chart shades the spans in gray.',
+    },
+    compliance: {
+        label: 'Compliance',
+        short: 'Days with at least 4 hours of use, as a percent of the calendar days in the period.',
+        long: 'A day counts at 4 hours or more of mask-on time from its enabled sessions, added across devices. Days without use count against it. Calendar days are counted from the first to the last day with therapy, as OSCAR’s Statistics page counts them.',
+    },
     spo2: {
         label: 'SpO₂',
         short: 'Blood oxygen saturation from the pulse oximeter, in percent.',
