@@ -4156,7 +4156,10 @@ export interface components {
              * @description [DEVICE] Numeric sample value as recorded; SpO2 recorded as a fraction is stored on the percent scale
              */
             value_num?: number | null
-            /** Value Text */
+            /**
+             * Value Text
+             * @description [DEVICE] Sleep stage for sleep-analysis samples (InBed, Awake, AsleepCore, AsleepDeep, AsleepREM or AsleepUnspecified); null for quantity samples
+             */
             value_text?: string | null
         }
         /**

@@ -42,6 +42,7 @@ from snore.services.schemas import (
     RERA_PROXY_FALLBACK_NOTE,
     DayDetail,
     HealthNightDetailRead,
+    HealthSampleRead,
     MergedSettingsChange,
     PeriodStatistics,
     RecordsResponse,
@@ -582,6 +583,16 @@ class NightDetailResponse(BaseModel):
     )
     apple_health: HealthNightDetailRead | None = Field(
         default=None, description="The Apple Health night; null when the date has none"
+    )
+
+
+class AppleSleepStagesResponse(BaseModel):
+    """Response from get_apple_sleep_stages."""
+
+    date: date
+    stages: list[HealthSampleRead] = Field(
+        description="The night's Apple Health sleep-stage samples by start time; "
+        "value_text is the stage. Apple Health local wall-clock times"
     )
 
 
@@ -1252,6 +1263,7 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
     "nightly_summary": NightlySummaryResponse,
     "night_session": NightSession,
     "night_detail": NightDetailResponse,
+    "apple_sleep_stages": AppleSleepStagesResponse,
     "period_stats": PeriodStatsResponse,
     "night_records": NightRecordsResponse,
     "experimental_nightly_row": ExperimentalNightlyRow,

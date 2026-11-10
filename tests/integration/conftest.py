@@ -183,7 +183,12 @@ async def _make_channel_waveform(
 
 
 async def _make_apple_night(
-    db: AsyncSession, profile_id: int, night: date, total_sleep_seconds: float
+    db: AsyncSession,
+    profile_id: int,
+    night: date,
+    total_sleep_seconds: float,
+    *,
+    preferred_source: str | None = None,
 ) -> None:
     """Create an Apple Health nightly summary at 90% sleep efficiency."""
     db.add(
@@ -192,6 +197,7 @@ async def _make_apple_night(
             night_date=night,
             total_sleep_seconds=total_sleep_seconds,
             sleep_efficiency_pct=90.0,
+            preferred_source=preferred_source,
         )
     )
     await db.flush()

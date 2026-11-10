@@ -142,6 +142,7 @@ src/snore/
 │       ├── changes.py          # get_settings_changes tool
 │       ├── summary.py          # get_nightly_summary + experimental_get_nightly_metrics tools
 │       ├── night_detail.py     # get_night_detail tool (Day page: DayDetail + session stats + Apple night)
+│       ├── apple_sleep_stages.py # get_apple_sleep_stages tool (Apple Health night page: sleep-stage samples)
 │       ├── period_stats.py     # get_period_stats tool (Stats page: /stats/periods)
 │       ├── records.py          # get_records tool (Stats page Records: /stats/records)
 │       ├── events.py           # get_events + experimental_get_event_context tools
@@ -610,7 +611,7 @@ Each tool lives in `src/snore/mcp/tools/<name>.py` and follows a two-part struct
 1. A module-level async function that accepts an `AsyncSession` and returns a Pydantic model — this is what tests call directly.
 2. A `register(mcp: FastMCP) -> None` function at the bottom of the module that defines the `@mcp.tool()` closure and wires it to the common scaffold.
 
-The common scaffold for the 14 standard-pattern tools (all 16 except the waveform pair) lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+The common scaffold for the 15 standard-pattern tools (all 17 except the waveform pair) lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
 
 Experimental metrics never go on a default tool, behind a parameter or otherwise. Each gets a separate tool with the `experimental_` prefix and `_with_experimental_disclaimer` (`tools/_scaffold.py`) applied below `@mcp.tool()`, registered in the same module as its default sibling (`summary.py`, `events.py`, `epochs.py`). `breath_table.py` and `windows.py` have no default sibling: they set the tool name with `@mcp.tool(name=...)` and keep the impl names `get_breath_table` and `find_windows`. See the MCP gating rule under Provenance tagging.
 
