@@ -165,8 +165,7 @@
                                         :key="c.key"
                                         class="history-change"
                                     >
-                                        <span class="history-key">{{ settingLabel(c.key) }}</span
-                                        >:
+                                        <span class="history-key">{{ settingLabel(c.key) }}</span>:
                                         <template v-if="c.old_value === null">
                                             <span class="history-val new">
                                                 {{ formatSettingValue(c.key, c.new_value ?? '') }}
