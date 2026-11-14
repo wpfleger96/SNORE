@@ -5,3 +5,21 @@ catalog:
   typescript: "~6.0.3"
 overrides:
   "openapi-typescript>typescript": "catalog:"
+  # shadcn-vue is used only for its stylesheet; see AGENTS.md "`shadcn-vue` is
+  # installed only for its stylesheet". These CLI-only deps carry advisories with
+  # no reachable fix: zod GHSA-mrhx-c7xc-m3w5 (shadcn-vue declares zod ^3),
+  # @modelcontextprotocol/sdk -> @hono/node-server GHSA-qv5m-9pm6-hqp3 and
+  # GHSA-jpvv-r467-5p4w, deepmerge GHSA-gcqx-w48m-w2h4 (no patched release),
+  # vue-metamorph -> stylus -> decode-uri-component GHSA-qr28-fpjm-wq7f.
+  # zod-to-json-schema is stripped because its zod peer would reinstall zod.
+  # Remove a line once shadcn-vue drops the package or requires a patched version.
+  "shadcn-vue>@modelcontextprotocol/sdk": "-"
+  "shadcn-vue>deepmerge": "-"
+  "shadcn-vue>vue-metamorph": "-"
+  "shadcn-vue>zod": "-"
+  "shadcn-vue>zod-to-json-schema": "-"
+  # glob GHSA-3g3m-2fjr-6pw4: delete once js-beautify requires glob >=14.0.2.
+  "glob@>=9.0.0 <14.0.2": "^14.0.2"
+  # minimatch GHSA-g3hv-75wg-m249: delete once editorconfig,
+  # @typescript-eslint/typescript-estree and @ts-morph/common require minimatch 11.
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
