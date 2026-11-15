@@ -161,32 +161,25 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Compare device flow-limitation and snore distributions across up to 6 therapy settings epochs.
 
-        Use this tool to see whether a settings change moved the device's own
-        flow-limitation and snore channels.  Each epoch is a labelled date range; the
-        tool returns descriptive statistics (median, IQR, P95) of the device's samples
-        for each epoch.  No analysis is needed: every enabled session in the range
-        contributes.
+        Use it to see whether a settings change moved the device's own channels. Returns
+        median, IQR and P95 of the device samples per epoch; every enabled session in
+        range contributes, no analysis needed. Call ``get_settings_timeline`` first to
+        find epoch boundaries.
 
-        Call ``get_settings_timeline`` first to identify meaningful epoch boundaries,
-        then ``compare_epochs`` to quantify the difference.
-
-        When a value can't be computed, that epoch's ``null_reason`` says why and the
-        others keep their values: ``"no_data_in_range"`` (no sessions) or
-        ``"rx_changed_within_epoch"`` (settings changed inside it; split it at the
-        dates in ``rx_violations``).  An unrecorded channel has null stats with
-        ``n_samples: 0``.  The top-level ``null_reason`` is ``"no_data_in_range"`` (no
-        session in the combined range), ``"not_available"`` (``device_id`` not in this
-        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
+        An epoch's ``null_reason`` is ``"no_data_in_range"`` (no sessions) or
+        ``"rx_changed_within_epoch"`` (settings changed inside it; split it at the dates
+        in ``rx_violations``); other epochs keep their values. An unrecorded channel has
+        null stats with ``n_samples: 0``. The top-level ``null_reason`` is
+        ``"no_data_in_range"`` (no session in the combined range), ``"not_available"``
+        (``device_id`` not in this profile) or ``"rx_changed_within_epoch"`` (every
+        epoch changed).
 
         Args:
-            epochs: List of 1–6 epoch specs.  Each spec has:
-                ``label`` — human-readable epoch name (appears in response).
-                ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
-                ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — required when several devices have data in the
-                range; all epochs must target the same device.
-                An epoch may span at most 366 calendar nights, both ends
-                included; split a longer range into several epochs.
+            epochs: 1–6 epoch specs, each with ``label``, ``date_start`` and
+                ``date_end`` (YYYY-MM-DD, inclusive) and ``device_id``, required
+                when several devices have data in the range; all epochs must
+                target the same device. An epoch may span at most 366 calendar
+                nights; split a longer range.
         """
         from snore.mcp.tools.epochs import compare_epochs as _impl  # noqa: PLC0415
 
@@ -208,45 +201,25 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Compare breath-feature distributions across up to 6 therapy settings epochs.
 
-        Use this tool to detect whether a settings change improved or worsened
-        flow-limitation metrics.  Each epoch is a labelled date range; the tool returns
-        descriptive statistics (median, IQR, P95) of leak-valid breaths for each epoch.
-        Only nights with OK analysis results contribute to an epoch's distributions.
+        Returns median, IQR and P95 of leak-valid breaths per epoch, from nights with OK
+        analysis results only. For the device's own channels use ``compare_epochs``.
+        ``mid_insp_flattening`` is lower = more flow-limited, opposite to the device
+        flow-limitation channel. ``rera_proxy_count`` applies no confidence gate: its FL
+        runs include the fallback flatness-triage guesses that
+        ``flow_class_distribution`` leaves out, so it inherits their sensitivity to
+        waveform shape (e.g. across therapy modes or pressure-support levels).
 
-        Call ``get_settings_timeline`` first to identify meaningful epoch boundaries,
-        then ``experimental_compare_epochs`` to quantify the difference.
-
-        Requires breath-level analysis results (``get_data_overview`` → ``analysis_run``
-        must be true).  For the device's own flow-limitation and snore channels, use
-        ``compare_epochs``, which needs no analysis.
-
-        ``rera_proxy_count`` applies no confidence gate: its FL runs include the
-        fallback flatness-triage guesses that ``flow_class_distribution`` leaves
-        out, so it inherits their sensitivity to waveform shape (e.g. across
-        therapy modes or pressure-support levels).
-
-        When a value can't be computed, that epoch's ``null_reason`` says why and the
-        others keep their values: ``"no_data_in_range"`` (no analyzed sessions; its
-        ``rera_reason`` is ``"analysis_not_run"`` when sessions exist but lack current
-        analysis) or ``"rx_changed_within_epoch"`` (settings changed inside it; split
-        it at the dates in ``rx_violations``).  Mixed primary modes null only
-        ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).  The
-        top-level ``null_reason`` is ``"no_data_in_range"`` (no
-        session in the combined range), ``"not_available"`` (``device_id`` not in this
-        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
+        Null reasons are as in ``compare_epochs`` (``"no_data_in_range"``,
+        ``"rx_changed_within_epoch"`` with ``rx_violations``, top-level
+        ``"not_available"``), except that an epoch's ``"no_data_in_range"`` means no
+        analyzed sessions. An epoch's ``rera_reason`` is ``"analysis_not_run"`` when
+        sessions exist but lack current analysis; mixed primary modes null only
+        ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).
 
         Args:
-            epochs: List of 1–6 epoch specs.  Each spec has:
-                ``label`` — human-readable epoch name (appears in response).
-                ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
-                ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — required when several devices have data in the
-                range; all epochs must target the same device.
-                An epoch may span at most 366 calendar nights, both ends
-                included; split a longer range into several epochs.
-            metrics: Optional subset of distribution metrics to compute.  Defaults
-                to all four: ``"mid_insp_flattening"``, ``"flatness_index"``,
-                ``"tidal_volume_ml"``, ``"ie_ratio"``.
+            epochs: Same format as ``compare_epochs`` ``epochs``.
+            metrics: Optional subset of ``"mid_insp_flattening"``, ``"flatness_index"``,
+                ``"tidal_volume_ml"``, ``"ie_ratio"`` (default all four).
         """
         from snore.mcp.tools.epochs import (  # noqa: PLC0415
             experimental_compare_epochs as _impl,

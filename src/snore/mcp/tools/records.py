@@ -50,33 +50,17 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return the best and worst nights per metric, as the web Stats page's Records show them.
 
-        Each metric holds ``best`` and ``worst`` lists of ``[date, value]``
-        pairs, up to ``top_n`` each (fewer when fewer nights have the metric),
-        best first and worst first; with fewer than ``2 * top_n`` nights a
-        night can appear in both lists. Dates are night dates. Equal values
-        come in no guaranteed order.
+        Each list holds up to ``top_n`` ``[night date, value]`` pairs; a night can
+        appear in both lists, and equal values have no guaranteed order. Lowest is best
+        for ``ahi`` and ``leak``; highest is best for ``therapy_hours``, ``spo2_min``
+        and ``total_sleep_hours``. ``ahi`` is the nightly headline AHI: device-reported
+        when trusted, else SNORE's recount; the lists can mix both. Device metrics rank
+        device nights with at least 1 h of therapy from enabled sessions, all devices
+        together and unlabelled, so a date can appear twice. ``total_sleep_hours`` ranks
+        every Apple Health night with a total sleep time. A metric with no qualifying
+        night is null.
 
-        - ``ahi``: lowest is best. The nightly headline AHI, device-reported
-          when trusted, else SNORE's recount; the lists can mix both.
-        - ``leak``: nightly median leak (L/min); lowest is best.
-        - ``therapy_hours``: nightly therapy hours; highest is best.
-        - ``spo2_min``: nightly minimum SpO2 (%); highest is best.
-        - ``total_sleep_hours``: Apple Health total sleep per night, rounded
-          to 0.01 h; highest is best.
-
-        The device metrics rank only device nights with at least 1 h of
-        therapy, each device night judged on its own therapy hours. Disabled
-        sessions count toward no device night, so a device night with only
-        disabled sessions never qualifies. Every device of the profile is
-        ranked together, one entry per device night, so a date can appear
-        twice when two devices recorded it; entries do not name the device.
-        A night without a value for a metric is skipped for that metric only.
-        ``total_sleep_hours`` ranks every Apple Health night that has a total
-        sleep time, therapy or not. A metric is null when no night in range
-        qualifies; with no data in range every metric is null. Values come
-        from nightly summaries only; no analysis data is read.
-
-        Omit ``start`` and/or ``end`` for an open range (all data by default).
+        Omit ``start`` and/or ``end`` for an open range.
 
         Args:
             top_n: Nights per list, 1-50. Default 5, as the Stats page shows.

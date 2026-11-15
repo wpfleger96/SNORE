@@ -447,7 +447,11 @@ hardcoding `Provenance.X` is allowed only for section/report titles with no sing
 for CLI-only judgements computed in the command with no schema field (such as the `snore stats` leak
 verdict), which cannot become fields because an Experimental field on a default REST response model
 like `TherapySummary` would break the REST gating rule.
-MCP responses get a top-level `provenance` block from `response_provenance` (`snore/provenance.py`).
+MCP flags only Experimental data: `experimental_*` tool responses carry a top-level `"experimental": true`, default
+tool responses carry no provenance key, and `docs://schemas` (`model_to_schema`) strips the `[DEVICE]`/`[DERIVED]`
+prefixes and `x-provenance` keys, keeping `[EXPERIMENTAL]`. Unflagged MCP fields are device data or computed from it;
+`index_source` and the `*_source` fields still say which values are SNORE recounts. `response_provenance` stays as
+the gating tests' walker.
 `tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
 and enum or `Literal` response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that
 are never metrics (ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts and
@@ -633,9 +637,9 @@ Each tool lives in `src/snore/mcp/tools/<name>.py` and follows a two-part struct
 1. A module-level async function that accepts an `AsyncSession` and returns a Pydantic model — this is what tests call directly.
 2. A `register(mcp: FastMCP) -> None` function at the bottom of the module that defines the `@mcp.tool()` closure and wires it to the common scaffold.
 
-The common scaffold for the 16 standard-pattern tools (all 18 except the waveform pair) lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block (`response_provenance` in `snore/provenance.py`, cache warmed in the lifespan) → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
+The common scaffold for the 16 standard-pattern tools (all 18 except the waveform pair) lives in `_scope_and_run` (`tools/_scaffold.py`, re-exported from `server.py`): open scope → `await impl(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add `"experimental": true` for `experimental_*` tools → `_check_response_size`. Tools with non-standard return paths (`get_waveform`, `render_window`) handle the scope themselves inside their `register` closures.
 
-A tool closure's docstring may contain only an `Args:` section: FastMCP sends the leading prose as the tool description and `Args:` as parameter descriptions, and silently drops every other section (`Returns:`, `Raises:`, any `Title:` block). Put refusal codes and limits in the leading prose, and per-field reason codes in the response field descriptions in `mcp/schemas.py` via `_reason()`. Every description character is paid in every MCP session, so state each fact once. Pin new codes and limits in `PINNED_TOKENS` in `tests/unit/test_mcp_tool_descriptions.py`, which also fails on any section header other than `Args:`.
+A tool closure's docstring may contain only an `Args:` section: FastMCP sends the leading prose as the tool description and `Args:` as parameter descriptions, and silently drops every other section (`Returns:`, `Raises:`, any `Title:` block). Put refusal codes and limits in the leading prose, and per-field reason codes in the response field descriptions in `mcp/schemas.py` via `_reason()`. Every description character is paid in every MCP session, so state each fact once. Pin new codes and limits in `PINNED_TOKENS` in `tests/unit/test_mcp_tool_descriptions.py`, which also fails on any section header other than `Args:`. The same file caps the total `list_tools` size; raise that cap only deliberately, after cutting what you can.
 
 Experimental metrics never go on a default tool, behind a parameter or otherwise. Each gets a separate tool with the `experimental_` prefix and `_with_experimental_disclaimer` (`tools/_scaffold.py`) applied below `@mcp.tool()`, registered in the same module as its default sibling (`summary.py`, `events.py`, `epochs.py`). `breath_table.py` and `windows.py` have no default sibling: they set the tool name with `@mcp.tool(name=...)` and keep the impl names `get_breath_table` and `find_windows`. See the MCP gating rule under Provenance tagging.
 

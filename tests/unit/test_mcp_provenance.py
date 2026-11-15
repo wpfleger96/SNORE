@@ -1,9 +1,9 @@
 """Provenance labeling on MCP surfaces.
 
-Every metric is device / derived / experimental.  These tests pin that onto
-what MCP clients see: tool descriptions, docs://schemas field descriptions,
-server instructions, the per-response ``provenance`` block, and
-docs://capabilities.
+MCP flags only experimental data.  These tests pin that onto what MCP clients
+see: tool descriptions, docs://schemas tags, server instructions, the top-level
+``experimental`` response flag and docs://capabilities, plus the gate that keeps
+experimental fields out of default tools.
 """
 
 from __future__ import annotations
@@ -38,10 +38,8 @@ from snore.mcp.schemas import (
     DataOverviewResponse,
     EpochStats,
     EventContext,
-    EventRow,
     EventsResponse,
     ExperimentalCompareEpochsResponse,
-    ExperimentalEventContextResponse,
     ExperimentalEventContextRow,
     ExperimentalNightlyResponse,
     ExperimentalNightlyRow,
@@ -56,7 +54,7 @@ from snore.mcp.schemas import (
     model_to_schema,
 )
 from snore.mcp.server import (
-    _SCHEMA_PROVENANCE_LEGEND,
+    _PROVENANCE_RULE,
     StaticRuntime,
     _build_instructions,
     make_server,
@@ -166,6 +164,16 @@ def _has_experimental_tag(schema: object) -> bool:
     return False
 
 
+def _provenance_values(schema: object) -> list[object]:
+    """Every ``x-provenance`` value anywhere in a JSON schema."""
+    if isinstance(schema, dict):
+        own = [schema["x-provenance"]] if "x-provenance" in schema else []
+        return own + [v for value in schema.values() for v in _provenance_values(value)]
+    if isinstance(schema, list):
+        return [v for value in schema for v in _provenance_values(value)]
+    return []
+
+
 class TestToolDescriptions:
     @pytest.mark.parametrize("tool_name", EXPERIMENTAL_TOOLS)
     async def test_experimental_tool_description_carries_note(
@@ -196,9 +204,8 @@ class TestToolDescriptions:
     async def test_nightly_description_explains_corrupt_leak_reason(self) -> None:
         description = (await _tool_descriptions())["get_nightly_summary"]
 
-        assert '``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``' in (
-            description
-        )
+        assert '``leak_above_24_pct_reason`` is ``"channel_corrupt"``' in description
+        assert "(no partial value)" in description
 
     async def test_experimental_epochs_description_names_every_null_reason(
         self,
@@ -249,6 +256,13 @@ class TestDefaultToolGate:
 
         assert response_provenance(Response) == {}
         assert _has_experimental_tag(Response.model_json_schema())
+
+    def test_epoch_distribution_inherits_experimental_parent(self) -> None:
+        """The gate sees fields nested under an experimental parent."""
+        block = response_provenance(ExperimentalCompareEpochsResponse)
+
+        assert "epochs[].mid_insp_flattening.median" in block["experimental"]
+        assert "epochs[].mid_insp_flattening.n_breaths" in block["experimental"]
 
     @pytest.mark.parametrize(
         ("tool_name", "model"), [(t, m) for t, m in DEFAULT_TOOLS.items() if m]
@@ -332,6 +346,17 @@ class TestSchemaFieldLabels:
         assert _field_description(NightlyRow, "ahi").startswith("[DEVICE]")
         assert prop["x-provenance-source"] == "index_source"
 
+    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
+        self,
+    ) -> None:
+        block = response_provenance(NightlySummaryResponse)
+
+        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
+            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
+            assert block["source_dependent"][f"nights[].{value}"] == (
+                f"nights[].{source}"
+            )
+
     def test_nightly_ahi_computed_is_derived(self) -> None:
         assert _field_description(NightlyRow, "ahi_computed").startswith("[DERIVED]")
 
@@ -360,6 +385,7 @@ class TestInstructions:
             "reference standard",
             "experimental_* tools return experimental metrics:",
             "Never present them as device-scored or clinically validated",
+            "nor nested under one are device data",
             "docs://capabilities",
         ):
             assert text in instructions
@@ -419,17 +445,76 @@ class TestInstructions:
         assert "stability" not in profile.clinical_context
 
 
-class TestResponseProvenanceBlock:
-    async def _run(self, result: BaseModel) -> dict[str, Any]:
+class _StubResponse(BaseModel):
+    ok: bool = True
+
+
+# Minimal valid arguments for every required tool parameter.
+_TOOL_ARGS: dict[str, Any] = {
+    "start": "2026-01-01",
+    "end": "2026-01-02",
+    "date": "2026-01-01",
+    "offset_start": 0.0,
+    "offset_end": 60.0,
+    "criterion": "ca_centered",
+    "epochs": [{"label": "a", "date_start": "2026-01-01", "date_end": "2026-01-02"}],
+}
+# Experimental tools whose impl keeps the default-style name.
+_IMPL_NAMES = {
+    "experimental_get_breath_table": "get_breath_table",
+    "experimental_find_windows": "find_windows",
+}
+
+
+class TestResponseExperimentalFlag:
+    @pytest.mark.parametrize(
+        "tool_name",
+        [*(t for t in DEFAULT_TOOLS if t != "render_window"), *EXPERIMENTAL_TOOLS],
+    )
+    async def test_registered_tool_flags_exactly_experimental_responses(
+        self, tool_name: str
+    ) -> None:
+        """Each closure's hand-typed ``tool_name`` must match its registered name."""
+        impl = _tool_impl(_IMPL_NAMES.get(tool_name, tool_name))
+        stub = AsyncMock(return_value=_StubResponse())
+        if tool_name == "get_waveform":
+            stub = MagicMock(return_value=_StubResponse())
+        with (
+            patch("snore.mcp.server._lifespan", _fake_lifespan),
+            patch("snore.mcp.server._fetch_waveform_for_tool", AsyncMock()),
+            patch.object(inspect.getmodule(impl), impl.__name__, stub),
+        ):
+            mcp = make_server()
+            async with fastmcp.Client(mcp) as client:
+                tool = next(t for t in await client.list_tools() if t.name == tool_name)
+                required = tool.input_schema.get("required", [])
+                result = await client.call_tool(
+                    tool_name, {name: _TOOL_ARGS[name] for name in required}
+                )
+
+        payload = json.loads(result.content[0].text)
+        stub.assert_called_once()
+        assert payload.get("experimental") is (
+            True if tool_name.startswith("experimental_") else None
+        )
+        assert "provenance" not in payload
+
+    async def _run(
+        self, result: BaseModel, tool_name: str = "get_nightly_summary"
+    ) -> dict[str, Any]:
         runtime = SimpleNamespace(scope_provider=_noop_scope, profile_id=1)
         ctx = MagicMock(lifespan_context=runtime)
         return await _scope_and_run(
-            ctx, AsyncMock(return_value=result), tool_name="test_tool"
+            ctx, AsyncMock(return_value=result), tool_name=tool_name
         )
 
-    async def test_nightly_response_lists_tiers_by_path(self) -> None:
+    async def test_default_response_carries_no_provenance_or_flag(self) -> None:
         result = NightlySummaryResponse(
-            nights=[NightlyRow(date=date(2026, 1, 1), ahi=2.0)],
+            nights=[
+                NightlyRow(
+                    date=date(2026, 1, 1), ahi=2.0, index_source=IndexSource.DEVICE
+                )
+            ],
             total_nights=1,
             page=1,
             page_size=30,
@@ -437,27 +522,11 @@ class TestResponseProvenanceBlock:
 
         payload = await self._run(result)
 
-        assert "experimental" not in payload["provenance"]
-        assert "nights[].usage_hours" in payload["provenance"]["derived"]
-        assert "nights[].leak_above_24_pct" in payload["provenance"]["derived"]
-        assert "nights[].rr_mean_bpm" not in payload["provenance"]["derived"]
-        assert "nights[].reras" not in json.dumps(payload["provenance"])
-        assert "nights[].ti_median_s" not in payload["provenance"]["derived"]
+        assert "provenance" not in payload
+        assert "experimental" not in payload
+        assert payload["nights"][0]["index_source"] == "device"
 
-    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
-        self,
-    ) -> None:
-        block = response_provenance(NightlySummaryResponse)
-
-        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
-            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
-            assert block["source_dependent"][f"nights[].{value}"] == (
-                f"nights[].{source}"
-            )
-
-    async def test_experimental_nightly_response_lists_only_experimental_paths(
-        self,
-    ) -> None:
+    async def test_experimental_tool_response_is_flagged(self) -> None:
         result = ExperimentalNightlyResponse(
             nights=[ExperimentalNightlyRow(date=date(2026, 1, 1), rera_index=1.0)],
             total_nights=1,
@@ -465,117 +534,11 @@ class TestResponseProvenanceBlock:
             page_size=30,
         )
 
-        block = (await self._run(result))["provenance"]
+        payload = await self._run(result, "experimental_get_nightly_metrics")
 
-        assert "nights[].rera_index" in block["experimental"]
-        assert "nights[].segmented_ie_ratio" in block["experimental"]
-        assert "derived" not in block
-
-    async def test_nightly_response_maps_headline_indices_to_index_source(
-        self,
-    ) -> None:
-        result = NightlySummaryResponse(
-            nights=[
-                NightlyRow(
-                    date=date(2026, 1, 1),
-                    ahi=2.0,
-                    ahi_computed=2.4,
-                    index_source=IndexSource.DEVICE,
-                )
-            ],
-            total_nights=1,
-            page=1,
-            page_size=30,
-        )
-
-        payload = await self._run(result)
-
-        provenance = payload["provenance"]
-        for index in ("ahi", "oai", "cai", "hi"):
-            assert (
-                provenance["source_dependent"][f"nights[].{index}"]
-                == "nights[].index_source"
-            )
-            assert f"nights[].{index}_computed" in provenance["derived"]
-            assert f"nights[].{index}" not in provenance["derived"]
-        assert payload["nights"][0]["index_source"] == "device"
-
-    def test_night_detail_maps_headline_indices_to_device_index_source(
-        self,
-    ) -> None:
-        block = response_provenance(NightDetailResponse)
-
-        for index in ("ahi", "oai", "cai", "hi"):
-            assert block["source_dependent"][f"device.{index}"] == (
-                "device.index_source"
-            )
-            assert f"device.{index}_computed" in block["derived"]
-        assert "sessions[].statistics.ahi" in block["derived"]
-        assert "sessions[].statistics.ahi_device" not in block["derived"]
-
-    async def test_epoch_distribution_inherits_experimental_parent(self) -> None:
-        payload = await self._run(ExperimentalCompareEpochsResponse())
-
-        assert (
-            "epochs[].mid_insp_flattening.median"
-            in payload["provenance"]["experimental"]
-        )
-        assert (
-            "epochs[].mid_insp_flattening.n_breaths"
-            in payload["provenance"]["experimental"]
-        )
-
-    async def test_device_epoch_response_is_derived_only(self) -> None:
-        block = (await self._run(CompareEpochsResponse()))["provenance"]
-
-        assert "epochs[].device_flg.median" in block["derived"]
-        assert "epochs[].snore_dist.n_samples" in block["derived"]
-        assert "experimental" not in block
-
-    async def test_events_response_has_no_experimental_or_source_dependent_field(
-        self,
-    ) -> None:
-        result = EventsResponse(
-            date="2026-01-01",
-            events=[
-                EventRow(
-                    session_id=1,
-                    session_start_wall_clock="2026-01-01T22:00:00",
-                    event_type="CA",
-                    start_time_wall_clock="2026-01-01T23:00:00",
-                    offset_seconds=3600.0,
-                    context=EventContext(mv_prior_120s_lpm=6.5),
-                )
-            ],
-            total_events=1,
-        )
-
-        block = (await self._run(result))["provenance"]
-
-        assert "events[].context.mv_prior_120s_lpm" in block["derived"]
-        assert "experimental" not in block
-        assert "source_dependent" not in block
-
-    async def test_experimental_event_context_lists_mv_fields_experimental(
-        self,
-    ) -> None:
-        result = ExperimentalEventContextResponse(
-            date="2026-01-01", events=[], total_events=0
-        )
-
-        block = (await self._run(result))["provenance"]
-
-        assert set(block["experimental"]) == {
-            "events[].mv_prior_120s_lpm",
-            "events[].preceding_mv_slope_lpm_per_min",
-            "events[].stability_index",
-        }
-        assert "source_dependent" not in block
-
-    async def test_device_only_response_has_no_block(self) -> None:
-        payload = await self._run(DataOverviewResponse(devices=[]))
-
+        assert payload["experimental"] is True
         assert "provenance" not in payload
+        assert payload["nights"][0]["rera_index"] == 1.0
 
 
 class TestCapabilitiesResource:
@@ -594,7 +557,7 @@ class TestCapabilitiesResource:
         ):
             caps = json.loads(await _read_resource("docs://capabilities"))
 
-        assert caps["provenance"] == {str(t): n for t, n in PROVENANCE_NOTES.items()}
+        assert caps["provenance"] == _PROVENANCE_RULE
         assert "Device data needs no analysis" in caps["analysis"]["note"]
         assert "experimental_* tools need analysis" in caps["analysis"]["note"]
         assert "snore analysis run" not in caps["analysis"]["note"]
@@ -613,35 +576,40 @@ class TestCapabilitiesResource:
 
 class TestSchemasResource:
     @pytest.mark.parametrize("schema_type", sorted(SCHEMA_MODEL_MAP))
-    async def test_schema_is_intact_and_carries_legend(self, schema_type: str) -> None:
+    async def test_schema_tags_only_experimental_fields(self, schema_type: str) -> None:
         schema = json.loads(await _read_resource(f"docs://schemas/{schema_type}"))
+        body = model_to_schema(SCHEMA_MODEL_MAP[schema_type])
+        text = json.dumps(body)
 
-        assert schema == {
-            **model_to_schema(SCHEMA_MODEL_MAP[schema_type]),
-            "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
-        }
+        assert schema == {**body, "x-provenance-legend": _PROVENANCE_RULE}
+        assert "[DEVICE]" not in text
+        assert "[DERIVED]" not in text
+        assert "x-provenance-source" not in text
+        assert set(_provenance_values(body)) <= {Provenance.EXPERIMENTAL}
+        assert _has_experimental_tag(body) == ("[EXPERIMENTAL]" in text)
 
-    async def test_legend_tiers_match_provenance_notes(self) -> None:
-        schema = json.loads(await _read_resource("docs://schemas/nightly_summary"))
+    async def test_experimental_schema_keeps_experimental_tags(self) -> None:
+        schema = json.loads(
+            await _read_resource("docs://schemas/experimental_nightly_row")
+        )
 
-        assert schema["x-provenance-legend"]["tiers"] == {
-            str(t): n for t, n in PROVENANCE_NOTES.items()
-        }
+        rdi = schema["properties"]["rdi"]
+        assert rdi["x-provenance"] == Provenance.EXPERIMENTAL
+        assert rdi["description"].startswith("[EXPERIMENTAL]")
 
-    def test_legend_explains_tags_and_response_block(self) -> None:
-        legend = _SCHEMA_PROVENANCE_LEGEND
-        text = " ".join(f"{legend['field_tags']} {legend['response_block']}".split())
+    async def test_default_schema_keeps_source_fields_untagged(self) -> None:
+        schema = json.loads(await _read_resource("docs://schemas/nightly_row"))
+        props = schema["properties"]
 
-        for expected in (
-            "[DEVICE]",
-            "[DERIVED]",
-            "[EXPERIMENTAL]",
-            "`provenance`",
-            "`source_dependent`",
-            "`x-provenance-source`",
-            "coverage counts",
-            "less certain of the two tiers",
-        ):
-            assert expected in text
-        for unexpected in (*DEFAULT_TOOLS, *EXPERIMENTAL_TOOLS, "mv_source"):
-            assert unexpected not in text
+        for field in ("index_source", *NIGHTLY_RESPIRATORY_SOURCES.values()):
+            assert field in props
+        assert "x-provenance" not in props["ahi"]
+        assert not props["ahi"]["description"].startswith("[")
+
+    def test_legend_states_the_experimental_rule(self) -> None:
+        assert "[EXPERIMENTAL]" in _PROVENANCE_RULE
+        assert "fields nested under them" in _PROVENANCE_RULE
+        assert EXPERIMENTAL_NOTE in _PROVENANCE_RULE
+        assert '`"experimental": true`' in _PROVENANCE_RULE
+        for unexpected in ("[DEVICE]", "[DERIVED]", "source_dependent"):
+            assert unexpected not in _PROVENANCE_RULE

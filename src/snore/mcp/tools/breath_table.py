@@ -276,34 +276,24 @@ def register(mcp: FastMCP) -> None:
         page_size: int = 500,
         bin_minutes: float | None = None,
     ) -> dict[str, Any]:
-        """Paginated breath-level table for a single therapy night.
+        """Paginated breath-level table (flow class, flattening, timing, tidal volume) for a window of one therapy night; requires breath-level analysis.
 
-        Use this tool to inspect individual breath waveform features (flow class,
-        flattening index, timing, tidal volume) within a time window of a therapy session.
-        Call ``get_data_overview`` first to confirm analysis has been run; this tool
-        requires breath-level analysis results.
-
-        When a value can't be computed, ``rows`` and ``bins`` are empty,
-        ``total_breaths`` is 0, ``session_id`` still names the resolved session, and
-        ``null_reason`` says why: ``"analysis_not_run"`` (``analysis_status:
-        "not_run"``; never analyzed) or ``"analysis_stale"`` (``analysis_status:
-        "stale_version"``; analysis predates the current algorithm version and must
-        be re-run).  A date with no sessions is an error.
+        When ``null_reason`` is set, ``rows`` and ``bins`` are empty, ``total_breaths``
+        is 0 and ``session_id`` still names the resolved session: ``"analysis_not_run"``
+        (never analyzed) or ``"analysis_stale"`` (``analysis_status: "stale_version"``;
+        re-run analysis). A date with no sessions is an error.
 
         Args:
-            date: Session date in YYYY-MM-DD format.
-            offset_start: Window start in seconds from session start (≥ 0).
-            offset_end: Window end in seconds from session start (> offset_start).
-                        Raw window must be ≤ 900 s unless ``bin_minutes`` is set.
-            device_id: Filter to a specific device.  Required when multiple devices
-                       have data for the same date.
-            session_id: Filter to a specific session.  Required when the device had
-                        multiple sessions on the date.  Pass ``device_id`` too when
-                        both are given to validate consistency.
-            page: Page number for raw rows (1-based, default 1).
-            page_size: Rows per page for raw fetch (default 500, must be between 1 and 2000).
-            bin_minutes: When set (≥ 1.0), aggregate breaths into bins of this width
-                         instead of returning raw rows.  Required for windows > 15 min.
+            date: Session date (YYYY-MM-DD).
+            offset_start: Window start, seconds from session start (≥ 0).
+            offset_end: Window end, seconds from session start. Raw window must be ≤ 900 s
+                unless ``bin_minutes`` is set.
+            device_id: Required if several devices have data that date.
+            session_id: Required if the device had several sessions that date.
+            page: Raw-row page (1-based, default 1).
+            page_size: Raw rows per page, 1-2000 (default 500).
+            bin_minutes: Aggregate breaths into bins of this width (≥ 1.0) instead of raw
+                rows.
         """
         from snore.mcp.tools.breath_table import (
             get_breath_table as _impl,  # noqa: PLC0415

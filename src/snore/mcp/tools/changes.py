@@ -58,27 +58,19 @@ def register(mcp: FastMCP) -> None:
         end: str,
         device_id: int | None = None,
     ) -> dict[str, Any]:
-        """Return a merged, source-tagged log of every settings change in a date range.
+        """Return a merged, date-ordered log of every settings change in a date range.
 
-        Combines two sources into one date-ordered list:
-        - ``source="device_settings"``: per-key changes read from the device's
-          stored settings, diffed day-over-day per device across ALL persisted
-          keys — including comfort settings such as mask_type and
-          humidity_level.
-        - ``source="mask_log"``: user-logged mask equipment changes
-          (``key="mask_equipment"``) with mask_brand/mask_model/mask_size/
-          mask_style detail fields and optional notes.  ``old_value`` is the
-          previously logged mask, or ``null`` for the first entry ever logged.
-
-        Mask log entries are profile-level, not device-level: they are ALWAYS
-        included even when ``device_id`` is passed — the filter narrows only
-        the device_settings entries.
+        ``source="device_settings"`` entries diff each device's stored settings
+        day-over-day across all keys, comfort settings such as mask_type and
+        humidity_level included. ``source="mask_log"`` entries are user-logged mask
+        equipment changes (``key="mask_equipment"``); ``old_value`` is null for the
+        first one logged. Mask log entries are profile-level, so ``device_id`` never
+        filters them out.
 
         Args:
-            start: Start date in YYYY-MM-DD format.
-            end: End date in YYYY-MM-DD format.
+            start: Start date (YYYY-MM-DD).
+            end: End date (YYYY-MM-DD).
             device_id: Optional device ID filter for device_settings entries.
-                Use get_data_overview to list devices.
         """
         from snore.mcp.tools.changes import (
             get_settings_changes as _impl,  # noqa: PLC0415

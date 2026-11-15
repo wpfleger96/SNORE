@@ -67,7 +67,7 @@ from snore.mcp.tools._scaffold import (  # noqa: F401  (re-exported; tests impor
     tool_error_boundary,
 )
 from snore.mcp.validation import parse_date
-from snore.provenance import PROVENANCE_NOTES, Provenance, response_provenance
+from snore.provenance import PROVENANCE_NOTES, Provenance
 
 logger = logging.getLogger(__name__)
 
@@ -183,30 +183,13 @@ class ActorRuntime:
         return current_actor().profile_id
 
 
-_TIER_NOTES: dict[str, str] = {
-    str(tier): note for tier, note in PROVENANCE_NOTES.items()
-}
-
-_SCHEMA_PROVENANCE_LEGEND: dict[str, Any] = {
-    "tiers": _TIER_NOTES,
-    "field_tags": (
-        "Each tagged field's description starts with its tier, [DEVICE], [DERIVED] "
-        "or [EXPERIMENTAL], and `x-provenance` holds the same tier. A tagged field "
-        "nested under a tagged parent takes the less certain of the two tiers. A "
-        "field with `x-provenance-source` takes its tier per value from the sibling "
-        "field it names, whose value is `device` or `derived`."
-    ),
-    "response_block": (
-        "Tool responses carry a top-level `provenance` block listing the paths of "
-        "non-device fields by tier (`derived`, `experimental`), with inherited tiers "
-        "applied. Metric fields it does not list are device data; identifiers and "
-        "bookkeeping fields (ids, offsets, pagination, coverage counts) are not "
-        "classified; responses with only device data carry no block. Its "
-        "`source_dependent` map takes the path of each field marked "
-        "`x-provenance-source` to the sibling path whose value gives that value's "
-        "tier."
-    ),
-}
+_PROVENANCE_RULE = (
+    "Fields tagged [EXPERIMENTAL] (`x-provenance: experimental`), and fields "
+    f"nested under them, are {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Every "
+    "other field is device data "
+    "or computed from device data. experimental_* tool responses carry "
+    '`"experimental": true`.'
+)
 
 
 def _build_instructions(profile: ClinicalProfile) -> str:
@@ -219,11 +202,11 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated.
+Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated. Fields neither marked experimental nor nested under one are device data or computed from it.
 
-A null field means the data is absent, never zero; its companion `*_reason` field says why.
+A null field means the data is absent, never zero; its `*_reason` field says why.
 
-`docs://schemas/{{type}}` gives each response's JSON schema and explains its [DEVICE]/[DERIVED]/[EXPERIMENTAL] field tiers and `provenance` block; `docs://capabilities` lists this dataset's channels and event types.
+`docs://schemas/{{type}}`: each response's JSON schema; `docs://capabilities`: this dataset's channels and event types.
 """
 
 
@@ -298,9 +281,6 @@ async def _lifespan(
         # Register vendor parsers once at startup (idempotent; tools must not call
         # ensure_registered_parsers() themselves — this is the single call site).
         ensure_registered_parsers()
-        # Warm the per-model provenance cache so first tool calls skip schema generation.
-        for model in SCHEMA_MODEL_MAP.values():
-            response_provenance(model)
 
         db_location = target.location if manage_database else "embedded"
         runtime: SNORERuntime
@@ -457,8 +437,8 @@ def _register_resources(mcp: FastMCP) -> None:
     def get_schema(schema_type: str) -> str:
         """JSON schema for a named response type.
 
-        Each schema carries an `x-provenance-legend` explaining field tiers and
-        the response `provenance` block.
+        Each schema carries an `x-provenance-legend` stating which fields are
+        experimental.
 
         Available schema_types: device_capabilities, device_info, data_overview,
         apple_health_coverage, settings_epoch, settings_timeline,
@@ -484,7 +464,7 @@ def _register_resources(mcp: FastMCP) -> None:
         return json.dumps(
             {
                 **model_to_schema(model),
-                "x-provenance-legend": _SCHEMA_PROVENANCE_LEGEND,
+                "x-provenance-legend": _PROVENANCE_RULE,
             },
             indent=2,
         )
@@ -546,7 +526,7 @@ def _register_resources(mcp: FastMCP) -> None:
                 "session_count": overview.analysis_session_count,
                 "note": _ANALYSIS_NOTE,
             },
-            "provenance": _TIER_NOTES,
+            "provenance": _PROVENANCE_RULE,
             "supported_parsers": supported_parsers,
         }
 

@@ -402,66 +402,33 @@ def register(mcp: FastMCP) -> None:
         page_size: int = 30,
         compliance_threshold_hours: float = COMPLIANCE_THRESHOLD_HOURS,
     ) -> dict[str, Any]:
-        """Return per-night device data and compliance for a date range.
+        """Return per-night device data and compliance for a date range, newest night first.
 
-        Paginated at 30 nights/call (adjustable). Every value comes from
-        device-scored events, device summaries and device waveforms, so the
-        response is the same whether or not analysis has run.
-        ``ahi``/``oai``/``cai``/``hi`` are the device-reported daily value when
-        trusted, otherwise SNORE's recount; ``index_source`` (``"device"`` or
-        ``"derived"``) says which. The recount, when computable, is in
-        ``*_computed``. ``obstructive_apneas``, ``central_apneas``,
-        ``hypopneas``, ``reras`` and ``unclassified_apneas`` are device-scored
-        event counts. ``reras`` and ``unclassified_apneas`` are null, not zero,
-        with a ``"not_reported_by_device"`` companion ``*_reason``, when the
-        device has never scored one.
+        Paginated; ``start`` to ``end`` spans at most 90 nights per call. A range with
+        no data returns no rows. Several devices in range
+        without ``device_id`` is an error that lists them. Values come from device data
+        only, so they do not depend on analysis.
 
-        ``leak_above_24_pct`` is the percent of leak samples at or above
-        24 L/min, OSCAR's time over the default redline. ``device_flg_*`` and
-        ``snore_*`` summarize the device flow-limitation and snore channels.
-        When one of these channels is null, its reason is
-        ``"channel_absent"`` (the channel was not recorded) or
-        ``"no_sessions"`` (the night has no enabled sessions).
-        ``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``: a
-        session's stored leak data could not be decoded, so the night reports
-        no partial value.
+        Headline ``ahi``/``oai``/``cai``/``hi`` are the device-reported value when
+        trusted, otherwise SNORE's recount; ``index_source`` says which, and the recount
+        is in ``*_computed``. ``reras`` and ``unclassified_apneas`` are null, not zero,
+        when the device never scored that type. Null channel values carry a
+        ``*_reason``; ``leak_above_24_pct_reason`` is ``"channel_corrupt"`` when leak
+        data can't be decoded (no partial value). The device
+        ``ie_ratio_median`` scale is unconfirmed and not comparable to
+        ``segmented_ie_ratio``.
 
-        ``rr_mean_bpm``, ``tv_mean_ml``, ``mv_mean_lpm``, ``ti_median_s`` and
-        ``ie_ratio_median`` are the stored summary value when every enabled
-        session of the night stores the same one (the STR daily value on
-        direct ResMed imports, the session summary on OSCAR-profile imports),
-        otherwise the median of the night's pooled waveform samples; each
-        value's ``*_source`` field (``rr_mean_source``, ``tv_mean_source``,
-        ``mv_mean_source``, ``ti_median_source``, ``ie_ratio_source``) is
-        ``"device"`` or ``"derived"`` respectively. When ``ti_median_s`` or
-        ``ie_ratio_median`` is null, its reason is ``"sessions_disagree"``
-        (stored values exist but disagree, or a session has no statistics,
-        and there is no waveform to pool), ``"channel_absent"`` (neither
-        exists), ``"channel_corrupt"`` (a session's waveform could not be
-        decoded) or ``"no_sessions"`` (the night has no enabled sessions).
-        The ResMed stored Ti is whole seconds while the waveform median is
-        fine-grained. The device I:E scale is unconfirmed, so
-        ``ie_ratio_median`` is not comparable to ``segmented_ie_ratio``.
-
-        The ``compliance`` block is present whenever ``start != end`` (range
-        mode), even when the range contains no night data rows; it is ``null``
-        only for single-date requests. ``days_total`` counts CALENDAR nights in
-        the requested range — nights without data count as non-compliant.
-
-        SNORE's own flow-limitation, RERA-proxy, segmented-breath and
-        periodic-breathing metrics are in ``experimental_get_nightly_metrics``.
-
-        Limits: ``start`` to ``end`` spans at most 90 nights per call; rows
-        are newest night first, and a range with no data returns no rows
-        rather than an error. Several devices in range without ``device_id``
-        is an error that lists them.
+        ``compliance`` is null only for a single-date request. ``days_total`` counts
+        every calendar night requested, so nights without data count as non-compliant;
+        ``get_period_stats``' ``compliance_pct`` counts first-to-last therapy day
+        instead.
 
         Args:
-            start: Start date in YYYY-MM-DD format.
-            end: End date in YYYY-MM-DD format.
+            start: Start date (YYYY-MM-DD).
+            end: End date (YYYY-MM-DD).
             device_id: Optional device ID filter.
             page: Page number (1-based). Default 1.
-            page_size: Nights per page (must be between 1 and 90). Default 30.
+            page_size: Nights per page, 1-90. Default 30.
             compliance_threshold_hours: Hours to count as compliant (default 4.0).
         """
         from snore.mcp.tools.summary import (
@@ -496,49 +463,27 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return SNORE's per-night experimental metrics, newest night first.
 
-        Paginated at 30 nights/call (adjustable). Rows are the nights with
-        enabled sessions. A night without a current (OK) analysis keeps its row
-        with null values and a ``"not_available"`` reason.
+        Paginated; ``start`` to ``end`` spans at most 90 nights per call. Several
+        devices in range without ``device_id`` is an error that lists them. Rows are the nights with enabled sessions; a night without a current
+        (OK) analysis keeps its row with null values and a ``"not_available"`` reason.
 
-        RDI here adds the experimental RERA-proxy index to the night's
-        ``ahi_computed``; compare ``rdi`` against ``ahi_computed``, not ``ahi``
-        — on device-headline nights ``rdi`` can be lower than ``ahi``.
-        ``rera_index`` is RERA-proxy events per mask-on hour of analyzed
-        sessions; ``rera_index_reason`` is ``"duration_zero"`` when a RERA
-        count exists but those analyzed sessions have zero mask-on hours,
-        making the per-hour rate undefined. The proxy's FL runs (and so
-        ``rera_proxy_count``, ``rera_index`` and ``rdi``) include fallback
-        flatness-triage guesses (classifier confidence ==
-        ``FL_DEFAULT_CONFIDENCE``), unlike ``fl_class_ge4_pct`` below, so they
-        inherit the fallback share's sensitivity to waveform shape (e.g. across
-        therapy modes or pressure-support levels).
-
-        ``fl_class_ge4_pct`` is the percent of leak-valid, rule-matched
-        classified breaths with ``flow_class >= 4``; the confidence gate
-        excludes fallback guesses. ``fl_median``/``fl_5th``/``fl_min`` are
-        per-breath mid-inspiratory flattening where lower = more flow-limited,
-        the opposite direction of ``device_flg_*``.
-
-        ``segmented_ti_median_s`` and ``segmented_ie_ratio`` come from SNORE's
-        breath segmentation. ``segmented_ie_ratio`` is unitless Ti/Te and is not
-        comparable to the device ``ie_ratio_median``.
-
-        ``periodic_breathing_pct`` is the percent of analyzed-session time
-        spent in periodic-breathing episodes found by analysis (0.0 when
-        detection ran and found none). When null, ``pb_reason`` is one of:
-        ``"not_available"`` (no OK session with a PB result, the persisted
-        episodes were malformed, or the OK sessions have zero duration);
-        ``"algo_version_mismatch"`` (reserved; not currently returned).
-
-        Limits: ``start`` to ``end`` spans at most 90 nights per call. Several
-        devices in range without ``device_id`` is an error that lists them.
+        RDI here adds the experimental RERA-proxy index to ``ahi_computed``; compare
+        ``rdi`` with ``ahi_computed``, not ``ahi``, which can be device-reported and
+        higher. The proxy's FL runs (``rera_proxy_count``, ``rera_index``, ``rdi``)
+        include fallback flatness-triage guesses, unlike ``fl_class_ge4_pct``, so they
+        inherit the fallback share's sensitivity to waveform shape (e.g. across therapy
+        modes or pressure-support levels). ``fl_class_ge4_pct`` counts leak-valid,
+        rule-matched classified breaths with ``flow_class >= 4``; the confidence gate
+        excludes fallback guesses. ``fl_*`` flattening is lower = more flow-limited,
+        opposite to ``device_flg_*``. ``segmented_ie_ratio`` is Ti/Te and not comparable
+        to the device ``ie_ratio_median``, whose scale is unconfirmed.
 
         Args:
-            start: Start date in YYYY-MM-DD format.
-            end: End date in YYYY-MM-DD format.
+            start: Start date (YYYY-MM-DD).
+            end: End date (YYYY-MM-DD).
             device_id: Optional device ID filter.
             page: Page number (1-based). Default 1.
-            page_size: Nights per page (must be between 1 and 90). Default 30.
+            page_size: Nights per page, 1-90. Default 30.
         """
         from snore.mcp.tools.summary import (
             experimental_get_nightly_metrics as _impl,  # noqa: PLC0415

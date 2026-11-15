@@ -65,35 +65,18 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return therapy statistics per day, week, month, 6 months or year, as the web Stats page shows them.
 
-        ``periods`` holds one entry per period that has therapy data, oldest
-        first; periods without any device night are omitted, so
-        ``days_used`` can be less than ``days_in_period``. Periods are whole
-        calendar periods (weeks start on Monday); when ``start`` or ``end``
-        falls inside one, only the nights in range count. Every value is
-        derived from the nightly device values across every device of the
-        profile: counts, means, medians, minimums and pooled percentiles.
-        ``avg_ahi``, ``avg_oai``, ``avg_cai`` and ``avg_hi`` average the
-        nightly headline indices, which
-        can mix device-reported and recounted nights. ``avg_rera`` is null
-        when no device in the period has ever scored a RERA.
-        ``days_compliant`` counts nights with at least 4 mask-on hours, and
-        ``compliance_pct`` is that as a percent of the period's calendar days
-        between the range's first and last therapy day (OSCAR's Statistics
-        page), so it can differ from ``get_nightly_summary``'s ``compliance``,
-        whose denominator is every calendar night requested.
-        ``device_flg_95th`` and ``snore_95th`` are the 95th percentiles of the
-        device flow-limitation and snore channels over the period's pooled
-        samples; null when no session has the channel. An open or long range
-        decodes every session's flow-limitation and snore channel data, so
-        bound ``start``/``end`` when the 95th percentiles over a shorter span
-        are enough.
-        ``avg_total_sleep_hours`` and ``avg_sleep_efficiency_pct`` average
-        the period's Apple Health nights; null when it has none.
+        One entry per period with therapy data, oldest first, across every device of the
+        profile. Weeks start on Monday; a ``start`` or ``end`` inside a period counts
+        only the nights in range. ``avg_ahi``/``avg_oai``/``avg_cai``/``avg_hi`` average
+        nightly headline indices, which can mix device-reported and recounted nights.
+        ``compliance_pct`` counts the calendar days from the range's first to last
+        therapy day (OSCAR's Statistics page); ``get_nightly_summary``'s ``compliance``
+        counts every calendar night requested. ``device_flg_95th`` and ``snore_95th``
+        decode every session's channel data, so bound ``start``/``end`` on long
+        histories.
 
-        Omit ``start`` and/or ``end`` for an open range (all data by default).
-        ``period_type="day"`` needs both, spanning at most 90 nights; for
-        nightly detail prefer ``get_nightly_summary``. No analysis data is read;
-        SNORE's experimental metrics are in the ``experimental_*`` tools.
+        Omit ``start`` and/or ``end`` for an open range. ``period_type="day"`` needs
+        both, spanning at most 90 nights.
 
         Args:
             period_type: One of "day", "week", "month", "6month", "year".

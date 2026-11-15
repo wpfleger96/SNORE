@@ -141,7 +141,8 @@ class TestCompareEpochsRoundtrip:
 
         assert payload["null_reason"] is None
         assert "version_warnings" not in payload
-        assert "experimental" not in payload["provenance"]
+        assert "provenance" not in payload
+        assert "experimental" not in payload
         epoch = payload["epochs"][0]
         assert epoch["date_start"] == "2025-01-01"
         assert epoch["nights_with_data"] == 2

@@ -862,11 +862,8 @@ class TestExperimentalGetEventContextRoundtrip:
         assert row["stability_index"] is None
         assert row["stability_reason"] == "not_available"
         assert row["mv_source"] == "flow_derived"
-        assert set(payload["provenance"]["experimental"]) == {
-            "events[].mv_prior_120s_lpm",
-            "events[].preceding_mv_slope_lpm_per_min",
-            "events[].stability_index",
-        }
+        assert payload["experimental"] is True
+        assert "provenance" not in payload
 
     async def test_max_events_zero_raises_tool_error(
         self, mock_db_session: Any, mcp_client_factory: Any

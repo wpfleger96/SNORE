@@ -49,50 +49,35 @@ if TYPE_CHECKING:
 _MaxPoints = Annotated[int | None, Field(ge=MAX_POINTS_MIN, le=MAX_POINTS_MAX)]
 _MAX_POINTS_RANGE = f"{MAX_POINTS_MIN}–{MAX_POINTS_MAX}"
 
-# Shared channel vocabulary block for get_waveform and render_window tool descriptions.
-_CHANNEL_VOCAB_DOC = """\
-Channel vocabulary (16 channels):
-    ``flow``             — inspiratory/expiratory flow (L/min), 25 Hz from BRP.edf
-    ``pressure``         — mask pressure (cmH2O), 0.5 Hz duty-cycle average from
-                           PLD.edf.  Reads approximately the time-weighted mean of
-                           IPAP/EPAP — NOT the instantaneous bilevel square wave —
-                           so it sits between EPAP and IPAP.  Use ``pressure_hr``
-                           for instantaneous mask pressure.  Plot alongside
-                           ``therapy_pressure`` for delivered-vs-target
-                           comparison.
-    ``therapy_pressure`` — therapy-algorithm target pressure (cmH2O), 0.5 Hz
-                           duty-cycle average from PLD.edf; same averaging caveat
-                           as ``pressure``.
-    ``epap``             — expiratory positive airway pressure (cmH2O)
-    ``leak``             — estimated unintentional leak (L/min)
-    ``mv``               — device-reported minute ventilation (L/min) from PLD.edf
-    ``rr``               — respiratory rate (breaths/min)
-    ``tv``               — device-reported tidal volume (mL) from PLD.edf
-    ``spo2``             — pulse-oximetry oxygen saturation (%)
-    ``pulse``            — pulse rate (bpm)
-    ``fl``               — flow-limitation index (dimensionless)
-    ``snore``            — snore-intensity signal (arbitrary units)
-    ``pressure_hr``      — mask pressure (cmH2O), 25 Hz from BRP.edf, recorded
-                           alongside ``flow``; shows the instantaneous IPAP/EPAP
-                           swing that ``pressure`` averages away.
-    ``ti``               — device-reported inspiratory time (seconds), 0.5 Hz from
-                           PLD.edf; ResMed VAuto/AirCurve only.
-    ``ie_ratio``         — device-reported I:E ratio in % (the EDF's unit, stored
-                           unconverted; how the device defines that percentage is
-                           unconfirmed, so do not read it as Ti/Te), 0.5 Hz from
-                           PLD.edf; ResMed VAuto/AirCurve only.
-    ``trigger_cycle``    — raw device trigger/cycle event codes (integers 0–16,
-                           undecoded, no unit), 25 Hz from TCV.edf; ResMed VAuto
-                           only.  Categorical: read each value as holding until
-                           the next offset.  With ``max_points`` it keeps the first
-                           sample of each run of equal codes, both edges of each
-                           recording (mask-off) gap, and the last sample (never
-                           LTTB), so no code is lost and two equal consecutive
-                           values mark a gap (or the window's end); it can
-                           return more than ``max_points`` values.
-The last four come only from direct ResMed SD-card imports; sessions without them
-list them in ``missing_channels``.  Samples are stored as recorded, including
-out-of-range or sentinel values."""
+# Channel list for the get_waveform description; render_window points to it.
+_CHANNEL_VOCAB_DOC = (
+    "Channels (unit, rate):\n"
+    "``flow``: flow (L/min), 25 Hz.\n"
+    "``pressure``: mask pressure (cmH2O), 0.5 Hz duty-cycle average: sits between "
+    "EPAP and IPAP, not the bilevel square wave.\n"
+    "``therapy_pressure``: target pressure (cmH2O), averaged like ``pressure``.\n"
+    "``epap``: EPAP (cmH2O).\n"
+    "``leak``: unintentional leak (L/min).\n"
+    "``mv``: minute ventilation (L/min).\n"
+    "``rr``: respiratory rate (breaths/min).\n"
+    "``tv``: tidal volume (mL).\n"
+    "``spo2``: oxygen saturation (%).\n"
+    "``pulse``: pulse rate (bpm).\n"
+    "``fl``: device flow-limitation index (0–1).\n"
+    "``snore``: snore signal (0–5).\n"
+    "``pressure_hr``: mask pressure (cmH2O), 25 Hz; shows the instantaneous "
+    "IPAP/EPAP swing.\n"
+    "``ti``: inspiratory time (s), 0.5 Hz; VAuto/AirCurve only.\n"
+    "``ie_ratio``: I:E in % as recorded, 0.5 Hz; scale unconfirmed, not Ti/Te; "
+    "VAuto/AirCurve only.\n"
+    "``trigger_cycle``: undecoded trigger/cycle codes 0–16, 25 Hz; VAuto only. "
+    "Categorical: each value holds until the next offset. ``max_points`` keeps "
+    "each run start, both edges of each recording gap and the last sample (never "
+    "LTTB), so two equal consecutive values mark a gap or the window end, and it "
+    "can return more than ``max_points`` values.\n"
+    "The last four come only from direct ResMed SD-card imports. Samples are "
+    "stored as recorded, sentinel values included."
+)
 
 
 async def fetch_waveform_raw(
@@ -267,40 +252,26 @@ def register(mcp: FastMCP) -> None:
         return _dump_response(response, "get_waveform")
 
     get_waveform.__doc__ = (
-        "Raw per-sample waveform arrays for a single therapy-night window (≤2 min).\n\n"
-        "Use this tool for deep numerical inspection of a specific waveform window\n"
-        "when ``render_window`` is insufficient.  Window cap\n"
-        "is 120 s — requesting a wider window is an error.\n\n"
+        "Raw per-sample waveform arrays for one therapy-night window. Window cap "
+        "is 120 s; a wider window is an error.\n\n"
         + _CHANNEL_VOCAB_DOC
-        + "\n\n"
-        "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
-        f"``max_points`` ({_MAX_POINTS_RANGE}): when set, applies LTTB downsampling per\n"
-        "channel (categorical channels excepted, see above) so the visual shape is\n"
-        "preserved while reducing data volume.  Omit for\n"
-        "raw unmodified samples.  Channels with no more samples than ``max_points``\n"
-        "are returned raw with ``is_downsampled: false``.  Many-channel raw requests often exceed the 500,000-byte\n"
-        "response limit — use ``max_points`` or fewer channels if that happens.\n\n"
-        "When a value can't be computed: channels the session did not record are\n"
-        "listed in ``missing_channels`` and ``missing_channel_reason`` is\n"
-        '``"channel_absent"`` (null when every requested channel is present).  When\n'
-        "``device_id`` names an owned device with no enabled session on the date and\n"
-        "no ``session_id``, the call succeeds with ``session_id`` and\n"
-        "``session_start_wall_clock`` null, empty ``channels``, and every requested\n"
-        "channel in ``missing_channels``; without ``device_id`` such a date is a tool\n"
-        "error.\n\n"
+        + "\n\nChannels the session did not record are listed in "
+        "``missing_channels`` with ``missing_channel_reason`` "
+        '``"channel_absent"``. A many-channel raw request can exceed the '
+        "500,000-byte response limit; set ``max_points`` or request fewer "
+        "channels. A ``device_id`` with no enabled session on the date and no "
+        "``session_id`` returns empty ``channels`` with null ``session_id``; "
+        "without ``device_id`` such a date is an error.\n\n"
         "Args:\n"
-        "    date: Session date in YYYY-MM-DD format.\n"
-        "    offset_start: Window start in seconds from session start (≥ 0).\n"
-        "    offset_end: Window end in seconds from session start (> offset_start).\n"
-        "                Must be within 120 s of offset_start (enforced).\n"
-        "    device_id: Filter to a specific device.  Required when multiple devices\n"
-        "               have data for the same date.\n"
-        "    session_id: Filter to a specific session.  Required when the device had\n"
-        "                multiple sessions on the date.\n"
-        "    channels: Waveform channels to return.  Defaults to [flow, pressure, leak].\n"
-        "    max_points: Per-channel target sample count for LTTB thinning\n"
-        f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
-        "                keep their run starts and may exceed it."
+        "    date: Session date (YYYY-MM-DD).\n"
+        "    offset_start: Window start, seconds from session start (≥ 0).\n"
+        "    offset_end: Window end, seconds from session start.\n"
+        "    device_id: Required if several devices have data that date.\n"
+        "    session_id: Required if the device had several sessions that date.\n"
+        "    channels: Channels to return. Default [flow, pressure, leak].\n"
+        f"    max_points: Per-channel LTTB target ({_MAX_POINTS_RANGE}); omit for "
+        "raw samples. Channels with no more samples than ``max_points`` come back "
+        "raw."
     )
     # Functional form (not @decorator) because __doc__ is built dynamically above
     # before decoration; switching to @mcp.tool() would lose the channel vocab.
@@ -334,34 +305,20 @@ def register(mcp: FastMCP) -> None:
         return Image(data=png, format="png")
 
     render_window.__doc__ = (
-        "PNG waveform chart for visual inspection of a therapy-night window (≤15 min).\n\n"
-        "Returns a stacked-subplot PNG image — one panel per channel — suitable for\n"
-        "visual inspection of breathing patterns, flow limitation, leak, and SpO2.\n"
-        "Window cap is 900 s (15 min) — requesting a wider window is an error.\n\n"
-        + _CHANNEL_VOCAB_DOC
-        + "\n\n"
-        "Default channels when ``channels`` is empty or omitted: flow, pressure, leak.\n\n"
-        f"``max_points`` ({_MAX_POINTS_RANGE}): thins dense windows before plotting,\n"
-        "preserving visual shape while speeding rendering (categorical channels are\n"
-        "drawn as steps and thinned as described above).  Channels with no more\n"
-        "samples than ``max_points`` are plotted raw.  Omit for raw unmodified samples.\n\n"
-        "Missing channels (not recorded by the device) are noted in the image title\n"
-        "rather than causing an error.\n\n"
-        "When ``device_id`` names an owned device with no enabled session on the date\n"
-        'and no ``session_id``, the tool returns a single-panel "No waveform data" PNG;\n'
-        "without ``device_id`` such a date is a tool error.\n\n"
+        "PNG chart of one therapy-night window, one panel per channel. Window cap "
+        "is 900 s; a wider window is an error. Channels are named as in "
+        "``get_waveform``; missing channels are noted in the image title. A "
+        "``device_id`` with no enabled session on the date and no ``session_id`` "
+        'returns a "No waveform data" PNG; without ``device_id`` such a date is '
+        "an error.\n\n"
         "Args:\n"
-        "    date: Session date in YYYY-MM-DD format.\n"
-        "    offset_start: Window start in seconds from session start (≥ 0).\n"
-        "    offset_end: Window end in seconds from session start (> offset_start).\n"
-        "                Must be within 900 s of offset_start (enforced).\n"
-        "    device_id: Filter to a specific device.  Required when multiple devices\n"
-        "               have data for the same date.\n"
-        "    session_id: Filter to a specific session.  Required when the device had\n"
-        "                multiple sessions on the date.\n"
-        "    channels: Waveform channels to plot.  Defaults to [flow, pressure, leak].\n"
-        "    max_points: Per-channel target samples to plot for LTTB thinning\n"
-        f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
-        "                keep their run starts and may exceed it."
+        "    date: Session date (YYYY-MM-DD).\n"
+        "    offset_start: Window start, seconds from session start (≥ 0).\n"
+        "    offset_end: Window end, seconds from session start.\n"
+        "    device_id: Required if several devices have data that date.\n"
+        "    session_id: Required if the device had several sessions that date.\n"
+        "    channels: Channels to plot. Default [flow, pressure, leak].\n"
+        f"    max_points: Per-channel LTTB target ({_MAX_POINTS_RANGE}) to thin "
+        "dense windows; omit for raw samples."
     )
     mcp.tool()(tool_error_boundary(render_window))

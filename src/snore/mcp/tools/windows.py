@@ -205,77 +205,54 @@ def register(mcp: FastMCP) -> None:
         fl_class_threshold: int = RERAProxyConstants.FL_CLASS_THRESHOLD,
         recovery_amplitude_margin: float = RERAProxyConstants.RECOVERY_AMPLITUDE_MARGIN,
     ) -> dict[str, Any]:
-        """Find the N worst breath windows matching a flow-limitation criterion for a night.
+        """Find the N worst breath windows matching a flow-limitation criterion for a night, to review in ``experimental_get_breath_table`` or ``render_window``.
 
-        Use this tool to locate specific regions in a therapy session worth reviewing in
-        detail (e.g. in ``experimental_get_breath_table`` or ``render_window``).  Each window
-        is a contiguous breath sequence ranked by severity; windows with >50% overlap
-        (relative to the shorter) are deduped, keeping the higher-ranked.  Results are
-        ordered worst-first, except ``ca_centered``, which is ordered by the CA event's
-        offset from its own session's start (smallest first; windows from different
-        sessions interleave by offset, not by wall-clock time).
+        Windows are contiguous breath sequences ranked worst-first; windows overlapping
+        by more than 50% of the shorter are deduped, keeping the higher-ranked.
+        ``ca_centered`` (device-scored CA events) is instead ordered by offset from its
+        own session's start, so sessions interleave; every other criterion requires
+        breath-level analysis.
 
-        Every criterion except ``ca_centered`` (device-scored CA events) requires
-        breath-level analysis results (``get_data_overview`` → ``analysis_run`` must
-        be true).
-
-        When a value can't be computed, ``windows`` is empty and ``null_reason`` says
-        why: ``"primary_mode_mismatch"`` (sessions differ in primary mode;
-        ``fl_run_ending_in_recovery`` and ``rera_proxy_centered`` refuse),
-        ``"analysis_not_run"`` (no session on the date) or ``"algo_version_mismatch"``
-        (reserved; not currently returned).  For the analysis-based criteria, an
-        empty ``windows`` with a null ``null_reason`` means nothing matched only if
-        ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
-        unanalyzed or stale sessions that were skipped.  Limits: options irrelevant
-        to the chosen ``criterion`` must keep their defaults.
+        When ``windows`` is empty, ``null_reason`` says why: ``"primary_mode_mismatch"``
+        (sessions differ in primary mode; ``fl_run_ending_in_recovery`` and
+        ``rera_proxy_centered`` refuse), ``"algo_version_mismatch"`` (sessions analyzed
+        with different algorithm versions; the FL-ranked criteria refuse) or
+        ``"analysis_not_run"`` (no session on the date). For the analysis-based
+        criteria, an empty ``windows`` with a null ``null_reason`` means nothing matched
+        only if ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
+        skipped unanalyzed or stale sessions. Options irrelevant to the chosen
+        ``criterion`` must keep their defaults.
 
         Args:
-            date: Session date in YYYY-MM-DD format.
-            criterion: Window selection criterion.  One of:
-                ``"worst_flattening_leak_valid"`` — windows anchored on the leak-valid
-                    breaths with the lowest (most flow-limited) mid-inspiratory flattening,
-                    ranked by that single anchor breath's score; use to find FL hotspots.
-                ``"ca_centered"`` — context window of ±``context_seconds`` around each
-                    CA or CAA event, ordered by offset within its session (see above); ``n``
-                    keeps the first N in that order.  Works even when the day mixes
-                    algorithm versions.
-                ``"fl_run_ending_in_recovery"`` — FL runs immediately followed by a
-                    recovery breath (the analysis-time recovery flag OR the
-                    self-contained v2 criterion: flow class drops to <=2 with peak
-                    flow >= ``(1 + recovery_amplitude_margin)`` x the run mean);
-                    requires uniform primary_mode across sessions.
-                ``"rera_proxy_centered"`` — context window of ±``context_seconds``
-                    centered on the recovery breath of each detected RERA-proxy event
-                    (FL run → recovery breath); ranked by FL run length descending.
-                    FL runs here, as in ``fl_run_ending_in_recovery``, include
-                    fallback flatness-triage guesses (no confidence gate).
-                    Accepts ``context_seconds``, ``min_fl_run_length``,
-                    ``fl_class_threshold``, ``recovery_amplitude_margin``.
-                    Pass ``session_id`` + ``window_start_offset`` / ``window_end_offset``
-                    to ``render_window`` for visual inspection.
-                    Requires uniform primary_mode across sessions.
-            n: Number of windows to return (1–50, default 5).
-            device_id: Filter to a specific device.  Required when multiple devices
-                       have data for the same date.
-            include_unknown_leak: Include breaths where leak validity is unknown
-                (default false).  Only relevant for ``worst_flattening_leak_valid``.
-            flattening_threshold: Maximum mid-inspiratory flattening score for a breath
-                to anchor a window (lower = more flow-limited).  No cutoff when omitted.
-            min_window_breaths: Minimum breaths per window (default 3).
-            context_breaths_before: Context breaths before the anchor (default 3).
-            context_breaths_after: Context breaths after the anchor (default 3).
-            context_seconds: Context seconds on each side of the anchor (default 120.0).
-                Only relevant for ``ca_centered`` and ``rera_proxy_centered``.
-            min_fl_run_length: Minimum FL-class run length (default 2).
-                Only relevant for ``fl_run_ending_in_recovery`` and
-                ``rera_proxy_centered``.
-            fl_class_threshold: Minimum flow class to count as FL (default 4).
-                Only relevant for ``fl_run_ending_in_recovery`` and
-                ``rera_proxy_centered``.
-            recovery_amplitude_margin: Fractional peak-flow margin over the FL-run
-                mean for the self-contained recovery criterion (default 0.20).
-                Only relevant for ``fl_run_ending_in_recovery`` and
-                ``rera_proxy_centered``.
+            date: Session date (YYYY-MM-DD).
+            criterion: One of:
+                ``"worst_flattening_leak_valid"``: anchored on the leak-valid breaths with the
+                lowest (most flow-limited) mid-inspiratory flattening.
+                ``"ca_centered"``: ±``context_seconds`` around each CA or CAA event. Works
+                when the day mixes algorithm versions.
+                ``"fl_run_ending_in_recovery"``: FL runs followed by a recovery breath (the
+                analysis-time flag, or flow class <= 2 with peak flow >=
+                ``(1 + recovery_amplitude_margin)`` x the run mean).
+                ``"rera_proxy_centered"``: ±``context_seconds`` around the recovery breath of
+                each RERA-proxy event, ranked by FL run length.
+                FL runs in the last two include fallback flatness-triage guesses (no
+                confidence gate) and need a uniform primary mode. Pass a window's
+                ``session_id`` and offsets to ``render_window`` to view it.
+            n: Windows to return (1–50, default 5).
+            device_id: Required if several devices have data that date.
+            include_unknown_leak: Include breaths with unknown leak validity
+                (``worst_flattening_leak_valid`` only).
+            flattening_threshold: Maximum flattening score for an anchor breath (lower =
+                more flow-limited); no cutoff when omitted.
+            min_window_breaths: Minimum breaths per window.
+            context_breaths_before: Context breaths before the anchor.
+            context_breaths_after: Context breaths after the anchor.
+            context_seconds: Seconds each side of the anchor (``ca_centered``,
+                ``rera_proxy_centered``).
+            min_fl_run_length: Minimum FL-class run length (last two criteria).
+            fl_class_threshold: Minimum flow class counted as FL (last two criteria).
+            recovery_amplitude_margin: Peak-flow margin over the FL-run mean for the
+                recovery test (last two criteria).
         """
         from snore.mcp.tools.windows import find_windows as _impl  # noqa: PLC0415
 

@@ -223,8 +223,7 @@ def register(mcp: FastMCP) -> None:
     async def get_data_overview(ctx: Context) -> dict[str, Any]:
         """Orient to the imported dataset: devices, date ranges, channels, analysis status, Apple Health coverage.
 
-        Call this first before any other tool. Returns everything needed to understand
-        what data is available and which tools are applicable.
+        Call this first.
 
         ``apple_health`` holds the first and last night dates and the number
         of nights with Apple Health sleep data, or null when there are none;

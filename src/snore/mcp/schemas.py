@@ -19,11 +19,11 @@ Absent data is ``null`` with a companion ``*_reason`` field
 (e.g. ``leak_above_24_pct: null, leak_above_24_pct_reason: "channel_absent"``).
 All measurement fields carry their unit in the field name or tool docstring.
 
-Metric fields declare a provenance tier via ``provenance_field``: the
-description starts with ``[DEVICE]`` / ``[DERIVED]`` / ``[EXPERIMENTAL]`` and
-the JSON schema carries ``x-provenance``.  Fields nested in a tagged parent
-(e.g. ``EpochDistribution`` under ``EpochStats.mid_insp_flattening``) take the
-less certain of the two tiers (``snore.provenance.response_provenance``).
+Metric fields declare a provenance tier via ``provenance_field`` (the tier
+REST/OpenAPI shows).  ``docs://schemas`` keeps only the experimental tag
+(``[EXPERIMENTAL]`` description prefix, ``x-provenance: experimental``):
+``model_to_schema`` strips the device/derived tags, since an unflagged MCP
+field is device data or computed from it.
 """
 
 from __future__ import annotations
@@ -35,7 +35,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field
 
 from snore.metrics import pooled_percentile_description
-from snore.provenance import IndexSource, Provenance, provenance_field
+from snore.provenance import (
+    IndexSource,
+    Provenance,
+    description_prefix,
+    provenance_field,
+)
 from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
     INDEX_SOURCE_DESCRIPTION,
@@ -1594,6 +1599,33 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
 }
 
 
+_UNFLAGGED_TIERS = (Provenance.DEVICE, Provenance.DERIVED)
+
+
+def _strip_unflagged_tiers(node: Any) -> None:
+    """Remove device/derived tags in place, keeping experimental ones."""
+    if isinstance(node, list):
+        for item in node:
+            _strip_unflagged_tiers(item)
+        return
+    if not isinstance(node, dict):
+        return
+    if node.get("x-provenance") in _UNFLAGGED_TIERS:
+        del node["x-provenance"]
+        node.pop("x-provenance-source", None)
+    description = node.get("description")
+    if isinstance(description, str):
+        for tier in _UNFLAGGED_TIERS:
+            description = description.removeprefix(description_prefix(tier))
+        node["description"] = description
+    for value in node.values():
+        _strip_unflagged_tiers(value)
+
+
 def model_to_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Return the JSON schema for a Pydantic model."""
-    return model.model_json_schema(mode="serialization")
+    """JSON schema for a Pydantic model, tagging only experimental fields."""
+    # model_json_schema builds a fresh dict on every call, so editing it in place
+    # cannot leak into Pydantic's cached core schema.
+    schema = model.model_json_schema(mode="serialization")
+    _strip_unflagged_tiers(schema)
+    return schema
