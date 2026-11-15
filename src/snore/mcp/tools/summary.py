@@ -404,8 +404,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return per-night device data and compliance for a date range, newest night first.
 
-        Paginated at 30 nights/call (adjustable); ``start`` to ``end`` spans at most 90
-        nights per call. A range with no data returns no rows. Several devices in range
+        Paginated; ``start`` to ``end`` spans at most 90 nights per call. A range with
+        no data returns no rows. Several devices in range
         without ``device_id`` is an error that lists them. Values come from device data
         only, so they do not depend on analysis.
 
@@ -413,8 +413,8 @@ def register(mcp: FastMCP) -> None:
         trusted, otherwise SNORE's recount; ``index_source`` says which, and the recount
         is in ``*_computed``. ``reras`` and ``unclassified_apneas`` are null, not zero,
         when the device never scored that type. Null channel values carry a
-        ``*_reason``; ``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``
-        (undecodable leak data; no partial value). The device
+        ``*_reason``; ``leak_above_24_pct_reason`` is ``"channel_corrupt"`` when leak
+        data can't be decoded (no partial value). The device
         ``ie_ratio_median`` scale is unconfirmed and not comparable to
         ``segmented_ie_ratio``.
 
@@ -463,9 +463,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return SNORE's per-night experimental metrics, newest night first.
 
-        Paginated at 30 nights/call (adjustable); ``start`` to ``end`` spans at most 90
-        nights per call. Several devices in range without ``device_id`` is an error that
-        lists them. Rows are the nights with enabled sessions; a night without a current
+        Paginated; ``start`` to ``end`` spans at most 90 nights per call. Several
+        devices in range without ``device_id`` is an error that lists them. Rows are the nights with enabled sessions; a night without a current
         (OK) analysis keeps its row with null values and a ``"not_available"`` reason.
 
         RDI here adds the experimental RERA-proxy index to ``ahi_computed``; compare

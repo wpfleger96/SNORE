@@ -176,7 +176,9 @@ def register(mcp: FastMCP) -> None:
         type. ``sessions`` includes disabled sessions, but only enabled ones feed the
         night's values. ``leak_redline`` holds OSCAR's 24 L/min leak views, including
         Large Leak spans. At most 500 spans are listed, the longest;
-        ``large_leak_span_count`` and ``large_leak_pct`` cover all of them. The sleep-stage timeline is in ``get_apple_sleep_stages``.
+        ``large_leak_span_count`` and ``large_leak_pct`` cover all of them.
+        ``apple_health`` is the Apple Health night; its stage timeline is in
+        ``get_apple_sleep_stages``.
         Times are wall-clock with no UTC offset.
 
         Errors when several devices have a night on the date and ``device_id`` is

@@ -53,8 +53,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """List the nights that have Apple Health sleep samples, newest first, as the web Apple Health page does.
 
-        A date with only other Apple data (such as SpO2) is not listed. Paginated at 30
-        nights per call (adjustable); ``total_nights`` counts every night in range.
+        A date with only other Apple data (such as SpO2) is not listed. Paginated;
+        ``total_nights`` counts every night in range.
         Night dates use the CPAP noon split, so an Apple night pairs with the device
         night of the same date. ``get_night_detail`` adds the night's SpO2, respiratory
         rate and breathing disturbances; ``get_apple_sleep_stages`` gives its stage

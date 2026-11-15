@@ -265,13 +265,13 @@ def register(mcp: FastMCP) -> None:
         "Args:\n"
         "    date: Session date (YYYY-MM-DD).\n"
         "    offset_start: Window start, seconds from session start (≥ 0).\n"
-        "    offset_end: Window end, seconds from session start; at most 120 s "
-        "after offset_start.\n"
+        "    offset_end: Window end, seconds from session start.\n"
         "    device_id: Required if several devices have data that date.\n"
         "    session_id: Required if the device had several sessions that date.\n"
         "    channels: Channels to return. Default [flow, pressure, leak].\n"
         f"    max_points: Per-channel LTTB target ({_MAX_POINTS_RANGE}); omit for "
-        "raw samples. Channels with fewer samples come back raw."
+        "raw samples. Channels with no more samples than ``max_points`` come back "
+        "raw."
     )
     # Functional form (not @decorator) because __doc__ is built dynamically above
     # before decoration; switching to @mcp.tool() would lose the channel vocab.
@@ -306,7 +306,7 @@ def register(mcp: FastMCP) -> None:
 
     render_window.__doc__ = (
         "PNG chart of one therapy-night window, one panel per channel. Window cap "
-        "is 900 s; a wider window is an error. Channels and defaults are as in "
+        "is 900 s; a wider window is an error. Channels are named as in "
         "``get_waveform``; missing channels are noted in the image title. A "
         "``device_id`` with no enabled session on the date and no ``session_id`` "
         'returns a "No waveform data" PNG; without ``device_id`` such a date is '
@@ -314,8 +314,7 @@ def register(mcp: FastMCP) -> None:
         "Args:\n"
         "    date: Session date (YYYY-MM-DD).\n"
         "    offset_start: Window start, seconds from session start (≥ 0).\n"
-        "    offset_end: Window end, seconds from session start; at most 900 s "
-        "after offset_start.\n"
+        "    offset_end: Window end, seconds from session start.\n"
         "    device_id: Required if several devices have data that date.\n"
         "    session_id: Required if the device had several sessions that date.\n"
         "    channels: Channels to plot. Default [flow, pressure, leak].\n"

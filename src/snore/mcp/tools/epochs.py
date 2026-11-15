@@ -217,9 +217,7 @@ def register(mcp: FastMCP) -> None:
         ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).
 
         Args:
-            epochs: Same format as ``compare_epochs`` ``epochs``: ``device_id``
-                is required when several devices have data in the range; at most
-                366 calendar nights per epoch.
+            epochs: Same format as ``compare_epochs`` ``epochs``.
             metrics: Optional subset of ``"mid_insp_flattening"``, ``"flatness_index"``,
                 ``"tidal_volume_ml"``, ``"ie_ratio"`` (default all four).
         """

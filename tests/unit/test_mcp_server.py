@@ -553,7 +553,7 @@ class TestChannelVocab:
     async def test_render_window_points_to_get_waveform_channels(self) -> None:
         description = (await self._get_tools())["render_window"].description or ""
 
-        assert "Channels and defaults are as in ``get_waveform``" in description
+        assert "Channels are named as in ``get_waveform``" in description
         assert "``trigger_cycle``:" not in description
 
     def test_channel_names_match_stored_waveform_types(self) -> None:

@@ -215,8 +215,9 @@ def register(mcp: FastMCP) -> None:
 
         When ``windows`` is empty, ``null_reason`` says why: ``"primary_mode_mismatch"``
         (sessions differ in primary mode; ``fl_run_ending_in_recovery`` and
-        ``rera_proxy_centered`` refuse), ``"analysis_not_run"`` (no session on the date)
-        or ``"algo_version_mismatch"`` (reserved; not returned). For the analysis-based
+        ``rera_proxy_centered`` refuse), ``"algo_version_mismatch"`` (sessions analyzed
+        with different algorithm versions; the FL-ranked criteria refuse) or
+        ``"analysis_not_run"`` (no session on the date). For the analysis-based
         criteria, an empty ``windows`` with a null ``null_reason`` means nothing matched
         only if ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
         skipped unanalyzed or stale sessions. Options irrelevant to the chosen
@@ -227,8 +228,8 @@ def register(mcp: FastMCP) -> None:
             criterion: One of:
                 ``"worst_flattening_leak_valid"``: anchored on the leak-valid breaths with the
                 lowest (most flow-limited) mid-inspiratory flattening.
-                ``"ca_centered"``: ±``context_seconds`` around each CA or CAA event; ``n``
-                keeps the first N by offset. Works when the day mixes algorithm versions.
+                ``"ca_centered"``: ±``context_seconds`` around each CA or CAA event. Works
+                when the day mixes algorithm versions.
                 ``"fl_run_ending_in_recovery"``: FL runs followed by a recovery breath (the
                 analysis-time flag, or flow class <= 2 with peak flow >=
                 ``(1 + recovery_amplitude_margin)`` x the run mean).

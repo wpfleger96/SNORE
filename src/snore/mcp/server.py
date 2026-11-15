@@ -184,8 +184,9 @@ class ActorRuntime:
 
 
 _PROVENANCE_RULE = (
-    "Fields tagged [EXPERIMENTAL] (`x-provenance: experimental`) are "
-    f"{PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Every other field is device data "
+    "Fields tagged [EXPERIMENTAL] (`x-provenance: experimental`), and fields "
+    f"nested under them, are {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Every "
+    "other field is device data "
     "or computed from device data. experimental_* tool responses carry "
     '`"experimental": true`.'
 )
@@ -201,11 +202,11 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated.
+Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated. Fields neither marked experimental nor nested under one are device data or computed from it.
 
-A null field means the data is absent, never zero; its companion `*_reason` field says why.
+A null field means the data is absent, never zero; its `*_reason` field says why.
 
-Fields not marked experimental are device data or computed from device data. `docs://schemas/{{type}}` gives each response's JSON schema; `docs://capabilities` lists this dataset's channels and event types.
+`docs://schemas/{{type}}`: each response's JSON schema; `docs://capabilities`: this dataset's channels and event types.
 """
 
 

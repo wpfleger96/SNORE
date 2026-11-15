@@ -53,7 +53,7 @@ class Provenance(StrEnum):
 
 
 class IndexSource(StrEnum):
-    """Which source a source-dependent value came from; values mirror the matching Provenance tiers."""
+    """``device``: the device-reported value; ``derived``: SNORE's recount or computed fallback."""
 
     DEVICE = "device"
     DERIVED = "derived"

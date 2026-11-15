@@ -1,9 +1,9 @@
 """Provenance labeling on MCP surfaces.
 
-Every metric is device / derived / experimental.  These tests pin that onto
-what MCP clients see: tool descriptions, docs://schemas field descriptions,
-server instructions, the per-response ``provenance`` block, and
-docs://capabilities.
+MCP flags only experimental data.  These tests pin that onto what MCP clients
+see: tool descriptions, docs://schemas tags, server instructions, the top-level
+``experimental`` response flag and docs://capabilities, plus the gate that keeps
+experimental fields out of default tools.
 """
 
 from __future__ import annotations
@@ -164,6 +164,16 @@ def _has_experimental_tag(schema: object) -> bool:
     return False
 
 
+def _provenance_values(schema: object) -> list[object]:
+    """Every ``x-provenance`` value anywhere in a JSON schema."""
+    if isinstance(schema, dict):
+        own = [schema["x-provenance"]] if "x-provenance" in schema else []
+        return own + [v for value in schema.values() for v in _provenance_values(value)]
+    if isinstance(schema, list):
+        return [v for value in schema for v in _provenance_values(value)]
+    return []
+
+
 class TestToolDescriptions:
     @pytest.mark.parametrize("tool_name", EXPERIMENTAL_TOOLS)
     async def test_experimental_tool_description_carries_note(
@@ -194,9 +204,8 @@ class TestToolDescriptions:
     async def test_nightly_description_explains_corrupt_leak_reason(self) -> None:
         description = (await _tool_descriptions())["get_nightly_summary"]
 
-        assert '``leak_above_24_pct_reason`` can also be ``"channel_corrupt"``' in (
-            description
-        )
+        assert '``leak_above_24_pct_reason`` is ``"channel_corrupt"``' in description
+        assert "(no partial value)" in description
 
     async def test_experimental_epochs_description_names_every_null_reason(
         self,
@@ -247,6 +256,13 @@ class TestDefaultToolGate:
 
         assert response_provenance(Response) == {}
         assert _has_experimental_tag(Response.model_json_schema())
+
+    def test_epoch_distribution_inherits_experimental_parent(self) -> None:
+        """The gate sees fields nested under an experimental parent."""
+        block = response_provenance(ExperimentalCompareEpochsResponse)
+
+        assert "epochs[].mid_insp_flattening.median" in block["experimental"]
+        assert "epochs[].mid_insp_flattening.n_breaths" in block["experimental"]
 
     @pytest.mark.parametrize(
         ("tool_name", "model"), [(t, m) for t, m in DEFAULT_TOOLS.items() if m]
@@ -330,6 +346,17 @@ class TestSchemaFieldLabels:
         assert _field_description(NightlyRow, "ahi").startswith("[DEVICE]")
         assert prop["x-provenance-source"] == "index_source"
 
+    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
+        self,
+    ) -> None:
+        block = response_provenance(NightlySummaryResponse)
+
+        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
+            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
+            assert block["source_dependent"][f"nights[].{value}"] == (
+                f"nights[].{source}"
+            )
+
     def test_nightly_ahi_computed_is_derived(self) -> None:
         assert _field_description(NightlyRow, "ahi_computed").startswith("[DERIVED]")
 
@@ -358,6 +385,7 @@ class TestInstructions:
             "reference standard",
             "experimental_* tools return experimental metrics:",
             "Never present them as device-scored or clinically validated",
+            "nor nested under one are device data",
             "docs://capabilities",
         ):
             assert text in instructions
@@ -417,7 +445,60 @@ class TestInstructions:
         assert "stability" not in profile.clinical_context
 
 
+class _StubResponse(BaseModel):
+    ok: bool = True
+
+
+# Minimal valid arguments for every required tool parameter.
+_TOOL_ARGS: dict[str, Any] = {
+    "start": "2026-01-01",
+    "end": "2026-01-02",
+    "date": "2026-01-01",
+    "offset_start": 0.0,
+    "offset_end": 60.0,
+    "criterion": "ca_centered",
+    "epochs": [{"label": "a", "date_start": "2026-01-01", "date_end": "2026-01-02"}],
+}
+# Experimental tools whose impl keeps the default-style name.
+_IMPL_NAMES = {
+    "experimental_get_breath_table": "get_breath_table",
+    "experimental_find_windows": "find_windows",
+}
+
+
 class TestResponseExperimentalFlag:
+    @pytest.mark.parametrize(
+        "tool_name",
+        [*(t for t in DEFAULT_TOOLS if t != "render_window"), *EXPERIMENTAL_TOOLS],
+    )
+    async def test_registered_tool_flags_exactly_experimental_responses(
+        self, tool_name: str
+    ) -> None:
+        """Each closure's hand-typed ``tool_name`` must match its registered name."""
+        impl = _tool_impl(_IMPL_NAMES.get(tool_name, tool_name))
+        stub = AsyncMock(return_value=_StubResponse())
+        if tool_name == "get_waveform":
+            stub = MagicMock(return_value=_StubResponse())
+        with (
+            patch("snore.mcp.server._lifespan", _fake_lifespan),
+            patch("snore.mcp.server._fetch_waveform_for_tool", AsyncMock()),
+            patch.object(inspect.getmodule(impl), impl.__name__, stub),
+        ):
+            mcp = make_server()
+            async with fastmcp.Client(mcp) as client:
+                tool = next(t for t in await client.list_tools() if t.name == tool_name)
+                required = tool.input_schema.get("required", [])
+                result = await client.call_tool(
+                    tool_name, {name: _TOOL_ARGS[name] for name in required}
+                )
+
+        payload = json.loads(result.content[0].text)
+        stub.assert_called_once()
+        assert payload.get("experimental") is (
+            True if tool_name.startswith("experimental_") else None
+        )
+        assert "provenance" not in payload
+
     async def _run(
         self, result: BaseModel, tool_name: str = "get_nightly_summary"
     ) -> dict[str, Any]:
@@ -458,24 +539,6 @@ class TestResponseExperimentalFlag:
         assert payload["experimental"] is True
         assert "provenance" not in payload
         assert payload["nights"][0]["rera_index"] == 1.0
-
-    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
-        self,
-    ) -> None:
-        block = response_provenance(NightlySummaryResponse)
-
-        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
-            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
-            assert block["source_dependent"][f"nights[].{value}"] == (
-                f"nights[].{source}"
-            )
-
-    def test_epoch_distribution_inherits_experimental_parent(self) -> None:
-        """The gate sees fields nested under an experimental parent."""
-        block = response_provenance(ExperimentalCompareEpochsResponse)
-
-        assert "epochs[].mid_insp_flattening.median" in block["experimental"]
-        assert "epochs[].mid_insp_flattening.n_breaths" in block["experimental"]
 
 
 class TestCapabilitiesResource:
@@ -522,6 +585,7 @@ class TestSchemasResource:
         assert "[DEVICE]" not in text
         assert "[DERIVED]" not in text
         assert "x-provenance-source" not in text
+        assert set(_provenance_values(body)) <= {Provenance.EXPERIMENTAL}
         assert _has_experimental_tag(body) == ("[EXPERIMENTAL]" in text)
 
     async def test_experimental_schema_keeps_experimental_tags(self) -> None:
@@ -544,6 +608,7 @@ class TestSchemasResource:
 
     def test_legend_states_the_experimental_rule(self) -> None:
         assert "[EXPERIMENTAL]" in _PROVENANCE_RULE
+        assert "fields nested under them" in _PROVENANCE_RULE
         assert EXPERIMENTAL_NOTE in _PROVENANCE_RULE
         assert '`"experimental": true`' in _PROVENANCE_RULE
         for unexpected in ("[DEVICE]", "[DERIVED]", "source_dependent"):

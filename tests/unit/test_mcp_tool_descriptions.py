@@ -30,7 +30,7 @@ _RESPONSE_LIMIT = f"{RESPONSE_SIZE_LIMIT:,}"
 _NIGHTLY_LIMIT = f"{MAX_NIGHTLY_RANGE} nights"
 
 # Total ``list_tools`` JSON size (~3% above the measured size), paid by every MCP session.
-TOOL_LIST_JSON_CHAR_LIMIT = 33_400
+TOOL_LIST_JSON_CHAR_LIMIT = 33_100
 
 _EPOCH_SPAN_LIMIT = f"at most {MAX_EPOCH_NIGHTS} calendar nights"
 _EPOCH_DEVICE_RULE = "required when several devices have data in the range"
@@ -51,8 +51,6 @@ PINNED_TOKENS: dict[str, list[str]] = {
         "analysis_not_run",
         "primary_mode_mismatch",
         "not_available",
-        _EPOCH_SPAN_LIMIT,
-        _EPOCH_DEVICE_RULE,
     ],
     "experimental_find_windows": [
         "algo_version_mismatch",

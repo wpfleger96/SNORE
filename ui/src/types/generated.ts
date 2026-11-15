@@ -4286,7 +4286,7 @@ export interface components {
         }
         /**
          * IndexSource
-         * @description Which source a source-dependent value came from; values mirror the matching Provenance tiers.
+         * @description ``device``: the device-reported value; ``derived``: SNORE's recount or computed fallback.
          * @enum {string}
          */
         IndexSource: 'device' | 'derived'
