@@ -65,19 +65,4 @@ async def test_page_maps_to_offset_and_rows_serialize(
         3,
         20,
     )
-    assert payload["provenance"] == {
-        "derived": [
-            f"nights[].{field}"
-            for field in (
-                "time_in_bed_seconds",
-                "total_sleep_seconds",
-                "core_seconds",
-                "deep_seconds",
-                "rem_seconds",
-                "awake_seconds",
-                "unspecified_seconds",
-                "sleep_efficiency_pct",
-                "stage_coverage_pct",
-            )
-        ]
-    }
+    assert "provenance" not in payload

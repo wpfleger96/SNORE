@@ -8,6 +8,7 @@ is silently dropped, so anything documented there never reaches the client.
 from __future__ import annotations
 
 import inspect
+import json
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -27,6 +28,9 @@ from snore.services.schemas import MAX_LARGE_LEAK_SPANS
 
 _RESPONSE_LIMIT = f"{RESPONSE_SIZE_LIMIT:,}"
 _NIGHTLY_LIMIT = f"{MAX_NIGHTLY_RANGE} nights"
+
+# Total ``list_tools`` JSON size (~3% above the measured size), paid by every MCP session.
+TOOL_LIST_JSON_CHAR_LIMIT = 33_400
 
 _EPOCH_SPAN_LIMIT = f"at most {MAX_EPOCH_NIGHTS} calendar nights"
 _EPOCH_DEVICE_RULE = "required when several devices have data in the range"
@@ -140,3 +144,18 @@ async def test_every_tool_docstring_reaches_client_intact(
         expected = " ".join(_leading_prose(doc).split())
         actual = " ".join((client_tools[registered.name].description or "").split())
         assert actual == expected, f"{registered.name}: FastMCP dropped docstring text"
+
+
+async def test_tool_list_json_stays_under_size_limit(
+    server_and_client_tools: tuple[fastmcp.FastMCP, dict[str, Tool]],
+) -> None:
+    _, tools = server_and_client_tools
+    size = sum(
+        len(json.dumps(t.model_dump(exclude_none=True, by_alias=True)))
+        for t in tools.values()
+    )
+    assert size < TOOL_LIST_JSON_CHAR_LIMIT, (
+        f"list_tools JSON is {size} chars, over {TOOL_LIST_JSON_CHAR_LIMIT}. Every MCP "
+        "session pays for this text: cut duplicated or verbose tool text, or raise "
+        "TOOL_LIST_JSON_CHAR_LIMIT deliberately if the growth is worth it."
+    )

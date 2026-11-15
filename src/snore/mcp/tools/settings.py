@@ -126,20 +126,16 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return therapy settings epochs for a date range.
 
-        Each epoch represents a contiguous period of identical settings.
-        Changed keys are flagged on the epoch where the change first appears.
-        Uses generic RX_KEYS (mode, epr_level, epr_mode, pressure_min,
-        pressure_max, pressure_fixed, ipap, epap, ps) plus ``mask_type``:
-        epochs split when the device-reported mask type changes.  No
-        vendor-specific branching (G4).
-
-        Each epoch's ``device_id`` is ``null`` (never ``0``) when no device is
-        associated with the epoch.
+        Each epoch is a contiguous period of identical settings; changed keys are
+        flagged on the epoch where the change first appears. Epochs split on mode,
+        epr_level, epr_mode, pressure_min, pressure_max, pressure_fixed, ipap, epap, ps
+        and ``mask_type``. An epoch's ``device_id`` is null (never 0) when no device is
+        associated.
 
         Args:
-            start: Start date in YYYY-MM-DD format.
-            end: End date in YYYY-MM-DD format.
-            device_id: Optional device ID filter. Use get_data_overview to list devices.
+            start: Start date (YYYY-MM-DD).
+            end: End date (YYYY-MM-DD).
+            device_id: Optional device ID filter.
         """
         from snore.mcp.tools.settings import (
             get_settings_timeline as _impl,  # noqa: PLC0415

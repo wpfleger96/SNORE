@@ -51,29 +51,17 @@ def register(mcp: FastMCP) -> None:
         ctx: Context,
         date: str,
     ) -> dict[str, Any]:
-        """Return one night's Apple Health sleep-stage timeline, as the web Apple Health night page charts it.
+        """Return one night's Apple Health sleep-stage samples from its preferred source, by start time, as the web Apple Health night page charts them.
 
-        ``stages`` lists the sleep-analysis samples of the night's preferred
-        source (the ``apple_health.preferred_source`` value ``get_night_detail``
-        reports for the same date) by start time, as recorded (device data).
-        Each one's ``value_text`` is the stage: ``InBed``, ``Awake``,
-        ``AsleepCore``, ``AsleepDeep``, ``AsleepREM`` or
-        ``AsleepUnspecified``; ``start_time``/``end_time`` bound it and
-        ``source_name`` names the app or device that wrote it. Samples can
-        overlap: an ``InBed`` sample, when the source wrote one, spans the
-        stages within it. Time in bed is ``get_night_detail``'s
-        ``apple_health.time_in_bed_seconds``.
-
-        The night's Apple summary (stage totals, efficiency, SpO2, respiratory
-        rate, breathing disturbances) is in ``get_night_detail``'s
-        ``apple_health``. Times are Apple Health local wall-clock with no UTC
-        offset. The tool errors with "No Apple Health sleep data found" when
-        the date has no Apple Health sleep samples, even if it has other
-        Apple Health data such as SpO2.
+        ``value_text`` is the stage: ``InBed``, ``Awake``, ``AsleepCore``,
+        ``AsleepDeep``, ``AsleepREM`` or ``AsleepUnspecified``. Samples can overlap: an
+        ``InBed`` sample spans the stages within it. Times are local wall-clock with no
+        UTC offset. Errors with "No Apple Health sleep data found" when the date has no
+        sleep samples, even if it has other Apple Health data.
 
         Args:
-            date: Night date in YYYY-MM-DD format (samples before noon belong
-                to the previous date).
+            date: Night date (YYYY-MM-DD); samples before noon belong to the previous
+                date.
         """
         from snore.mcp.tools.apple_sleep_stages import (  # noqa: PLC0415
             get_apple_sleep_stages as _impl,

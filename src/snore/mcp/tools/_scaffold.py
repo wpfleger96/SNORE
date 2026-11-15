@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from snore.mcp.errors import ValidationError
-from snore.provenance import PROVENANCE_NOTES, Provenance, response_provenance
+from snore.provenance import PROVENANCE_NOTES, Provenance
 
 if TYPE_CHECKING:
     from snore.mcp.server import SNORERuntime
@@ -173,14 +173,15 @@ def _check_response_size(result: Any, tool_name: str) -> None:
 
 
 def _dump_response(result: BaseModel, tool_name: str) -> dict[str, Any]:
-    """model_dump a tool response, attach its provenance block, and size-check it.
+    """model_dump a tool response, flag it if experimental, and size-check it.
 
-    The top-level ``provenance`` key (``response_provenance``) is added only
-    when the response model has derived or experimental fields.
+    ``experimental_*`` tools get a top-level ``"experimental": true``; default
+    tools carry no flag, since every field they return is device data or
+    computed from it.
     """
     payload: dict[str, Any] = result.model_dump(mode="json")
-    if provenance := response_provenance(type(result)):
-        payload["provenance"] = provenance
+    if tool_name.startswith("experimental_"):
+        payload["experimental"] = True
     _check_response_size(payload, tool_name)
     return payload
 
@@ -202,6 +203,9 @@ async def _scope_and_run(
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Open a DB scope, call impl, and serialize the result via ``_dump_response``.
+
+    ``tool_name`` sets the size-limit message and, for ``experimental_*`` tools,
+    the top-level ``experimental`` flag.
 
     Shared scaffold for every tool except the waveform pair, which has
     non-standard return paths.  Each tool module's

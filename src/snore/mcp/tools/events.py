@@ -300,53 +300,30 @@ def register(mcp: FastMCP) -> None:
         include_context: bool = True,
         max_events: int = 500,
     ) -> dict[str, Any]:
-        """Return device-scored respiratory events for a single session date with inline waveform context.
+        """Return device-scored respiratory events for one session date with inline waveform context.
 
-        Each event carries the device's event type, start time and duration.
-        When waveform data is available, ``context`` adds means of device
-        channels around the event: ``pressure_at_event_cmh2o`` and
-        ``leak_at_event_lpm`` (±5 s), ``ps_delivered_cmh2o`` (therapy pressure
-        − EPAP over ±5 s), and ``mv_prior_120s_lpm`` (device MV channel over
-        the prior 120 s), plus ``minutes_since_session_start``.
+        ``context`` holds means of device channels around each event. Null context
+        values carry a ``*_reason`` of ``"not_available"``, including when a channel is
+        absent or corrupt, which nulls only the fields that depend on it. ResMed
+        hypopneas and RERAs have no recorded duration, so their context anchors on the
+        event's end. MV slope, MV stability and flow-derived MV are in
+        ``experimental_get_event_context``.
 
-        Null values carry a ``*_reason`` of ``"not_available"`` on the event row
-        (``pressure_reason``, ``leak_reason``, ``mv_reason``, ``ps_reason``),
-        including when a device channel is absent or corrupt, which nulls only
-        the fields that depend on it.
-        ``include_context=false`` skips the waveform work entirely: ``context``
-        and those reasons are null.
-        ``duration_reason`` is ``"not_recorded_by_device"`` when
-        ``duration_seconds`` is null, always the case for ResMed hypopneas and
-        RERAs.  Those events have no start, so their ``context`` windows anchor
-        on the event's end.
-
-        For MV slope, MV stability, and flow-derived MV on devices with no MV
-        channel, use ``experimental_get_event_context``.
-
-        When ``device_id`` names an owned device with no enabled session on the
-        date, the call succeeds with no events; without ``device_id`` such a
-        date is an error. Limits: a response over 500,000 bytes is an error;
+        A ``device_id`` with no enabled session on the date returns no events
+        (``device_id`` omitted: an error). A response over 500,000 bytes is an error:
         lower ``max_events`` or filter by ``types``.
 
         Args:
-            date: Session date in YYYY-MM-DD format.
-            device_id: Optional device ID filter. Required when multiple devices
-                       have data for the same date.
-            types: Optional event type filter, e.g. ["CA", "OA", "H", "RE"].
-                   Common values: ``OA`` (obstructive apnea), ``CA`` (central
-                   apnea), ``H`` (hypopnea), ``RE`` (respiratory effort-related
-                   arousal), ``FL`` (flow limitation), ``VS`` (vibratory snore).
-                   At most 50 distinct values.
-            min_duration: Minimum event duration in seconds (optional). A positive
-                value excludes events with no recorded duration (ResMed hypopneas,
-                RERAs); 0 is no filter.
-            include_context: Compute and attach the per-event waveform context
-                block (default true); false is faster and leaves ``context``
-                and the context ``*_reason`` fields null.
-            max_events: Maximum number of events to return after filtering (default 500,
-                        minimum 1). When the result is truncated, ``total_events`` still
-                        reports the full count and ``truncated`` is set to true in the
-                        response.
+            date: Session date (YYYY-MM-DD).
+            device_id: Required if several devices have data that date.
+            types: Optional event type filter (at most 50), e.g. ``OA``, ``CA``, ``H``,
+                ``RE`` (RERA), ``FL`` (flow limitation), ``VS`` (vibratory snore).
+            min_duration: Minimum duration (s); a positive value excludes events with
+                no recorded duration (ResMed hypopneas, RERAs). 0 is no filter.
+            include_context: Attach the per-event context (default true); false is
+                faster and leaves ``context`` and its reasons null.
+            max_events: Events to return after filtering (default 500, minimum 1);
+                when cut, ``truncated`` is true and ``total_events`` has the full count.
         """
         from snore.mcp.tools.events import get_events as _impl  # noqa: PLC0415
 
@@ -376,44 +353,27 @@ def register(mcp: FastMCP) -> None:
         min_duration: float | None = None,
         max_events: int = 500,
     ) -> dict[str, Any]:
-        """Return SNORE's ventilatory-control context for the device-scored events on one date.
+        """Return SNORE's ventilatory-control context (MV slope, stability, prior MV) for the device-scored events on one date.
 
-        Each row identifies an event and carries ``preceding_mv_slope_lpm_per_min``
-        (MV trend over the 60 s before the event, L/min per minute; negative =
-        falling ventilation), ``stability_index`` (MV stdev/mean over the same
-        60 s), and ``mv_prior_120s_lpm`` (mean MV over the prior 120 s).
+        All three metrics use the series named by ``mv_source``: the device MV channel,
+        or MV derived from the flow waveform when the device recorded none. The flow
+        fallback loads the full-session flow waveform, so it is slower than
+        ``get_events``. Null values carry a ``*_reason`` of ``"not_available"``,
+        including when the MV or flow channel is corrupt, which nulls only the MV
+        fields.
 
-        ``mv_source`` is ``"device"`` (device MV channel), ``"flow_derived"``
-        (MV computed from the flow waveform when the device recorded no MV),
-        or null. All three metrics use that MV series, so they may be
-        flow-derived; the response-level ``mv_fallback_version`` labels the
-        derivation and is non-null only when some returned event is
-        ``"flow_derived"``. The flow fallback loads the full-session flow
-        waveform, so it is slower than ``get_events``.
-
-        Null values carry a ``*_reason`` of ``"not_available"`` on the row
-        (``mv_reason``, ``preceding_mv_slope_reason``, ``stability_reason``),
-        including when the MV or flow channel is corrupt, which nulls only the
-        MV fields.
-
-        When ``device_id`` names an owned device with no enabled session on the
-        date, the call succeeds with no events; without ``device_id`` such a
-        date is an error. Limits: a response over 500,000 bytes is an error;
+        A ``device_id`` with no enabled session on the date returns no events
+        (``device_id`` omitted: an error). A response over 500,000 bytes is an error:
         lower ``max_events`` or filter by ``types``.
 
         Args:
-            date: Session date in YYYY-MM-DD format.
-            device_id: Optional device ID filter. Required when multiple devices
-                       have data for the same date.
-            types: Optional event type filter, e.g. ["CA", "OA", "H"]. At most
-                   50 distinct values.
-            min_duration: Minimum event duration in seconds (optional). A positive
-                value excludes events with no recorded duration (ResMed hypopneas,
-                RERAs); 0 is no filter.
-            max_events: Maximum number of events to return after filtering (default 500,
-                        minimum 1). When the result is truncated, ``total_events`` still
-                        reports the full count and ``truncated`` is set to true in the
-                        response.
+            date: Session date (YYYY-MM-DD).
+            device_id: Required if several devices have data that date.
+            types: Optional event type filter (at most 50), e.g. ``OA``, ``CA``, ``H``.
+            min_duration: Minimum duration (s); a positive value excludes events with
+                no recorded duration (ResMed hypopneas, RERAs). 0 is no filter.
+            max_events: Events to return after filtering (default 500, minimum 1);
+                when cut, ``truncated`` is true and ``total_events`` has the full count.
         """
         from snore.mcp.tools.events import (  # noqa: PLC0415
             experimental_get_event_context as _impl,

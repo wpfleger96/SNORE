@@ -538,7 +538,6 @@ class TestGetNightlySummary:
         self, async_db_session: AsyncSession, async_test_profile: Any
     ) -> None:
         from snore.mcp.tools.summary import get_nightly_summary
-        from snore.provenance import response_provenance
 
         device = await _make_device(async_db_session, async_test_profile.id)
         await _make_day_session(
@@ -558,15 +557,12 @@ class TestGetNightlySummary:
             profile_id=async_test_profile.id,
         )
         night = result.nights[0]
-        block = response_provenance(type(result))
 
         assert night.index_source == "device"
         assert night.ahi == pytest.approx(1.2)
         assert night.ahi_computed == 1.68
         assert night.cai_computed == pytest.approx(0.4)
         assert night.hi_computed is None
-        assert block["source_dependent"]["nights[].ahi"] == "nights[].index_source"
-        assert "nights[].ahi_computed" in block["derived"]
 
     async def test_three_hour_nights_compliant_only_below_threshold(
         self, async_db_session: AsyncSession, async_test_profile: Any

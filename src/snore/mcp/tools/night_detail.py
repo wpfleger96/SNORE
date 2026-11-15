@@ -166,59 +166,26 @@ def register(mcp: FastMCP) -> None:
         date: str,
         device_id: int | None = None,
     ) -> dict[str, Any]:
-        """Return one night as the web Day page shows it: the device night, its sessions' device statistics, and the Apple Health night.
+        """Return one night as the web Day page shows it: the device night, its sessions' stored device statistics, and the Apple Health night.
 
-        ``device`` is the device night (null when the date has none): headline
-        ``ahi``/``oai``/``cai``/``hi`` are the device-reported daily value when
-        trusted, otherwise SNORE's recount; ``index_source`` (``"device"`` or
-        ``"derived"``) says which, and the recount, when computable, is in
-        ``*_computed``. Event counts are device-scored; ``reras`` and
-        ``unclassified_apneas`` are null, not zero, when the device has never
-        scored one. Pressure, EPAP, leak and SpO2 values, ``channel_stats``
-        (median, 95th and max of the device flow-limitation, snore,
-        respiratory-rate, tidal-volume (mL), minute-ventilation, Ti and I:E
-        channels and the oximeter pulse, pooled over enabled sessions),
-        ``leak_redline`` and ``mask_on_spans`` are derived from device data.
-        ``leak_redline`` (null without a leak channel, or when its data cannot
-        be decoded) holds OSCAR's leak redline views at 24 L/min:
-        ``leak_above_24_pct`` (the same value as ``get_nightly_summary``), the
-        Large Leak spans (leak at or above the redline) and
-        ``large_leak_pct``, their total duration as a percent of mask-on hours
-        (null when those hours are zero). At most 500 spans are listed, the
-        longest; ``large_leak_span_count`` and ``large_leak_pct`` cover all of
-        them.
-        ``device`` matches ``GET /days/{date}``: ``device.health_sleep`` is the
-        Day page's Apple Health summary, and ``apple_health`` is the fuller
-        Apple night.
+        Headline ``ahi``/``oai``/``cai``/``hi`` are the device-reported value when
+        trusted, otherwise SNORE's recount; ``index_source`` says which, and the recount
+        is in ``*_computed``. Session-level ``ahi``/``oai``/``cai``/``hi`` are SNORE's
+        count of device-scored events per mask-on hour. ``reras`` and
+        ``unclassified_apneas`` are null, not zero, when the device never scored that
+        type. ``sessions`` includes disabled sessions, but only enabled ones feed the
+        night's values. ``leak_redline`` holds OSCAR's 24 L/min leak views, including
+        Large Leak spans. At most 500 spans are listed, the longest;
+        ``large_leak_span_count`` and ``large_leak_pct`` cover all of them. The sleep-stage timeline is in ``get_apple_sleep_stages``.
+        Times are wall-clock with no UTC offset.
 
-        ``sessions`` lists every session of that device night, enabled and
-        disabled, by start time; only enabled sessions feed the night's values.
-        Each session's ``statistics`` (null when it has none) is the stored
-        device summary: device-reported values such as ``ahi_device``,
-        ``rin``, ``csr_pct`` and the humidifier, tube and ambient-humidity
-        readings, plus pressure, leak, SpO2, pulse, respiratory-rate,
-        tidal-volume (mL) and minute-ventilation statistics, some recomputed
-        from the device waveforms (derived). Session ``ahi``/``oai``/``cai``/
-        ``hi`` are SNORE's count of device-scored events per mask-on hour
-        (derived). The response's ``provenance`` block lists every derived
-        path.
-
-        ``apple_health`` is the Apple Health night (null when the date has
-        none): the Day page's Apple summary (sleep stages, efficiency) plus
-        SpO2 and respiratory rate derived from Apple Health samples, and
-        Apple's breathing disturbances. The night's sleep-stage timeline is
-        in ``get_apple_sleep_stages``.
-
-        Times are device wall-clock with no UTC offset. The tool errors when
-        several devices have a night on this date and ``device_id`` is omitted
-        (the message lists them; pass ``device_id`` to choose), when
-        ``device_id`` has no night on the date, and when the date has neither
-        a device night nor an Apple Health night. No analysis data is read;
-        SNORE's experimental metrics are in the ``experimental_*`` tools.
+        Errors when several devices have a night on the date and ``device_id`` is
+        omitted (the message lists them), when ``device_id`` has no night on the date,
+        and when the date has neither a device night nor an Apple Health night.
 
         Args:
-            date: Night date in YYYY-MM-DD format (sessions before noon belong
-                to the previous date).
+            date: Night date (YYYY-MM-DD); sessions before noon belong to the previous
+                date.
             device_id: Optional device ID.
         """
         from snore.mcp.tools.night_detail import (  # noqa: PLC0415

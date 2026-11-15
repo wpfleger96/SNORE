@@ -72,7 +72,7 @@ PROVENANCE_NOTES: dict[Provenance, str] = {
 
 
 class ProvenanceBlock(TypedDict):
-    """Per-response ``provenance`` block (see :func:`response_provenance`)."""
+    """Tagged field paths of a response model (see :func:`response_provenance`)."""
 
     experimental: NotRequired[list[str]]
     derived: NotRequired[list[str]]
@@ -147,6 +147,9 @@ def field_description(model: type[BaseModel], name: str) -> str:
 
 def response_provenance(model: type[BaseModel]) -> ProvenanceBlock:
     """Dotted paths of a response model's non-device fields, by tier.
+
+    Used to check that default MCP responses carry no experimental field; MCP
+    responses themselves carry no such block.
 
     Shape: ``{"experimental": [...], "derived": [...], "source_dependent":
     {path: sibling_path}}``; ``[]`` marks list items (``nights[].rdi``), ``{}``

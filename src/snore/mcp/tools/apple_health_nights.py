@@ -51,31 +51,22 @@ def register(mcp: FastMCP) -> None:
         page: int = 1,
         page_size: int = 30,
     ) -> dict[str, Any]:
-        """List the nights that have Apple Health sleep data, newest first, as the web Apple Health page does.
+        """List the nights that have Apple Health sleep samples, newest first, as the web Apple Health page does.
 
-        Each row is the night's Apple sleep summary: ``night_date``, the
-        ``preferred_source`` its totals come from, time in bed, total sleep,
-        core, deep, REM, awake and unspecified-stage seconds, sleep efficiency
-        and stage coverage, and ``computed_at``, when SNORE built the summary.
-        A night is listed only when it has Apple Health sleep samples; a date
-        with only other Apple data (such as SpO2) is not. Paginated at 30
-        nights per call (adjustable); ``total_nights`` counts every night in
-        range. ``get_data_overview``'s ``apple_health`` gives the first and
-        last night dates and the night count.
+        A date with only other Apple data (such as SpO2) is not listed. Paginated at 30
+        nights per call (adjustable); ``total_nights`` counts every night in range.
+        Night dates use the CPAP noon split, so an Apple night pairs with the device
+        night of the same date. ``get_night_detail`` adds the night's SpO2, respiratory
+        rate and breathing disturbances; ``get_apple_sleep_stages`` gives its stage
+        timeline.
 
-        A night's SpO2, respiratory rate and breathing disturbances are in
-        ``get_night_detail``'s ``apple_health``, and its sleep-stage timeline
-        is ``get_apple_sleep_stages``. Night dates use the same noon split
-        as CPAP nights (samples starting before noon belong to the previous
-        date), so an Apple night pairs with the device night of the same date.
-
-        Omit ``start`` and/or ``end`` for an open range (all nights by default).
+        Omit ``start`` and/or ``end`` for an open range.
 
         Args:
             start: Optional first night date (YYYY-MM-DD), inclusive.
             end: Optional last night date (YYYY-MM-DD), inclusive.
             page: Page number (1-based). Default 1.
-            page_size: Nights per page (must be between 1 and 90). Default 30.
+            page_size: Nights per page, 1-90. Default 30.
         """
         from snore.mcp.tools.apple_health_nights import (  # noqa: PLC0415
             get_apple_health_nights as _impl,

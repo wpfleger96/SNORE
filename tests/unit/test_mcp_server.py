@@ -525,11 +525,10 @@ class TestStage2ToolsRegistered:
         )
 
 
-class TestChannelVocabInSync:
-    """Channel vocabulary in get_waveform and render_window docstrings must be identical
-    and must cover all WaveformChannelName enum members."""
+class TestChannelVocab:
+    """get_waveform's description lists every channel once; render_window points to it."""
 
-    async def _get_tools(self) -> list:
+    async def _get_tools(self) -> dict[str, Any]:
         from unittest.mock import patch
 
         import fastmcp
@@ -539,57 +538,23 @@ class TestChannelVocabInSync:
         mcp = make_server()
         with patch("snore.mcp.server._lifespan", _fake_static_lifespan):
             async with fastmcp.Client(mcp) as client:
-                return await client.list_tools()
+                return {t.name: t for t in await client.list_tools()}
 
-    @staticmethod
-    def _extract_channel_lines(description: str) -> list[str]:
-        """Extract lines from the channel vocabulary block (lines that name a channel)."""
+    async def test_get_waveform_lists_every_channel(self) -> None:
         from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
 
-        return [
-            line.strip()
-            for line in description.splitlines()
-            if any(f"`{name.value}`" in line for name in WaveformChannelName)
-        ]
+        description = (await self._get_tools())["get_waveform"].description or ""
+        lines = description.splitlines()
 
-    async def test_channel_vocab_in_sync(self) -> None:
-        """get_waveform and render_window channel vocabulary blocks are identical."""
-        tools = await self._get_tools()
-        tool_map = {t.name: t for t in tools}
+        for channel in WaveformChannelName:
+            entries = [ln for ln in lines if ln.startswith(f"``{channel.value}``:")]
+            assert len(entries) == 1, f"get_waveform lists {channel.value} {entries}"
 
-        gw_desc = tool_map["get_waveform"].description or ""
-        rw_desc = tool_map["render_window"].description or ""
+    async def test_render_window_points_to_get_waveform_channels(self) -> None:
+        description = (await self._get_tools())["render_window"].description or ""
 
-        gw_lines = self._extract_channel_lines(gw_desc)
-        rw_lines = self._extract_channel_lines(rw_desc)
-
-        assert gw_lines, "get_waveform description has no channel lines"
-        assert rw_lines, "render_window description has no channel lines"
-        assert gw_lines == rw_lines, (
-            "Channel vocabulary mismatch between get_waveform and render_window.\n"
-            f"get_waveform:  {gw_lines}\n"
-            f"render_window: {rw_lines}"
-        )
-
-    async def test_all_channel_names_in_both_tools(self) -> None:
-        """Every WaveformChannelName enum value must appear in both tool descriptions."""
-        from snore.services.breath_service import WaveformChannelName  # noqa: PLC0415
-
-        tools = await self._get_tools()
-        tool_map = {t.name: t for t in tools}
-
-        gw_desc = tool_map["get_waveform"].description or ""
-        rw_desc = tool_map["render_window"].description or ""
-
-        missing_gw = [
-            ch.value for ch in WaveformChannelName if f"`{ch.value}`" not in gw_desc
-        ]
-        missing_rw = [
-            ch.value for ch in WaveformChannelName if f"`{ch.value}`" not in rw_desc
-        ]
-
-        assert not missing_gw, f"get_waveform missing channels: {missing_gw}"
-        assert not missing_rw, f"render_window missing channels: {missing_rw}"
+        assert "Channels and defaults are as in ``get_waveform``" in description
+        assert "``trigger_cycle``:" not in description
 
     def test_channel_names_match_stored_waveform_types(self) -> None:
         """The MCP channel list is exactly the set of waveform types the parsers store."""
