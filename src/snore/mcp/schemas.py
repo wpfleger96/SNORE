@@ -77,6 +77,36 @@ def localize_wall_clock(dt: datetime, tz_status: str, tz_name: str | None) -> st
     return dt.isoformat()
 
 
+# ---------------------------------------------------------------------------
+# Null-reason codes.  Each ``*_reason`` field is null when its value is present
+# and otherwise holds a ``NullReason`` code (``snore.analysis.shared.versioning``);
+# its description lists every code the service can assign to it.
+# ---------------------------------------------------------------------------
+
+_CHANNEL_ABSENT = "'channel_absent' (no session of the night recorded the channel)"
+_NO_SESSIONS = "'no_sessions' (the night has no enabled sessions)"
+_NOT_AVAILABLE_NIGHT = (
+    "'not_available' (no session of the night has a current OK analysis, or the "
+    "analyzed breaths gave no value)"
+)
+_NOT_AVAILABLE_RERA = (
+    "'not_available' (no session of the night has a current OK analysis, or the "
+    "analyzed sessions differ in primary detection mode)"
+)
+_EPOCH_NULL_CODES = (
+    "'not_available' (the requested device_id is not owned by this profile; "
+    "every epoch and the top level carry it), 'no_data_in_range' (no enabled "
+    "session falls in the range; widen the dates) or 'rx_changed_within_epoch' "
+    "(therapy settings changed inside the epoch; split it at the "
+    "rx_violations change dates)"
+)
+
+
+def _reason(description: str) -> Any:
+    """A ``*_reason`` companion field: null when its value is present."""
+    return Field(default=None, description=description)
+
+
 class DeviceCapabilities(BaseModel):
     """Capabilities declared by the device/dataset for a queried range (G2)."""
 
@@ -156,7 +186,12 @@ class SettingsTimelineResponse(BaseModel):
 
     epochs: list[SettingsEpoch]
     total_epochs: int
-    device_capabilities_by_device: dict[str, DeviceCapabilities] = {}
+    device_capabilities_by_device: dict[str, DeviceCapabilities] = Field(
+        default_factory=dict,
+        description="Capabilities keyed by device_id: a timeline can span "
+        "several devices, so this replaces the single device_capabilities "
+        "field of single-device tools.",
+    )
 
 
 class SettingsChangeEntry(MergedSettingsChange):
@@ -174,7 +209,9 @@ class SettingsChangesResponse(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    changes: list[SettingsChangeEntry]
+    changes: list[SettingsChangeEntry] = Field(
+        description="Sorted by (date, source, device_id, key)."
+    )
     total_changes: int
 
 
@@ -189,13 +226,14 @@ class NightlyChannelFields(BaseModel):
         "default redline.",
         default=None,
     )
-    leak_above_24_pct_reason: str | None = None
+    leak_above_24_pct_reason: str | None = _reason(
+        f"Why leak_above_24_pct is null: {_CHANNEL_ABSENT}, 'channel_corrupt' (a "
+        "session's stored leak data could not be decoded, so no partial value is "
+        f"reported) or {_NO_SESSIONS}."
+    )
 
     # Device flow-limitation ("fl") and snore channels.  Negative sentinel
-    # values filtered before aggregation; zeros retained.  Reason tokens:
-    # "channel_absent" (session(s) had no such channel), "no_sessions" (the
-    # day had no enabled sessions at all).  leak_above_24_pct_reason is also
-    # "channel_corrupt" (a session's leak blob could not be decoded).
+    # values filtered before aggregation; zeros retained.
     device_flg_median: float | None = provenance_field(
         Provenance.DERIVED,
         "Median of the device flow-limitation channel (0–1 unitless).",
@@ -211,7 +249,9 @@ class NightlyChannelFields(BaseModel):
         "Maximum of the device flow-limitation channel (0–1 unitless).",
         default=None,
     )
-    device_flg_reason: str | None = None
+    device_flg_reason: str | None = _reason(
+        f"Why the device_flg_* values are null: {_CHANNEL_ABSENT} or {_NO_SESSIONS}."
+    )
     snore_median: float | None = provenance_field(
         Provenance.DERIVED,
         "Median of the device snore channel (0–5 unitless).",
@@ -227,7 +267,10 @@ class NightlyChannelFields(BaseModel):
         "Fraction of snore-channel samples (0–1) above 0.5.",
         default=None,
     )
-    snore_reason: str | None = None
+    snore_reason: str | None = _reason(
+        "Why snore_median and snore_95th are null: "
+        f"{_CHANNEL_ABSENT} or {_NO_SESSIONS}."
+    )
 
 
 # Where each NightlyRow respiratory value comes from; its *_source field says which.
@@ -339,7 +382,10 @@ class NightlyRow(NightlyChannelFields):
         "one, not a zero.",
         default=None,
     )
-    reras_reason: str | None = None
+    reras_reason: str | None = _reason(
+        "'not_reported_by_device' when reras is null because the device has never "
+        "scored a RERA (absent, not zero)."
+    )
     unclassified_apneas: int | None = provenance_field(
         Provenance.DEVICE,
         "Device-scored unclassified apneas, summed across the night's sessions; "
@@ -347,7 +393,10 @@ class NightlyRow(NightlyChannelFields):
         "device has never scored one, not a zero.",
         default=None,
     )
-    unclassified_apneas_reason: str | None = None
+    unclassified_apneas_reason: str | None = _reason(
+        "'not_reported_by_device' when unclassified_apneas is null because the "
+        "device has never scored one (absent, not zero)."
+    )
 
     pressure_median_cmh2o: float | None = provenance_field(
         Provenance.DERIVED,
@@ -415,7 +464,9 @@ class NightlyRow(NightlyChannelFields):
         default=None,
     )
     ti_median_source: IndexSource | None = _respiratory_source("ti_median_s")
-    ti_median_reason: str | None = None
+    ti_median_reason: str | None = _reason(
+        f"Why ti_median_s is null: {_NIGHT_RESPIRATORY_REASONS}."
+    )
     ie_ratio_median: float | None = provenance_field(
         Provenance.DEVICE,
         f"Median I:E ratio: {_NIGHT_RESPIRATORY_SOURCE}; ie_ratio_source says "
@@ -428,7 +479,9 @@ class NightlyRow(NightlyChannelFields):
         default=None,
     )
     ie_ratio_source: IndexSource | None = _respiratory_source("ie_ratio_median")
-    ie_ratio_reason: str | None = None
+    ie_ratio_reason: str | None = _reason(
+        f"Why ie_ratio_median is null: {_NIGHT_RESPIRATORY_REASONS}."
+    )
 
     device_id: int | None = None
 
@@ -453,7 +506,11 @@ class ExperimentalNightlyRow(BaseModel):
         f"mask-on hours. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
-    rera_index_reason: str | None = None
+    rera_index_reason: str | None = _reason(
+        f"Why rera_index is null: {_NOT_AVAILABLE_RERA}, or 'duration_zero' (a "
+        "RERA-proxy count exists but the analyzed sessions have zero mask-on "
+        "hours, so the per-hour rate is undefined)."
+    )
     rdi: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
@@ -462,7 +519,10 @@ class ExperimentalNightlyRow(BaseModel):
         "shape.",
         default=None,
     )
-    rdi_reason: str | None = None
+    rdi_reason: str | None = _reason(
+        "Why rdi is null: rera_index_reason when rera_index is null, otherwise "
+        "'not_available' (the night has no ahi_computed)."
+    )
 
     fl_median: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
@@ -471,7 +531,9 @@ class ExperimentalNightlyRow(BaseModel):
         "device_flg_*).",
         default=None,
     )
-    fl_median_reason: str | None = None
+    fl_median_reason: str | None = _reason(
+        f"Why fl_median is null: {_NOT_AVAILABLE_NIGHT}."
+    )
     fl_5th: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Nearest-rank 5th-percentile per-breath mid-inspiratory flattening "
@@ -479,14 +541,14 @@ class ExperimentalNightlyRow(BaseModel):
         "equals fl_min when the night has fewer than 20 leak-valid breaths.",
         default=None,
     )
-    fl_5th_reason: str | None = None
+    fl_5th_reason: str | None = _reason(f"Why fl_5th is null: {_NOT_AVAILABLE_NIGHT}.")
     fl_min: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Minimum per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
         "flow-limited; lower = more flow-limited).",
         default=None,
     )
-    fl_min_reason: str | None = None
+    fl_min_reason: str | None = _reason(f"Why fl_min is null: {_NOT_AVAILABLE_NIGHT}.")
     fl_class_ge4_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Percent of leak-valid, rule-matched classified breaths with "
@@ -494,7 +556,9 @@ class ExperimentalNightlyRow(BaseModel):
         "(flow-limitation proxy).",
         default=None,
     )
-    fl_class_ge4_pct_reason: str | None = None
+    fl_class_ge4_pct_reason: str | None = _reason(
+        f"Why fl_class_ge4_pct is null: {_NOT_AVAILABLE_NIGHT}."
+    )
     rera_proxy_count: int | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
@@ -502,7 +566,9 @@ class ExperimentalNightlyRow(BaseModel):
         f"{RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
-    rera_proxy_reason: str | None = None
+    rera_proxy_reason: str | None = _reason(
+        f"Why rera_proxy_count is null: {_NOT_AVAILABLE_RERA}."
+    )
     # Version of the query-time RERA-proxy criterion (independent of the
     # persisted AlgorithmIdentity); stamped only when the RERA scan ran
     # (rera_proxy_count non-null), null otherwise.
@@ -513,14 +579,18 @@ class ExperimentalNightlyRow(BaseModel):
         "Median inspiratory time (s) over SNORE-segmented breaths.",
         default=None,
     )
-    segmented_ti_median_reason: str | None = None
+    segmented_ti_median_reason: str | None = _reason(
+        f"Why segmented_ti_median_s is null: {_NOT_AVAILABLE_NIGHT}."
+    )
     segmented_ie_ratio: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Median I:E ratio over SNORE-segmented breaths (unitless Ti/Te); not "
         "comparable to the device ie_ratio_median.",
         default=None,
     )
-    segmented_ie_ratio_reason: str | None = None
+    segmented_ie_ratio_reason: str | None = _reason(
+        f"Why segmented_ie_ratio is null: {_NOT_AVAILABLE_NIGHT}."
+    )
 
     periodic_breathing_pct: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
@@ -528,7 +598,13 @@ class ExperimentalNightlyRow(BaseModel):
         "found by analysis; 0.0 when detection ran and found none.",
         default=None,
     )
-    pb_reason: str | None = None
+    pb_reason: str | None = _reason(
+        "Why periodic_breathing_pct is null: 'not_available' (no OK session has a "
+        "periodic-breathing result, the stored episodes were malformed, or the OK "
+        "sessions have zero duration) or 'algo_version_mismatch' (the night's "
+        "sessions were analyzed with different algorithm versions; re-run "
+        "analysis so they match)."
+    )
 
 
 class ComplianceFields(BaseModel):
@@ -719,7 +795,10 @@ class EventRow(EventRowBase):
         "which is always the case for ResMed hypopneas and RERAs.",
         default=None,
     )
-    duration_reason: str | None = None
+    duration_reason: str | None = _reason(
+        "'not_recorded_by_device' when duration_seconds is null (always for "
+        "ResMed hypopneas and RERAs)."
+    )
     spo2_drop_pct: float | None = provenance_field(
         Provenance.DEVICE,
         "SpO₂ drop during the event (%), from the events table; null when the "
@@ -732,11 +811,29 @@ class EventRow(EventRowBase):
         "table; null when the source did not record it (no parser fills it today).",
         default=None,
     )
-    pressure_reason: str | None = None
-    leak_reason: str | None = None
-    mv_reason: str | None = None
-    ps_reason: str | None = None
-    context: EventContext | None = None
+    # Context reasons are null when include_context=false.
+    pressure_reason: str | None = _reason(
+        "'not_available' when context.pressure_at_event_cmh2o is null (no "
+        "pressure channel, a corrupt one, or no samples in the window)."
+    )
+    leak_reason: str | None = _reason(
+        "'not_available' when context.leak_at_event_lpm is null (no leak "
+        "channel, a corrupt one, or no samples in the window)."
+    )
+    mv_reason: str | None = _reason(
+        "'not_available' when context.mv_prior_120s_lpm is null (no device MV "
+        "channel, a corrupt one, an event at the session start, or no samples "
+        "in the window)."
+    )
+    ps_reason: str | None = _reason(
+        "'not_available' when context.ps_delivered_cmh2o is null (therapy "
+        "pressure or EPAP channel absent or corrupt, or no samples in the window)."
+    )
+    context: EventContext | None = Field(
+        default=None,
+        description="Device-channel means around the event; null when "
+        "include_context=false.",
+    )
 
 
 class EventsResponseBase(BaseModel):
@@ -779,31 +876,47 @@ class ExperimentalEventContextRow(EventRowBase):
         f"be flow-derived, see mv_source. {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
-    mv_reason: str | None = None
+    mv_reason: str | None = _reason(
+        "'not_available' when mv_prior_120s_lpm is null (no MV or flow channel, "
+        "a corrupt one, an event at the session start, or no samples in the "
+        "window)."
+    )
     preceding_mv_slope_lpm_per_min: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         "Least-squares MV slope over the 60 s before the event (L/min per min). "
         f"{_PRIOR_WINDOW_NOTE}",
         default=None,
     )
-    preceding_mv_slope_reason: str | None = None
+    preceding_mv_slope_reason: str | None = _reason(
+        "'not_available' when preceding_mv_slope_lpm_per_min is null (no MV "
+        "series, or fewer than 2 MV samples in the 60 s window)."
+    )
     stability_index: float | None = provenance_field(
         Provenance.EXPERIMENTAL,
         f"MV stdev / mean (CV) over the 60 s before the event. {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
-    stability_reason: str | None = None
-    # MV provenance: "device" | "flow_derived" | null (no MV or flow channel)
-    mv_source: str | None = None
+    stability_reason: str | None = _reason(
+        "'not_available' when stability_index is null (no MV series, fewer than "
+        "3 MV samples in the 60 s window, or a zero mean)."
+    )
+    mv_source: str | None = Field(
+        default=None,
+        description="MV series behind the three MV metrics: 'device' (device MV "
+        "channel), 'flow_derived' (computed from the flow waveform because the "
+        "device recorded no MV) or null (no MV or flow channel).",
+    )
 
 
 class ExperimentalEventContextResponse(EventsResponseBase):
     """Response from experimental_get_event_context."""
 
     events: list[ExperimentalEventContextRow]
-    # Version of the query-time flow-derived MV fallback (MV_FALLBACK_ALGO_VERSION);
-    # non-null only when at least one returned event has mv_source "flow_derived".
-    mv_fallback_version: str | None = None
+    mv_fallback_version: str | None = Field(
+        default=None,
+        description="Version of the flow-derived MV fallback; non-null only when "
+        "some returned event has mv_source 'flow_derived'.",
+    )
 
 
 class CapabilityEntry(BaseModel):
@@ -915,19 +1028,39 @@ class BreathTableRow(BaseModel):
         default=None,
     )
     trigger_cycle_applicability: str | None = None
-    trigger_cycle_reason: str | None = None
+    trigger_cycle_reason: str | None = Field(
+        default=None,
+        description="Stored analysis code; currently 'unvalidated_device' when "
+        "trigger/cycle inference is not validated for this device, so "
+        "trigger_type and cycle_type are null.",
+    )
     leak_valid: bool | None = provenance_field(
         Provenance.EXPERIMENTAL, "Breath is free of excess leak.", default=None
     )
-    leak_valid_reason: str | None = None
+    leak_valid_reason: str | None = Field(
+        default=None,
+        description="Stored analysis code when leak_valid is null; currently "
+        "'channel_absent' (no leak channel) or 'channel_unaligned' (the nearest "
+        "leak sample is more than 5 s from the breath).",
+    )
     ramp_active: bool | None = provenance_field(
         Provenance.EXPERIMENTAL, "Breath falls in the pressure ramp.", default=None
     )
-    ramp_active_reason: str | None = None
+    ramp_active_reason: str | None = Field(
+        default=None,
+        description="Stored analysis code when ramp_active is null; currently "
+        "'not_available' (ramp enable or ramp time unknown) or "
+        "'smart_ramp_indeterminate' (SmartRamp ends on sleep detection, not a "
+        "timer, so the ramp period cannot be placed).",
+    )
     mask_off: bool | None = provenance_field(
         Provenance.EXPERIMENTAL, "Breath falls in a mask-off period.", default=None
     )
-    mask_off_reason: str | None = None
+    mask_off_reason: str | None = Field(
+        default=None,
+        description="Stored analysis code when mask_off is null; currently "
+        "'segments_unknown' (the session's mask-on segments are unknown).",
+    )
 
 
 class BreathTableBin(BaseModel):
@@ -978,10 +1111,22 @@ class BreathTableResponse(BaseModel):
     session_start_wall_clock: str | None = None
     timezone_status: str = "unknown"
     timezone_name: str | None = None  # IANA name when user_declared
-    analysis_status: str
+    analysis_status: str = Field(
+        description="'ok' (results present), 'not_run' (no analysis run) or "
+        "'stale_version' (the latest analysis is from an older algorithm "
+        "version)."
+    )
     algo_versions: dict[str, Any] | None = None
-    null_reason: str | None = None
-    is_binned: bool
+    null_reason: str | None = _reason(
+        "Why rows and bins are empty (a successful response with "
+        "total_breaths=0, not an error): 'analysis_not_run' (the session has no "
+        "analysis; run it first) or 'analysis_stale' (the latest analysis is "
+        "from an older algorithm version; re-run it)."
+    )
+    is_binned: bool = Field(
+        description="True when bin_minutes was set: bins is populated and rows "
+        "is empty; false for raw rows."
+    )
     total_breaths: int = provenance_field(
         Provenance.EXPERIMENTAL, "SNORE-segmented breaths matching the query."
     )
@@ -1029,7 +1174,11 @@ class WindowRow(BaseModel):
     anchor_event_offset: float | None = None
     analysis_result_id: int | None = None
     analysis_status: str
-    analysis_reason: str | None = None
+    analysis_reason: str | None = _reason(
+        "'analysis_not_run' when the window's session has no analysis "
+        "(ca_centered windows anchor on device events, so they need none); "
+        "analysis_result_id is then null."
+    )
 
 
 class FindWindowsResponse(BaseModel):
@@ -1038,14 +1187,36 @@ class FindWindowsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     query_date: str
-    device_id: int | None = None
+    device_id: int | None = Field(
+        default=None, description="Null when no sessions were found on the date."
+    )
     criterion: str
     day_status: str
-    session_coverage: list[SessionCoverageEntry] = []
+    session_coverage: list[SessionCoverageEntry] = Field(
+        default_factory=list, description="Per-session analysis status."
+    )
     algorithm_identity: dict[str, Any] | None = None
-    null_reason: str | None = None
-    primary_mode: str | None = None
-    windows: list[WindowRow] = []
+    null_reason: str | None = _reason(
+        "Why windows is empty (a successful response, not an error): "
+        "'analysis_not_run' (no analysis results for the date), "
+        "'algo_version_mismatch' (the day's sessions were analyzed with "
+        "different algorithm versions; the FL-ranked criteria "
+        "worst_flattening_leak_valid, fl_run_ending_in_recovery and "
+        "rera_proxy_centered refuse, ca_centered still works) or "
+        "'primary_mode_mismatch' (sessions differ in primary mode; "
+        "fl_run_ending_in_recovery and rera_proxy_centered refuse, other "
+        "criteria still work)."
+    )
+    primary_mode: str | None = Field(
+        default=None,
+        description="The sessions' shared primary detection mode; null when "
+        "they mix modes.",
+    )
+    windows: list[WindowRow] = Field(
+        default_factory=list,
+        description="Worst first; for ca_centered, smallest CA offset from "
+        "session start first.",
+    )
     device_capabilities: DeviceCapabilities | None = None
 
 
@@ -1097,9 +1268,11 @@ class DeviceEpochDistribution(BaseModel):
     n_samples: int = provenance_field(
         Provenance.DERIVED, "Count of valid device-channel samples.", default=0
     )
-    # Calendar therapy dates with at least one valid sample; a two-session night
-    # counts once.
-    n_nights: int = 0
+    n_nights: int = Field(
+        default=0,
+        description="Calendar nights with at least one valid sample; a "
+        "two-session night counts once.",
+    )
 
 
 class EpochRxViolationRow(BaseModel):
@@ -1120,10 +1293,19 @@ class EpochStats(BaseModel):
     label: str
     date_start: str
     date_end: str
-    nights_with_data: int
-    nights_missing_analysis: int
+    nights_with_data: int = Field(
+        description="Nights with at least one session with a current OK analysis."
+    )
+    nights_missing_analysis: int = Field(
+        description="Nights whose sessions all lack a current OK analysis."
+    )
     algorithm_identity: dict[str, Any] | None = None
-    null_reason: str | None = None
+    null_reason: str | None = _reason(
+        f"Why the epoch's distributions are null: {_EPOCH_NULL_CODES}. "
+        "'no_data_in_range' also covers an epoch whose sessions have no current "
+        "analysis. Differing algorithm versions do not null an epoch; see "
+        "version_warnings."
+    )
     primary_mode: str | None = None
     mid_insp_flattening: EpochDistribution = provenance_field(
         Provenance.EXPERIMENTAL, "Per-breath mid-inspiratory flattening."
@@ -1131,17 +1313,19 @@ class EpochStats(BaseModel):
     flatness_index: EpochDistribution = provenance_field(
         Provenance.EXPERIMENTAL, "Per-breath flatness index."
     )
-    # Keys are strings because JSON object keys are always strings.
     flow_class_distribution: dict[str, int] = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Rule-matched FL classifications only; the class>=4 fraction "
-        "reconciles with nightly fl_class_ge4_pct.",
+        "Breath counts by flow class (string keys '0', '1', ..., as JSON object "
+        "keys are strings), rule-matched FL classifications only (classifier "
+        "confidence clears the default gate); the class>=4 fraction reconciles "
+        "with experimental_get_nightly_metrics' fl_class_ge4_pct.",
         default_factory=dict,
     )
     flow_class_distribution_fallback: dict[str, int] = provenance_field(
         Provenance.EXPERIMENTAL,
-        "Low-confidence fallback flatness-triage guesses (confidence at the "
-        "default), reported separately from flow_class_distribution so they "
+        "Low-confidence fallback guesses: breaths triaged on flatness alone when "
+        "no shape rule matched, stamped at exactly the default confidence, "
+        "reported separately from flow_class_distribution so they "
         "don't inflate FL rates. Missing or below-default confidence values "
         "are excluded from both distributions.",
         default_factory=dict,
@@ -1158,12 +1342,21 @@ class EpochStats(BaseModel):
         f"ending in a recovery breath. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
     )
-    rera_reason: str | None = None
+    rera_reason: str | None = _reason(
+        "Why rera_proxy_count is null: the epoch's null_reason when the epoch "
+        "is nulled, except 'analysis_not_run' when it has sessions but none "
+        "with a current analysis; or 'primary_mode_mismatch' when the epoch's "
+        "sessions differ in primary mode (the FL distributions stay populated "
+        "and null_reason stays null)."
+    )
     # Version of the query-time RERA-proxy criterion (independent of the
     # persisted AlgorithmIdentity); stamped only when the RERA scan ran
     # (rera_proxy_count non-null), null otherwise.
     rera_proxy_version: str | None = None
-    rx_settings: dict[str, str] = {}
+    rx_settings: dict[str, str] = Field(
+        default_factory=dict,
+        description="Representative therapy settings observed in the epoch.",
+    )
 
 
 class DeviceEpochStats(BaseModel):
@@ -1174,10 +1367,18 @@ class DeviceEpochStats(BaseModel):
     label: str
     date_start: str
     date_end: str
-    # Nights with at least one enabled session in the epoch.
-    nights_with_data: int = 0
-    null_reason: str | None = None
-    rx_settings: dict[str, str] = {}
+    nights_with_data: int = Field(
+        default=0, description="Nights with at least one enabled session."
+    )
+    null_reason: str | None = _reason(
+        f"Why the epoch's distributions are null: {_EPOCH_NULL_CODES}. A channel "
+        "absent from the epoch is not a null epoch: that channel's stats are "
+        "null with n_samples 0 and null_reason stays null."
+    )
+    rx_settings: dict[str, str] = Field(
+        default_factory=dict,
+        description="Representative therapy settings observed in the epoch.",
+    )
     # Null stats when the channel has no valid samples in the epoch's sessions.
     device_flg: DeviceEpochDistribution = provenance_field(
         Provenance.DERIVED,
@@ -1198,8 +1399,20 @@ class CompareEpochsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     epochs: list[DeviceEpochStats] = []
-    null_reason: str | None = None
-    rx_violations: list[EpochRxViolationRow] = []
+    null_reason: str | None = _reason(
+        "Whole-comparison null cause: 'rx_changed_within_epoch' only when every "
+        "epoch was nulled for a settings change, 'not_available' when the "
+        "requested device_id is not owned by this profile, 'no_data_in_range' "
+        "when no enabled session falls anywhere in the epochs' combined range; "
+        "otherwise null (per-epoch causes are on each epoch)."
+    )
+    rx_violations: list[EpochRxViolationRow] = Field(
+        default_factory=list,
+        description="Therapy-settings changes inside each epoch's date range; "
+        "split affected epochs at change_dates. Sessions with no recorded "
+        "settings are skipped, so a change is reported only between sessions "
+        "that both have settings.",
+    )
 
 
 class ExperimentalCompareEpochsResponse(BaseModel):
@@ -1208,13 +1421,27 @@ class ExperimentalCompareEpochsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     epochs: list[EpochStats] = []
-    null_reason: str | None = None
-    rx_violations: list[EpochRxViolationRow] = []
-    # Per-field warnings when algorithm identity fields differ across epochs; also
-    # includes a warning when rera_proxy_version differs across epochs.
-    # Non-empty means distributions were computed across sessions with different
-    # algorithm versions — callers should review before drawing conclusions.
-    version_warnings: list[str] = []
+    null_reason: str | None = _reason(
+        "Whole-comparison null cause: 'rx_changed_within_epoch' only when every "
+        "epoch was nulled for a settings change, 'not_available' when the "
+        "requested device_id is not owned by this profile, 'no_data_in_range' "
+        "when no enabled session falls anywhere in the epochs' combined range; "
+        "otherwise null (per-epoch causes are on each epoch)."
+    )
+    rx_violations: list[EpochRxViolationRow] = Field(
+        default_factory=list,
+        description="Therapy-settings changes inside each epoch's date range; "
+        "split affected epochs at change_dates. Sessions with no recorded "
+        "settings are skipped, so a change is reported only between sessions "
+        "that both have settings.",
+    )
+    version_warnings: list[str] = Field(
+        default_factory=list,
+        description="One message per algorithm-identity field (or "
+        "rera_proxy_version) that differs across the epochs' sessions. "
+        "Distributions are still computed; non-empty means they mix algorithm "
+        "versions, so review before drawing conclusions.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1264,8 +1491,13 @@ class WaveformWindowResponse(BaseModel):
     window_start_offset_s: float
     window_end_offset_s: float
     channels: list[WaveformChannelSchema]
-    missing_channels: list[str]
-    missing_channel_reason: str | None = None
+    missing_channels: list[str] = Field(
+        description="Requested channels the device did not record, or every "
+        "requested channel when the date has no session; not an error."
+    )
+    missing_channel_reason: str | None = _reason(
+        "'channel_absent' when missing_channels is non-empty."
+    )
 
 
 # Mapping used for docs://schemas/{type} — maps schema name to model class
