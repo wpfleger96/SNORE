@@ -84,6 +84,16 @@ def localize_wall_clock(dt: datetime, tz_status: str, tz_name: str | None) -> st
 # ---------------------------------------------------------------------------
 
 _CHANNEL_ABSENT = "'channel_absent' (no session of the night recorded the channel)"
+# FL and snore skip a session whose stored channel cannot be decoded, so their
+# 'channel_absent' also covers recordings that exist but are undecodable.
+_CHANNEL_ABSENT_OR_UNDECODABLE = (
+    "'channel_absent' (no session of the night has a decodable recording of the "
+    "channel: it was not recorded, or its stored data could not be decoded)"
+)
+_RESERVED_VERSION_CODE = (
+    "reserved: not produced while a session counts as analyzed only when its "
+    "algorithm identity equals the current one exactly"
+)
 _NO_SESSIONS = "'no_sessions' (the night has no enabled sessions)"
 _NOT_AVAILABLE_NIGHT = (
     "'not_available' (no session of the night has a current OK analysis, or the "
@@ -187,7 +197,7 @@ class SettingsTimelineResponse(BaseModel):
     epochs: list[SettingsEpoch]
     total_epochs: int
     device_capabilities_by_device: dict[str, DeviceCapabilities] = Field(
-        default_factory=dict,
+        default={},
         description="Capabilities keyed by device_id: a timeline can span "
         "several devices, so this replaces the single device_capabilities "
         "field of single-device tools.",
@@ -250,7 +260,8 @@ class NightlyChannelFields(BaseModel):
         default=None,
     )
     device_flg_reason: str | None = _reason(
-        f"Why the device_flg_* values are null: {_CHANNEL_ABSENT} or {_NO_SESSIONS}."
+        "Why the device_flg_* values are null: "
+        f"{_CHANNEL_ABSENT_OR_UNDECODABLE} or {_NO_SESSIONS}."
     )
     snore_median: float | None = provenance_field(
         Provenance.DERIVED,
@@ -269,7 +280,7 @@ class NightlyChannelFields(BaseModel):
     )
     snore_reason: str | None = _reason(
         "Why snore_median and snore_95th are null: "
-        f"{_CHANNEL_ABSENT} or {_NO_SESSIONS}."
+        f"{_CHANNEL_ABSENT_OR_UNDECODABLE} or {_NO_SESSIONS}."
     )
 
 
@@ -602,8 +613,8 @@ class ExperimentalNightlyRow(BaseModel):
         "Why periodic_breathing_pct is null: 'not_available' (no OK session has a "
         "periodic-breathing result, the stored episodes were malformed, or the OK "
         "sessions have zero duration) or 'algo_version_mismatch' (the night's "
-        "sessions were analyzed with different algorithm versions; re-run "
-        "analysis so they match)."
+        "sessions were analyzed with different algorithm versions; "
+        f"{_RESERVED_VERSION_CODE})."
     )
 
 
@@ -1137,13 +1148,20 @@ class BreathTableResponse(BaseModel):
     device_capabilities: DeviceCapabilities | None = None
 
 
+_SESSION_ANALYSIS_STATUS = (
+    "The session's latest analysis: 'ok' (from the current algorithm "
+    "version), 'not_run' (no analysis run) or 'stale_version' (from an older "
+    "algorithm version, or unreadable)."
+)
+
+
 class SessionCoverageEntry(BaseModel):
     """Per-session analysis coverage for a queried day."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     session_id: int
-    analysis_status: str
+    analysis_status: str = Field(description=_SESSION_ANALYSIS_STATUS)
     algo_versions: dict[str, Any] | None = None
 
 
@@ -1173,7 +1191,11 @@ class WindowRow(BaseModel):
     )
     anchor_event_offset: float | None = None
     analysis_result_id: int | None = None
-    analysis_status: str
+    analysis_status: str = Field(
+        description=f"{_SESSION_ANALYSIS_STATUS} Always 'ok' for the FL-ranked "
+        "criteria, which read only sessions with a current analysis; ca_centered "
+        "windows can carry any value."
+    )
     analysis_reason: str | None = _reason(
         "'analysis_not_run' when the window's session has no analysis "
         "(ca_centered windows anchor on device events, so they need none); "
@@ -1188,21 +1210,31 @@ class FindWindowsResponse(BaseModel):
 
     query_date: str
     device_id: int | None = Field(
-        default=None, description="Null when no sessions were found on the date."
+        default=None,
+        description="Null when no device_id was given and the date has no sessions.",
     )
     criterion: str
-    day_status: str
+    day_status: str = Field(
+        description="The date's sessions together: 'ok' (all have a current "
+        "analysis), 'not_run' (none analyzed, or no enabled session), 'stale' "
+        "(all analyses from an older algorithm version), 'partial' (any other "
+        "mix) or 'mixed_version' (current analyses with different algorithm "
+        f"versions; {_RESERVED_VERSION_CODE})."
+    )
     session_coverage: list[SessionCoverageEntry] = Field(
-        default_factory=list, description="Per-session analysis status."
+        default=[], description="Per-session analysis status."
     )
     algorithm_identity: dict[str, Any] | None = None
     null_reason: str | None = _reason(
         "Why windows is empty (a successful response, not an error): "
-        "'analysis_not_run' (no analysis results for the date), "
+        "'analysis_not_run' (no enabled session on the date; a date whose "
+        "sessions lack a current analysis returns null here with empty windows, "
+        "see day_status and session_coverage), "
         "'algo_version_mismatch' (the day's sessions were analyzed with "
-        "different algorithm versions; the FL-ranked criteria "
+        "different algorithm versions, so the FL-ranked criteria "
         "worst_flattening_leak_valid, fl_run_ending_in_recovery and "
-        "rera_proxy_centered refuse, ca_centered still works) or "
+        "rera_proxy_centered refuse; "
+        f"{_RESERVED_VERSION_CODE}) or "
         "'primary_mode_mismatch' (sessions differ in primary mode; "
         "fl_run_ending_in_recovery and rera_proxy_centered refuse, other "
         "criteria still work)."
@@ -1213,7 +1245,7 @@ class FindWindowsResponse(BaseModel):
         "they mix modes.",
     )
     windows: list[WindowRow] = Field(
-        default_factory=list,
+        default=[],
         description="Worst first; for ca_centered, smallest CA offset from "
         "session start first.",
     )
@@ -1354,7 +1386,7 @@ class EpochStats(BaseModel):
     # (rera_proxy_count non-null), null otherwise.
     rera_proxy_version: str | None = None
     rx_settings: dict[str, str] = Field(
-        default_factory=dict,
+        default={},
         description="Representative therapy settings observed in the epoch.",
     )
 
@@ -1376,7 +1408,7 @@ class DeviceEpochStats(BaseModel):
         "null with n_samples 0 and null_reason stays null."
     )
     rx_settings: dict[str, str] = Field(
-        default_factory=dict,
+        default={},
         description="Representative therapy settings observed in the epoch.",
     )
     # Null stats when the channel has no valid samples in the epoch's sessions.
@@ -1407,7 +1439,7 @@ class CompareEpochsResponse(BaseModel):
         "otherwise null (per-epoch causes are on each epoch)."
     )
     rx_violations: list[EpochRxViolationRow] = Field(
-        default_factory=list,
+        default=[],
         description="Therapy-settings changes inside each epoch's date range; "
         "split affected epochs at change_dates. Sessions with no recorded "
         "settings are skipped, so a change is reported only between sessions "
@@ -1429,18 +1461,18 @@ class ExperimentalCompareEpochsResponse(BaseModel):
         "otherwise null (per-epoch causes are on each epoch)."
     )
     rx_violations: list[EpochRxViolationRow] = Field(
-        default_factory=list,
+        default=[],
         description="Therapy-settings changes inside each epoch's date range; "
         "split affected epochs at change_dates. Sessions with no recorded "
         "settings are skipped, so a change is reported only between sessions "
         "that both have settings.",
     )
     version_warnings: list[str] = Field(
-        default_factory=list,
+        default=[],
         description="One message per algorithm-identity field (or "
-        "rera_proxy_version) that differs across the epochs' sessions. "
-        "Distributions are still computed; non-empty means they mix algorithm "
-        "versions, so review before drawing conclusions.",
+        "rera_proxy_version) that differs across the epochs' sessions; "
+        "distributions are still computed. Always empty today ("
+        f"{_RESERVED_VERSION_CODE}, and rera_proxy_version is a single constant).",
     )
 
 
@@ -1459,7 +1491,9 @@ class WaveformChannelSchema(BaseModel):
     sample_rate_hz: float = provenance_field(
         Provenance.DEVICE, "Channel sample rate (Hz)."
     )
-    offset_seconds: list[float]  # tier-3 positions from session start
+    offset_seconds: list[float] = Field(
+        description="Sample positions in seconds from the session start."
+    )
     values: list[float] = provenance_field(
         Provenance.DEVICE,
         "Device samples; when is_downsampled, LTTB keeps a subset of them. "
@@ -1483,11 +1517,22 @@ class WaveformWindowResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     session_id: int | None = None  # null when no session on the date
-    session_start_wall_clock: str | None = (
-        None  # ISO 8601 wall-clock; offset-qualified when timezone_status == "user_declared", else naive (tier 2); null when session_id null
+    session_start_wall_clock: str | None = Field(
+        default=None,
+        description="ISO 8601 device wall-clock of the session start; "
+        "offset-qualified when timezone_status is 'user_declared', else naive. "
+        "Null when session_id is null.",
     )
-    timezone_status: str = "unknown"
-    timezone_name: str | None = None  # IANA name when user_declared
+    timezone_status: str = Field(
+        default="unknown",
+        description="'unknown', or 'user_declared' when the profile declares an "
+        "IANA timezone (carried in timezone_name).",
+    )
+    timezone_name: str | None = Field(
+        default=None,
+        description="The profile's declared IANA timezone; null when "
+        "timezone_status is 'unknown'.",
+    )
     window_start_offset_s: float
     window_end_offset_s: float
     channels: list[WaveformChannelSchema]

@@ -554,55 +554,6 @@ class TestExperimentalCompareEpochsRoundtrip:
 
         service_mock.assert_not_called()
 
-    async def test_algo_version_mismatch_refusal_pass_through_as_success(
-        self, mock_db_session: Any, mcp_client_factory: Any
-    ) -> None:
-        """Service returning ALGO_VERSION_MISMATCH produces a SUCCESS response
-        (not a ToolError) with null_reason populated at both the top level and
-        per-epoch."""
-        from snore.services.breath_service import (  # noqa: PLC0415
-            ExperimentalCompareEpochsResult,
-            NullReason,
-        )
-
-        null_stats = _make_epoch_stats(
-            "Before",
-            null_reason=NullReason.ALGO_VERSION_MISMATCH,
-            algorithm_identity=None,
-        )
-        mock_result = ExperimentalCompareEpochsResult(
-            epochs=[null_stats],
-            null_reason=NullReason.ALGO_VERSION_MISMATCH,
-            rx_violations=[],
-        )
-
-        service_mock = AsyncMock(return_value=mock_result)
-        patch_cm = patch(
-            "snore.services.breath_service.BreathService.compare_experimental_epochs",
-            service_mock,
-        )
-
-        async with mcp_client_factory(
-            mock_db_session, extra_patches=[patch_cm]
-        ) as client:
-            result = await client.call_tool(
-                "experimental_compare_epochs",
-                {
-                    "epochs": [
-                        {
-                            "label": "Before",
-                            "date_start": "2025-01-01",
-                            "date_end": "2025-01-31",
-                        }
-                    ]
-                },
-            )
-
-        assert not result.is_error
-        payload = json.loads(result.content[0].text)
-        assert payload["null_reason"] == "algo_version_mismatch"
-        assert payload["epochs"][0]["null_reason"] == "algo_version_mismatch"
-
     async def test_not_available_refusal_pass_through_as_success(
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
