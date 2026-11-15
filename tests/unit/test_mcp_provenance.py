@@ -60,16 +60,9 @@ from snore.mcp.server import (
     make_server,
 )
 from snore.mcp.tools._scaffold import _scope_and_run
-from snore.provenance import (
-    PROVENANCE_NOTES,
-    IndexSource,
-    Provenance,
-    provenance_field,
-    response_provenance,
-)
+from snore.provenance import EXPERIMENTAL_NOTE, IndexSource, experimental_field
 from snore.services.schemas import DayExperimentalMetrics
 
-EXPERIMENTAL_NOTE = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
 EXPERIMENTAL_TOOLS = [
     "experimental_get_nightly_metrics",
     "experimental_get_event_context",
@@ -94,22 +87,13 @@ DEFAULT_TOOLS: dict[str, type[BaseModel] | None] = {
     "get_waveform": WaveformWindowResponse,
     "render_window": None,  # PNG of device samples
 }
-# Nightly respiratory values and the source field that sets each one's tier.
+# Nightly respiratory values and the source field that says where each comes from.
 NIGHTLY_RESPIRATORY_SOURCES = {
     "rr_mean_bpm": "rr_mean_source",
     "tv_mean_ml": "tv_mean_source",
     "mv_mean_lpm": "mv_mean_source",
     "ti_median_s": "ti_median_source",
     "ie_ratio_median": "ie_ratio_source",
-}
-# The only sibling fields that may set a default tool's per-value tier: the Day
-# headline indices' index_source and the nightly respiratory values' sources.
-SOURCE_FIELDS: dict[type[BaseModel], set[str]] = {
-    NightlySummaryResponse: {
-        "nights[].index_source",
-        *(f"nights[].{source}" for source in NIGHTLY_RESPIRATORY_SOURCES.values()),
-    },
-    NightDetailResponse: {"device.index_source"},
 }
 
 
@@ -156,12 +140,17 @@ def _tool_impl(tool_name: str) -> Any:
 def _has_experimental_tag(schema: object) -> bool:
     """Whether any node of a JSON schema, ``$defs`` included, is tagged experimental."""
     if isinstance(schema, dict):
-        return schema.get("x-provenance") == Provenance.EXPERIMENTAL or any(
+        return schema.get("x-provenance") == "experimental" or any(
             _has_experimental_tag(value) for value in schema.values()
         )
     if isinstance(schema, list):
         return any(_has_experimental_tag(value) for value in schema)
     return False
+
+
+def _is_untagged(prop: dict[str, Any]) -> bool:
+    """A JSON-schema property with no provenance key and no bracketed tag prefix."""
+    return "x-provenance" not in prop and not prop["description"].startswith("[")
 
 
 def _provenance_values(schema: object) -> list[object]:
@@ -235,34 +224,33 @@ class TestDefaultToolGate:
     def test_default_tool_has_no_experimental_field(
         self, model: type[BaseModel]
     ) -> None:
-        block = response_provenance(model)
-
-        assert not block.get("experimental")
         assert not _has_experimental_tag(model.model_json_schema(mode="serialization"))
-        assert set(block.get("source_dependent", {}).values()) <= SOURCE_FIELDS.get(
-            model, set()
-        )
 
     def test_schema_scan_catches_experimental_parent_of_untagged_leaf(self) -> None:
-        """``response_provenance`` lists leaves, so this model's block is empty."""
+        """Only the parent field is tagged; the nested model's fields carry no tag."""
 
         class Leaf(BaseModel):
             note: str | None = None
 
         class Response(BaseModel):
-            leaf: Leaf = provenance_field(
-                Provenance.EXPERIMENTAL, "A heuristic.", default_factory=Leaf
-            )
+            leaf: Leaf = experimental_field("A heuristic.", default_factory=Leaf)
 
-        assert response_provenance(Response) == {}
+        assert not _has_experimental_tag(Leaf.model_json_schema())
         assert _has_experimental_tag(Response.model_json_schema())
 
-    def test_epoch_distribution_inherits_experimental_parent(self) -> None:
-        """The gate sees fields nested under an experimental parent."""
-        block = response_provenance(ExperimentalCompareEpochsResponse)
+    def test_epoch_distribution_is_flagged_through_its_experimental_parent(
+        self,
+    ) -> None:
+        """EpochDistribution is untagged; EpochStats tags the field holding it."""
+        schema = ExperimentalCompareEpochsResponse.model_json_schema(
+            mode="serialization"
+        )
+        defs = schema["$defs"]
 
-        assert "epochs[].mid_insp_flattening.median" in block["experimental"]
-        assert "epochs[].mid_insp_flattening.n_breaths" in block["experimental"]
+        assert not _has_experimental_tag(defs["EpochDistribution"])
+        prop = defs["EpochStats"]["properties"]["mid_insp_flattening"]
+        assert prop["x-provenance"] == "experimental"
+        assert _has_experimental_tag(schema)
 
     @pytest.mark.parametrize(
         ("tool_name", "model"), [(t, m) for t, m in DEFAULT_TOOLS.items() if m]
@@ -340,32 +328,30 @@ class TestSchemaFieldLabels:
         assert "rule-matched" in description
         assert "excludes fallback guesses" in description
 
-    def test_nightly_ahi_headline_is_device_tagged_by_index_source(self) -> None:
-        prop = NightlyRow.model_json_schema()["properties"]["ahi"]
+    @pytest.mark.parametrize(
+        ("value", "source"),
+        [("ahi", "index_source"), *NIGHTLY_RESPIRATORY_SOURCES.items()],
+    )
+    def test_nightly_source_dependent_value_is_untagged_beside_its_source_field(
+        self, value: str, source: str
+    ) -> None:
+        props = NightlyRow.model_json_schema()["properties"]
 
-        assert _field_description(NightlyRow, "ahi").startswith("[DEVICE]")
-        assert prop["x-provenance-source"] == "index_source"
+        assert _is_untagged(props[value])
+        assert source in props
 
-    def test_nightly_respiratory_values_are_device_tagged_by_their_source(
+    def test_nightly_ahi_computed_is_untagged(self) -> None:
+        assert _is_untagged(
+            NightlyRow.model_json_schema()["properties"]["ahi_computed"]
+        )
+
+    def test_default_event_mv_field_is_untagged_and_names_the_device_channel(
         self,
     ) -> None:
-        block = response_provenance(NightlySummaryResponse)
-
-        for value, source in NIGHTLY_RESPIRATORY_SOURCES.items():
-            assert _field_description(NightlyRow, value).startswith("[DEVICE]")
-            assert block["source_dependent"][f"nights[].{value}"] == (
-                f"nights[].{source}"
-            )
-
-    def test_nightly_ahi_computed_is_derived(self) -> None:
-        assert _field_description(NightlyRow, "ahi_computed").startswith("[DERIVED]")
-
-    def test_default_event_mv_field_is_derived_from_the_device_channel(self) -> None:
         prop = EventContext.model_json_schema()["properties"]["mv_prior_120s_lpm"]
 
-        assert prop["description"].startswith("[DERIVED]")
-        assert "device" in prop["description"]
-        assert "x-provenance-source" not in prop
+        assert _is_untagged(prop)
+        assert "device minute-ventilation channel" in prop["description"]
 
     def test_experimental_event_mv_field_names_its_flow_fallback(self) -> None:
         description = _field_description(
@@ -585,7 +571,7 @@ class TestSchemasResource:
         assert "[DEVICE]" not in text
         assert "[DERIVED]" not in text
         assert "x-provenance-source" not in text
-        assert set(_provenance_values(body)) <= {Provenance.EXPERIMENTAL}
+        assert set(_provenance_values(body)) <= {"experimental"}
         assert _has_experimental_tag(body) == ("[EXPERIMENTAL]" in text)
 
     async def test_experimental_schema_keeps_experimental_tags(self) -> None:
@@ -594,7 +580,7 @@ class TestSchemasResource:
         )
 
         rdi = schema["properties"]["rdi"]
-        assert rdi["x-provenance"] == Provenance.EXPERIMENTAL
+        assert rdi["x-provenance"] == "experimental"
         assert rdi["description"].startswith("[EXPERIMENTAL]")
 
     async def test_default_schema_keeps_source_fields_untagged(self) -> None:

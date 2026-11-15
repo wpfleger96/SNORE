@@ -67,7 +67,7 @@ from snore.mcp.tools._scaffold import (  # noqa: F401  (re-exported; tests impor
     tool_error_boundary,
 )
 from snore.mcp.validation import parse_date
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class ActorRuntime:
 
 _PROVENANCE_RULE = (
     "Fields tagged [EXPERIMENTAL] (`x-provenance: experimental`), and fields "
-    f"nested under them, are {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Every "
+    f"nested under them, are {EXPERIMENTAL_NOTE} Every "
     "other field is device data "
     "or computed from device data. experimental_* tool responses carry "
     '`"experimental": true`.'
@@ -202,7 +202,7 @@ Active clinical profile: {profile.display_name}
 Clinical context:
 {profile.clinical_context}
 
-Device-scored events are the reference standard. experimental_* tools return experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]} Never present them as device-scored or clinically validated. Fields neither marked experimental nor nested under one are device data or computed from it.
+Device-scored events are the reference standard. experimental_* tools return experimental metrics: {EXPERIMENTAL_NOTE} Never present them as device-scored or clinically validated. Fields neither marked experimental nor nested under one are device data or computed from it.
 
 A null field means the data is absent, never zero; its `*_reason` field says why.
 

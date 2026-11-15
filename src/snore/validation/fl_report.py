@@ -26,7 +26,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import experimental_field
 
 
 class FlSessionValidation(BaseModel):
@@ -34,9 +34,7 @@ class FlSessionValidation(BaseModel):
 
     session_id: int = Field(description="Database session ID")
     date: str = Field(description="Session date (YYYY-MM-DD)")
-    duration_hours: float = provenance_field(
-        Provenance.DEVICE, "Session duration in hours"
-    )
+    duration_hours: float = Field(description="Session duration in hours")
     parser_version: str = Field(description="Waveform parser/import version tag")
     has_flg_waveform: bool = Field(
         description="Whether a device FLG waveform row exists for this session"
@@ -54,87 +52,78 @@ class FlSessionValidation(BaseModel):
             "None — session was fully compared."
         ),
     )
-    n_breaths_compared: int = provenance_field(
-        Provenance.EXPERIMENTAL,
+    n_breaths_compared: int = experimental_field(
         "Number of (SNORE-segmented breath, FLG) pairs actually compared after "
         "dropping NaN (zero-sample) alignment windows",
         default=0,
     )
-    low_sample_warning: bool = provenance_field(
-        Provenance.EXPERIMENTAL, "True when n_breaths_compared < 20", default=False
+    low_sample_warning: bool = experimental_field(
+        "True when n_breaths_compared < 20", default=False
     )
-    n_class_breaths_compared: int = provenance_field(
-        Provenance.EXPERIMENTAL,
+    n_class_breaths_compared: int = experimental_field(
         "Number of breaths entering the flow_class-weight metrics "
         "(spearman_class_weight_r, auc_class_t25/t50): the subset of "
         "n_breaths_compared that is also rule-matched with a known class. "
         "Can be far smaller than n_breaths_compared",
         default=0,
     )
-    spearman_flattening_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    spearman_flattening_r: float | None = experimental_field(
         "Spearman r between flattening_severity (1 − mid_insp_flattening) "
         "and breath-averaged device FLG; None if n < 3 or either side constant",
         default=None,
     )
-    spearman_flattening_p: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "p-value for spearman_flattening_r", default=None
+    spearman_flattening_p: float | None = experimental_field(
+        "p-value for spearman_flattening_r", default=None
     )
-    spearman_flatness_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    spearman_flatness_r: float | None = experimental_field(
         "Spearman r between flatness_index (direct severity) "
         "and breath-averaged device FLG; None if n < 3 or either side constant",
         default=None,
     )
-    spearman_flatness_p: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "p-value for spearman_flatness_r", default=None
+    spearman_flatness_p: float | None = experimental_field(
+        "p-value for spearman_flatness_r", default=None
     )
-    auc_t25: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    auc_t25: float | None = experimental_field(
         "AUC (Mann-Whitney U / n_pos*n_neg) discriminating device FLG >= 0.25 "
         "using flattening_severity as score; None if either class empty",
         default=None,
     )
-    auc_t50: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    auc_t50: float | None = experimental_field(
         "AUC discriminating device FLG >= 0.50 using flattening_severity; "
         "None if either class empty",
         default=None,
     )
-    spearman_class_weight_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    spearman_class_weight_r: float | None = experimental_field(
         "Spearman r between 7-class flow_class severity weight and "
         "breath-averaged device FLG, over rule-matched breaths only "
         "(flow_confidence > 0.5; fallback-confidence guesses excluded); "
         "None if fewer than 3 such breaths or either side constant",
         default=None,
     )
-    spearman_class_weight_p: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "p-value for spearman_class_weight_r", default=None
+    spearman_class_weight_p: float | None = experimental_field(
+        "p-value for spearman_class_weight_r", default=None
     )
-    auc_class_t25: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    auc_class_t25: float | None = experimental_field(
         "AUC discriminating device FLG >= 0.25 using flow_class severity "
         "weight as score, over rule-matched breaths; None if either class empty",
         default=None,
     )
-    auc_class_t50: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    auc_class_t50: float | None = experimental_field(
         "AUC discriminating device FLG >= 0.50 using flow_class severity "
         "weight, over rule-matched breaths; None if either class empty",
         default=None,
     )
-    snore_fl_95th: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    snore_fl_95th: float | None = experimental_field(
         "95th percentile of flattening_severity (1 − mid_insp_flattening) "
         "over leak-valid breaths; direct severity orientation",
         default=None,
     )
-    device_flg_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        "95th percentile of masked FLG samples (values in [0, 1]) "
-        "over the full session",
+    device_flg_95th: float | None = Field(
         default=None,
+        description=(
+            "95th percentile of masked FLG samples (values in [0, 1]) "
+            "over the full session"
+        ),
     )
 
 
@@ -152,45 +141,35 @@ class FlAggregateMetrics(BaseModel):
     sessions_skipped_no_valid_breaths: int = Field(
         description="Sessions skipped: no leak-valid breaths with required fields"
     )
-    mean_spearman_flattening_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean Spearman r (flattening_severity) over compared sessions",
-        default=None,
+    mean_spearman_flattening_r: float | None = experimental_field(
+        "Mean Spearman r (flattening_severity) over compared sessions", default=None
     )
-    mean_spearman_flatness_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean Spearman r (flatness_index) over compared sessions",
-        default=None,
+    mean_spearman_flatness_r: float | None = experimental_field(
+        "Mean Spearman r (flatness_index) over compared sessions", default=None
     )
-    mean_auc_t25: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Mean AUC at FLG threshold 0.25", default=None
+    mean_auc_t25: float | None = experimental_field(
+        "Mean AUC at FLG threshold 0.25", default=None
     )
-    mean_auc_t50: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Mean AUC at FLG threshold 0.50", default=None
+    mean_auc_t50: float | None = experimental_field(
+        "Mean AUC at FLG threshold 0.50", default=None
     )
-    mean_spearman_class_weight_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    mean_spearman_class_weight_r: float | None = experimental_field(
         "Mean Spearman r (flow_class severity weight) over compared sessions",
         default=None,
     )
-    mean_auc_class_t25: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean class-weight AUC at FLG threshold 0.25",
-        default=None,
+    mean_auc_class_t25: float | None = experimental_field(
+        "Mean class-weight AUC at FLG threshold 0.25", default=None
     )
-    mean_auc_class_t50: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean class-weight AUC at FLG threshold 0.50",
-        default=None,
+    mean_auc_class_t50: float | None = experimental_field(
+        "Mean class-weight AUC at FLG threshold 0.50", default=None
     )
-    cross_night_spearman_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    cross_night_spearman_r: float | None = experimental_field(
         "Cross-night Spearman r of (snore_fl_95th, device_flg_95th) pairs; "
         "None if fewer than 3 paired nights",
         default=None,
     )
-    cross_night_spearman_p: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "p-value for cross_night_spearman_r", default=None
+    cross_night_spearman_p: float | None = experimental_field(
+        "p-value for cross_night_spearman_r", default=None
     )
 
 

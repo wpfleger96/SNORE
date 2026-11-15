@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner, Result
 
 from snore.cli.commands.validate_rera import validate_rera
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 from snore.validation.rera_report import (
     ReraSessionValidation,
     ReraValidationReport,
@@ -106,17 +106,14 @@ def test_report_marks_snore_scores_and_prints_legend_once():
     result = _invoke(_report(3))
     assert result.exit_code == 0, result.output
     assert "Amplitude*:" in result.output
-    # Device-scored RE count is unmarked; only its per-hour density is derived.
+    # The device-scored RE count and its per-hour density carry no marker.
     machine_line = next(
         line for line in result.output.splitlines() if "Machine RE" in line
     )
     assert "Machine RE:" in machine_line
-    assert machine_line.rstrip().endswith("/h†)")
+    assert machine_line.rstrip().endswith("/h)")
     legend = result.output.splitlines()[-1]
-    assert legend == (
-        f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
-        f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
-    )
+    assert legend == f"* experimental: {EXPERIMENTAL_NOTE}"
     assert result.output.count("* experimental") == 1
 
 

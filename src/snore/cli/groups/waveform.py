@@ -248,7 +248,7 @@ async def show_waveform(
 
         if output_format == "plot":
             show_events = waveform_type_single == "flow"
-            # mark_field registers the tier for the legend, so mark the label only
+            # mark_field records the marker for the legend, so mark the label only
             # when the events section prints.
             programmatic_label = (
                 mark_field("Programmatic", ModeResult, "apnea_count")

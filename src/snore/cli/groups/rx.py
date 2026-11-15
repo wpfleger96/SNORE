@@ -8,7 +8,6 @@ from snore.cli.decorators import CliCtx, profile_scoped_command
 from snore.cli.display import (
     Column,
     console,
-    mark_field,
     print_footer,
     print_header,
     print_kv,
@@ -16,8 +15,6 @@ from snore.cli.display import (
     print_table,
 )
 from snore.cli.display.settings import format_setting_key, format_setting_value
-from snore.provenance import field_provenance
-from snore.services.schemas import RxPeriodResponse
 
 
 def _format_change_value(key: str, val: str | None) -> str:
@@ -98,15 +95,11 @@ async def rx_history(ctx: CliCtx) -> None:
         console.print("  " + " | ".join(summary_parts))
 
         ahi_val = f"{period.avg_ahi:.1f}" if period.avg_ahi is not None else "N/A"
-        parts = [f"  {mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {ahi_val}"]
+        parts = [f"  Avg AHI: {ahi_val}"]
         if period.avg_hours is not None:
-            parts.append(
-                f"{mark_field('Avg Hours', RxPeriodResponse, 'avg_hours')}: {period.avg_hours:.1f}"
-            )
+            parts.append(f"Avg Hours: {period.avg_hours:.1f}")
         if period.avg_leak is not None:
-            parts.append(
-                f"{mark_field('Avg Leak', RxPeriodResponse, 'avg_leak')}: {period.avg_leak:.1f}"
-            )
+            parts.append(f"Avg Leak: {period.avg_leak:.1f}")
         console.print(" | ".join(parts))
 
     console.print()
@@ -155,31 +148,17 @@ async def rx_current(ctx: CliCtx) -> None:
 
     print_subsection("Outcomes")
     print_kv(
-        "Avg AHI",
-        f"{current.avg_ahi:.1f}" if current.avg_ahi is not None else "N/A",
-        provenance=field_provenance(RxPeriodResponse, "avg_ahi"),
+        "Avg AHI", f"{current.avg_ahi:.1f}" if current.avg_ahi is not None else "N/A"
     )
 
     if current.median_ahi is not None:
-        print_kv(
-            "Median AHI",
-            f"{current.median_ahi:.1f}",
-            provenance=field_provenance(RxPeriodResponse, "median_ahi"),
-        )
+        print_kv("Median AHI", f"{current.median_ahi:.1f}")
 
     if current.avg_hours is not None:
-        print_kv(
-            "Avg Hours",
-            f"{current.avg_hours:.1f}",
-            provenance=field_provenance(RxPeriodResponse, "avg_hours"),
-        )
+        print_kv("Avg Hours", f"{current.avg_hours:.1f}")
 
     if current.avg_leak is not None:
-        print_kv(
-            "Avg Leak",
-            f"{current.avg_leak:.1f}",
-            provenance=field_provenance(RxPeriodResponse, "avg_leak"),
-        )
+        print_kv("Avg Leak", f"{current.avg_leak:.1f}")
 
     print_footer(wide=True)
 
@@ -233,7 +212,7 @@ async def rx_compare(ctx: CliCtx, min_days: int) -> None:
 
     print_header("RX Period Comparison", wide=True)
     console.print(
-        f"{'Dates':<25} {'Days':<6} {mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi'):<10} {mark_field('Avg Leak', RxPeriodResponse, 'avg_leak'):<10} {'Mode':<8} {'Pressure':<15} {'EPR':<10}"
+        f"{'Dates':<25} {'Days':<6} {'Avg AHI':<10} {'Avg Leak':<10} {'Mode':<8} {'Pressure':<15} {'EPR':<10}"
     )
     print_footer(wide=True)
 
@@ -273,18 +252,14 @@ async def rx_compare(ctx: CliCtx, min_days: int) -> None:
     print_footer(wide=True)
 
     if best:
-        console.print(
-            f"\nBest Period ({mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {best.avg_ahi:.1f}):"
-        )
+        console.print(f"\nBest Period (Avg AHI: {best.avg_ahi:.1f}):")
         console.print(
             f"  {best.start_date.strftime('%Y-%m-%d')} to {best.end_date.strftime('%Y-%m-%d')} ({best.days_count} days)"
         )
         console.print(f"  Settings: {best.settings}")
 
     if worst:
-        console.print(
-            f"\nWorst Period ({mark_field('Avg AHI', RxPeriodResponse, 'avg_ahi')}: {worst.avg_ahi:.1f}):"
-        )
+        console.print(f"\nWorst Period (Avg AHI: {worst.avg_ahi:.1f}):")
         console.print(
             f"  {worst.start_date.strftime('%Y-%m-%d')} to {worst.end_date.strftime('%Y-%m-%d')} ({worst.days_count} days)"
         )

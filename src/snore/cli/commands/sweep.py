@@ -21,8 +21,7 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, fmt_sig, mark_provenance
-from snore.provenance import Provenance
+from snore.cli.display import console, fmt_sig, mark_experimental
 from snore.validation.sweep import SweepResult
 
 
@@ -70,7 +69,7 @@ def _render_table(result: SweepResult, top: int) -> None:
         f"Top {min(top, len(result.rows))} of {len(result.rows)} "
         f"(ranked by {result.objective_label})"
     )
-    table = Table(title=mark_provenance(title, Provenance.EXPERIMENTAL))
+    table = Table(title=mark_experimental(title))
     table.add_column("#", justify="right")
     for knob in knob_cols:
         table.add_column(knob, justify="right")

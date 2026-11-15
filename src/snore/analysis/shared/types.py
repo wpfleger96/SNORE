@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from snore.constants import ApneaEventType, FlowSeverity
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import experimental_field
 
 
 class BreathMetrics(BaseModel):
@@ -76,28 +76,16 @@ class ApneaEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
+    duration: float = experimental_field("Event duration (seconds)", ge=0)
+    event_type: ApneaEventType = experimental_field(
+        "Apnea type, classified from flow alone"
     )
-    event_type: ApneaEventType = provenance_field(
-        Provenance.EXPERIMENTAL, "Apnea type, classified from flow alone"
+    flow_reduction: float = experimental_field("Flow reduction (0-1)", ge=0, le=1)
+    confidence: float = experimental_field("Detection confidence (0-1)", ge=0, le=1)
+    classification_confidence: float = experimental_field(
+        "Confidence in OA/CA/MA classification (0-1)", default=0.5, ge=0, le=1
     )
-    flow_reduction: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", ge=0, le=1
-    )
-    confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Detection confidence (0-1)", ge=0, le=1
-    )
-    classification_confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Confidence in OA/CA/MA classification (0-1)",
-        default=0.5,
-        ge=0,
-        le=1,
-    )
-    baseline_flow: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
-    )
+    baseline_flow: float = experimental_field("Baseline flow before event (L/min)")
     detection_method: str = Field(
         default="amplitude",
         description="Detection method (amplitude, gap, near_zero_flow)",
@@ -121,23 +109,13 @@ class HypopneaEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
-    )
-    flow_reduction: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", ge=0, le=1
-    )
-    confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Detection confidence (0-1)", ge=0, le=1
-    )
-    baseline_flow: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
-    )
-    has_arousal: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Arousal detected", default=None
-    )
-    has_desaturation: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "SpO2 desaturation ≥3%", default=None
+    duration: float = experimental_field("Event duration (seconds)", ge=0)
+    flow_reduction: float = experimental_field("Flow reduction (0-1)", ge=0, le=1)
+    confidence: float = experimental_field("Detection confidence (0-1)", ge=0, le=1)
+    baseline_flow: float = experimental_field("Baseline flow before event (L/min)")
+    has_arousal: bool | None = experimental_field("Arousal detected", default=None)
+    has_desaturation: bool | None = experimental_field(
+        "SpO2 desaturation ≥3%", default=None
     )
 
 
@@ -160,24 +138,17 @@ class RERAEvent(BaseModel):
 
     start_time: float = Field(description="Event start timestamp (seconds)")
     end_time: float = Field(description="Event end timestamp (seconds)")
-    duration: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Event duration (seconds)", ge=0
+    duration: float = experimental_field("Event duration (seconds)", ge=0)
+    obstructed_breath_count: int = experimental_field(
+        "Breaths showing flow limitation", ge=2
     )
-    obstructed_breath_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Breaths showing flow limitation", ge=2
+    recovery_amplitude_increase_pct: float = experimental_field(
+        "Recovery breath amplitude increase (%)", ge=0
     )
-    recovery_amplitude_increase_pct: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Recovery breath amplitude increase (%)", ge=0
+    confidence: float = experimental_field(
+        "Detection confidence (0-1, lower without EEG)", ge=0, le=1
     )
-    confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Detection confidence (0-1, lower without EEG)",
-        ge=0,
-        le=1,
-    )
-    baseline_flow: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Baseline flow before event (L/min)"
-    )
+    baseline_flow: float = experimental_field("Baseline flow before event (L/min)")
 
 
 class EventTimeline(BaseModel):
@@ -285,19 +256,11 @@ class FlowPattern(BaseModel):
     """
 
     breath_number: int = Field(description="Sequential breath number")
-    flow_class: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Flow limitation class (1-7)", ge=1, le=7
-    )
+    flow_class: int = experimental_field("Flow limitation class (1-7)", ge=1, le=7)
     class_name: str = Field(description="Human-readable class name")
-    confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Classification confidence", ge=0, le=1
-    )
-    matched_features: dict[str, Any] = provenance_field(
-        Provenance.EXPERIMENTAL, "Supporting features"
-    )
-    severity: FlowSeverity = provenance_field(
-        Provenance.EXPERIMENTAL, "Clinical severity level"
-    )
+    confidence: float = experimental_field("Classification confidence", ge=0, le=1)
+    matched_features: dict[str, Any] = experimental_field("Supporting features")
+    severity: FlowSeverity = experimental_field("Clinical severity level")
 
 
 class SessionFlowAnalysis(BaseModel):
@@ -312,18 +275,10 @@ class SessionFlowAnalysis(BaseModel):
         patterns: Individual breath classifications
     """
 
-    total_breaths: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Total breaths analyzed", ge=0
-    )
-    class_distribution: dict[int, int] = provenance_field(
-        Provenance.EXPERIMENTAL, "Breaths per class"
-    )
-    flow_limitation_index: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Overall FL index", ge=0, le=1
-    )
-    average_confidence: float = provenance_field(
-        Provenance.EXPERIMENTAL, "Mean confidence", ge=0, le=1
-    )
+    total_breaths: int = experimental_field("Total breaths analyzed", ge=0)
+    class_distribution: dict[int, int] = experimental_field("Breaths per class")
+    flow_limitation_index: float = experimental_field("Overall FL index", ge=0, le=1)
+    average_confidence: float = experimental_field("Mean confidence", ge=0, le=1)
     patterns: list[FlowPattern] = Field(description="Individual breath classifications")
 
 

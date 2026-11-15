@@ -19,7 +19,7 @@ from snore.analysis.shared.types import (
     SessionFlowAnalysis,
 )
 from snore.analysis.types import AnalysisEvent, AnalysisResult
-from snore.cli.display import provenance_legend
+from snore.cli.display import experimental_legend
 from snore.cli.display.analysis import (
     create_flow_limitation_panel,
     create_header_panel,
@@ -28,7 +28,7 @@ from snore.cli.display.analysis import (
     create_validation_table,
     format_event_list,
 )
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 from snore.services.schemas import EventValidationResult
 
 
@@ -302,17 +302,16 @@ class TestMachineEventsTable:
         assert "Unclassified" not in output
 
 
-class TestAnalysisProvenanceLegend:
-    def test_header_panel_has_no_provenance_legend(self):
+class TestAnalysisExperimentalLegend:
+    def test_header_panel_has_no_experimental_legend(self):
         output = _render(create_header_panel("2025-06-01", 8.0))
         assert "OA=Obstructive" in output
-        assert "derived" not in output
         assert "experimental" not in output
 
     def test_marked_tables_feed_the_command_legend(self):
         legend_buf = StringIO()
         legend_console = Console(file=legend_buf, no_color=True, width=200)
-        with patch("snore.cli.display.console", legend_console), provenance_legend():
+        with patch("snore.cli.display.console", legend_console), experimental_legend():
             machine = _render(create_machine_events_table([], 2.0))
             validation = _render(
                 create_validation_table(
@@ -322,12 +321,10 @@ class TestAnalysisProvenanceLegend:
                     [],
                 )
             )
-        assert "AHI†" in machine
+        assert "AHI" in machine
+        assert "†" not in machine
         assert "Validation: aasm*" in validation
-        assert legend_buf.getvalue().strip() == (
-            f"† derived: {PROVENANCE_NOTES[Provenance.DERIVED]}  "
-            f"* experimental: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
-        )
+        assert legend_buf.getvalue().strip() == (f"* experimental: {EXPERIMENTAL_NOTE}")
 
     def test_mode_comparison_marks_ahi_and_rdi_rows(self):
         mode = ModeResult(mode_name="aasm", apneas=[], hypopneas=[], ahi=2.0, rdi=3.0)

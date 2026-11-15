@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from snore.mcp.errors import ValidationError
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 
 if TYPE_CHECKING:
     from snore.mcp.server import SNORERuntime
@@ -137,7 +137,7 @@ def _with_experimental_disclaimer(
     if not func.__doc__:
         return func
     lines = inspect.cleandoc(func.__doc__).splitlines()
-    disclaimer = f"Experimental metrics: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
+    disclaimer = f"Experimental metrics: {EXPERIMENTAL_NOTE}"
     insert_at = next(
         (i for i, line in enumerate(lines) if _DOC_SECTION_HEADER.match(line)),
         len(lines),

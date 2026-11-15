@@ -7,11 +7,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from rich.console import Console
 from rich.markup import escape
 
-from snore.provenance import PROVENANCE_NOTES, Provenance, field_provenance
+from snore.provenance import EXPERIMENTAL_NOTE, is_experimental
 
 console = Console()
 err_console = Console(stderr=True)
@@ -33,13 +33,7 @@ ICON_TIP = "[yellow]\U0001f4a1[/yellow]"
 ICON_CHART = "\U0001f4c8"
 
 
-_PROVENANCE_MARKERS: dict[Provenance, str] = {
-    Provenance.EXPERIMENTAL: "*",
-    Provenance.DERIVED: "†",
-    Provenance.DEVICE: "",
-}
-# Legend order: least to most uncertain.
-_LEGEND_TIERS = (Provenance.DERIVED, Provenance.EXPERIMENTAL)
+_EXPERIMENTAL_MARKER = "*"
 
 
 class _LegendState(BaseModel):
@@ -47,53 +41,50 @@ class _LegendState(BaseModel):
 
     Mutation (not ``ContextVar.set``) is what lets writes made inside the
     command's ``asyncio.run`` task, which runs in a copied context, reach the
-    outer ``provenance_legend()`` block.
+    outer ``experimental_legend()`` block.
     """
 
-    used: set[Provenance] = Field(default_factory=set)
+    used: bool = False
     plain: bool = False
 
 
-# State of the current command; None outside provenance_legend().
+# State of the current command; None outside experimental_legend().
 _legend_state: ContextVar[_LegendState | None] = ContextVar(
     "_legend_state", default=None
 )
 
 
-def mark_provenance(label: str, provenance: Provenance | None) -> str:
-    """Append the tier's marker to ``label`` and record it for the legend.
+def mark_experimental(label: str) -> str:
+    """Append the experimental marker to ``label`` and record it for the legend.
 
     The legend itself is printed only for commands wrapped in
-    ``profile_scoped_command`` (which opens ``provenance_legend()``); elsewhere
-    the marker is still appended but no legend line follows.
+    ``profile_scoped_command`` (which opens ``experimental_legend()``);
+    elsewhere the marker is still appended but no legend line follows.
     """
-    if provenance is None or provenance is Provenance.DEVICE:
-        return label
     state = _legend_state.get()
     if state is not None:
-        state.used.add(provenance)
-    return f"{label}{_PROVENANCE_MARKERS[provenance]}"
+        state.used = True
+    return f"{label}{_EXPERIMENTAL_MARKER}"
 
 
 def mark_field(label: str, model: type[BaseModel], field: str) -> str:
-    """``mark_provenance`` with the tier read from ``model.field``'s tag.
+    """``mark_experimental(label)`` when ``model.field`` is tagged experimental.
 
-    As with ``mark_provenance``, the legend is printed only for commands
-    wrapped in ``profile_scoped_command``.
+    Any other field returns ``label`` unchanged.
     """
-    return mark_provenance(label, field_provenance(model, field))
+    return mark_experimental(label) if is_experimental(model, field) else label
 
 
 def use_plain_legend() -> None:
-    """Render the current command's provenance legend without styling."""
+    """Render the current command's experimental legend without styling."""
     state = _legend_state.get()
     if state is not None:
         state.plain = True
 
 
 @contextmanager
-def provenance_legend() -> Iterator[None]:
-    """Collect markers emitted inside the block; print their legend on exit.
+def experimental_legend() -> Iterator[None]:
+    """Collect markers emitted inside the block; print the legend on exit.
 
     The legend is printed even when the block raises (e.g. a
     ``click.ClickException`` after partial output), then the exception
@@ -105,14 +96,9 @@ def provenance_legend() -> Iterator[None]:
         yield
     finally:
         _legend_state.reset(token)
-        parts = [
-            f"{_PROVENANCE_MARKERS[tier]} {tier.value}: {PROVENANCE_NOTES[tier]}"
-            for tier in _LEGEND_TIERS
-            if tier in state.used
-        ]
-        if parts:
+        if state.used:
             console.print(
-                "  ".join(parts),
+                f"{_EXPERIMENTAL_MARKER} experimental: {EXPERIMENTAL_NOTE}",
                 style=None if state.plain else "dim",
                 markup=False,
                 highlight=False,
@@ -191,11 +177,14 @@ def print_separator(*, wide: bool = False) -> None:
 
 
 class Column(NamedTuple):
-    """A ``print_table`` column; a width of 0 leaves the cell unpadded."""
+    """A ``print_table`` column; a width of 0 leaves the cell unpadded.
+
+    The header prints as given: to mark it, pass a ``mark_experimental`` or
+    ``mark_field`` label.
+    """
 
     header: str
     width: int
-    provenance: Provenance | None = None
 
 
 def print_table(
@@ -208,12 +197,12 @@ def print_table(
 ) -> None:
     """Print a plain-text table of left-aligned, space-separated columns.
 
-    A column's provenance marks its header; a width of 0 suits a ragged last
-    column. Cells longer than their column width are not truncated.
+    A width of 0 suits a ragged last column. Cells longer than their column
+    width are not truncated.
     """
     prefix = _indent_prefix(indent)
     widths = [col.width for col in columns]
-    headers = [mark_provenance(col.header, col.provenance) for col in columns]
+    headers = [col.header for col in columns]
 
     def _format_row(cells: Sequence[str]) -> str:
         return prefix + " ".join(
@@ -232,14 +221,7 @@ def print_subsection(title: str) -> None:
     console.print(f"\n{title}")
 
 
-def print_kv(
-    key: str,
-    value: str,
-    *,
-    indent: int = 1,
-    provenance: Provenance | None = None,
-) -> None:
-    key = mark_provenance(key, provenance)
+def print_kv(key: str, value: str, *, indent: int = 1) -> None:
     console.print(f"{_indent_prefix(indent)}[dim]{escape(key)}:[/dim] {escape(value)}")
 
 

@@ -14,16 +14,9 @@ from rich.text import Text
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.analysis.types import AnalysisEvent, AnalysisResult
-from snore.cli.display import console, mark_field, mark_provenance, print_kv
+from snore.cli.display import console, mark_experimental, mark_field, print_kv
 from snore.constants import FLOW_LIMITATION_CLASSES, LEAK_REDLINE_LPM
-from snore.provenance import Provenance
-from snore.services.schemas import (
-    DeviceChannelStats,
-    LargeLeakSpan,
-    LeakRedlineStats,
-    MaskOnSpan,
-    SessionStatistics,
-)
+from snore.services.schemas import DeviceChannelStats, LeakRedlineStats
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
@@ -108,7 +101,7 @@ def create_machine_events_table(
 
     ahi_color = _get_ahi_color(machine_ahi)
     table.add_row(
-        mark_field("AHI", AnalysisResult, "machine_ahi"),
+        "AHI",
         f"[{ahi_color}]{machine_ahi:.1f}[/{ahi_color}] events/hr",
     )
     table.add_section()
@@ -134,7 +127,7 @@ def create_machine_events_table(
 def create_mode_comparison_table(
     mode_results: dict[str, ModeResult], plain: bool = False
 ) -> Table:
-    title = mark_provenance("MODE COMPARISON", Provenance.EXPERIMENTAL)
+    title = mark_experimental("MODE COMPARISON")
     table = Table(
         title=f"[bold]{title}[/bold]" if not plain else title,
         show_header=True,
@@ -210,7 +203,7 @@ def create_validation_table(
     rera_val: Any = None,
     rera_status: str | None = None,
 ) -> Table:
-    title = mark_provenance(f"Validation: {mode_name}", Provenance.EXPERIMENTAL)
+    title = mark_experimental(f"Validation: {mode_name}")
     table = Table(
         title=f"[bold]{title}[/bold]" if not plain else title,
         show_header=True,
@@ -292,7 +285,7 @@ def create_flow_limitation_panel(
     content.append(f"{fli_label}: {fli:.2f}       ", style="bold")
     content.append(f"{breaths_label}: {total_breaths:,}", style="bold")
 
-    title = mark_provenance("FLOW LIMITATION ANALYSIS", Provenance.EXPERIMENTAL)
+    title = mark_experimental("FLOW LIMITATION ANALYSIS")
     panel = Panel(
         content,
         title=f"[bold cyan]{title}[/bold cyan]" if not plain else title,
@@ -378,50 +371,41 @@ def _print_channel_stats(
 ) -> None:
     """Print a channel's median, 95th and max, skipping a channel with no data."""
     rows = [
-        (label, field, value)
-        for label, field in (
-            ("Median", f"{prefix}_median"),
-            ("95th percentile", f"{prefix}_95th"),
-            ("Max", f"{prefix}_max"),
+        (label, value)
+        for label, suffix in (
+            ("Median", "median"),
+            ("95th percentile", "95th"),
+            ("Max", "max"),
         )
-        if (value := getattr(stats, field)) is not None
+        if (value := getattr(stats, f"{prefix}_{suffix}")) is not None
     ]
     if not rows:
         return
     console.print(f"    {title}:")
-    for label, field, value in rows:
-        print_kv(
-            mark_field(label, DeviceChannelStats, field),
-            f"{value:.{decimals}f}",
-            indent=3,
-        )
+    for label, value in rows:
+        print_kv(label, f"{value:.{decimals}f}", indent=3)
 
 
 def _print_leak_redline(leak: LeakRedlineStats) -> None:
     """Print the time over the leak redline and the Large Leak spans."""
     console.print(f"\n  Leak Redline ({LEAK_REDLINE_LPM:g} L/min):")
-    for label, field, value, decimals in (
-        ("Time over redline", "leak_above_24_pct", leak.leak_above_24_pct, 1),
-        ("Large Leak", "large_leak_pct", leak.large_leak_pct, 2),
+    for label, value, decimals in (
+        ("Time over redline", leak.leak_above_24_pct, 1),
+        ("Large Leak", leak.large_leak_pct, 2),
     ):
         if value is not None:
-            print_kv(
-                mark_field(label, LeakRedlineStats, field),
-                f"{value:.{decimals}f}%",
-                indent=2,
-            )
+            print_kv(label, f"{value:.{decimals}f}%", indent=2)
     count = leak.large_leak_span_count
     listed = len(leak.large_leak_spans)
     print_kv(
-        mark_field("Large Leak spans", LeakRedlineStats, "large_leak_span_count"),
+        "Large Leak spans",
         f"{count} (showing the {listed} longest)" if listed < count else str(count),
         indent=2,
     )
-    duration_label = mark_field("Duration", LargeLeakSpan, "duration_seconds")
     for span in leak.large_leak_spans:
         console.print(
             f"    {span.start:%Y-%m-%d %H:%M:%S} to {span.end:%H:%M:%S}, "
-            f"{duration_label}: {span.duration_seconds:.0f}s"
+            f"Duration: {span.duration_seconds:.0f}s"
         )
 
 
@@ -462,9 +446,7 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         console.print("\n  Statistics:")
 
         if stats.usage_hours is not None:
-            console.print(
-                f"    {mark_field('Usage', SessionStatistics, 'usage_hours')}: {stats.usage_hours:.1f}h"
-            )
+            console.print(f"    Usage: {stats.usage_hours:.1f}h")
 
         has_event_indices = any(
             [
@@ -478,25 +460,15 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_event_indices:
             console.print("\n    Event Indices:")
             if stats.ahi is not None:
-                console.print(
-                    f"      {mark_field('AHI', SessionStatistics, 'ahi')}: {stats.ahi:.1f}"
-                )
+                console.print(f"      AHI: {stats.ahi:.1f}")
             if stats.rei is not None:
-                console.print(
-                    f"      {mark_field('REI', SessionStatistics, 'rei')}: {stats.rei:.1f}"
-                )
+                console.print(f"      REI: {stats.rei:.1f}")
             if stats.oai is not None:
-                console.print(
-                    f"      {mark_field('OAI', SessionStatistics, 'oai')}: {stats.oai:.1f}"
-                )
+                console.print(f"      OAI: {stats.oai:.1f}")
             if stats.cai is not None:
-                console.print(
-                    f"      {mark_field('CAI', SessionStatistics, 'cai')}: {stats.cai:.1f}"
-                )
+                console.print(f"      CAI: {stats.cai:.1f}")
             if stats.hi is not None:
-                console.print(
-                    f"      {mark_field('HI', SessionStatistics, 'hi')}: {stats.hi:.1f}"
-                )
+                console.print(f"      HI: {stats.hi:.1f}")
 
         has_event_counts = any(
             [
@@ -512,33 +484,19 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_event_counts:
             console.print("\n    Event Counts:")
             if stats.obstructive_apneas and stats.obstructive_apneas > 0:
-                console.print(
-                    f"      {mark_field('Obstructive Apneas', SessionStatistics, 'obstructive_apneas')}: {stats.obstructive_apneas}"
-                )
+                console.print(f"      Obstructive Apneas: {stats.obstructive_apneas}")
             if stats.central_apneas and stats.central_apneas > 0:
-                console.print(
-                    f"      {mark_field('Central Apneas', SessionStatistics, 'central_apneas')}: {stats.central_apneas}"
-                )
+                console.print(f"      Central Apneas: {stats.central_apneas}")
             if stats.unclassified_apneas and stats.unclassified_apneas > 0:
-                console.print(
-                    f"      {mark_field('Unclassified Apneas', SessionStatistics, 'unclassified_apneas')}: {stats.unclassified_apneas}"
-                )
+                console.print(f"      Unclassified Apneas: {stats.unclassified_apneas}")
             if stats.mixed_apneas and stats.mixed_apneas > 0:
-                console.print(
-                    f"      {mark_field('Mixed Apneas', SessionStatistics, 'mixed_apneas')}: {stats.mixed_apneas}"
-                )
+                console.print(f"      Mixed Apneas: {stats.mixed_apneas}")
             if stats.hypopneas and stats.hypopneas > 0:
-                console.print(
-                    f"      {mark_field('Hypopneas', SessionStatistics, 'hypopneas')}: {stats.hypopneas}"
-                )
+                console.print(f"      Hypopneas: {stats.hypopneas}")
             if stats.reras and stats.reras > 0:
-                console.print(
-                    f"      {mark_field('RERAs', SessionStatistics, 'reras')}: {stats.reras}"
-                )
+                console.print(f"      RERAs: {stats.reras}")
             if stats.flow_limitations and stats.flow_limitations > 0:
-                console.print(
-                    f"      {mark_field('Flow Limitations', SessionStatistics, 'flow_limitations')}: {stats.flow_limitations}"
-                )
+                console.print(f"      Flow Limitations: {stats.flow_limitations}")
 
         has_pressure = any(
             [
@@ -551,17 +509,13 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_pressure:
             console.print("\n    Pressure:")
             if stats.pressure_mean is not None:
-                console.print(
-                    f"      {mark_field('Mean', SessionStatistics, 'pressure_mean')}: {stats.pressure_mean:.1f} cmH₂O"
-                )
+                console.print(f"      Mean: {stats.pressure_mean:.1f} cmH₂O")
             if stats.pressure_min is not None and stats.pressure_max is not None:
                 console.print(
-                    f"      {mark_field('Range', SessionStatistics, 'pressure_min')}: {stats.pressure_min:.1f} - {stats.pressure_max:.1f} cmH₂O"
+                    f"      Range: {stats.pressure_min:.1f} - {stats.pressure_max:.1f} cmH₂O"
                 )
             if stats.pressure_95th is not None:
-                console.print(
-                    f"      {mark_field('95th percentile', SessionStatistics, 'pressure_95th')}: {stats.pressure_95th:.1f} cmH₂O"
-                )
+                console.print(f"      95th percentile: {stats.pressure_95th:.1f} cmH₂O")
 
         has_epap = any(
             [
@@ -574,17 +528,13 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_epap:
             console.print("\n    EPAP:")
             if stats.epap_mean is not None:
-                console.print(
-                    f"      {mark_field('Mean', SessionStatistics, 'epap_mean')}: {stats.epap_mean:.1f} cmH₂O"
-                )
+                console.print(f"      Mean: {stats.epap_mean:.1f} cmH₂O")
             if stats.epap_min is not None and stats.epap_max is not None:
                 console.print(
-                    f"      {mark_field('Range', SessionStatistics, 'epap_min')}: {stats.epap_min:.1f} - {stats.epap_max:.1f} cmH₂O"
+                    f"      Range: {stats.epap_min:.1f} - {stats.epap_max:.1f} cmH₂O"
                 )
             if stats.epap_95th is not None:
-                console.print(
-                    f"      {mark_field('95th percentile', SessionStatistics, 'epap_95th')}: {stats.epap_95th:.1f} cmH₂O"
-                )
+                console.print(f"      95th percentile: {stats.epap_95th:.1f} cmH₂O")
 
         has_leak = any(
             [
@@ -596,17 +546,13 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_leak:
             console.print("\n    Leak:")
             if stats.leak_mean is not None:
-                console.print(
-                    f"      {mark_field('Mean', SessionStatistics, 'leak_mean')}: {stats.leak_mean:.1f} L/min"
-                )
+                console.print(f"      Mean: {stats.leak_mean:.1f} L/min")
             if stats.leak_percentile_70 is not None:
                 console.print(
-                    f"      {mark_field('70th percentile', SessionStatistics, 'leak_percentile_70')}: {stats.leak_percentile_70:.1f} L/min"
+                    f"      70th percentile: {stats.leak_percentile_70:.1f} L/min"
                 )
             if stats.leak_95th is not None:
-                console.print(
-                    f"      {mark_field('95th percentile', SessionStatistics, 'leak_95th')}: {stats.leak_95th:.1f} L/min"
-                )
+                console.print(f"      95th percentile: {stats.leak_95th:.1f} L/min")
 
         has_spo2 = any(
             [
@@ -618,18 +564,12 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_spo2:
             console.print("\n    SpO₂:")
             if stats.spo2_mean is not None:
-                console.print(
-                    f"      {mark_field('Mean', SessionStatistics, 'spo2_mean')}: {stats.spo2_mean:.1f}%"
-                )
+                console.print(f"      Mean: {stats.spo2_mean:.1f}%")
             if stats.spo2_min is not None:
-                console.print(
-                    f"      {mark_field('Minimum', SessionStatistics, 'spo2_min')}: {stats.spo2_min:.0f}%"
-                )
+                console.print(f"      Minimum: {stats.spo2_min:.0f}%")
             if stats.spo2_time_below_90 is not None:
                 minutes_below_90 = stats.spo2_time_below_90 / 60
-                console.print(
-                    f"      {mark_field('Time below 90%', SessionStatistics, 'spo2_time_below_90')}: {minutes_below_90:.1f} minutes"
-                )
+                console.print(f"      Time below 90%: {minutes_below_90:.1f} minutes")
 
         has_pulse = any(
             [
@@ -641,12 +581,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
         if has_pulse:
             console.print("\n    Pulse:")
             if stats.pulse_mean is not None:
-                console.print(
-                    f"      {mark_field('Mean', SessionStatistics, 'pulse_mean')}: {stats.pulse_mean:.1f} BPM"
-                )
+                console.print(f"      Mean: {stats.pulse_mean:.1f} BPM")
             if stats.pulse_min is not None and stats.pulse_max is not None:
                 console.print(
-                    f"      {mark_field('Range', SessionStatistics, 'pulse_min')}: {stats.pulse_min:.0f} - {stats.pulse_max:.0f} BPM"
+                    f"      Range: {stats.pulse_min:.0f} - {stats.pulse_max:.0f} BPM"
                 )
 
         has_respiratory = any(
@@ -660,15 +598,15 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
             console.print("\n    Respiratory:")
             if stats.respiratory_rate_mean is not None:
                 console.print(
-                    f"      {mark_field('Mean Respiratory Rate', SessionStatistics, 'respiratory_rate_mean')}: {stats.respiratory_rate_mean:.1f} breaths/min"
+                    f"      Mean Respiratory Rate: {stats.respiratory_rate_mean:.1f} breaths/min"
                 )
             if stats.tidal_volume_mean is not None:
                 console.print(
-                    f"      {mark_field('Mean Tidal Volume', SessionStatistics, 'tidal_volume_mean')}: {stats.tidal_volume_mean:.0f} mL"
+                    f"      Mean Tidal Volume: {stats.tidal_volume_mean:.0f} mL"
                 )
             if stats.minute_ventilation_mean is not None:
                 console.print(
-                    f"      {mark_field('Mean Minute Ventilation', SessionStatistics, 'minute_ventilation_mean')}: {stats.minute_ventilation_mean:.1f} L/min"
+                    f"      Mean Minute Ventilation: {stats.minute_ventilation_mean:.1f} L/min"
                 )
 
     if detail.channel_stats:
@@ -681,11 +619,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
 
     if detail.mask_on_spans:
         console.print("\n  Mask-On Spans:")
-        duration_label = mark_field("Duration", MaskOnSpan, "duration_seconds")
         for span in detail.mask_on_spans:
             console.print(
                 f"    {span.start:%Y-%m-%d %H:%M:%S} to {span.end:%Y-%m-%d %H:%M:%S}, "
-                f"{duration_label}: {span.duration_seconds / 3600:.2f}h"
+                f"Duration: {span.duration_seconds / 3600:.2f}h"
             )
 
     if detail.settings:

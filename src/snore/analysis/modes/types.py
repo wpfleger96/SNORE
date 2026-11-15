@@ -7,11 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from snore.analysis.shared.types import ApneaEvent, HypopneaEvent, RERAEvent
 from snore.constants import EventDetectionConstants as EDC
-from snore.provenance import (
-    Provenance,
-    provenance_computed_field,
-    provenance_field,
-)
+from snore.provenance import experimental_computed_field, experimental_field
 
 
 class BaselineMethod(StrEnum):
@@ -150,13 +146,10 @@ class ModeResult(BaseModel):
     reras: list[RERAEvent] = Field(
         default_factory=list, description="Detected RERA events"
     )
-    ahi: float = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Apnea-Hypopnea Index from programmatic detection",
-        ge=0,
+    ahi: float = experimental_field(
+        "Apnea-Hypopnea Index from programmatic detection", ge=0
     )
-    rdi: float = provenance_field(
-        Provenance.EXPERIMENTAL,
+    rdi: float = experimental_field(
         "Respiratory Disturbance Index (AHI + RERAs/hour). RERAs here come "
         "from the analysis-time amplitude-crescendo detector "
         "(detector.py::_detect_reras). This is a DIFFERENT RERA definition "
@@ -169,17 +162,17 @@ class ModeResult(BaseModel):
         default_factory=dict, description="Mode-specific debug info"
     )
 
-    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected apnea count")  # type: ignore[prop-decorator]
+    @experimental_computed_field("Detected apnea count")  # type: ignore[prop-decorator]
     @property
     def apnea_count(self) -> int:
         return len(self.apneas)
 
-    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected hypopnea count")  # type: ignore[prop-decorator]
+    @experimental_computed_field("Detected hypopnea count")  # type: ignore[prop-decorator]
     @property
     def hypopnea_count(self) -> int:
         return len(self.hypopneas)
 
-    @provenance_computed_field(Provenance.EXPERIMENTAL, "Detected RERA count")  # type: ignore[prop-decorator]
+    @experimental_computed_field("Detected RERA count")  # type: ignore[prop-decorator]
     @property
     def rera_count(self) -> int:
         return len(self.reras)

@@ -147,7 +147,7 @@ class WaveformRenderer:
             center_time: Center time for title
             waveform_type: Type of waveform (default: "flow")
             programmatic_label: Plain-text row label for programmatic events,
-                e.g. with a provenance marker appended; the renderer escapes it
+                e.g. with an experimental marker appended; the renderer escapes it
 
         Note:
             All output, including the chart, goes to self.console. Returns None.

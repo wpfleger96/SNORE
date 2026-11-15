@@ -26,8 +26,6 @@ from snore.cli.display import (
     print_warning,
 )
 from snore.constants import DEFAULT_LIST_SESSIONS_LIMIT
-from snore.provenance import field_provenance
-from snore.services.schemas import SessionListItem
 
 
 @click.group()
@@ -101,10 +99,10 @@ async def session_list(
             Column("ID", 5),
             Column("Therapy Day", 12),
             Column("Time", 8),
-            Column("Duration", 10, field_provenance(SessionListItem, "duration_hours")),
+            Column("Duration", 10),
             Column("Device", 30),
             Column("Serial", 15),
-            Column("AHI", 8, field_provenance(SessionListItem, "ahi")),
+            Column("AHI", 8),
         ],
         rows,
     )

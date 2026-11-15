@@ -11,7 +11,7 @@ from snore.cli.display import (
     ICON_CHART,
     Column,
     console,
-    mark_field,
+    mark_experimental,
     print_footer,
     print_header,
     print_kv,
@@ -19,13 +19,7 @@ from snore.cli.display import (
     print_table,
 )
 from snore.constants import COMPLIANCE_THRESHOLD_HOURS, LEAK_REDLINE_LPM
-from snore.provenance import Provenance, field_provenance
-from snore.services.schemas import (
-    PeriodStatistics,
-    RecordsResponse,
-    TherapySummary,
-    TrendsResponse,
-)
+from snore.services.schemas import PeriodStatistics
 
 
 @click.command()
@@ -68,91 +62,83 @@ async def stats(
     print_subsection("Date Range")
     print_kv("First session", str(summary.first_date))
     print_kv("Last session", str(summary.last_date))
-    _summary_kv("Days since last use", "days_since_last", str(summary.days_since_last))
+    print_kv("Days since last use", str(summary.days_since_last))
 
     print_subsection("Usage")
-    _summary_kv("Total therapy hours", "total_hours", f"{summary.total_hours:,.1f} hrs")
-    _summary_kv("Average per night", "avg_hours", f"{summary.avg_hours:.1f} hrs")
-    _summary_kv("Days with data", "days_with_data", str(summary.days_with_data))
-    _summary_kv(
+    print_kv("Total therapy hours", f"{summary.total_hours:,.1f} hrs")
+    print_kv("Average per night", f"{summary.avg_hours:.1f} hrs")
+    print_kv("Days with data", str(summary.days_with_data))
+    print_kv(
         f"Days >= {COMPLIANCE_THRESHOLD_HOURS:g} hrs",
-        "days_compliant",
         str(summary.days_compliant),
     )
-    _summary_kv(
-        "Compliance (all days)", "compliance_pct", f"{summary.compliance_pct:.1f}%"
-    )
+    print_kv("Compliance (all days)", f"{summary.compliance_pct:.1f}%")
 
     print_subsection("Clinical")
-    _summary_kv(
+    print_kv(
         "Average AHI",
-        "avg_ahi",
         f"{summary.avg_ahi:.1f}" if summary.avg_ahi is not None else "N/A",
     )
     if summary.avg_rei is not None:
-        _summary_kv("Average REI", "avg_rei", f"{summary.avg_rei:.1f}")
+        print_kv("Average REI", f"{summary.avg_rei:.1f}")
 
     if summary.avg_pressure is not None:
         print_subsection("Pressure")
-        _summary_kv("Average", "avg_pressure", f"{summary.avg_pressure:.1f} cmH₂O")
+        print_kv("Average", f"{summary.avg_pressure:.1f} cmH₂O")
         if summary.min_pressure is not None and summary.max_pressure is not None:
-            _summary_kv(
+            print_kv(
                 "Range",
-                "min_pressure",
                 f"{summary.min_pressure:.1f} - {summary.max_pressure:.1f} cmH₂O",
             )
 
     if summary.avg_epap is not None:
         print_subsection("EPAP")
-        _summary_kv("Average", "avg_epap", f"{summary.avg_epap:.1f} cmH₂O")
+        print_kv("Average", f"{summary.avg_epap:.1f} cmH₂O")
 
     if summary.avg_leak is not None:
         print_subsection("Leak")
-        _summary_kv("Average", "avg_leak", f"{summary.avg_leak:.1f} L/min")
-        # A SNORE judgement with no schema field behind it, so the tier is set here.
+        print_kv("Average", f"{summary.avg_leak:.1f} L/min")
+        # A SNORE judgement with no schema field behind it, so it is marked here.
         leak_assessment = (
             "well controlled" if summary.avg_leak < LEAK_REDLINE_LPM else "elevated"
         )
-        print_kv("Assessment", leak_assessment, provenance=Provenance.EXPERIMENTAL)
+        print_kv(mark_experimental("Assessment"), leak_assessment)
 
     if summary.avg_spo2 is not None:
         print_subsection("SpO₂")
-        _summary_kv("Average", "avg_spo2", f"{summary.avg_spo2:.1f}%")
+        print_kv("Average", f"{summary.avg_spo2:.1f}%")
         if summary.min_spo2 is not None:
-            _summary_kv("Minimum recorded", "min_spo2", f"{summary.min_spo2:.0f}%")
+            print_kv("Minimum recorded", f"{summary.min_spo2:.0f}%")
 
     if summary.total_spo2_time_below_90 > 0:
         minutes_below_90 = summary.total_spo2_time_below_90 / 60
-        _summary_kv(
+        print_kv(
             "Time below 90%",
-            "total_spo2_time_below_90",
             f"{minutes_below_90:.1f} minutes",
         )
 
     if summary.avg_pulse is not None:
         print_subsection("Pulse")
-        _summary_kv("Average", "avg_pulse", f"{summary.avg_pulse:.1f} BPM")
+        print_kv("Average", f"{summary.avg_pulse:.1f} BPM")
 
     respiratory = [
         (
             "Respiratory Rate",
-            "avg_respiratory_rate",
             summary.avg_respiratory_rate,
             "{:.1f} breaths/min",
         ),
-        ("Tidal Volume", "avg_tidal_volume", summary.avg_tidal_volume, "{:.0f} mL"),
+        ("Tidal Volume", summary.avg_tidal_volume, "{:.0f} mL"),
         (
             "Minute Ventilation",
-            "avg_minute_ventilation",
             summary.avg_minute_ventilation,
             "{:.1f} L/min",
         ),
     ]
-    if any(value is not None for _, _, value, _ in respiratory):
+    if any(value is not None for _, value, _ in respiratory):
         print_subsection("Respiratory")
-        for label, field, value, fmt in respiratory:
+        for label, value, fmt in respiratory:
             if value is not None:
-                _summary_kv(label, field, fmt.format(value))
+                print_kv(label, fmt.format(value))
 
     if summary.event_counts:
         print_subsection("Events")
@@ -228,35 +214,13 @@ async def stats(
             print_table(
                 [
                     Column("Period", 12),
-                    Column(
-                        "Days",
-                        6,
-                        field_provenance(PeriodStatistics, "days_used"),
-                    ),
-                    Column(
-                        "Avg Hours",
-                        11,
-                        field_provenance(PeriodStatistics, "avg_hours_per_day"),
-                    ),
-                    Column(
-                        f">={COMPLIANCE_THRESHOLD_HOURS:g}h",
-                        6,
-                        field_provenance(PeriodStatistics, "compliance_pct"),
-                    ),
-                    Column("Avg AHI", 9, field_provenance(PeriodStatistics, "avg_ahi")),
-                    Column(
-                        "Med AHI", 9, field_provenance(PeriodStatistics, "median_ahi")
-                    ),
-                    Column(
-                        "FL 95th",
-                        9,
-                        field_provenance(PeriodStatistics, "device_flg_95th"),
-                    ),
-                    Column(
-                        "Snore 95th",
-                        11,
-                        field_provenance(PeriodStatistics, "snore_95th"),
-                    ),
+                    Column("Days", 6),
+                    Column("Avg Hours", 11),
+                    Column(f">={COMPLIANCE_THRESHOLD_HOURS:g}h", 6),
+                    Column("Avg AHI", 9),
+                    Column("Med AHI", 9),
+                    Column("FL 95th", 9),
+                    Column("Snore 95th", 11),
                 ],
                 period_rows,
             )
@@ -275,9 +239,7 @@ async def stats(
                     date_labels = [d.strftime("%Y-%m-%d") for d in dates_for_plot]
                     x_indices = list(range(len(ahi_values)))
 
-                    print_header(
-                        mark_field("AHI Trend", TrendsResponse, "ahi"), wide=True
-                    )
+                    print_header("AHI Trend", wide=True)
 
                     fig = plt.figure
                     fig.clear()
@@ -316,8 +278,6 @@ async def stats(
             for metric, extremes, best_label, worst_label in metric_rows:
                 if extremes is None:
                     continue
-                metric_provenance = field_provenance(RecordsResponse, metric)
-
                 best_records = extremes.best
                 worst_records = extremes.worst
 
@@ -345,10 +305,7 @@ async def stats(
 
                 console.print()
                 print_table(
-                    [
-                        Column(best_label, 35, metric_provenance),
-                        Column(worst_label, 0, metric_provenance),
-                    ],
+                    [Column(best_label, 35), Column(worst_label, 0)],
                     record_rows,
                 )
 
@@ -367,8 +324,3 @@ def _percent_cell(value: float | None) -> str:
 def _channel_cell(value: float | None) -> str:
     """Format a device-channel percentile cell, ``N/A`` when the channel is absent."""
     return f"{value:.2f}" if value is not None else "N/A"
-
-
-def _summary_kv(label: str, field: str, value: str) -> None:
-    """Print a ``TherapySummary`` metric row with the field's provenance marker."""
-    print_kv(mark_field(label, TherapySummary, field), value)
