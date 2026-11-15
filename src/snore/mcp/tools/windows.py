@@ -215,8 +215,19 @@ def register(mcp: FastMCP) -> None:
         offset from its own session's start (smallest first; windows from different
         sessions interleave by offset, not by wall-clock time).
 
-        Requires breath-level analysis results (``get_data_overview`` → ``analysis_run``
-        must be true).
+        Every criterion except ``ca_centered`` (device-scored CA events) requires
+        breath-level analysis results (``get_data_overview`` → ``analysis_run`` must
+        be true).
+
+        When a value can't be computed, ``windows`` is empty and ``null_reason`` says
+        why: ``"algo_version_mismatch"`` (sessions analyzed with different algorithm
+        versions; only ``ca_centered`` still works), ``"primary_mode_mismatch"``
+        (sessions differ in primary mode; ``fl_run_ending_in_recovery`` and
+        ``rera_proxy_centered`` refuse) or ``"analysis_not_run"`` (no session on the
+        date).  With a null ``null_reason``, an empty ``windows`` means nothing matched
+        only if ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
+        unanalyzed or stale sessions that were skipped.  Limits: options irrelevant
+        to the chosen ``criterion`` must keep their defaults.
 
         Args:
             date: Session date in YYYY-MM-DD format.
@@ -265,34 +276,6 @@ def register(mcp: FastMCP) -> None:
                 mean for the self-contained recovery criterion (default 0.20).
                 Only relevant for ``fl_run_ending_in_recovery`` and
                 ``rera_proxy_centered``.
-
-        Returns:
-            FindWindowsResponse.  ``windows`` is ordered worst-first (``ca_centered``:
-            smallest CA offset from session start first).
-            ``device_id`` is ``null`` when no sessions were found on the date
-            (the service-internal sentinel ``0`` is never emitted).
-            ``session_coverage`` lists per-session analysis status.
-            ``device_capabilities`` describes what the device records.
-            ``primary_mode`` is populated for all criteria; ``null`` when
-            sessions on the date mix primary modes.
-
-        Refusal semantics (successful responses with empty ``windows`` list):
-            ``null_reason: "algo_version_mismatch"`` — the day has sessions analyzed
-                with different algorithm versions; FL-ranked criteria
-                (``worst_flattening_leak_valid``, ``fl_run_ending_in_recovery``,
-                ``rera_proxy_centered``) refuse comparison.
-                ``ca_centered`` is unaffected — it still works.
-            ``null_reason: "primary_mode_mismatch"`` — sessions differ in primary mode;
-                ``fl_run_ending_in_recovery`` and ``rera_proxy_centered`` refuse; other
-                criteria are unaffected.
-            ``null_reason: "analysis_not_run"`` — no analysis results for this date.
-
-        Error conditions:
-            - Unknown ``criterion`` value → tool error listing valid criteria.
-            - ``n`` outside 1–50 → tool error.
-            - Multiple devices on date and no ``device_id`` → tool error listing device IDs.
-            - Options irrelevant to the chosen criterion passed with non-default values
-              → tool error; omit those options or use their defaults.
         """
         from snore.mcp.tools.windows import find_windows as _impl  # noqa: PLC0415
 
