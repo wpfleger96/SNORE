@@ -179,11 +179,14 @@ def register(mcp: FastMCP) -> None:
         respiratory-rate, tidal-volume (mL), minute-ventilation, Ti and I:E
         channels and the oximeter pulse, pooled over enabled sessions),
         ``leak_redline`` and ``mask_on_spans`` are derived from device data.
-        ``leak_redline`` (null without a leak channel) holds OSCAR's leak
-        redline views at 24 L/min: ``leak_above_24_pct`` (the same value as
-        ``get_nightly_summary``), the Large Leak spans (leak at or above the
-        redline) and ``large_leak_pct``, their total duration as a percent of
-        mask-on hours.
+        ``leak_redline`` (null without a leak channel, or when its data cannot
+        be decoded) holds OSCAR's leak redline views at 24 L/min:
+        ``leak_above_24_pct`` (the same value as ``get_nightly_summary``), the
+        Large Leak spans (leak at or above the redline) and
+        ``large_leak_pct``, their total duration as a percent of mask-on hours
+        (null when those hours are zero). At most 500 spans are listed, the
+        longest; ``large_leak_span_count`` and ``large_leak_pct`` cover all of
+        them.
         ``device`` matches ``GET /days/{date}``: ``device.health_sleep`` is the
         Day page's Apple Health summary, and ``apple_health`` is the fuller
         Apple night.
@@ -217,9 +220,6 @@ def register(mcp: FastMCP) -> None:
             date: Night date in YYYY-MM-DD format (sessions before noon belong
                 to the previous date).
             device_id: Optional device ID.
-
-        Returns:
-            NightDetailResponse with date, device, sessions and apple_health.
         """
         from snore.mcp.tools.night_detail import (  # noqa: PLC0415
             get_night_detail as _impl,

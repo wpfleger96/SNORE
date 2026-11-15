@@ -283,9 +283,12 @@ def register(mcp: FastMCP) -> None:
         Call ``get_data_overview`` first to confirm analysis has been run; this tool
         requires breath-level analysis results.
 
-        Raw windows are capped at 15 minutes (offset_end - offset_start ≤ 900 s).
-        For longer windows set ``bin_minutes`` to aggregate into time bins — the response
-        then populates ``bins`` instead of ``rows``.  ``page_size`` must be between 1 and 2000.
+        When a value can't be computed, ``rows`` and ``bins`` are empty,
+        ``total_breaths`` is 0, ``session_id`` still names the resolved session, and
+        ``null_reason`` says why: ``"analysis_not_run"`` (``analysis_status:
+        "not_run"``; never analyzed) or ``"analysis_stale"`` (``analysis_status:
+        "stale_version"``; analysis predates the current algorithm version and must
+        be re-run).  A date with no sessions is an error.
 
         Args:
             date: Session date in YYYY-MM-DD format.
@@ -301,26 +304,6 @@ def register(mcp: FastMCP) -> None:
             page_size: Rows per page for raw fetch (default 500, must be between 1 and 2000).
             bin_minutes: When set (≥ 1.0), aggregate breaths into bins of this width
                          instead of returning raw rows.  Required for windows > 15 min.
-
-        Returns:
-            BreathTableResponse.  ``is_binned`` indicates raw vs binned mode.
-            ``analysis_status`` / ``null_reason`` describe coverage.
-            ``device_capabilities`` describes what the device records.
-
-        Refusal semantics:
-            ``analysis_status`` is one of ``"ok"`` (results present),
-            ``"not_run"`` (no analysis run), or ``"stale"`` (source data
-            changed since analysis ran). When ``"not_run"`` or ``"stale"``,
-            ``null_reason`` explains why (``"analysis_not_run"``,
-            ``"analysis_stale"``). These are successful responses with
-            ``total_breaths=0``, not tool errors.
-
-        Error conditions:
-            - No sessions found for date → tool error; use ``get_data_overview``.
-            - Multiple devices on date and no ``device_id`` → tool error listing device IDs.
-            - Multiple sessions on date and no ``session_id`` → tool error listing session IDs.
-            - Raw window > 15 min without ``bin_minutes`` → tool error; set ``bin_minutes``.
-            - Required tables missing → tool error; run ``snore db init``.
         """
         from snore.mcp.tools.breath_table import (
             get_breath_table as _impl,  # noqa: PLC0415

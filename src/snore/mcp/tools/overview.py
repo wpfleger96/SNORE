@@ -229,10 +229,6 @@ def register(mcp: FastMCP) -> None:
         ``apple_health`` holds the first and last night dates and the number
         of nights with Apple Health sleep data, or null when there are none;
         ``get_apple_health_nights`` lists those nights.
-
-        Returns:
-            DataOverviewResponse with devices, date ranges, waveform channels,
-            event types, analysis status, and Apple Health night coverage.
         """
         from snore.mcp.tools.overview import get_data_overview as _impl  # noqa: PLC0415
 

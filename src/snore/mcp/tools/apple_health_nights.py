@@ -76,9 +76,6 @@ def register(mcp: FastMCP) -> None:
             end: Optional last night date (YYYY-MM-DD), inclusive.
             page: Page number (1-based). Default 1.
             page_size: Nights per page (must be between 1 and 90). Default 30.
-
-        Returns:
-            AppleHealthNightsResponse with nights and pagination.
         """
         from snore.mcp.tools.apple_health_nights import (  # noqa: PLC0415
             get_apple_health_nights as _impl,

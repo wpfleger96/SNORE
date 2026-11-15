@@ -82,9 +82,6 @@ def register(mcp: FastMCP) -> None:
             top_n: Nights per list, 1-50. Default 5, as the Stats page shows.
             start: Optional first night date (YYYY-MM-DD), inclusive.
             end: Optional last night date (YYYY-MM-DD), inclusive.
-
-        Returns:
-            NightRecordsResponse with one best/worst entry per metric.
         """
         from snore.mcp.tools.records import (  # noqa: PLC0415
             get_records as _impl,

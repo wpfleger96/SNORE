@@ -170,52 +170,23 @@ def register(mcp: FastMCP) -> None:
         Call ``get_settings_timeline`` first to identify meaningful epoch boundaries,
         then ``compare_epochs`` to quantify the difference.
 
+        When a value can't be computed, that epoch's ``null_reason`` says why and the
+        others keep their values: ``"no_data_in_range"`` (no sessions) or
+        ``"rx_changed_within_epoch"`` (settings changed inside it; split it at the
+        dates in ``rx_violations``).  An unrecorded channel has null stats with
+        ``n_samples: 0``.  The top-level ``null_reason`` is ``"no_data_in_range"`` (no
+        session in the combined range), ``"not_available"`` (``device_id`` not in this
+        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
+
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — optional; all epochs must target the same device.
+                ``device_id`` — required when several devices have data in the
+                range; all epochs must target the same device.
                 An epoch may span at most 366 calendar nights, both ends
                 included; split a longer range into several epochs.
-
-        Returns:
-            CompareEpochsResponse.  Each entry in ``epochs`` carries
-            ``device_flg`` (device-reported flow limitation, 0–1 unitless, negative
-            sentinels excluded) and ``snore_dist`` (device-reported snore level, 0–5
-            unitless, zeros included).  In both, ``n_samples`` counts valid samples
-            and ``n_nights`` counts calendar nights with at least one valid sample, so
-            a two-session night counts once.  A channel absent from an epoch has null
-            stats with ``n_samples: 0``; the epoch's ``null_reason`` stays ``null``.
-            ``nights_with_data`` counts nights with at least one enabled session.
-            ``rx_settings`` holds representative therapy settings observed for the epoch.
-            ``rx_violations`` lists any therapy-settings changes detected within an
-            epoch's date range; callers should split affected epochs at those dates.
-            Sessions with no recorded settings are skipped: a change is only reported
-            between sessions that both have settings.
-
-        Refusal semantics:
-            Mid-epoch RX change nulls only the affected epoch: that epoch's
-                ``null_reason`` becomes ``"rx_changed_within_epoch"`` while clean epochs
-                in the same call keep their computed distributions.  The top-level
-                ``null_reason`` is ``"rx_changed_within_epoch"`` only when EVERY epoch was
-                nulled for an RX change; otherwise it stays ``null``.  ``rx_violations``
-                always lists the affected epoch label, changed keys, and change dates so
-                the caller can split those ranges.
-            No sessions in an epoch: that epoch's ``null_reason`` is
-                ``"no_data_in_range"``.  When no session falls anywhere in the combined
-                date range, the top-level ``null_reason`` is ``"no_data_in_range"`` too.
-            Device not owned by the active profile: the service catches this internally
-                and returns a success response with the top-level and every epoch's
-                ``null_reason: "not_available"``.
-
-        Error conditions:
-            - Epochs list empty or >6 entries → tool error.
-            - An epoch spanning more than 366 nights → tool error naming the
-              epoch (e.g. ``epochs[1]``); split it into shorter epochs.
-            - Multiple device IDs across epoch specs → tool error.
-            - Multiple devices on the date range and no ``device_id`` → tool error
-              listing device IDs so the caller can re-issue with ``device_id``.
         """
         from snore.mcp.tools.epochs import compare_epochs as _impl  # noqa: PLC0415
 
@@ -249,77 +220,33 @@ def register(mcp: FastMCP) -> None:
         must be true).  For the device's own flow-limitation and snore channels, use
         ``compare_epochs``, which needs no analysis.
 
-        An epoch with no analyzed sessions has ``null_reason: "no_data_in_range"``; its
-        ``rera_reason`` is ``"no_data_in_range"`` when the epoch has no sessions and
-        ``"analysis_not_run"`` when its sessions have no current analysis.  The
-        top-level ``null_reason`` and every epoch's are ``"no_data_in_range"`` when no
-        session falls anywhere in the combined date range, and ``"not_available"`` for
-        a device the active profile does not own.
-
         ``rera_proxy_count`` applies no confidence gate: its FL runs include the
         fallback flatness-triage guesses that ``flow_class_distribution`` leaves
         out, so it inherits their sensitivity to waveform shape (e.g. across
         therapy modes or pressure-support levels).
+
+        When a value can't be computed, that epoch's ``null_reason`` says why and the
+        others keep their values: ``"no_data_in_range"`` (no analyzed sessions; its
+        ``rera_reason`` is ``"analysis_not_run"`` when sessions exist but lack current
+        analysis) or ``"rx_changed_within_epoch"`` (settings changed inside it; split
+        it at the dates in ``rx_violations``).  Mixed primary modes null only
+        ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).  The
+        top-level ``null_reason`` is ``"no_data_in_range"`` (no
+        session in the combined range), ``"not_available"`` (``device_id`` not in this
+        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
 
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — optional; all epochs must target the same device.
+                ``device_id`` — required when several devices have data in the
+                range; all epochs must target the same device.
                 An epoch may span at most 366 calendar nights, both ends
                 included; split a longer range into several epochs.
             metrics: Optional subset of distribution metrics to compute.  Defaults
                 to all four: ``"mid_insp_flattening"``, ``"flatness_index"``,
                 ``"tidal_volume_ml"``, ``"ie_ratio"``.
-
-        Returns:
-            ExperimentalCompareEpochsResponse.  Each entry in ``epochs`` contains distributions
-            and coverage metadata (``nights_with_data``, ``nights_missing_analysis``).
-            ``flow_class_distribution`` counts rule-matched FL classifications only
-            (breaths whose classifier confidence clears the default gate); its
-            class>=4 fraction reconciles with ``experimental_get_nightly_metrics``'s
-            ``fl_class_ge4_pct``.  ``flow_class_distribution_fallback`` counts the
-            low-confidence fallback guesses — breaths triaged on flatness alone when
-            no shape rule matched, stamped at exactly the default confidence — kept
-            separate so they don't inflate FL rates.  Rows with missing or
-            below-default confidence values are excluded from both distributions.
-            Both use string keys (``"0"``, ``"1"``, ...) because JSON object keys
-            are always strings.
-            ``rx_settings`` holds representative therapy settings observed for the epoch.
-            ``rx_violations`` lists any therapy-settings changes detected within an
-            epoch's date range; callers should split affected epochs at those dates.
-            Sessions with no recorded settings are skipped: a change is only reported
-            between sessions that both have settings.
-            ``version_warnings`` lists per-field messages when algorithm identity fields
-            differ across epochs — distributions are still populated but callers should
-            review version_warnings before drawing conclusions.
-
-        Refusal semantics:
-            Mid-epoch RX change nulls only the affected epoch: that epoch's
-                ``null_reason`` becomes ``"rx_changed_within_epoch"`` while clean epochs
-                in the same call keep their computed distributions.  The top-level
-                ``null_reason`` is ``"rx_changed_within_epoch"`` only when EVERY epoch was
-                nulled for an RX change; otherwise it stays ``null``.  ``rx_violations``
-                always lists the affected epoch label, changed keys, and change dates so
-                the caller can split those ranges.
-            Partial degradation: when sessions within an epoch differ in ``primary_mode``,
-                the epoch's ``null_reason`` stays ``null``; only ``rera_proxy_count`` is
-                set to ``null`` with ``rera_reason: "primary_mode_mismatch"``; FL
-                distributions remain populated.
-            Device not owned by the active profile: the service catches this internally
-                and returns a success response with the top-level and every epoch's
-                ``null_reason: "not_available"``.
-            Algorithm version mismatch (``algo_version_mismatch``) is NOT a hard refusal
-                — distributions are computed and ``version_warnings`` is populated instead.
-
-        Error conditions:
-            - Epochs list empty or >6 entries → tool error.
-            - An epoch spanning more than 366 nights → tool error naming the
-              epoch (e.g. ``epochs[1]``); split it into shorter epochs.
-            - Multiple device IDs across epoch specs → tool error.
-            - Multiple devices on the date range and no ``device_id`` → tool error
-              listing device IDs so the caller can re-issue with ``device_id``.
         """
         from snore.mcp.tools.epochs import (  # noqa: PLC0415
             experimental_compare_epochs as _impl,

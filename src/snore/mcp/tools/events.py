@@ -309,10 +309,10 @@ def register(mcp: FastMCP) -> None:
         − EPAP over ±5 s), and ``mv_prior_120s_lpm`` (device MV channel over
         the prior 120 s), plus ``minutes_since_session_start``.
 
-        Null values carry a ``*_reason`` on the event row (``pressure_reason``,
-        ``leak_reason``, ``mv_reason``, ``ps_reason``), including when a device
-        channel is absent or corrupt, which nulls only the fields that depend
-        on it.
+        Null values carry a ``*_reason`` of ``"not_available"`` on the event row
+        (``pressure_reason``, ``leak_reason``, ``mv_reason``, ``ps_reason``),
+        including when a device channel is absent or corrupt, which nulls only
+        the fields that depend on it.
         ``include_context=false`` skips the waveform work entirely: ``context``
         and those reasons are null.
         ``duration_reason`` is ``"not_recorded_by_device"`` when
@@ -323,6 +323,11 @@ def register(mcp: FastMCP) -> None:
         For MV slope, MV stability, and flow-derived MV on devices with no MV
         channel, use ``experimental_get_event_context``.
 
+        When ``device_id`` names an owned device with no enabled session on the
+        date, the call succeeds with no events; without ``device_id`` such a
+        date is an error. Limits: a response over 500,000 bytes is an error;
+        lower ``max_events`` or filter by ``types``.
+
         Args:
             date: Session date in YYYY-MM-DD format.
             device_id: Optional device ID filter. Required when multiple devices
@@ -331,6 +336,7 @@ def register(mcp: FastMCP) -> None:
                    Common values: ``OA`` (obstructive apnea), ``CA`` (central
                    apnea), ``H`` (hypopnea), ``RE`` (respiratory effort-related
                    arousal), ``FL`` (flow limitation), ``VS`` (vibratory snore).
+                   At most 50 distinct values.
             min_duration: Minimum event duration in seconds (optional). A positive
                 value excludes events with no recorded duration (ResMed hypopneas,
                 RERAs); 0 is no filter.
@@ -341,9 +347,6 @@ def register(mcp: FastMCP) -> None:
                         minimum 1). When the result is truncated, ``total_events`` still
                         reports the full count and ``truncated`` is set to true in the
                         response.
-
-        Returns:
-            EventsResponse with events list, total_events count, and truncated flag.
         """
         from snore.mcp.tools.events import get_events as _impl  # noqa: PLC0415
 
@@ -388,15 +391,22 @@ def register(mcp: FastMCP) -> None:
         ``"flow_derived"``. The flow fallback loads the full-session flow
         waveform, so it is slower than ``get_events``.
 
-        Null values carry a ``*_reason`` on the row (``mv_reason``,
-        ``preceding_mv_slope_reason``, ``stability_reason``), including when
-        the MV or flow channel is corrupt, which nulls only the MV fields.
+        Null values carry a ``*_reason`` of ``"not_available"`` on the row
+        (``mv_reason``, ``preceding_mv_slope_reason``, ``stability_reason``),
+        including when the MV or flow channel is corrupt, which nulls only the
+        MV fields.
+
+        When ``device_id`` names an owned device with no enabled session on the
+        date, the call succeeds with no events; without ``device_id`` such a
+        date is an error. Limits: a response over 500,000 bytes is an error;
+        lower ``max_events`` or filter by ``types``.
 
         Args:
             date: Session date in YYYY-MM-DD format.
             device_id: Optional device ID filter. Required when multiple devices
                        have data for the same date.
-            types: Optional event type filter, e.g. ["CA", "OA", "H"].
+            types: Optional event type filter, e.g. ["CA", "OA", "H"]. At most
+                   50 distinct values.
             min_duration: Minimum event duration in seconds (optional). A positive
                 value excludes events with no recorded duration (ResMed hypopneas,
                 RERAs); 0 is no filter.
@@ -404,10 +414,6 @@ def register(mcp: FastMCP) -> None:
                         minimum 1). When the result is truncated, ``total_events`` still
                         reports the full count and ``truncated`` is set to true in the
                         response.
-
-        Returns:
-            ExperimentalEventContextResponse with events list, total_events count,
-            truncated flag, and mv_fallback_version.
         """
         from snore.mcp.tools.events import (  # noqa: PLC0415
             experimental_get_event_context as _impl,
