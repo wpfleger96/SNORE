@@ -309,10 +309,10 @@ def register(mcp: FastMCP) -> None:
         − EPAP over ±5 s), and ``mv_prior_120s_lpm`` (device MV channel over
         the prior 120 s), plus ``minutes_since_session_start``.
 
-        Null values carry a ``*_reason`` on the event row (``pressure_reason``,
-        ``leak_reason``, ``mv_reason``, ``ps_reason``), including when a device
-        channel is absent or corrupt, which nulls only the fields that depend
-        on it.
+        Null values carry a ``*_reason`` of ``"not_available"`` on the event row
+        (``pressure_reason``, ``leak_reason``, ``mv_reason``, ``ps_reason``),
+        including when a device channel is absent or corrupt, which nulls only
+        the fields that depend on it.
         ``include_context=false`` skips the waveform work entirely: ``context``
         and those reasons are null.
         ``duration_reason`` is ``"not_recorded_by_device"`` when
@@ -323,12 +323,10 @@ def register(mcp: FastMCP) -> None:
         For MV slope, MV stability, and flow-derived MV on devices with no MV
         channel, use ``experimental_get_event_context``.
 
-        When a value can't be computed, its context ``*_reason`` is
-        ``"not_available"``. When ``device_id`` names an owned device with no
-        enabled session on the date, the call succeeds with no events; without
-        ``device_id`` such a date is an error, as are several devices on the
-        date (the error lists them). Limits: a response over 500,000 bytes is
-        an error; lower ``max_events`` or filter by ``types``.
+        When ``device_id`` names an owned device with no enabled session on the
+        date, the call succeeds with no events; without ``device_id`` such a
+        date is an error. Limits: a response over 500,000 bytes is an error;
+        lower ``max_events`` or filter by ``types``.
 
         Args:
             date: Session date in YYYY-MM-DD format.
@@ -393,16 +391,15 @@ def register(mcp: FastMCP) -> None:
         ``"flow_derived"``. The flow fallback loads the full-session flow
         waveform, so it is slower than ``get_events``.
 
-        Null values carry a ``*_reason`` on the row (``mv_reason``,
-        ``preceding_mv_slope_reason``, ``stability_reason``), including when
-        the MV or flow channel is corrupt, which nulls only the MV fields.
+        Null values carry a ``*_reason`` of ``"not_available"`` on the row
+        (``mv_reason``, ``preceding_mv_slope_reason``, ``stability_reason``),
+        including when the MV or flow channel is corrupt, which nulls only the
+        MV fields.
 
-        When a value can't be computed, its ``*_reason`` is
-        ``"not_available"``. When ``device_id`` names an owned device with no
-        enabled session on the date, the call succeeds with no events; without
-        ``device_id`` such a date is an error, as are several devices on the
-        date (the error lists them). Limits: a response over 500,000 bytes is
-        an error; lower ``max_events`` or filter by ``types``.
+        When ``device_id`` names an owned device with no enabled session on the
+        date, the call succeeds with no events; without ``device_id`` such a
+        date is an error. Limits: a response over 500,000 bytes is an error;
+        lower ``max_events`` or filter by ``types``.
 
         Args:
             date: Session date in YYYY-MM-DD format.

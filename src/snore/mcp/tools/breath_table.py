@@ -288,10 +288,7 @@ def register(mcp: FastMCP) -> None:
         ``null_reason`` says why: ``"analysis_not_run"`` (``analysis_status:
         "not_run"``; never analyzed) or ``"analysis_stale"`` (``analysis_status:
         "stale_version"``; analysis predates the current algorithm version and must
-        be re-run).  Limits: a raw window spans at most 900 s (15 min); set
-        ``bin_minutes`` for longer windows, which fills ``bins`` instead of ``rows``.
-        A date with no sessions is an error, and ``device_id``/``session_id`` are
-        required when the date has several devices/sessions (the error lists them).
+        be re-run).  A date with no sessions is an error.
 
         Args:
             date: Session date in YYYY-MM-DD format.

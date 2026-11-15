@@ -528,8 +528,7 @@ def register(mcp: FastMCP) -> None:
         detection ran and found none). When null, ``pb_reason`` is one of:
         ``"not_available"`` (no OK session with a PB result, the persisted
         episodes were malformed, or the OK sessions have zero duration);
-        ``"algo_version_mismatch"`` (the night's sessions were analyzed with
-        different algorithm versions).
+        ``"algo_version_mismatch"`` (reserved; not currently returned).
 
         Limits: ``start`` to ``end`` spans at most 90 nights per call. Several
         devices in range without ``device_id`` is an error that lists them.

@@ -28,14 +28,17 @@ from snore.services.schemas import MAX_LARGE_LEAK_SPANS
 _RESPONSE_LIMIT = f"{RESPONSE_SIZE_LIMIT:,}"
 _NIGHTLY_LIMIT = f"{MAX_NIGHTLY_RANGE} nights"
 
+_EPOCH_SPAN_LIMIT = f"at most {MAX_EPOCH_NIGHTS} calendar nights"
+_EPOCH_DEVICE_RULE = "required when several devices have data in the range"
+
 PINNED_TOKENS: dict[str, list[str]] = {
     "compare_epochs": [
         "no_data_in_range",
         "rx_changed_within_epoch",
         "rx_violations",
         "not_available",
-        str(MAX_EPOCH_NIGHTS),
-        "device_id",
+        _EPOCH_SPAN_LIMIT,
+        _EPOCH_DEVICE_RULE,
     ],
     "experimental_compare_epochs": [
         "no_data_in_range",
@@ -43,35 +46,36 @@ PINNED_TOKENS: dict[str, list[str]] = {
         "rx_violations",
         "analysis_not_run",
         "primary_mode_mismatch",
-        "version_warnings",
         "not_available",
-        str(MAX_EPOCH_NIGHTS),
+        _EPOCH_SPAN_LIMIT,
+        _EPOCH_DEVICE_RULE,
     ],
     "experimental_find_windows": [
         "algo_version_mismatch",
         "primary_mode_mismatch",
         "analysis_not_run",
-        "day_status",
+        "For the analysis-based criteria",
         "session_coverage",
     ],
     "experimental_get_breath_table": [
         "analysis_not_run",
         "analysis_stale",
         "stale_version",
-        "900",
+        "Raw window must be ≤ 900 s",
     ],
     "get_waveform": [
         "missing_channel_reason",
         "channel_absent",
         "missing_channels",
-        "120",
+        "Window cap is 120 s",
+        "and no ``session_id``",
     ],
-    "render_window": ["No waveform data"],
-    "get_events": ["not_available", _RESPONSE_LIMIT],
-    "experimental_get_event_context": ["not_available", _RESPONSE_LIMIT],
+    "render_window": ['"No waveform data" PNG', "and no ``session_id``"],
+    "get_events": ['``"not_available"``', _RESPONSE_LIMIT],
+    "experimental_get_event_context": ['``"not_available"``', _RESPONSE_LIMIT],
     "get_nightly_summary": [_NIGHTLY_LIMIT],
     "experimental_get_nightly_metrics": [_NIGHTLY_LIMIT],
-    "get_night_detail": [str(MAX_LARGE_LEAK_SPANS)],
+    "get_night_detail": [f"At most {MAX_LARGE_LEAK_SPANS} spans are listed"],
 }
 
 

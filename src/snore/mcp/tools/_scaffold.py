@@ -111,11 +111,13 @@ def tool_error_boundary(
     return wrapper
 
 
-# A Google-style docstring section header on its own line ("Args:", "Returns:",
-# "Refusal semantics:", ...). FastMCP keeps only the leading prose as the tool
-# description and turns everything from the first such header onward into
-# parameter/return metadata — so the disclaimer must be injected BEFORE it, not
-# appended to the end of the docstring where it would be discarded.
+# A Google-style docstring section header on its own line ("Args:", "Returns:", ...).
+# MCP tool closure docstrings may contain only an "Args:" section: FastMCP sends the
+# leading prose as the description and "Args:" as parameter descriptions, and drops
+# every other section. Refusal codes and limits go in the leading prose, field-level
+# codes in the schema field descriptions (``_reason()`` in ``snore/mcp/schemas.py``);
+# tests/unit/test_mcp_tool_descriptions.py enforces this. The disclaimer is inserted
+# before "Args:".
 _DOC_SECTION_HEADER = re.compile(r"^[A-Z][A-Za-z ]*:$")
 
 

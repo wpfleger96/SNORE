@@ -283,10 +283,11 @@ def register(mcp: FastMCP) -> None:
         "When a value can't be computed: channels the session did not record are\n"
         "listed in ``missing_channels`` and ``missing_channel_reason`` is\n"
         '``"channel_absent"`` (null when every requested channel is present).  When\n'
-        "``device_id`` names an owned device with no enabled session on the date, the\n"
-        "call succeeds with ``session_id`` and ``session_start_wall_clock`` null, empty\n"
-        "``channels``, and every requested channel in ``missing_channels``; without\n"
-        "``device_id`` such a date is a tool error.\n\n"
+        "``device_id`` names an owned device with no enabled session on the date and\n"
+        "no ``session_id``, the call succeeds with ``session_id`` and\n"
+        "``session_start_wall_clock`` null, empty ``channels``, and every requested\n"
+        "channel in ``missing_channels``; without ``device_id`` such a date is a tool\n"
+        "error.\n\n"
         "Args:\n"
         "    date: Session date in YYYY-MM-DD format.\n"
         "    offset_start: Window start in seconds from session start (≥ 0).\n"
@@ -346,8 +347,8 @@ def register(mcp: FastMCP) -> None:
         "samples than ``max_points`` are plotted raw.  Omit for raw unmodified samples.\n\n"
         "Missing channels (not recorded by the device) are noted in the image title\n"
         "rather than causing an error.\n\n"
-        "When ``device_id`` names an owned device with no enabled session on the date,\n"
-        'the tool returns a valid single-panel PNG with a "No waveform data" label;\n'
+        "When ``device_id`` names an owned device with no enabled session on the date\n"
+        'and no ``session_id``, the tool returns a single-panel "No waveform data" PNG;\n'
         "without ``device_id`` such a date is a tool error.\n\n"
         "Args:\n"
         "    date: Session date in YYYY-MM-DD format.\n"

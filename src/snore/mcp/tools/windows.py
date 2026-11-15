@@ -220,12 +220,12 @@ def register(mcp: FastMCP) -> None:
         be true).
 
         When a value can't be computed, ``windows`` is empty and ``null_reason`` says
-        why: ``"algo_version_mismatch"`` (sessions analyzed with different algorithm
-        versions; only ``ca_centered`` still works), ``"primary_mode_mismatch"``
-        (sessions differ in primary mode; ``fl_run_ending_in_recovery`` and
-        ``rera_proxy_centered`` refuse) or ``"analysis_not_run"`` (no session on the
-        date).  With a null ``null_reason``, an empty ``windows`` means nothing matched
-        only if ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
+        why: ``"primary_mode_mismatch"`` (sessions differ in primary mode;
+        ``fl_run_ending_in_recovery`` and ``rera_proxy_centered`` refuse),
+        ``"analysis_not_run"`` (no session on the date) or ``"algo_version_mismatch"``
+        (reserved; not currently returned).  For the analysis-based criteria, an
+        empty ``windows`` with a null ``null_reason`` means nothing matched only if
+        ``day_status`` is ``"ok"``; otherwise ``session_coverage`` shows the
         unanalyzed or stale sessions that were skipped.  Limits: options irrelevant
         to the chosen ``criterion`` must keep their defaults.
 

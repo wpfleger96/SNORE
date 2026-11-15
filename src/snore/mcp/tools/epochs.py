@@ -176,15 +176,15 @@ def register(mcp: FastMCP) -> None:
         dates in ``rx_violations``).  An unrecorded channel has null stats with
         ``n_samples: 0``.  The top-level ``null_reason`` is ``"no_data_in_range"`` (no
         session in the combined range), ``"not_available"`` (``device_id`` not in this
-        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).  Limits: name
-        a ``device_id`` when several devices have data in the range.
+        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
 
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — optional; all epochs must target the same device.
+                ``device_id`` — required when several devices have data in the
+                range; all epochs must target the same device.
                 An epoch may span at most 366 calendar nights, both ends
                 included; split a longer range into several epochs.
         """
@@ -230,19 +230,18 @@ def register(mcp: FastMCP) -> None:
         ``rera_reason`` is ``"analysis_not_run"`` when sessions exist but lack current
         analysis) or ``"rx_changed_within_epoch"`` (settings changed inside it; split
         it at the dates in ``rx_violations``).  Mixed primary modes null only
-        ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).  Differing
-        algorithm versions null nothing but fill ``version_warnings``; read them
-        before comparing.  The top-level ``null_reason`` is ``"no_data_in_range"`` (no
+        ``rera_proxy_count`` (``rera_reason: "primary_mode_mismatch"``).  The
+        top-level ``null_reason`` is ``"no_data_in_range"`` (no
         session in the combined range), ``"not_available"`` (``device_id`` not in this
-        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).  Limits: name
-        a ``device_id`` when several devices have data in the range.
+        profile) or ``"rx_changed_within_epoch"`` (every epoch changed).
 
         Args:
             epochs: List of 1–6 epoch specs.  Each spec has:
                 ``label`` — human-readable epoch name (appears in response).
                 ``date_start`` — epoch start in YYYY-MM-DD format (inclusive).
                 ``date_end`` — epoch end in YYYY-MM-DD format (inclusive).
-                ``device_id`` — optional; all epochs must target the same device.
+                ``device_id`` — required when several devices have data in the
+                range; all epochs must target the same device.
                 An epoch may span at most 366 calendar nights, both ends
                 included; split a longer range into several epochs.
             metrics: Optional subset of distribution metrics to compute.  Defaults
