@@ -451,6 +451,11 @@ def register(mcp: FastMCP) -> None:
         SNORE's own flow-limitation, RERA-proxy, segmented-breath and
         periodic-breathing metrics are in ``experimental_get_nightly_metrics``.
 
+        Limits: ``start`` to ``end`` spans at most 90 nights per call; rows
+        are newest night first, and a range with no data returns no rows
+        rather than an error. Several devices in range without ``device_id``
+        is an error that lists them.
+
         Args:
             start: Start date in YYYY-MM-DD format.
             end: End date in YYYY-MM-DD format.
@@ -458,9 +463,6 @@ def register(mcp: FastMCP) -> None:
             page: Page number (1-based). Default 1.
             page_size: Nights per page (must be between 1 and 90). Default 30.
             compliance_threshold_hours: Hours to count as compliant (default 4.0).
-
-        Returns:
-            NightlySummaryResponse with nights list, pagination, and compliance block.
         """
         from snore.mcp.tools.summary import (
             get_nightly_summary as _impl,  # noqa: PLC0415
@@ -529,15 +531,15 @@ def register(mcp: FastMCP) -> None:
         ``"algo_version_mismatch"`` (the night's sessions were analyzed with
         different algorithm versions).
 
+        Limits: ``start`` to ``end`` spans at most 90 nights per call. Several
+        devices in range without ``device_id`` is an error that lists them.
+
         Args:
             start: Start date in YYYY-MM-DD format.
             end: End date in YYYY-MM-DD format.
             device_id: Optional device ID filter.
             page: Page number (1-based). Default 1.
             page_size: Nights per page (must be between 1 and 90). Default 30.
-
-        Returns:
-            ExperimentalNightlyResponse with nights list and pagination.
         """
         from snore.mcp.tools.summary import (
             experimental_get_nightly_metrics as _impl,  # noqa: PLC0415

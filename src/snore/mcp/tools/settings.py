@@ -140,13 +140,6 @@ def register(mcp: FastMCP) -> None:
             start: Start date in YYYY-MM-DD format.
             end: End date in YYYY-MM-DD format.
             device_id: Optional device ID filter. Use get_data_overview to list devices.
-
-        Returns:
-            SettingsTimelineResponse with epochs list and total_epochs count.
-            Also includes ``device_capabilities_by_device``, a map keyed by
-            device_id (a timeline can span multiple devices, so capabilities are
-            per-device rather than the single ``device_capabilities`` field
-            used by single-device tools).
         """
         from snore.mcp.tools.settings import (
             get_settings_timeline as _impl,  # noqa: PLC0415

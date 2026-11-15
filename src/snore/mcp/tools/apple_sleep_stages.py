@@ -74,9 +74,6 @@ def register(mcp: FastMCP) -> None:
         Args:
             date: Night date in YYYY-MM-DD format (samples before noon belong
                 to the previous date).
-
-        Returns:
-            AppleSleepStagesResponse with date and stages.
         """
         from snore.mcp.tools.apple_sleep_stages import (  # noqa: PLC0415
             get_apple_sleep_stages as _impl,

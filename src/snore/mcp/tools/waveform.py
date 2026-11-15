@@ -280,6 +280,13 @@ def register(mcp: FastMCP) -> None:
         "raw unmodified samples.  Channels with no more samples than ``max_points``\n"
         "are returned raw with ``is_downsampled: false``.  Many-channel raw requests often exceed the 500,000-byte\n"
         "response limit — use ``max_points`` or fewer channels if that happens.\n\n"
+        "When a value can't be computed: channels the session did not record are\n"
+        "listed in ``missing_channels`` and ``missing_channel_reason`` is\n"
+        '``"channel_absent"`` (null when every requested channel is present).  When\n'
+        "``device_id`` names an owned device with no enabled session on the date, the\n"
+        "call succeeds with ``session_id`` and ``session_start_wall_clock`` null, empty\n"
+        "``channels``, and every requested channel in ``missing_channels``; without\n"
+        "``device_id`` such a date is a tool error.\n\n"
         "Args:\n"
         "    date: Session date in YYYY-MM-DD format.\n"
         "    offset_start: Window start in seconds from session start (≥ 0).\n"
@@ -292,28 +299,7 @@ def register(mcp: FastMCP) -> None:
         "    channels: Waveform channels to return.  Defaults to [flow, pressure, leak].\n"
         "    max_points: Per-channel target sample count for LTTB thinning\n"
         f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
-        "                keep their run starts and may exceed it.\n\n"
-        "Returns:\n"
-        "    WaveformWindowResponse.  ``session_id`` and ``session_start_wall_clock``\n"
-        '    (tier-2 offset-free ISO 8601, ``timezone_status: "unknown" | "user_declared"``,\n'
-        "    with ``timezone_name`` carrying the profile's declared IANA zone) are null\n"
-        "    when the date has no session.  Each channel carries ``offset_seconds``\n"
-        "    arrays (tier-3 positions from session start) and ``values``.\n"
-        "    ``missing_channels`` lists channels the device did not record;\n"
-        '    ``missing_channel_reason: "channel_absent"`` is set when any are absent.\n\n'
-        "Refusal semantics (successful responses):\n"
-        "    When ``device_id`` is provided (owned device) and the date has no sessions,\n"
-        "    the tool returns SUCCESS with ``session_id: null``,\n"
-        "    ``session_start_wall_clock: null``, empty ``channels``, and requested\n"
-        "    channels in ``missing_channels`` — not an error.\n\n"
-        "Error conditions:\n"
-        "    - Window width > 120 s → tool error.\n"
-        "    - No ``device_id`` provided and no sessions found for date → tool error\n"
-        '      ("No sessions found in range <start> to <end>").\n'
-        "    - Multiple devices on date and no ``device_id`` → tool error listing IDs.\n"
-        "    - Multiple sessions on date and no ``session_id`` → tool error listing IDs.\n"
-        "    - Response exceeds 500,000-byte limit → tool error; use ``max_points``\n"
-        "      or request fewer channels."
+        "                keep their run starts and may exceed it."
     )
     # Functional form (not @decorator) because __doc__ is built dynamically above
     # before decoration; switching to @mcp.tool() would lose the channel vocab.
@@ -360,11 +346,9 @@ def register(mcp: FastMCP) -> None:
         "samples than ``max_points`` are plotted raw.  Omit for raw unmodified samples.\n\n"
         "Missing channels (not recorded by the device) are noted in the image title\n"
         "rather than causing an error.\n\n"
-        'A date with no sessions returns a valid single-panel PNG with a "No waveform\n'
-        'data" label rather than a tool error — but only when ``device_id`` is provided\n'
-        "(owned device, empty date) or when a single device is auto-resolved.  When no\n"
-        "device can be resolved (no sessions in range and no ``device_id`` supplied)\n"
-        "the tool raises an error instead.\n\n"
+        "When ``device_id`` names an owned device with no enabled session on the date,\n"
+        'the tool returns a valid single-panel PNG with a "No waveform data" label;\n'
+        "without ``device_id`` such a date is a tool error.\n\n"
         "Args:\n"
         "    date: Session date in YYYY-MM-DD format.\n"
         "    offset_start: Window start in seconds from session start (≥ 0).\n"
@@ -377,12 +361,6 @@ def register(mcp: FastMCP) -> None:
         "    channels: Waveform channels to plot.  Defaults to [flow, pressure, leak].\n"
         "    max_points: Per-channel target samples to plot for LTTB thinning\n"
         f"                ({_MAX_POINTS_RANGE}); categorical channels (``trigger_cycle``)\n"
-        "                keep their run starts and may exceed it.\n\n"
-        "Returns:\n"
-        "    PNG image (not JSON) — one stacked subplot per channel.\n\n"
-        "Error conditions:\n"
-        "    - Window width > 900 s → tool error mentioning 900.\n"
-        "    - Multiple devices on date and no ``device_id`` → tool error listing IDs.\n"
-        "    - Multiple sessions on date and no ``session_id`` → tool error listing IDs."
+        "                keep their run starts and may exceed it."
     )
     mcp.tool()(tool_error_boundary(render_window))

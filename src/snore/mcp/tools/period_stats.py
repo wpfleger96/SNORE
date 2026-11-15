@@ -100,9 +100,6 @@ def register(mcp: FastMCP) -> None:
                 Default "month".
             start: Optional first date (YYYY-MM-DD), inclusive.
             end: Optional last date (YYYY-MM-DD), inclusive.
-
-        Returns:
-            PeriodStatsResponse with the periods list.
         """
         from snore.mcp.tools.period_stats import (  # noqa: PLC0415
             get_period_stats as _impl,

@@ -79,10 +79,6 @@ def register(mcp: FastMCP) -> None:
             end: End date in YYYY-MM-DD format.
             device_id: Optional device ID filter for device_settings entries.
                 Use get_data_overview to list devices.
-
-        Returns:
-            SettingsChangesResponse with changes sorted by
-            (date, source, device_id, key) and a total_changes count.
         """
         from snore.mcp.tools.changes import (
             get_settings_changes as _impl,  # noqa: PLC0415
