@@ -1511,7 +1511,6 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert "†" not in result.output
         assert "* experimental:" not in result.output
 
     def test_session_show_displays_device_channels(
@@ -1737,7 +1736,6 @@ class TestStatsPeriod:
         assert result.exit_code == 0
         assert "FL 95th" in result.output
         assert "Snore 95th" in result.output
-        assert "†" not in result.output
         [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
         assert row.split()[-2:] == ["0.50", "2.00"]
 
@@ -1781,7 +1779,7 @@ class TestStatsPeriod:
 
         assert result.exit_code == 0, result.output
         assert "AHI Trend" in result.output
-        assert "†" not in result.output
+        assert "AHI Trend*" not in result.output
         plotext_stub.figure.title.assert_called_once_with("AHI Over Time")
         # Only the experimental leak assessment is marked, so the legend is its line.
         assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
@@ -1798,7 +1796,7 @@ class TestStatsPeriod:
         assert result.exit_code == 0, result.output
         assert "Best AHI" in result.output
         assert "Worst AHI" in result.output
-        assert "†" not in result.output
+        assert "AHI*" not in result.output
         # Only the experimental leak assessment is marked, so the legend is its line.
         assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
         assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)

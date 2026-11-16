@@ -322,9 +322,9 @@ class TestAnalysisExperimentalLegend:
                 )
             )
         assert "AHI" in machine
-        assert "†" not in machine
+        assert "AHI*" not in machine
         assert "Validation: aasm*" in validation
-        assert legend_buf.getvalue().strip() == (f"* experimental: {EXPERIMENTAL_NOTE}")
+        assert legend_buf.getvalue().strip() == f"* experimental: {EXPERIMENTAL_NOTE}"
 
     def test_mode_comparison_marks_ahi_and_rdi_rows(self):
         mode = ModeResult(mode_name="aasm", apneas=[], hypopneas=[], ahi=2.0, rdi=3.0)

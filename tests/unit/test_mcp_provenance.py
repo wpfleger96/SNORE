@@ -62,6 +62,7 @@ from snore.mcp.server import (
 from snore.mcp.tools._scaffold import _scope_and_run
 from snore.provenance import EXPERIMENTAL_NOTE, IndexSource, experimental_field
 from snore.services.schemas import DayExperimentalMetrics
+from tests.helpers.schema_tags import has_experimental_tag
 
 EXPERIMENTAL_TOOLS = [
     "experimental_get_nightly_metrics",
@@ -137,30 +138,9 @@ def _tool_impl(tool_name: str) -> Any:
     raise LookupError(tool_name)
 
 
-def _has_experimental_tag(schema: object) -> bool:
-    """Whether any node of a JSON schema, ``$defs`` included, is tagged experimental."""
-    if isinstance(schema, dict):
-        return schema.get("x-provenance") == "experimental" or any(
-            _has_experimental_tag(value) for value in schema.values()
-        )
-    if isinstance(schema, list):
-        return any(_has_experimental_tag(value) for value in schema)
-    return False
-
-
 def _is_untagged(prop: dict[str, Any]) -> bool:
     """A JSON-schema property with no provenance key and no bracketed tag prefix."""
     return "x-provenance" not in prop and not prop["description"].startswith("[")
-
-
-def _provenance_values(schema: object) -> list[object]:
-    """Every ``x-provenance`` value anywhere in a JSON schema."""
-    if isinstance(schema, dict):
-        own = [schema["x-provenance"]] if "x-provenance" in schema else []
-        return own + [v for value in schema.values() for v in _provenance_values(value)]
-    if isinstance(schema, list):
-        return [v for value in schema for v in _provenance_values(value)]
-    return []
 
 
 class TestToolDescriptions:
@@ -224,7 +204,7 @@ class TestDefaultToolGate:
     def test_default_tool_has_no_experimental_field(
         self, model: type[BaseModel]
     ) -> None:
-        assert not _has_experimental_tag(model.model_json_schema(mode="serialization"))
+        assert not has_experimental_tag(model.model_json_schema(mode="serialization"))
 
     def test_schema_scan_catches_experimental_parent_of_untagged_leaf(self) -> None:
         """Only the parent field is tagged; the nested model's fields carry no tag."""
@@ -235,8 +215,8 @@ class TestDefaultToolGate:
         class Response(BaseModel):
             leaf: Leaf = experimental_field("A heuristic.", default_factory=Leaf)
 
-        assert not _has_experimental_tag(Leaf.model_json_schema())
-        assert _has_experimental_tag(Response.model_json_schema())
+        assert not has_experimental_tag(Leaf.model_json_schema())
+        assert has_experimental_tag(Response.model_json_schema())
 
     def test_epoch_distribution_is_flagged_through_its_experimental_parent(
         self,
@@ -247,10 +227,10 @@ class TestDefaultToolGate:
         )
         defs = schema["$defs"]
 
-        assert not _has_experimental_tag(defs["EpochDistribution"])
+        assert not has_experimental_tag(defs["EpochDistribution"])
         prop = defs["EpochStats"]["properties"]["mid_insp_flattening"]
         assert prop["x-provenance"] == "experimental"
-        assert _has_experimental_tag(schema)
+        assert has_experimental_tag(schema)
 
     @pytest.mark.parametrize(
         ("tool_name", "model"), [(t, m) for t, m in DEFAULT_TOOLS.items() if m]
@@ -562,17 +542,15 @@ class TestCapabilitiesResource:
 
 class TestSchemasResource:
     @pytest.mark.parametrize("schema_type", sorted(SCHEMA_MODEL_MAP))
-    async def test_schema_tags_only_experimental_fields(self, schema_type: str) -> None:
+    async def test_schema_resource_serves_model_schema_with_legend(
+        self, schema_type: str
+    ) -> None:
         schema = json.loads(await _read_resource(f"docs://schemas/{schema_type}"))
-        body = model_to_schema(SCHEMA_MODEL_MAP[schema_type])
-        text = json.dumps(body)
 
-        assert schema == {**body, "x-provenance-legend": _PROVENANCE_RULE}
-        assert "[DEVICE]" not in text
-        assert "[DERIVED]" not in text
-        assert "x-provenance-source" not in text
-        assert set(_provenance_values(body)) <= {"experimental"}
-        assert _has_experimental_tag(body) == ("[EXPERIMENTAL]" in text)
+        assert schema == {
+            **model_to_schema(SCHEMA_MODEL_MAP[schema_type]),
+            "x-provenance-legend": _PROVENANCE_RULE,
+        }
 
     async def test_experimental_schema_keeps_experimental_tags(self) -> None:
         schema = json.loads(
@@ -597,5 +575,3 @@ class TestSchemasResource:
         assert "fields nested under them" in _PROVENANCE_RULE
         assert EXPERIMENTAL_NOTE in _PROVENANCE_RULE
         assert '`"experimental": true`' in _PROVENANCE_RULE
-        for unexpected in ("[DEVICE]", "[DERIVED]", "source_dependent"):
-            assert unexpected not in _PROVENANCE_RULE

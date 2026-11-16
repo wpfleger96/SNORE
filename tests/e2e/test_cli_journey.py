@@ -56,7 +56,6 @@ def test_session_list_and_show(snore, imported_db):
     # The AHI recount includes this night's one unclassified apnea, so OAI + CAI +
     # HI alone falls short of it.
     assert "Unclassified Apneas: 1" in show.stdout
-    assert "†" not in show.stdout
     assert "* experimental" not in show.stdout
     # All five real waveform channels parsed from the EDF files.
     for channel in ("epap", "flow", "leak", "pressure", "therapy_pressure"):

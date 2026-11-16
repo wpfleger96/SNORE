@@ -12,17 +12,7 @@ from snore.database.models import Day, Device, Session
 from snore.services.report_service import ReportService
 from snore.services.schemas import TherapySummary
 from snore.services.stats_service import StatsService
-
-
-def _has_experimental_tag(node: Any) -> bool:
-    """Whether any node of a JSON schema (``$defs`` included) is tagged experimental."""
-    if isinstance(node, dict):
-        return node.get("x-provenance") == "experimental" or any(
-            _has_experimental_tag(v) for v in node.values()
-        )
-    if isinstance(node, list):
-        return any(_has_experimental_tag(v) for v in node)
-    return False
+from tests.helpers.schema_tags import has_experimental_tag
 
 
 async def _create_day(
@@ -165,7 +155,7 @@ class TestReportService:
         assert TherapySummary in models
         for model in models:
             schema = model.model_json_schema(mode="serialization")
-            assert not _has_experimental_tag(schema), model.__name__
+            assert not has_experimental_tag(schema), model.__name__
 
     async def test_comparison_contains_both_range_headings_and_delta_sign(
         self, async_db_session, async_test_device

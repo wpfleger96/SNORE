@@ -20,9 +20,8 @@ Absent data is ``null`` with a companion ``*_reason`` field
 All measurement fields carry their unit in the field name or tool docstring.
 
 Experimental metric fields are declared with ``experimental_field``
-(``[EXPERIMENTAL]`` description prefix, ``x-provenance: experimental``), the
-only tag ``docs://schemas`` shows; an untagged field is device data or
-computed from it.
+(``[EXPERIMENTAL]`` description prefix, ``x-provenance: experimental``); an
+untagged field is device data or computed from it.
 """
 
 from __future__ import annotations

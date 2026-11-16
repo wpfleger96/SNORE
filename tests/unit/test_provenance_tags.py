@@ -1,13 +1,14 @@
 """Experimental tags are well-formed, and default surfaces carry none.
 
-A field is tagged experimental (see ``snore.provenance``) or it is untagged
-device data.  This walks the JSON schema of every MCP response model
-(``SCHEMA_MODEL_MAP``) and every OpenAPI schema a REST route can return, and
-checks that every ``x-provenance`` value is ``experimental`` and that the tag and
-the ``[EXPERIMENTAL]`` description prefix always appear together.  It also enforces the REST gating rule (no
-REST operation without the ``experimental`` tag returns an experimental field)
-and keeps experimental columns out of exports.  See AGENTS.md "Provenance
-tagging".
+A field is tagged experimental (see ``snore.provenance``) or it is untagged:
+device data or computed from it.  This walks the JSON schema of every MCP
+response model (``SCHEMA_MODEL_MAP``) and every OpenAPI schema a REST route can
+return, and checks that every ``x-provenance`` value is ``experimental``, that
+the tag and the ``[EXPERIMENTAL]`` description prefix always appear together,
+and that a model held by a tagged field is never held by an untagged one.  It
+also enforces the REST gating rule (no REST operation without the
+``experimental`` tag returns an experimental field) and keeps experimental
+columns out of exports.  See AGENTS.md "Provenance tagging".
 """
 
 import json
@@ -130,6 +131,32 @@ def _object_properties() -> list[tuple[str, str, str, dict[str, Any]]]:
     ]
 
 
+def _untagged_holders_of_experimental_models(
+    objects: list[tuple[str, dict[str, Any]]],
+) -> list[str]:
+    """``model.field`` of untagged properties holding a model a tagged property holds.
+
+    A model with no tags of its own is experimental through the field that holds
+    it, so every other field holding it must carry the tag too.
+    """
+    props = [
+        (model, field, prop)
+        for model, schema in objects
+        for field, prop in schema.get("properties", {}).items()
+    ]
+    held_by_experimental = {
+        ref
+        for _, _, prop in props
+        if prop.get("x-provenance") == "experimental"
+        for ref in _refs(prop)
+    }
+    return sorted(
+        f"{model}.{field}"
+        for model, field, prop in props
+        if "x-provenance" not in prop and _refs(prop) & held_by_experimental
+    )
+
+
 def _untyped_routes() -> set[str]:
     """``METHOD path`` of routes with a 2xx JSON body that references no model."""
     return {
@@ -215,6 +242,59 @@ def test_tagged_fields_and_experimental_descriptions_match() -> None:
     assert not offenders, (
         "Fields whose x-provenance tag and [EXPERIMENTAL] description prefix "
         "disagree (use experimental_field):\n" + "\n".join(offenders)
+    )
+
+
+def test_model_held_by_experimental_field_is_never_held_untagged() -> None:
+    offenders = [
+        f"{surface} {holder}"
+        for surface, objects in _surfaces()
+        for holder in _untagged_holders_of_experimental_models(objects)
+    ]
+    assert not offenders, (
+        "Untagged fields holding a model that an experimental field also holds "
+        "(use experimental_field):\n" + "\n".join(offenders)
+    )
+
+
+def test_untagged_holder_check_sees_list_and_dict_holders() -> None:
+    class Leaf(BaseModel):
+        value: float = 0.0
+
+    class ExperimentalHolder(BaseModel):
+        leaf: Leaf = experimental_field("A heuristic.", default_factory=Leaf)
+
+    class PlainHolder(BaseModel):
+        leaves: list[Leaf] = []
+        by_name: dict[str, Leaf] = {}
+
+    objects = [
+        (model.__name__, model.model_json_schema())
+        for model in (Leaf, ExperimentalHolder, PlainHolder)
+    ]
+
+    assert _untagged_holders_of_experimental_models(objects) == [
+        "PlainHolder.by_name",
+        "PlainHolder.leaves",
+    ]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        f"{channel}_{stat}"
+        for channel in ("pressure", "epap", "leak")
+        for stat in ("max", "median", "95th")
+    ],
+)
+def test_waveform_recomputed_statistic_description_names_its_fallback(
+    field: str,
+) -> None:
+    description = SessionStatistics.model_fields[field].description or ""
+
+    assert (
+        "recomputed from the waveform when available, otherwise the device's value"
+        in description
     )
 
 

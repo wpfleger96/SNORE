@@ -13,6 +13,7 @@ from snore.analysis.modes.types import ModeResult
 from snore.cli.display import (
     SEP_NARROW,
     SEP_WIDE,
+    Column,
     _indent_prefix,
     experimental_legend,
     mark_experimental,
@@ -23,6 +24,7 @@ from snore.cli.display import (
     print_kv,
     print_raw,
     print_success,
+    print_table,
     print_warning,
     use_plain_legend,
 )
@@ -106,9 +108,16 @@ class TestKeyValue:
         assert "Name" in output
         assert "Alice" in output
 
-    def test_kv_default_is_unmarked(self, capture_stdout):
-        print_kv("OA", "3")
-        assert "OA:" in capture_stdout.getvalue()
+
+class TestTable:
+    def test_table_prints_padded_headers_then_rows(self, capture_stdout):
+        print_table(
+            [Column("Day", 6), Column("AHI", 6), Column("FLI", 0)],
+            [("d1", "1.0", "0.2")],
+        )
+        header, _separator, row = capture_stdout.getvalue().splitlines()
+        assert header == "Day    AHI    FLI"
+        assert row == "d1     1.0    0.2"
 
 
 class TestExperimentalMarker:
@@ -136,7 +145,6 @@ class TestExperimentalMarker:
         assert "C:" in output
         assert output.count("* experimental") == 1
         assert LEGEND in output.splitlines()[-1]
-        assert "†" not in output
 
     def test_legend_without_markers_prints_nothing(self, capture_stdout):
         with experimental_legend():

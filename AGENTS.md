@@ -426,12 +426,13 @@ which, and the recount, when computable, is in `*_computed` (`DayListItem` carri
 `rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and `ie_ratio_median` each have their own
 `*_source` field (`rr_mean_source` etc.) the same way. A new source-dependent value adds a sibling
 `IndexSource` field and names it in its description. Session `Statistics` columns with a preferred
-source and a fallback have no source field; their descriptions name both: pressure/EPAP/leak
-percentiles are recomputed from the waveform when present (`finalize_statistics()` overwrites the
-STR values) and `spo2_max` prefers the oximeter waveform, each falling back to the device's summary
-value; `respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device
-STR value and fall back to the OSCAR session summary, and on ResMed the `*_mean` columns hold the
-STR median.
+source and a fallback have no source field; their descriptions, in `SessionStatistics`
+(`services/schemas.py`, the canonical model for the Statistics columns), name both:
+pressure/EPAP/leak percentiles are recomputed from the waveform when present
+(`finalize_statistics()` overwrites the STR values) and `spo2_max` prefers the oximeter waveform,
+each falling back to the device's summary value; `respiratory_rate_mean/max` and tidal volume /
+minute ventilation mean/max prefer the device STR value and fall back to the OSCAR session summary,
+and on ResMed the `*_mean` columns hold the STR median.
 
 Absent, not zero: a device's zero count of UA, MA, RE or FL means it never scored that type unless
 the device has at least one such event, across all its sessions including disabled ones. Reported
@@ -447,9 +448,11 @@ MCP flags only experimental data: `experimental_*` tool responses carry a top-le
 Unflagged MCP fields are device data or computed from it; `index_source` and the `*_source` fields
 say which values SNORE computed rather than read from the device.
 `tests/unit/test_provenance_tags.py` checks that tags are well-formed (`x-provenance` is only ever
-`experimental`, and the `[EXPERIMENTAL]` prefix appears exactly on tagged fields), the REST gating
-rule below, and the pinned list of untyped REST routes (`_UNTYPED_METRIC_ROUTES`), which have no
-schema for that gate to walk.
+`experimental`, and the `[EXPERIMENTAL]` prefix appears exactly on tagged fields), that a model
+held by an experimental field is never also held by an untagged field
+(`test_model_held_by_experimental_field_is_never_held_untagged`), the REST gating rule below, and
+the pinned list of untyped REST routes (`_UNTYPED_METRIC_ROUTES`), which have no schema for that
+gate to walk.
 
 **MCP gating rule:** no experimental-tagged field may appear in any default MCP response.
 Experimental data lives in `experimental_*` tools, and calling one is the opt-in. Default paths must
@@ -474,11 +477,13 @@ through the raw API client. HTML reports have no response schema: `tests/unit/te
 fetches carry no experimental field.
 
 CLI entry points (`cli/display`): `mark_experimental(label)` appends the `*` marker;
-`mark_field(label, Model, "field")` appends it when the field is experimental, so use it only for
-labels backed by an experimental field; keys and headers are marked by passing the marked label,
-e.g. `print_kv(mark_experimental("Assessment"), ...)`. A CLI-only judgement with no
-schema field (such as the `snore stats` leak verdict) is marked directly; it cannot become a field
-on a default REST model like `TherapySummary` without breaking the REST gating rule. The legend
+`mark_field(label, Model, "field")` appends it when that schema field is experimental. A label
+backed by an experimental schema field must go through `mark_field`, so the schema stays the
+single source of the tag; `mark_experimental` is for section or table titles with no single
+backing field and for CLI-only judgements with no schema field (such as the `snore stats` leak
+verdict, which cannot become a field on a default REST model like `TherapySummary` without
+breaking the REST gating rule). Keys and headers are marked by passing the marked label, e.g.
+`print_kv(mark_experimental("Assessment"), ...)`. The legend
 line (`* experimental: ` plus `EXPERIMENTAL_NOTE`) prints automatically only for commands wrapped in
 `profile_scoped_command` (`cli/decorators.py`), including when the command exits with an error
 after printing markers; elsewhere markers appear with no legend. The CLI is marked, not separated:
