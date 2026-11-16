@@ -14,7 +14,6 @@ from pydantic import (
     model_validator,
 )
 
-from snore.provenance import Provenance, provenance_field
 from snore.services.schemas import (
     AnalysisSelection,
     DayDetail,
@@ -104,10 +103,10 @@ class PaginatedResponse[T](BaseModel):
 
 class WaveformDataResponse(BaseModel):
     timestamps: list[float]
-    values: list[float] = provenance_field(
-        Provenance.DEVICE, "Waveform samples (possibly LTTB-downsampled)"
+    values: list[float] = Field(
+        description="Waveform samples (possibly LTTB-downsampled)"
     )
-    sample_rate: float = provenance_field(Provenance.DEVICE, "Sample rate (Hz)")
+    sample_rate: float = Field(description="Sample rate (Hz)")
     unit: str
     total_samples: int
     downsampled: bool
@@ -158,18 +157,17 @@ class EventItem(BaseModel):
     id: int
     event_type: str
     start_time: float
-    duration_seconds: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-recorded event duration (s); null when the device recorded none, "
-        "which is always the case for ResMed hypopneas and RERAs",
+    duration_seconds: float | None = Field(
         default=None,
+        description=(
+            "Device-recorded event duration (s); null when the device recorded "
+            "none, which is always the case for ResMed hypopneas and RERAs"
+        ),
     )
     offset_seconds: float
-    spo2_drop: float | None = provenance_field(
-        Provenance.DEVICE, "SpO2 drop (%)", default=None
-    )
-    peak_flow_limitation: float | None = provenance_field(
-        Provenance.DEVICE, "Peak flow limitation", default=None
+    spo2_drop: float | None = Field(default=None, description="SpO2 drop (%)")
+    peak_flow_limitation: float | None = Field(
+        default=None, description="Peak flow limitation"
     )
 
 

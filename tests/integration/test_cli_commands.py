@@ -31,19 +31,12 @@ from snore.cli import cli
 from snore.database import models
 from snore.database.day_manager import DayManager
 from snore.database.session import init_database, session_scope
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 from tests.helpers.str_edf import read_str_header, write_synthetic_str_edf
 from tests.helpers.terminal_charts import has_drawn_braille
 from tests.integration.conftest import _make_channel_waveform
 
-_DERIVED_LEGEND = (
-    f"† {Provenance.DERIVED.value}: {PROVENANCE_NOTES[Provenance.DERIVED]}"
-)
-_EXPERIMENTAL_LEGEND = (
-    f"* {Provenance.EXPERIMENTAL.value}: {PROVENANCE_NOTES[Provenance.EXPERIMENTAL]}"
-)
-# `snore stats` on data with a leak average, which adds the experimental leak assessment.
-_STATS_LEGEND = f"{_DERIVED_LEGEND}  {_EXPERIMENTAL_LEGEND}"
+_EXPERIMENTAL_LEGEND = f"* experimental: {EXPERIMENTAL_NOTE}"
 
 
 @pytest.fixture
@@ -1501,15 +1494,15 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert "AHI†:" in result.output
-        assert "REI†:" in result.output
+        assert "AHI:" in result.output
+        assert "REI:" in result.output
         assert "Pressure:" in result.output
         assert "Leak:" in result.output
         assert "SpO₂:" in result.output or "SpO2:" in result.output
         assert "Pulse:" in result.output
         assert "Respiratory:" in result.output or "Respiratory Rate:" in result.output
 
-    def test_session_show_derived_stats_print_legend_once(
+    def test_session_show_device_stats_print_no_marker_or_legend(
         self, cli_runner, populated_test_db_full
     ):
         result = cli_runner.invoke(
@@ -1518,9 +1511,7 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert result.output.count(_DERIVED_LEGEND) == 1
-        assert result.output.rstrip().endswith(_DERIVED_LEGEND)
-        assert f"* {Provenance.EXPERIMENTAL.value}:" not in result.output
+        assert "* experimental:" not in result.output
 
     def test_session_show_displays_device_channels(
         self, cli_runner, db_with_device_channels
@@ -1533,20 +1524,20 @@ class TestSessionShowExpanded:
         assert result.exit_code == 0
         output = result.output
         flow_limitation = output[output.index("Flow Limitation:") :]
-        assert "Median†: 0.25" in flow_limitation
-        assert "95th percentile†: 0.50" in flow_limitation
-        assert "Max†: 0.50" in flow_limitation
+        assert "Median: 0.25" in flow_limitation
+        assert "95th percentile: 0.50" in flow_limitation
+        assert "Max: 0.50" in flow_limitation
         snore = output[output.index("Snore:") :]
-        assert "Median†: 1.00" in snore
-        assert "95th percentile†: 2.00" in snore
-        assert "Max†: 2.00" in snore
+        assert "Median: 1.00" in snore
+        assert "95th percentile: 2.00" in snore
+        assert "Max: 2.00" in snore
         respiratory_rate = output[output.index("Respiratory Rate (breaths/min):") :]
-        assert "Median†: 14.0\n" in respiratory_rate
-        assert "95th percentile†: 16.0\n" in respiratory_rate
-        assert "Max†: 16.0\n" in respiratory_rate
+        assert "Median: 14.0\n" in respiratory_rate
+        assert "95th percentile: 16.0\n" in respiratory_rate
+        assert "Max: 16.0\n" in respiratory_rate
         tidal_volume = output[output.index("Tidal Volume (mL):") :]
-        assert "Median†: 475\n" in tidal_volume
-        assert "Max†: 500\n" in tidal_volume
+        assert "Median: 475\n" in tidal_volume
+        assert "Max: 500\n" in tidal_volume
         assert "Pulse (bpm):" not in output
 
     def test_session_show_displays_mask_on_spans(
@@ -1560,11 +1551,11 @@ class TestSessionShowExpanded:
         assert result.exit_code == 0
         assert "Mask-On Spans:" in result.output
         assert (
-            "2025-10-01 22:00:00 to 2025-10-01 23:00:00, Duration†: 1.00h"
+            "2025-10-01 22:00:00 to 2025-10-01 23:00:00, Duration: 1.00h"
             in result.output
         )
         assert (
-            "2025-10-01 23:30:00 to 2025-10-02 00:30:00, Duration†: 1.00h"
+            "2025-10-01 23:30:00 to 2025-10-02 00:30:00, Duration: 1.00h"
             in result.output
         )
 
@@ -1578,8 +1569,8 @@ class TestSessionShowExpanded:
 
         assert result.exit_code == 0
         leak = result.output[result.output.index("Leak Redline (24 L/min):") :]
-        assert "Time over redline†: 50.0%" in leak
-        assert "2025-10-01 22:00:02 to 22:00:06, Duration†: 4s" in leak
+        assert "Time over redline: 50.0%" in leak
+        assert "2025-10-01 22:00:02 to 22:00:06, Duration: 4s" in leak
 
     def test_session_show_omits_absent_device_detail(
         self, cli_runner, db_with_device_channels
@@ -1654,7 +1645,7 @@ class TestStatsEnhanced:
         assert result.exit_code == 0, result.output
         assert "Assessment*: well controlled" in result.output
         assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
-        assert result.output.rstrip().endswith(_STATS_LEGEND)
+        assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)
 
     def test_stats_without_leak_data_prints_no_assessment(
         self, cli_runner, populated_test_db
@@ -1673,8 +1664,8 @@ class TestStatsEnhanced:
         )
 
         assert result.exit_code == 0
-        assert "Days >= 4 hrs†:" in result.output
-        assert "Compliance (all days)†:" in result.output
+        assert "Days >= 4 hrs:" in result.output
+        assert "Compliance (all days):" in result.output
 
     def test_stats_omits_effectiveness(self, cli_runner, populated_test_db_full):
         """The effectiveness band is experimental, so `snore stats` does not show it."""
@@ -1743,8 +1734,8 @@ class TestStatsPeriod:
         )
 
         assert result.exit_code == 0
-        assert "FL 95th†" in result.output
-        assert "Snore 95th†" in result.output
+        assert "FL 95th" in result.output
+        assert "Snore 95th" in result.output
         [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
         assert row.split()[-2:] == ["0.50", "2.00"]
 
@@ -1773,7 +1764,7 @@ class TestStatsPeriod:
         [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
         assert max(len(header), len(row)) <= 80
 
-    def test_stats_trend_marks_derived_ahi_trend(
+    def test_stats_trend_prints_unmarked_ahi_trend(
         self, cli_runner, populated_test_db_with_day_stats
     ):
         # Chart rendering is covered by test_stats_trend_renders_chart; stub
@@ -1787,12 +1778,14 @@ class TestStatsPeriod:
             )
 
         assert result.exit_code == 0, result.output
-        assert "AHI Trend†" in result.output
+        assert "AHI Trend" in result.output
+        assert "AHI Trend*" not in result.output
         plotext_stub.figure.title.assert_called_once_with("AHI Over Time")
-        assert result.output.count(_DERIVED_LEGEND) == 1
-        assert result.output.rstrip().endswith(_STATS_LEGEND)
+        # Only the experimental leak assessment is marked, so the legend is its line.
+        assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
+        assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)
 
-    def test_stats_records_marks_derived_columns(
+    def test_stats_records_prints_unmarked_columns(
         self, cli_runner, populated_test_db_with_day_stats
     ):
         result = cli_runner.invoke(
@@ -1801,10 +1794,12 @@ class TestStatsPeriod:
         )
 
         assert result.exit_code == 0, result.output
-        assert "Best AHI†" in result.output
-        assert "Worst AHI†" in result.output
-        assert result.output.count(_DERIVED_LEGEND) == 1
-        assert result.output.rstrip().endswith(_STATS_LEGEND)
+        assert "Best AHI" in result.output
+        assert "Worst AHI" in result.output
+        assert "AHI*" not in result.output
+        # Only the experimental leak assessment is marked, so the legend is its line.
+        assert result.output.count(_EXPERIMENTAL_LEGEND) == 1
+        assert result.output.rstrip().endswith(_EXPERIMENTAL_LEGEND)
 
     @pytest.mark.usefixtures("chart_terminal")
     def test_stats_trend_renders_chart(

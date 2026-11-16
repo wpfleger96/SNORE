@@ -32,7 +32,7 @@ import numpy as np
 
 from pydantic import BaseModel, Field
 
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import experimental_field
 from snore.validation.stats import spearman_or_none
 
 # Minimum paired nights before Spearman is attempted.  This is a floor for
@@ -45,16 +45,13 @@ _MIN_PAIRS = 3
 class PairCorrelation(BaseModel):
     """Spearman correlation for one SNORE↔Apple metric pair over paired nights."""
 
-    rho: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    rho: float | None = experimental_field(
         "Spearman rho over nights present in both series; None when fewer "
         "than 3 pairs or a side is constant (see reason)",
         default=None,
     )
-    p_value: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "p-value for rho; None whenever rho is None",
-        default=None,
+    p_value: float | None = experimental_field(
+        "p-value for rho; None whenever rho is None", default=None
     )
     n_paired_nights: int = Field(
         default=0,
@@ -102,16 +99,13 @@ class AppleCrossNightRecord(BaseModel):
 
     night_date: str = Field(description="Therapy night (YYYY-MM-DD, noon-split)")
 
-    rera_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "SNORE nightly RERA index (RERAs / therapy hour)",
-        default=None,
+    rera_index: float | None = experimental_field(
+        "SNORE nightly RERA index (RERAs / therapy hour)", default=None
     )
     rera_index_reason: str | None = Field(
         default=None, description="NullReason code when rera_index is null"
     )
-    fl_class_ge4_pct: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    fl_class_ge4_pct: float | None = experimental_field(
         "SNORE percent of leak-valid classified breaths at flow_class >= 4",
         default=None,
     )
@@ -119,22 +113,19 @@ class AppleCrossNightRecord(BaseModel):
         default=None, description="NullReason code when fl_class_ge4_pct is null"
     )
 
-    apple_breathing_disturbances: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Mean Apple sleeping-breathing-disturbance value for the night",
+    apple_breathing_disturbances: float | None = Field(
         default=None,
+        description="Mean Apple sleeping-breathing-disturbance value for the night",
     )
     apple_bd_reason: str | None = Field(
         default=None,
         description="'no_apple_bd' when Apple recorded no disturbance value; else None",
     )
-    awake_seconds: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Apple-derived awake time in seconds (fragmentation)",
-        default=None,
+    awake_seconds: float | None = Field(
+        default=None, description="Apple-derived awake time in seconds (fragmentation)"
     )
-    sleep_efficiency_pct: float | None = provenance_field(
-        Provenance.DERIVED, "Apple-derived sleep efficiency percent", default=None
+    sleep_efficiency_pct: float | None = Field(
+        default=None, description="Apple-derived sleep efficiency percent"
     )
 
     skip_reason: str | None = Field(

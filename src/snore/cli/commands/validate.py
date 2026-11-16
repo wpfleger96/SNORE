@@ -23,14 +23,13 @@ from snore.cli.display import (
     Column,
     console,
     err_console,
+    mark_experimental,
     mark_field,
-    mark_provenance,
     print_footer,
     print_header,
     print_kv,
     print_table,
 )
-from snore.provenance import Provenance
 from snore.validation.report import AggregateMetrics
 
 
@@ -123,9 +122,7 @@ async def validate(
         )
         console.print(f"{programmatic}: {report.aggregate.total_programmatic_events}")
 
-        console.print(
-            f"\n{mark_provenance('Aggregate Metrics', Provenance.EXPERIMENTAL)}:"
-        )
+        console.print(f"\n{mark_experimental('Aggregate Metrics')}:")
         console.print(
             f"  Apneas:     "
             f"Avg Sens: {report.aggregate.avg_apnea_sensitivity * 100:.0f}%  "
@@ -152,9 +149,7 @@ async def validate(
                     f"  ... and {len(report.aggregate.low_sensitivity_sessions) - 10} more"
                 )
 
-        console.print(
-            f"\n{mark_provenance('Per-Session Results', Provenance.EXPERIMENTAL)}:"
-        )
+        console.print(f"\n{mark_experimental('Per-Session Results')}:")
         console.print(
             f"{'Date':<12} {'ID':<6} {'Machine':<8} {'Prog':<8} {'Apnea Sens':<11} {'Hypopnea Sens':<13}"
         )

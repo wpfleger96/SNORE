@@ -58,7 +58,7 @@ src/snore/
 ├── completions.py      # Shell completion generation and installation
 ├── exceptions.py       # Domain exceptions (NotFoundError)
 ├── metrics.py          # Session metric registry (MetricSpec: day aggregation), export keys, reported_count
-├── provenance.py       # Provenance tiers + provenance_field / field_provenance / response_provenance
+├── provenance.py       # experimental_field / is_experimental, EXPERIMENTAL_NOTE, IndexSource
 ├── logging_config.py   # Logging configuration with rotation
 ├── types.py            # Shared type definitions
 ├── analysis/           # Analysis algorithms
@@ -400,34 +400,39 @@ shares the threshold and percent but keeps its own denominator (every calendar n
 **Event matching tolerance** is single-sourced:
 `EVENT_MATCH_TOLERANCE_SECONDS` in `analysis/modes/postprocess.py`. Never hardcode 5.0.
 
-**Provenance tagging:** every reported metric carries one of three tiers (`snore/provenance.py`):
-- **Device**: verbatim device data (device-scored events and their counts, waveforms, STR values, settings).
-- **Derived**: deterministic math on device data (index recounts over SNORE mask-on hours, percentiles, usage, roll-ups).
-- **Experimental**: SNORE's own detection/classification heuristics and invented measures or judgements
-  (FL classes, RERA proxy, breath segmentation features, MV slope and stability, programmatic event
-  detection, SNORE-vs-device agreement scores, the therapy effectiveness band, AHI trend direction).
+**Provenance tagging:** a response field is either tagged experimental or untagged
+(`snore/provenance.py`). Untagged fields are device data or deterministic math on device data.
+Experimental means SNORE's own detection/classification heuristics and invented measures or
+judgements: FL classes, RERA proxy, breath segmentation features, MV slope and stability,
+programmatic event detection, SNORE-vs-device agreement scores, the therapy effectiveness band, AHI
+trend direction. Anything built on an experimental input is experimental, and so is any field nested
+under an experimental field.
 
-Aggregates inherit the weakest input: anything built on an experimental input stays Experimental;
-aggregates of Device/Derived inputs are Derived. Exception: a sum of device-scored event counts
-(across sessions, days, or a validation run) stays Device; rates, means, percentiles and recounts
-are Derived. A field with a preferred source and a fallback is tagged with the preferred source's
-tier and its description names the fallback, in both directions: pressure/EPAP/leak percentiles
-recomputed from the waveform when present are Derived (falling back to the device's summary value),
-because `finalize_statistics()` overwrites the STR values with the waveform's; `spo2_max` prefers the
-oximeter waveform and stays Derived (falling back to the device's STR value);
-`respiratory_rate_mean/max` and tidal volume / minute ventilation mean/max prefer the device STR value
-and are Device (falling back to the OSCAR session summary); on ResMed the `*_mean` columns hold the
-STR median. Day-level and MCP `NightlyRow` pressure/EPAP/leak values are aggregates and stay Derived.
-Day-level `ahi/oai/cai/hi` (`Day` rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are
-source-dependent headlines: the device-reported daily value when trusted, otherwise SNORE's recount;
-`index_source` (`IndexSource.DEVICE`/`DERIVED`) says which. They are tagged Device with
-`source_field="index_source"` — copy that pattern for any new source-dependent field. MCP
-`NightlyRow`'s `rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and `ie_ratio_median`
-follow it: Device-tagged, each with its own `IndexSource` field (`rr_mean_source` etc.) that is
-`derived` when the value is the pooled waveform median. Aggregates over
-them (period, Rx, trends, records) stay Derived and can mix device-reported and recounted days. The
-recount, when computable, is in `*_computed` (`DayListItem` carries only `ahi_computed`;
-`DayDetail` and MCP `NightlyRow` carry all four).
+`experimental_field("...")` (or `experimental_computed_field("...")`) tags a field: it adds the
+`x-provenance: experimental` JSON-schema key and the `[EXPERIMENTAL] ` description prefix. Every
+other field uses a plain Pydantic `Field(description=...)`. No test forces the tag onto a new field:
+one that reports a SNORE heuristic or judgement must use `experimental_field` and live on an
+`experimental_*` MCP tool or an `experimental`-tagged REST operation. The schemas are the single
+source of the tag: read it back with `is_experimental(<Model>, "<field>")`, from the response model
+that carries the value. `EXPERIMENTAL_NOTE` is the one-line definition that MCP disclaimers and the
+CLI legend read.
+
+Source-dependent values say their source in data, not in a tag. Day-level `ahi/oai/cai/hi` (`Day`
+rows, `DayListItem`/`DayDetail`, MCP `NightlyRow`) are the device-reported daily value when trusted,
+otherwise SNORE's recount; the sibling `index_source` field (`IndexSource.DEVICE`/`DERIVED`) says
+which, and the recount, when computable, is in `*_computed` (`DayListItem` carries only
+`ahi_computed`; `DayDetail` and MCP `NightlyRow` carry all four). Aggregates over these headlines
+(period, Rx, trends, records) can mix device-reported and recounted days. MCP `NightlyRow`'s
+`rr_mean_bpm`, `tv_mean_ml`, `mv_mean_lpm`, `ti_median_s` and `ie_ratio_median` each have their own
+`*_source` field (`rr_mean_source` etc.) the same way. A new source-dependent value adds a sibling
+`IndexSource` field and names it in its description. Session `Statistics` columns with a preferred
+source and a fallback have no source field; their descriptions, in `SessionStatistics`
+(`services/schemas.py`, the canonical model for the Statistics columns), name both:
+pressure/EPAP/leak percentiles are recomputed from the waveform when present
+(`finalize_statistics()` overwrites the STR values) and `spo2_max` prefers the oximeter waveform,
+each falling back to the device's summary value; `respiratory_rate_mean/max` and tidal volume /
+minute ventilation mean/max prefer the device STR value and fall back to the OSCAR session summary,
+and on ResMed the `*_mean` columns hold the STR median.
 
 Absent, not zero: a device's zero count of UA, MA, RE or FL means it never scored that type unless
 the device has at least one such event, across all its sessions including disabled ones. Reported
@@ -437,29 +442,19 @@ Exports are the exception: they keep the raw zeros. `Event.duration_seconds` is
 null when the device recorded no duration, which is always the case for ResMed hypopneas and RERAs,
 and such an event keeps the annotation time instead of a shifted start.
 
-The Pydantic schemas are the single source of tiers. Every metric field in MCP/REST schemas uses
-`provenance_field(Provenance.X, "...")` (adds `x-provenance` + a `[TIER]` description prefix);
-`SessionStatistics` (`services/schemas.py`) is canonical for the Statistics columns. Read a tier
-back with `field_provenance(<Model>, "<field>")` and the prefix-free description with
-`field_description(<Model>, "<field>")`, from the response model that carries the value. Any value
-or column label backed by a tagged field must read its tier this way (or via `mark_field`);
-hardcoding `Provenance.X` is allowed only for section/report titles with no single backing field, and
-for CLI-only judgements computed in the command with no schema field (such as the `snore stats` leak
-verdict), which cannot become fields because an Experimental field on a default REST response model
-like `TherapySummary` would break the REST gating rule.
-MCP flags only Experimental data: `experimental_*` tool responses carry a top-level `"experimental": true`, default
-tool responses carry no provenance key, and `docs://schemas` (`model_to_schema`) strips the `[DEVICE]`/`[DERIVED]`
-prefixes and `x-provenance` keys, keeping `[EXPERIMENTAL]`. Unflagged MCP fields are device data or computed from it;
-`index_source` and the `*_source` fields still say which values are SNORE recounts. `response_provenance` stays as
-the gating tests' walker.
-`tests/unit/test_provenance_tags.py` enforces tagging on every numeric/boolean (or list-of-number)
-and enum or `Literal` response field, with bookkeeping allowlists: `_NON_METRIC_FIELDS` for names that
-are never metrics (ids, positions, pagination) and `_NON_METRIC_MODEL_FIELDS` for coverage counts and
-origin labels keyed by `(model, field)`; it also requires a tag on fields holding a model whose tier
-depends on the parent. A plain `str` field is not checked, so type a string judgement as a `Literal`
-or enum (as `ExperimentalStats` does) to bring it under the rule.
+MCP flags only experimental data: `experimental_*` tool responses carry a top-level
+`"experimental": true`, default tool responses carry no provenance key, and `docs://schemas`
+(`model_to_schema`) shows each experimental field's `x-provenance` key and `[EXPERIMENTAL]` prefix.
+Unflagged MCP fields are device data or computed from it; `index_source` and the `*_source` fields
+say which values SNORE computed rather than read from the device.
+`tests/unit/test_provenance_tags.py` checks that tags are well-formed (`x-provenance` is only ever
+`experimental`, and the `[EXPERIMENTAL]` prefix appears exactly on tagged fields), that a model
+held by an experimental field is never also held by an untagged field
+(`test_model_held_by_experimental_field_is_never_held_untagged`), the REST gating rule below, and
+the pinned list of untyped REST routes (`_UNTYPED_METRIC_ROUTES`), which have no schema for that
+gate to walk.
 
-**MCP gating rule:** no Experimental-tagged field may appear in any default MCP response.
+**MCP gating rule:** no experimental-tagged field may appear in any default MCP response.
 Experimental data lives in `experimental_*` tools, and calling one is the opt-in. Default paths must
 not read breath rows, so their device data does not depend on analysis having run (the
 `analysis_run` and `has_analysis` bookkeeping flags read `analysis_results`, not breaths).
@@ -468,7 +463,7 @@ default tool to its response model: a new tool must be added to that map or take
 prefix. `tests/integration/test_mcp_device_waveform_aggregates.py` enforces the no-breath-rows rule by
 running every `DEFAULT_TOOLS` entry with SQL capture.
 
-**REST gating rule:** no default REST operation may return an Experimental-tagged field. Experimental
+**REST gating rule:** no default REST operation may return an experimental-tagged field. Experimental
 operations keep their URLs and carry the FastAPI `experimental` tag: at `include_router` for the
 analysis and validation routers, per operation elsewhere (`GET /days/{date}/experimental`,
 `GET /stats/experimental`, `/sessions/{id}/waveforms/compare`).
@@ -479,21 +474,26 @@ check fails until that list is edited too. `ui/src/tests/experimentalBoundary.te
 file: every listed operation needs a wrapper in `ui/src/api/`, and default pages may not import those
 wrappers, the experimental views or the other modules on its allowlist, or call an experimental path
 through the raw API client. HTML reports have no response schema: `tests/unit/test_report_service.py` checks that the models a report
-fetches carry no Experimental field.
+fetches carry no experimental field.
 
-CLI entry points (`cli/display`): `mark_field(label, Model, "field")` returns the label with the
-field's tier marker; `mark_provenance(label, tier)` does the same for a tier in hand;
-`print_kv(..., provenance=...)` and `Column(header, width, provenance)` for `print_table` mark keys
-and headers. The legend line prints automatically only for commands wrapped in
+CLI entry points (`cli/display`): `mark_experimental(label)` appends the `*` marker;
+`mark_field(label, Model, "field")` appends it when that schema field is experimental. A label
+backed by an experimental schema field must go through `mark_field`, so the schema stays the
+single source of the tag; `mark_experimental` is for section or table titles with no single
+backing field and for CLI-only judgements with no schema field (such as the `snore stats` leak
+verdict, which cannot become a field on a default REST model like `TherapySummary` without
+breaking the REST gating rule). Keys and headers are marked by passing the marked label, e.g.
+`print_kv(mark_experimental("Assessment"), ...)`. The legend
+line (`* experimental: ` plus `EXPERIMENTAL_NOTE`) prints automatically only for commands wrapped in
 `profile_scoped_command` (`cli/decorators.py`), including when the command exits with an error
 after printing markers; elsewhere markers appear with no legend. The CLI is marked, not separated:
-Experimental values stay on ordinary commands with their tier marker, because running a local command
-is already an explicit request. Exports carry a JSON `provenance` header and a CSV `columns.csv`
-sidecar, and `tests/unit/test_provenance_tags.py` keeps Experimental columns out of them.
+experimental values stay on ordinary commands with the `*` marker, because running a local command
+is already an explicit request. JSON and CSV exports contain no experimental column, and
+`tests/unit/test_provenance_tags.py` enforces it.
 
-The web UI does not mark individual fields. A section or card whose content is an Experimental
+The web UI does not mark individual fields. A section or card whose content is an experimental
 metric gets one `<ExperimentalBanner>` (pass a short `body` on small cards; `ValidationPanelShell`
-takes `experimental`/`experimental-note`); Device and Derived data stay unflagged. Day-level AHI
+takes `experimental`/`experimental-note`); everything else stays unflagged. Day-level AHI
 names its source (`index_source`) in text: device-reported or SNORE recount.
 
 **UI:** API types are generated — run `just ui-generate-types` after changing API

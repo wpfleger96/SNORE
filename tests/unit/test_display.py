@@ -1,5 +1,7 @@
 """Unit tests for cli/display helpers."""
 
+import asyncio
+
 from io import StringIO
 from unittest.mock import patch
 
@@ -7,13 +9,15 @@ import pytest
 
 from rich.console import Console
 
+from snore.analysis.modes.types import ModeResult
 from snore.cli.display import (
     SEP_NARROW,
     SEP_WIDE,
     Column,
     _indent_prefix,
+    experimental_legend,
+    mark_experimental,
     mark_field,
-    mark_provenance,
     print_dry_run_complete,
     print_dry_run_header,
     print_header,
@@ -22,16 +26,12 @@ from snore.cli.display import (
     print_success,
     print_table,
     print_warning,
-    provenance_legend,
     use_plain_legend,
 )
-from snore.provenance import PROVENANCE_NOTES, Provenance
+from snore.provenance import EXPERIMENTAL_NOTE
 from snore.services.schemas import SessionStatistics
 
-
-def _legend_part(tier: Provenance) -> str:
-    marker = {Provenance.DERIVED: "†", Provenance.EXPERIMENTAL: "*"}[tier]
-    return f"{marker} {tier.value}: {PROVENANCE_NOTES[tier]}"
+LEGEND = f"* experimental: {EXPERIMENTAL_NOTE}"
 
 
 @pytest.fixture()
@@ -108,88 +108,86 @@ class TestKeyValue:
         assert "Name" in output
         assert "Alice" in output
 
-    def test_kv_with_derived_provenance_marks_key(self, capture_stdout):
-        print_kv("Avg AHI", "2.1", provenance=Provenance.DERIVED)
-        assert "Avg AHI†:" in capture_stdout.getvalue()
 
-    def test_kv_with_device_provenance_is_unmarked(self, capture_stdout):
-        print_kv("OA", "3", provenance=Provenance.DEVICE)
-        assert "OA:" in capture_stdout.getvalue()
-
-
-class TestProvenance:
-    def test_marker_per_tier(self):
-        assert mark_provenance("x", Provenance.EXPERIMENTAL) == "x*"
-        assert mark_provenance("x", Provenance.DERIVED) == "x†"
-        assert mark_provenance("x", Provenance.DEVICE) == "x"
-        assert mark_provenance("x", None) == "x"
-
-    def test_table_column_provenance_marks_only_that_header(self, capture_stdout):
+class TestTable:
+    def test_table_prints_padded_headers_then_rows(self, capture_stdout):
         print_table(
-            [Column("Day", 6), Column("AHI", 6, Provenance.DERIVED), Column("FLI", 0)],
+            [Column("Day", 6), Column("AHI", 6), Column("FLI", 0)],
             [("d1", "1.0", "0.2")],
         )
-        header = capture_stdout.getvalue().splitlines()[0]
-        assert header.split() == ["Day", "AHI†", "FLI"]
+        header, _separator, row = capture_stdout.getvalue().splitlines()
+        assert header == "Day    AHI    FLI"
+        assert row == "d1     1.0    0.2"
 
-    def test_mark_field_reads_tier_from_model_tag(self):
-        assert mark_field("AHI", SessionStatistics, "ahi") == "AHI†"
 
-    def test_legend_lists_only_used_markers_once(self, capture_stdout):
-        with provenance_legend():
-            print_kv("A", "1", provenance=Provenance.DERIVED)
-            print_kv("B", "2", provenance=Provenance.DERIVED)
-            print_kv("C", "3", provenance=Provenance.DEVICE)
+class TestExperimentalMarker:
+    def test_mark_experimental_appends_marker(self):
+        assert mark_experimental("x") == "x*"
+
+    def test_mark_field_experimental_field_is_marked(self):
+        assert mark_field("AHI", ModeResult, "ahi") == "AHI*"
+
+    def test_mark_field_non_experimental_field_is_plain(self):
+        assert mark_field("AHI", SessionStatistics, "ahi") == "AHI"
+
+    def test_mark_field_non_experimental_field_needs_no_legend(self, capture_stdout):
+        with experimental_legend():
+            mark_field("AHI", SessionStatistics, "ahi")
+        assert capture_stdout.getvalue() == ""
+
+    def test_legend_printed_once_for_several_markers(self, capture_stdout):
+        with experimental_legend():
+            print_kv(mark_experimental("A"), "1")
+            print_kv(mark_experimental("B"), "2")
+            print_kv("C", "3")
         output = capture_stdout.getvalue()
-        assert output.count("† derived") == 1
-        assert "* experimental" not in output
-        assert _legend_part(Provenance.DERIVED) in output.splitlines()[-1]
-
-    def test_legend_lists_derived_before_experimental(self, capture_stdout):
-        with provenance_legend():
-            mark_provenance("y", Provenance.EXPERIMENTAL)
-            mark_provenance("x", Provenance.DERIVED)
-        expected = (
-            f"{_legend_part(Provenance.DERIVED)}  "
-            f"{_legend_part(Provenance.EXPERIMENTAL)}"
-        )
-        assert expected in capture_stdout.getvalue().splitlines()[-1]
+        assert "A*:" in output
+        assert "C:" in output
+        assert output.count("* experimental") == 1
+        assert LEGEND in output.splitlines()[-1]
 
     def test_legend_without_markers_prints_nothing(self, capture_stdout):
-        with provenance_legend():
-            print_kv("OA", "3", provenance=Provenance.DEVICE)
-        assert "derived" not in capture_stdout.getvalue()
+        with experimental_legend():
+            print_kv("OA", "3")
+        assert "experimental" not in capture_stdout.getvalue()
 
     def test_legend_printed_when_block_raises_after_markers(self, capture_stdout):
-        with pytest.raises(SystemExit), provenance_legend():
-            mark_provenance("x", Provenance.EXPERIMENTAL)
+        with pytest.raises(SystemExit), experimental_legend():
+            mark_experimental("x")
             raise SystemExit(1)
-        assert _legend_part(Provenance.EXPERIMENTAL) in capture_stdout.getvalue()
+        assert LEGEND in capture_stdout.getvalue()
 
     def test_legend_skipped_when_block_raises_before_markers(self, capture_stdout):
-        with pytest.raises(RuntimeError), provenance_legend():
+        with pytest.raises(RuntimeError), experimental_legend():
             raise RuntimeError
         assert capture_stdout.getvalue() == ""
 
+    def test_legend_collects_marker_emitted_inside_asyncio_run(self, capture_stdout):
+        async def _emit() -> None:
+            mark_experimental("x")
+
+        with experimental_legend():
+            asyncio.run(_emit())
+        assert LEGEND in capture_stdout.getvalue()
+
     def test_legend_is_dim_by_default(self, capture_stdout):
-        with provenance_legend():
-            mark_provenance("x", Provenance.DERIVED)
+        with experimental_legend():
+            mark_experimental("x")
         assert "\x1b[2m" in capture_stdout.getvalue()
 
     def test_plain_legend_has_no_styling(self, capture_stdout):
-        with provenance_legend():
+        with experimental_legend():
             use_plain_legend()
-            mark_provenance("x", Provenance.DERIVED)
-        assert capture_stdout.getvalue() == f"{_legend_part(Provenance.DERIVED)}\n"
+            mark_experimental("x")
+        assert capture_stdout.getvalue() == f"{LEGEND}\n"
 
     def test_markers_do_not_leak_into_next_legend(self, capture_stdout):
-        with provenance_legend():
-            mark_provenance("x", Provenance.EXPERIMENTAL)
-        mark_provenance("outside", Provenance.DERIVED)
-        with provenance_legend():
+        with experimental_legend():
+            mark_experimental("x")
+        mark_experimental("outside")
+        with experimental_legend():
             pass
         assert capture_stdout.getvalue().count("* experimental") == 1
-        assert "derived" not in capture_stdout.getvalue()
 
 
 class TestDryRun:

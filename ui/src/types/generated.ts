@@ -2089,7 +2089,7 @@ export interface components {
             low_sensitivity_sessions: number[]
             /**
              * Total Machine Events
-             * @description [DEVICE] Total machine events
+             * @description Total machine events
              */
             total_machine_events: number
             /**
@@ -2150,7 +2150,7 @@ export interface components {
             confidence?: number | null
             /**
              * Duration
-             * @description [DEVICE] Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
+             * @description Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
              */
             duration: number
             /**
@@ -2237,7 +2237,7 @@ export interface components {
             analysis_id?: number | null
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours?: number | null
             /** Has Analysis */
@@ -2275,7 +2275,7 @@ export interface components {
             flow_analysis?: components['schemas']['SessionFlowAnalysis'] | null
             /**
              * Machine Ahi
-             * @description [DERIVED] Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, not the device-reported AHI (None if no events)
+             * @description Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, not the device-reported AHI (None if no events)
              */
             machine_ahi?: number | null
             /**
@@ -2286,7 +2286,7 @@ export interface components {
             /**
              * Machine Rdi
              * @deprecated
-             * @description [DERIVED] Mirrors machine_ahi (machine-scored apneas + hypopneas per waveform-coverage hour); device-flagged RERAs are not added, so this is not a true RDI (None if no events). Deprecated: read machine_ahi.
+             * @description Mirrors machine_ahi (machine-scored apneas + hypopneas per waveform-coverage hour); device-flagged RERAs are not added, so this is not a true RDI (None if no events). Deprecated: read machine_ahi.
              */
             machine_rdi?: number | null
             /**
@@ -2324,7 +2324,7 @@ export interface components {
             pulse_change_index?: number | null
             /**
              * Session Duration Hours
-             * @description [DERIVED] Flow-waveform coverage (hours)
+             * @description Flow-waveform coverage (hours)
              */
             session_duration_hours: number
             /**
@@ -2510,12 +2510,12 @@ export interface components {
             apple_bd_reason?: string | null
             /**
              * Apple Breathing Disturbances
-             * @description [DEVICE] Mean Apple sleeping-breathing-disturbance value for the night
+             * @description Mean Apple sleeping-breathing-disturbance value for the night
              */
             apple_breathing_disturbances?: number | null
             /**
              * Awake Seconds
-             * @description [DERIVED] Apple-derived awake time in seconds (fragmentation)
+             * @description Apple-derived awake time in seconds (fragmentation)
              */
             awake_seconds?: number | null
             /**
@@ -2550,7 +2550,7 @@ export interface components {
             skip_reason?: string | null
             /**
              * Sleep Efficiency Pct
-             * @description [DERIVED] Apple-derived sleep efficiency percent
+             * @description Apple-derived sleep efficiency percent
              */
             sleep_efficiency_pct?: number | null
         }
@@ -2699,7 +2699,7 @@ export interface components {
             date: string
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours: number
             /**
@@ -2980,42 +2980,42 @@ export interface components {
         DayDetail: {
             /**
              * Ahi
-             * @description [DEVICE] Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
+             * @description Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
              */
             ahi?: number | null
             /**
              * Ahi Computed
-             * @description [DERIVED] SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
+             * @description SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
              */
             ahi_computed?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Median leak over the night's pooled samples (L/min); a usage-weighted mean of session medians when a session has no usable stored waveform
+             * @description Median leak over the night's pooled samples (L/min); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             avg_leak?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
+             * @description Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             avg_pressure?: number | null
             /**
              * Avg Spo2
-             * @description [DERIVED] Usage-weighted mean SpO2 (%)
+             * @description Usage-weighted mean SpO2 (%)
              */
             avg_spo2?: number | null
             /**
              * Cai
-             * @description [DEVICE] Headline CAI: same source rule as ahi
+             * @description Headline CAI: same source rule as ahi
              */
             cai?: number | null
             /**
              * Cai Computed
-             * @description [DERIVED] SNORE recount CAI (see ahi_computed)
+             * @description SNORE recount CAI (see ahi_computed)
              */
             cai_computed?: number | null
             /**
              * Central Apneas
-             * @description [DEVICE] Device-scored central apnea count for the night, including clear airway events
+             * @description Device-scored central apnea count for the night, including clear airway events
              * @default 0
              */
             central_apneas: number
@@ -3030,43 +3030,43 @@ export interface components {
             device_id: number
             /**
              * Epap 95Th
-             * @description [DERIVED] 95th percentile EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
+             * @description 95th percentile EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             epap_95th?: number | null
             /**
              * Epap Max
-             * @description [DERIVED] Max EPAP (cmH2O)
+             * @description Max EPAP (cmH2O)
              */
             epap_max?: number | null
             /**
              * Epap Mean
-             * @description [DERIVED] Usage-weighted mean EPAP (cmH2O)
+             * @description Usage-weighted mean EPAP (cmH2O)
              */
             epap_mean?: number | null
             /**
              * Epap Median
-             * @description [DERIVED] Median EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
+             * @description Median EPAP over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             epap_median?: number | null
             /**
              * Epap Min
-             * @description [DERIVED] Min EPAP (cmH2O)
+             * @description Min EPAP (cmH2O)
              */
             epap_min?: number | null
             health_sleep?: components['schemas']['HealthNightSummaryRead'] | null
             /**
              * Hi
-             * @description [DEVICE] Headline HI: same source rule as ahi
+             * @description Headline HI: same source rule as ahi
              */
             hi?: number | null
             /**
              * Hi Computed
-             * @description [DERIVED] SNORE recount HI (see ahi_computed)
+             * @description SNORE recount HI (see ahi_computed)
              */
             hi_computed?: number | null
             /**
              * Hypopneas
-             * @description [DEVICE] Device-scored hypopnea count for the night
+             * @description Device-scored hypopnea count for the night
              * @default 0
              */
             hypopneas: number
@@ -3074,22 +3074,22 @@ export interface components {
             index_source?: components['schemas']['IndexSource'] | null
             /**
              * Leak 95Th
-             * @description [DERIVED] 95th percentile leak over the night's pooled samples (L/min); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
+             * @description 95th percentile leak over the night's pooled samples (L/min); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             leak_95th?: number | null
             /**
              * Leak Max
-             * @description [DERIVED] Max leak (L/min)
+             * @description Max leak (L/min)
              */
             leak_max?: number | null
             /**
              * Leak Mean
-             * @description [DERIVED] Usage-weighted mean leak (L/min)
+             * @description Usage-weighted mean leak (L/min)
              */
             leak_mean?: number | null
             /**
              * Leak Min
-             * @description [DERIVED] Min leak (L/min)
+             * @description Min leak (L/min)
              */
             leak_min?: number | null
             /** @description Time over the leak redline and Large Leak spans of the day's enabled sessions with leak data; null when none has a valid leak sample or any one's leak data is unusable */
@@ -3101,43 +3101,43 @@ export interface components {
             mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /**
              * Oai
-             * @description [DEVICE] Headline OAI: same source rule as ahi
+             * @description Headline OAI: same source rule as ahi
              */
             oai?: number | null
             /**
              * Oai Computed
-             * @description [DERIVED] SNORE recount OAI (see ahi_computed)
+             * @description SNORE recount OAI (see ahi_computed)
              */
             oai_computed?: number | null
             /**
              * Obstructive Apneas
-             * @description [DEVICE] Device-scored obstructive apnea count for the night
+             * @description Device-scored obstructive apnea count for the night
              * @default 0
              */
             obstructive_apneas: number
             /**
              * Pressure 95Th
-             * @description [DERIVED] 95th percentile pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
+             * @description 95th percentile pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session 95th percentiles when a session has no usable stored waveform
              */
             pressure_95th?: number | null
             /**
              * Pressure Max
-             * @description [DERIVED] Max pressure (cmH2O)
+             * @description Max pressure (cmH2O)
              */
             pressure_max?: number | null
             /**
              * Pressure Median
-             * @description [DERIVED] Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
+             * @description Median pressure over the night's pooled samples (cmH2O); a usage-weighted mean of session medians when a session has no usable stored waveform
              */
             pressure_median?: number | null
             /**
              * Pressure Min
-             * @description [DERIVED] Min pressure (cmH2O)
+             * @description Min pressure (cmH2O)
              */
             pressure_min?: number | null
             /**
              * Reras
-             * @description [DEVICE] Device-scored RERA count for the night; null when the device has never scored one
+             * @description Device-scored RERA count for the night; null when the device has never scored one
              */
             reras?: number | null
             /** Session Count */
@@ -3146,22 +3146,22 @@ export interface components {
             session_ids?: number[]
             /**
              * Spo2 Max
-             * @description [DERIVED] Max SpO2 (%)
+             * @description Max SpO2 (%)
              */
             spo2_max?: number | null
             /**
              * Spo2 Min
-             * @description [DERIVED] Min SpO2 (%)
+             * @description Min SpO2 (%)
              */
             spo2_min?: number | null
             /**
              * Total Therapy Hours
-             * @description [DERIVED] Total mask-on hours across the day's sessions
+             * @description Total mask-on hours across the day's sessions
              */
             total_therapy_hours?: number | null
             /**
              * Unclassified Apneas
-             * @description [DEVICE] Device-scored unclassified apnea count for the night; null when the device has never scored one
+             * @description Device-scored unclassified apnea count for the night; null when the device has never scored one
              */
             unclassified_apneas?: number | null
         }
@@ -3212,12 +3212,12 @@ export interface components {
         DayListItem: {
             /**
              * Ahi
-             * @description [DEVICE] Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
+             * @description Headline AHI (events/hr): device-reported daily value when trusted, otherwise SNORE's recount; index_source says which. Trusted = no session of the day is disabled, every session reports the same device AHI/OAI/CAI/HI and daily mask-on hours, both mask-on times are nonzero, and SNORE's imported time is within the larger of 5 min or 5% of the device's
              */
             ahi?: number | null
             /**
              * Ahi Computed
-             * @description [DERIVED] SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
+             * @description SNORE recount AHI: device-scored events over SNORE mask-on hours, usage-weighted across sessions; null when there are no mask-on hours or no session statistics
              */
             ahi_computed?: number | null
             /**
@@ -3233,7 +3233,7 @@ export interface components {
             session_count: number
             /**
              * Total Therapy Hours
-             * @description [DERIVED] Total mask-on hours across the day's sessions
+             * @description Total mask-on hours across the day's sessions
              */
             total_therapy_hours?: number | null
         }
@@ -3309,122 +3309,122 @@ export interface components {
         DeviceChannelStats: {
             /**
              * Device Flg 95Th
-             * @description [DERIVED] 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             * @description 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
              */
             device_flg_95th?: number | null
             /**
              * Device Flg Max
-             * @description [DERIVED] Maximum of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             * @description Maximum of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
              */
             device_flg_max?: number | null
             /**
              * Device Flg Median
-             * @description [DERIVED] Median of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             * @description Median of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
              */
             device_flg_median?: number | null
             /**
              * Ie Ratio 95Th
-             * @description [DERIVED] 95th percentile of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ie_ratio_95th?: number | null
             /**
              * Ie Ratio Max
-             * @description [DERIVED] Maximum of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ie_ratio_max?: number | null
             /**
              * Ie Ratio Median
-             * @description [DERIVED] Median of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ie_ratio_median?: number | null
             /**
              * Minute Ventilation 95Th
-             * @description [DERIVED] 95th percentile of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             minute_ventilation_95th?: number | null
             /**
              * Minute Ventilation Max
-             * @description [DERIVED] Maximum of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             minute_ventilation_max?: number | null
             /**
              * Minute Ventilation Median
-             * @description [DERIVED] Median of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             minute_ventilation_median?: number | null
             /**
              * Pulse 95Th
-             * @description [DERIVED] 95th percentile of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             pulse_95th?: number | null
             /**
              * Pulse Max
-             * @description [DERIVED] Maximum of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             pulse_max?: number | null
             /**
              * Pulse Median
-             * @description [DERIVED] Median of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             pulse_median?: number | null
             /**
              * Respiratory Rate 95Th
-             * @description [DERIVED] 95th percentile of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             respiratory_rate_95th?: number | null
             /**
              * Respiratory Rate Max
-             * @description [DERIVED] Maximum of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             respiratory_rate_max?: number | null
             /**
              * Respiratory Rate Median
-             * @description [DERIVED] Median of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             respiratory_rate_median?: number | null
             /**
              * Snore 95Th
-             * @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), pooled
+             * @description 95th percentile of the device snore channel (0-5 unitless), pooled
              */
             snore_95th?: number | null
             /**
              * Snore Max
-             * @description [DERIVED] Maximum of the device snore channel (0-5 unitless), pooled
+             * @description Maximum of the device snore channel (0-5 unitless), pooled
              */
             snore_max?: number | null
             /**
              * Snore Median
-             * @description [DERIVED] Median of the device snore channel (0-5 unitless), pooled
+             * @description Median of the device snore channel (0-5 unitless), pooled
              */
             snore_median?: number | null
             /**
              * Ti 95Th
-             * @description [DERIVED] 95th percentile of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ti_95th?: number | null
             /**
              * Ti Max
-             * @description [DERIVED] Maximum of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ti_max?: number | null
             /**
              * Ti Median
-             * @description [DERIVED] Median of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ti_median?: number | null
             /**
              * Tidal Volume 95Th
-             * @description [DERIVED] 95th percentile of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description 95th percentile of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             tidal_volume_95th?: number | null
             /**
              * Tidal Volume Max
-             * @description [DERIVED] Maximum of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Maximum of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             tidal_volume_max?: number | null
             /**
              * Tidal Volume Median
-             * @description [DERIVED] Median of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             * @description Median of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             tidal_volume_median?: number | null
         }
@@ -3504,7 +3504,7 @@ export interface components {
             therapy_modes: string[]
             /**
              * Total Therapy Hours
-             * @description [DERIVED] Total therapy hours from enabled sessions, summed over the device's days (mask-on time, falling back to session span)
+             * @description Total therapy hours from enabled sessions, summed over the device's days (mask-on time, falling back to session span)
              */
             total_therapy_hours: number
         }
@@ -3525,7 +3525,7 @@ export interface components {
             confidence?: number | null
             /**
              * Duration
-             * @description [DEVICE] Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
+             * @description Event duration (seconds), 0 when the device recorded none; experimental for programmatic events
              */
             duration: number
             /**
@@ -3577,7 +3577,7 @@ export interface components {
             false_positives_rera?: components['schemas']['EventComparisonDetail'][]
             /**
              * Machine Event Count
-             * @description [DEVICE] Machine-scored apneas and hypopneas, plus RERAs when the device scored any
+             * @description Machine-scored apneas and hypopneas, plus RERAs when the device scored any
              */
             machine_event_count: number
             /**
@@ -3605,7 +3605,7 @@ export interface components {
         EventItem: {
             /**
              * Duration Seconds
-             * @description [DEVICE] Device-recorded event duration (s); null when the device recorded none, which is always the case for ResMed hypopneas and RERAs
+             * @description Device-recorded event duration (s); null when the device recorded none, which is always the case for ResMed hypopneas and RERAs
              */
             duration_seconds?: number | null
             /** Event Type */
@@ -3616,12 +3616,12 @@ export interface components {
             offset_seconds: number
             /**
              * Peak Flow Limitation
-             * @description [DEVICE] Peak flow limitation
+             * @description Peak flow limitation
              */
             peak_flow_limitation?: number | null
             /**
              * Spo2 Drop
-             * @description [DEVICE] SpO2 drop (%)
+             * @description SpO2 drop (%)
              */
             spo2_drop?: number | null
             /** Start Time */
@@ -3634,14 +3634,14 @@ export interface components {
         EventTypeCount: {
             /**
              * Count
-             * @description [DEVICE] Device-scored events of this type
+             * @description Device-scored events of this type
              */
             count: number
             /** Event Type */
             event_type: string
             /**
              * Percentage
-             * @description [DERIVED] Share of all device-scored events (%)
+             * @description Share of all device-scored events (%)
              */
             percentage: number
         }
@@ -3770,12 +3770,12 @@ export interface components {
             date: string
             /**
              * Device Flg 95Th
-             * @description [DERIVED] 95th percentile of masked FLG samples (values in [0, 1]) over the full session
+             * @description 95th percentile of masked FLG samples (values in [0, 1]) over the full session
              */
             device_flg_95th?: number | null
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours: number
             /**
@@ -3986,22 +3986,22 @@ export interface components {
         HealthNightDetailRead: {
             /**
              * Avg Rr
-             * @description [DERIVED] Average respiratory rate (breaths/min)
+             * @description Average respiratory rate (breaths/min)
              */
             avg_rr?: number | null
             /**
              * Avg Spo2 Pct
-             * @description [DERIVED] Average SpO2 (%)
+             * @description Average SpO2 (%)
              */
             avg_spo2_pct?: number | null
             /**
              * Awake Seconds
-             * @description [DERIVED] Awake time (s)
+             * @description Awake time (s)
              */
             awake_seconds?: number | null
             /**
              * Breathing Disturbances
-             * @description [DEVICE] Apple's nightly breathing-disturbances value as recorded (HealthKit unit 'count', a non-integer nightly value; Apple writes one per night); when several sources wrote one, the mean of their values; null without a sample
+             * @description Apple's nightly breathing-disturbances value as recorded (HealthKit unit 'count', a non-integer nightly value; Apple writes one per night); when several sources wrote one, the mean of their values; null without a sample
              */
             breathing_disturbances?: number | null
             /**
@@ -4011,17 +4011,17 @@ export interface components {
             computed_at: string
             /**
              * Core Seconds
-             * @description [DERIVED] Core sleep (s)
+             * @description Core sleep (s)
              */
             core_seconds?: number | null
             /**
              * Deep Seconds
-             * @description [DERIVED] Deep sleep (s)
+             * @description Deep sleep (s)
              */
             deep_seconds?: number | null
             /**
              * Min Spo2 Pct
-             * @description [DERIVED] Minimum SpO2 (%)
+             * @description Minimum SpO2 (%)
              */
             min_spo2_pct?: number | null
             /**
@@ -4033,32 +4033,32 @@ export interface components {
             preferred_source?: string | null
             /**
              * Rem Seconds
-             * @description [DERIVED] REM sleep (s)
+             * @description REM sleep (s)
              */
             rem_seconds?: number | null
             /**
              * Sleep Efficiency Pct
-             * @description [DERIVED] Total sleep / time in bed (%)
+             * @description Total sleep / time in bed (%)
              */
             sleep_efficiency_pct?: number | null
             /**
              * Stage Coverage Pct
-             * @description [DERIVED] Share of sleep with a known stage (%)
+             * @description Share of sleep with a known stage (%)
              */
             stage_coverage_pct?: number | null
             /**
              * Time In Bed Seconds
-             * @description [DERIVED] Time in bed (s)
+             * @description Time in bed (s)
              */
             time_in_bed_seconds?: number | null
             /**
              * Total Sleep Seconds
-             * @description [DERIVED] Total sleep (s)
+             * @description Total sleep (s)
              */
             total_sleep_seconds?: number | null
             /**
              * Unspecified Seconds
-             * @description [DERIVED] Asleep, unspecified stage (s)
+             * @description Asleep, unspecified stage (s)
              */
             unspecified_seconds?: number | null
         }
@@ -4069,7 +4069,7 @@ export interface components {
         HealthNightSummaryRead: {
             /**
              * Awake Seconds
-             * @description [DERIVED] Awake time (s)
+             * @description Awake time (s)
              */
             awake_seconds?: number | null
             /**
@@ -4079,12 +4079,12 @@ export interface components {
             computed_at: string
             /**
              * Core Seconds
-             * @description [DERIVED] Core sleep (s)
+             * @description Core sleep (s)
              */
             core_seconds?: number | null
             /**
              * Deep Seconds
-             * @description [DERIVED] Deep sleep (s)
+             * @description Deep sleep (s)
              */
             deep_seconds?: number | null
             /**
@@ -4096,32 +4096,32 @@ export interface components {
             preferred_source?: string | null
             /**
              * Rem Seconds
-             * @description [DERIVED] REM sleep (s)
+             * @description REM sleep (s)
              */
             rem_seconds?: number | null
             /**
              * Sleep Efficiency Pct
-             * @description [DERIVED] Total sleep / time in bed (%)
+             * @description Total sleep / time in bed (%)
              */
             sleep_efficiency_pct?: number | null
             /**
              * Stage Coverage Pct
-             * @description [DERIVED] Share of sleep with a known stage (%)
+             * @description Share of sleep with a known stage (%)
              */
             stage_coverage_pct?: number | null
             /**
              * Time In Bed Seconds
-             * @description [DERIVED] Time in bed (s)
+             * @description Time in bed (s)
              */
             time_in_bed_seconds?: number | null
             /**
              * Total Sleep Seconds
-             * @description [DERIVED] Total sleep (s)
+             * @description Total sleep (s)
              */
             total_sleep_seconds?: number | null
             /**
              * Unspecified Seconds
-             * @description [DERIVED] Asleep, unspecified stage (s)
+             * @description Asleep, unspecified stage (s)
              */
             unspecified_seconds?: number | null
         }
@@ -4155,12 +4155,12 @@ export interface components {
             unit?: string | null
             /**
              * Value Num
-             * @description [DEVICE] Numeric sample value as recorded; SpO2 recorded as a fraction is stored on the percent scale
+             * @description Numeric sample value as recorded; SpO2 recorded as a fraction is stored on the percent scale
              */
             value_num?: number | null
             /**
              * Value Text
-             * @description [DEVICE] Sleep stage for sleep-analysis samples (InBed, Awake, AsleepCore, AsleepDeep, AsleepREM or AsleepUnspecified); null for quantity samples
+             * @description Sleep stage for sleep-analysis samples (InBed, Awake, AsleepCore, AsleepDeep, AsleepREM or AsleepUnspecified); null for quantity samples
              */
             value_text?: string | null
         }
@@ -4364,7 +4364,7 @@ export interface components {
         LargeLeakSpan: {
             /**
              * Duration Seconds
-             * @description [DERIVED] Span length in seconds (end minus start)
+             * @description Span length in seconds (end minus start)
              */
             duration_seconds: number
             /**
@@ -4397,12 +4397,12 @@ export interface components {
         LeakRedlineStats: {
             /**
              * Large Leak Pct
-             * @description [DERIVED] OSCAR's Large Leak index: the summed durations of every Large Leak span (not only the listed ones) as a percent of the covered sessions' mask-on hours (to 0.01); null when those hours are zero
+             * @description OSCAR's Large Leak index: the summed durations of every Large Leak span (not only the listed ones) as a percent of the covered sessions' mask-on hours (to 0.01); null when those hours are zero
              */
             large_leak_pct?: number | null
             /**
              * Large Leak Span Count
-             * @description [DERIVED] Number of Large Leak spans, listed or not
+             * @description Number of Large Leak spans, listed or not
              */
             large_leak_span_count: number
             /**
@@ -4412,7 +4412,7 @@ export interface components {
             large_leak_spans: components['schemas']['LargeLeakSpan'][]
             /**
              * Leak Above 24 Pct
-             * @description [DERIVED] Percent of the pooled valid leak samples at or above 24 L/min (to 0.1). OSCAR's time over the leak redline is time-weighted over the day's hours, so the two agree only approximately
+             * @description Percent of the pooled valid leak samples at or above 24 L/min (to 0.1). OSCAR's time over the leak redline is time-weighted over the day's hours, so the two agree only approximately
              */
             leak_above_24_pct: number
         }
@@ -4541,7 +4541,7 @@ export interface components {
         MaskOnSpan: {
             /**
              * Duration Seconds
-             * @description [DERIVED] Span length in seconds
+             * @description Span length in seconds
              */
             duration_seconds: number
             /**
@@ -4771,67 +4771,67 @@ export interface components {
         PeriodStatistics: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
+             * @description Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
              * Avg Cai
-             * @description [DERIVED] Usage-weighted average of daily headline CAI (events/hour) (can mix device-reported and recounted days)
+             * @description Usage-weighted average of daily headline CAI (events/hour) (can mix device-reported and recounted days)
              */
             avg_cai?: number | null
             /**
              * Avg Hi
-             * @description [DERIVED] Usage-weighted average of daily headline HI (events/hour) (can mix device-reported and recounted days)
+             * @description Usage-weighted average of daily headline HI (events/hour) (can mix device-reported and recounted days)
              */
             avg_hi?: number | null
             /**
              * Avg Hours Per Day
-             * @description [DERIVED] Average hours per day used
+             * @description Average hours per day used
              */
             avg_hours_per_day?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Usage-weighted mean of the daily median leak (L/min)
+             * @description Usage-weighted mean of the daily median leak (L/min)
              */
             avg_leak?: number | null
             /**
              * Avg Oai
-             * @description [DERIVED] Usage-weighted average of daily headline OAI (events/hour) (can mix device-reported and recounted days)
+             * @description Usage-weighted average of daily headline OAI (events/hour) (can mix device-reported and recounted days)
              */
             avg_oai?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Usage-weighted mean of the daily median pressure (cmH₂O)
+             * @description Usage-weighted mean of the daily median pressure (cmH₂O)
              */
             avg_pressure?: number | null
             /**
              * Avg Rera
-             * @description [DERIVED] Usage-weighted device-scored RERA index (events/hour) over days from devices that have scored a RERA; null when none in the period has
+             * @description Usage-weighted device-scored RERA index (events/hour) over days from devices that have scored a RERA; null when none in the period has
              */
             avg_rera?: number | null
             /**
              * Avg Sleep Efficiency Pct
-             * @description [DERIVED] Average sleep efficiency % per night (Apple Health)
+             * @description Average sleep efficiency % per night (Apple Health)
              */
             avg_sleep_efficiency_pct?: number | null
             /**
              * Avg Spo2
-             * @description [DERIVED] Average SpO₂ (%)
+             * @description Average SpO₂ (%)
              */
             avg_spo2?: number | null
             /**
              * Avg Total Sleep Hours
-             * @description [DERIVED] Average total sleep hours per night (Apple Health)
+             * @description Average total sleep hours per night (Apple Health)
              */
             avg_total_sleep_hours?: number | null
             /**
              * Compliance Pct
-             * @description [DERIVED] days_compliant as a percent of the period's calendar days (to 0.1), leaving out days before the range's first or after its last day with therapy hours from enabled sessions, as OSCAR's Statistics page does; null when the period has no calendar day in that span
+             * @description days_compliant as a percent of the period's calendar days (to 0.1), leaving out days before the range's first or after its last day with therapy hours from enabled sessions, as OSCAR's Statistics page does; null when the period has no calendar day in that span
              */
             compliance_pct?: number | null
             /**
              * Days Compliant
-             * @description [DERIVED] Nights with at least 4 mask-on hours from enabled sessions, summed across devices
+             * @description Nights with at least 4 mask-on hours from enabled sessions, summed across devices
              * @default 0
              */
             days_compliant: number
@@ -4843,23 +4843,23 @@ export interface components {
             days_in_period: number
             /**
              * Days Used
-             * @description [DERIVED] Number of days with therapy
+             * @description Number of days with therapy
              * @default 0
              */
             days_used: number
             /**
              * Device Flg 95Th
-             * @description [DERIVED] 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, over the pooled samples of every enabled session in the period; null when none has the channel
+             * @description 95th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, over the pooled samples of every enabled session in the period; null when none has the channel
              */
             device_flg_95th?: number | null
             /**
              * Median Ahi
-             * @description [DERIVED] Median of daily headline AHI (can mix device-reported and recounted days)
+             * @description Median of daily headline AHI (can mix device-reported and recounted days)
              */
             median_ahi?: number | null
             /**
              * Min Spo2
-             * @description [DERIVED] Minimum SpO₂ (%)
+             * @description Minimum SpO₂ (%)
              */
             min_spo2?: number | null
             /**
@@ -4879,7 +4879,7 @@ export interface components {
             period_type: string
             /**
              * Snore 95Th
-             * @description [DERIVED] 95th percentile of the device snore channel (0-5 unitless), over the pooled samples of every enabled session in the period; null when none has the channel
+             * @description 95th percentile of the device snore channel (0-5 unitless), over the pooled samples of every enabled session in the period; null when none has the channel
              */
             snore_95th?: number | null
         }
@@ -5076,12 +5076,12 @@ export interface components {
         RecordExtremes: {
             /**
              * Best
-             * @description [DERIVED] Best days, best first
+             * @description Best days, best first
              */
             best: [string, number][]
             /**
              * Worst
-             * @description [DERIVED] Worst days, worst first
+             * @description Worst days, worst first
              */
             worst: [string, number][]
         }
@@ -5093,15 +5093,15 @@ export interface components {
          *     metric.
          */
         RecordsResponse: {
-            /** @description [DERIVED] Daily headline AHI (device-reported when trusted, else SNORE's recount; records can mix both) */
+            /** @description Daily headline AHI (device-reported when trusted, else SNORE's recount; records can mix both) */
             ahi?: components['schemas']['RecordExtremes'] | null
-            /** @description [DERIVED] Nightly median leak (L/min) */
+            /** @description Nightly median leak (L/min) */
             leak?: components['schemas']['RecordExtremes'] | null
-            /** @description [DERIVED] Nightly minimum SpO2 (%) */
+            /** @description Nightly minimum SpO2 (%) */
             spo2_min?: components['schemas']['RecordExtremes'] | null
-            /** @description [DERIVED] Nightly therapy hours */
+            /** @description Nightly therapy hours */
             therapy_hours?: components['schemas']['RecordExtremes'] | null
-            /** @description [DERIVED] Nightly total sleep hours (Apple Health) */
+            /** @description Nightly total sleep hours (Apple Health) */
             total_sleep_hours?: components['schemas']['RecordExtremes'] | null
         }
         /** RecoveryCodesResponse */
@@ -5135,7 +5135,7 @@ export interface components {
             chance_precision_floor?: number | null
             /**
              * Machine Re Density
-             * @description [DERIVED] Pooled machine RE per therapy hour
+             * @description Pooled machine RE per therapy hour
              */
             machine_re_density?: number | null
             /**
@@ -5235,7 +5235,7 @@ export interface components {
             total_amplitude_reras: number
             /**
              * Total Machine Re
-             * @description [DEVICE] Total machine RE across all sessions
+             * @description Total machine RE across all sessions
              */
             total_machine_re: number
             /**
@@ -5312,18 +5312,18 @@ export interface components {
             date: string
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours: number
             /**
              * Machine Re Count
-             * @description [DEVICE] Machine-flagged RE (RERA) events for this session
+             * @description Machine-flagged RE (RERA) events for this session
              * @default 0
              */
             machine_re_count: number
             /**
              * Machine Re Density
-             * @description [DERIVED] Machine RE events per therapy hour
+             * @description Machine RE events per therapy hour
              */
             machine_re_density?: number | null
             /**
@@ -5588,17 +5588,17 @@ export interface components {
         RxPeriodResponse: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Usage-hours-weighted average of daily headline AHI over the period (can mix device-reported and recounted days)
+             * @description Usage-hours-weighted average of daily headline AHI over the period (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
              * Avg Hours
-             * @description [DERIVED] Average therapy hours per day with usage
+             * @description Average therapy hours per day with usage
              */
             avg_hours?: number | null
             /**
              * Avg Leak
-             * @description [DERIVED] Usage-weighted mean of the daily median leak over the period (L/min)
+             * @description Usage-weighted mean of the daily median leak over the period (L/min)
              */
             avg_leak?: number | null
             /** Days Count */
@@ -5614,7 +5614,7 @@ export interface components {
             end_date: string
             /**
              * Median Ahi
-             * @description [DERIVED] Median of daily headline AHI over the period (can mix device-reported and recounted days)
+             * @description Median of daily headline AHI over the period (can mix device-reported and recounted days)
              */
             median_ahi?: number | null
             /** Settings */
@@ -5628,7 +5628,7 @@ export interface components {
             start_date: string
             /**
              * Total Hours
-             * @description [DERIVED] Total therapy hours
+             * @description Total therapy hours
              * @default 0
              */
             total_hours: number
@@ -5679,12 +5679,12 @@ export interface components {
             device_session_id: string
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours: number
             /**
              * Duration Seconds
-             * @description [DEVICE] Session duration in seconds
+             * @description Session duration in seconds
              */
             duration_seconds: number
             /** Enabled */
@@ -5786,12 +5786,12 @@ export interface components {
         SessionListItem: {
             /**
              * Ahi
-             * @description [DERIVED] Apnea-Hypopnea Index (device events / mask-on hours)
+             * @description Apnea-Hypopnea Index (device events / mask-on hours)
              */
             ahi?: number | null
             /**
              * Duration Hours
-             * @description [DEVICE] Session duration in hours
+             * @description Session duration in hours
              */
             duration_hours: number
             /**
@@ -5855,402 +5855,402 @@ export interface components {
         SessionStatistics: {
             /**
              * Ahi
-             * @description [DERIVED] AHI: device-scored apneas of every type and hypopneas per mask-on hour
+             * @description AHI: device-scored apneas of every type and hypopneas per mask-on hour
              */
             ahi?: number | null
             /**
              * Ahi Device
-             * @description [DEVICE] AHI as reported by the device (STR)
+             * @description AHI as reported by the device (STR)
              */
             ahi_device?: number | null
             /**
              * Ai
-             * @description [DEVICE] Apnea index
+             * @description Apnea index
              */
             ai?: number | null
             /**
              * Amb Humidity Median
-             * @description [DEVICE] Median ambient humidity (%)
+             * @description Median ambient humidity (%)
              */
             amb_humidity_median?: number | null
             /**
              * Blow Flow Median
-             * @description [DEVICE] Median blower flow (L/min)
+             * @description Median blower flow (L/min)
              */
             blow_flow_median?: number | null
             /**
              * Blow Press 5Th
-             * @description [DEVICE] 5th percentile blower pressure (cmH2O)
+             * @description 5th percentile blower pressure (cmH2O)
              */
             blow_press_5th?: number | null
             /**
              * Blow Press 95Th
-             * @description [DEVICE] 95th percentile blower pressure (cmH2O)
+             * @description 95th percentile blower pressure (cmH2O)
              */
             blow_press_95th?: number | null
             /**
              * Cai
-             * @description [DERIVED] Device-scored central apneas per mask-on hour
+             * @description Device-scored central apneas per mask-on hour
              */
             cai?: number | null
             /**
              * Cai Device
-             * @description [DEVICE] Central apnea index as reported by the device (STR)
+             * @description Central apnea index as reported by the device (STR)
              */
             cai_device?: number | null
             /**
              * Central Apneas
-             * @description [DEVICE] Device-scored central apnea count, including clear airway events
+             * @description Device-scored central apnea count, including clear airway events
              */
             central_apneas?: number | null
             /**
              * Csr Pct
-             * @description [DEVICE] Device STR CSR value. The unit is unverified: OSCAR stores this signal as a per-hour rate, not a percent of session time
+             * @description Device STR CSR value. The unit is unverified: OSCAR stores this signal as a per-hour rate, not a percent of session time
              */
             csr_pct?: number | null
             /**
              * Epap 95Th
-             * @description [DERIVED] 95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description 95th percentile EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_95th?: number | null
             /**
              * Epap Max
-             * @description [DERIVED] Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description Max EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_max?: number | null
             /**
              * Epap Mean
-             * @description [DERIVED] Mean EPAP (cmH2O)
+             * @description Mean EPAP (cmH2O)
              */
             epap_mean?: number | null
             /**
              * Epap Median
-             * @description [DERIVED] Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description Median EPAP (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             epap_median?: number | null
             /**
              * Epap Min
-             * @description [DERIVED] Min EPAP (cmH2O)
+             * @description Min EPAP (cmH2O)
              */
             epap_min?: number | null
             /**
              * Flow 5Th
-             * @description [DEVICE] 5th percentile flow (L/min)
+             * @description 5th percentile flow (L/min)
              */
             flow_5th?: number | null
             /**
              * Flow 95Th
-             * @description [DEVICE] 95th percentile flow (L/min)
+             * @description 95th percentile flow (L/min)
              */
             flow_95th?: number | null
             /**
              * Flow Limitations
-             * @description [DEVICE] Device-flagged flow limitation count; null when the device has never flagged one
+             * @description Device-flagged flow limitation count; null when the device has never flagged one
              */
             flow_limitations?: number | null
             /**
              * Hi
-             * @description [DERIVED] Device-scored hypopneas per mask-on hour
+             * @description Device-scored hypopneas per mask-on hour
              */
             hi?: number | null
             /**
              * Hi Device
-             * @description [DEVICE] Hypopnea index as reported by the device (STR)
+             * @description Hypopnea index as reported by the device (STR)
              */
             hi_device?: number | null
             /**
              * Htube Pow Median
-             * @description [DEVICE] Median heated-tube power (%)
+             * @description Median heated-tube power (%)
              */
             htube_pow_median?: number | null
             /**
              * Htube Temp Median
-             * @description [DEVICE] Median heated-tube temperature (C)
+             * @description Median heated-tube temperature (C)
              */
             htube_temp_median?: number | null
             /**
              * Hum Pow Median
-             * @description [DEVICE] Median humidifier power (%)
+             * @description Median humidifier power (%)
              */
             hum_pow_median?: number | null
             /**
              * Hum Temp Median
-             * @description [DEVICE] Median humidifier temperature (C)
+             * @description Median humidifier temperature (C)
              */
             hum_temp_median?: number | null
             /**
              * Hypopneas
-             * @description [DEVICE] Device-scored hypopnea count
+             * @description Device-scored hypopnea count
              */
             hypopneas?: number | null
             /**
              * Ie Ratio 95Th
-             * @description [DEVICE] 95th percentile I:E ratio
+             * @description 95th percentile I:E ratio
              */
             ie_ratio_95th?: number | null
             /**
              * Ie Ratio Max
-             * @description [DEVICE] Max I:E ratio
+             * @description Max I:E ratio
              */
             ie_ratio_max?: number | null
             /**
              * Ie Ratio Median
-             * @description [DEVICE] Median I:E ratio
+             * @description Median I:E ratio
              */
             ie_ratio_median?: number | null
             /**
              * Ipap 95Th
-             * @description [DEVICE] 95th percentile IPAP (cmH2O)
+             * @description 95th percentile IPAP (cmH2O)
              */
             ipap_95th?: number | null
             /**
              * Ipap Max
-             * @description [DEVICE] Max IPAP (cmH2O)
+             * @description Max IPAP (cmH2O)
              */
             ipap_max?: number | null
             /**
              * Ipap Median
-             * @description [DEVICE] Median IPAP (cmH2O)
+             * @description Median IPAP (cmH2O)
              */
             ipap_median?: number | null
             /**
              * Leak 95Th
-             * @description [DERIVED] 95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             * @description 95th percentile leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_95th?: number | null
             /**
              * Leak Max
-             * @description [DERIVED] Max leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             * @description Max leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_max?: number | null
             /**
              * Leak Mean
-             * @description [DERIVED] Mean leak (L/min)
+             * @description Mean leak (L/min)
              */
             leak_mean?: number | null
             /**
              * Leak Median
-             * @description [DERIVED] Median leak (L/min); recomputed from the waveform when available, otherwise the device's value
+             * @description Median leak (L/min); recomputed from the waveform when available, otherwise the device's value
              */
             leak_median?: number | null
             /**
              * Leak Min
-             * @description [DERIVED] Min leak (L/min)
+             * @description Min leak (L/min)
              */
             leak_min?: number | null
             /**
              * Leak Percentile 70
-             * @description [DEVICE] 70th percentile leak (L/min)
+             * @description 70th percentile leak (L/min)
              */
             leak_percentile_70?: number | null
             /**
              * Mask Events
-             * @description [DEVICE] Mask-on events
+             * @description Mask-on events
              */
             mask_events?: number | null
             /**
              * Minute Ventilation 95Th
-             * @description [DEVICE] 95th percentile minute ventilation (L/min)
+             * @description 95th percentile minute ventilation (L/min)
              */
             minute_ventilation_95th?: number | null
             /**
              * Minute Ventilation Max
-             * @description [DEVICE] Max minute ventilation (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             * @description Max minute ventilation (L/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
              */
             minute_ventilation_max?: number | null
             /**
              * Minute Ventilation Mean
-             * @description [DEVICE] Minute ventilation (L/min); device STR median on ResMed, OSCAR session average on OSCAR imports
+             * @description Minute ventilation (L/min); device STR median on ResMed, OSCAR session average on OSCAR imports
              */
             minute_ventilation_mean?: number | null
             /**
              * Minute Ventilation Min
-             * @description [DERIVED] Min minute ventilation (L/min); OSCAR session summary (OSCAR imports only)
+             * @description Min minute ventilation (L/min); OSCAR session summary (OSCAR imports only)
              */
             minute_ventilation_min?: number | null
             /**
              * Mixed Apneas
-             * @description [DEVICE] Device-scored mixed apnea count; null when the device has never scored one
+             * @description Device-scored mixed apnea count; null when the device has never scored one
              */
             mixed_apneas?: number | null
             /**
              * Oai
-             * @description [DERIVED] Device-scored obstructive apneas per mask-on hour
+             * @description Device-scored obstructive apneas per mask-on hour
              */
             oai?: number | null
             /**
              * Oai Device
-             * @description [DEVICE] Obstructive apnea index as reported by the device (STR)
+             * @description Obstructive apnea index as reported by the device (STR)
              */
             oai_device?: number | null
             /**
              * Obstructive Apneas
-             * @description [DEVICE] Device-scored obstructive apnea count
+             * @description Device-scored obstructive apnea count
              */
             obstructive_apneas?: number | null
             /**
              * Pressure 95Th
-             * @description [DERIVED] 95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description 95th percentile pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_95th?: number | null
             /**
              * Pressure Max
-             * @description [DERIVED] Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description Max pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_max?: number | null
             /**
              * Pressure Mean
-             * @description [DERIVED] Mean pressure (cmH2O)
+             * @description Mean pressure (cmH2O)
              */
             pressure_mean?: number | null
             /**
              * Pressure Median
-             * @description [DERIVED] Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
+             * @description Median pressure (cmH2O); recomputed from the waveform when available, otherwise the device's value
              */
             pressure_median?: number | null
             /**
              * Pressure Min
-             * @description [DERIVED] Min pressure (cmH2O)
+             * @description Min pressure (cmH2O)
              */
             pressure_min?: number | null
             /**
              * Pulse Max
-             * @description [DERIVED] Max pulse (BPM)
+             * @description Max pulse (BPM)
              */
             pulse_max?: number | null
             /**
              * Pulse Mean
-             * @description [DERIVED] Mean pulse (BPM)
+             * @description Mean pulse (BPM)
              */
             pulse_mean?: number | null
             /**
              * Pulse Min
-             * @description [DERIVED] Min pulse (BPM)
+             * @description Min pulse (BPM)
              */
             pulse_min?: number | null
             /**
              * Rei
-             * @description [DERIVED] Respiratory Event Index
+             * @description Respiratory Event Index
              */
             rei?: number | null
             /**
              * Reras
-             * @description [DEVICE] Device-scored RERA count; null in API responses when the device has never scored one, while exports keep the raw 0
+             * @description Device-scored RERA count; null in API responses when the device has never scored one, while exports keep the raw 0
              */
             reras?: number | null
             /**
              * Respiratory Rate 95Th
-             * @description [DEVICE] 95th percentile respiratory rate (breaths/min)
+             * @description 95th percentile respiratory rate (breaths/min)
              */
             respiratory_rate_95th?: number | null
             /**
              * Respiratory Rate Max
-             * @description [DEVICE] Max respiratory rate (breaths/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             * @description Max respiratory rate (breaths/min); device STR value on ResMed, OSCAR session summary on OSCAR imports
              */
             respiratory_rate_max?: number | null
             /**
              * Respiratory Rate Mean
-             * @description [DEVICE] Respiratory rate (breaths/min); device STR median on ResMed, OSCAR session average on OSCAR imports
+             * @description Respiratory rate (breaths/min); device STR median on ResMed, OSCAR session average on OSCAR imports
              */
             respiratory_rate_mean?: number | null
             /**
              * Respiratory Rate Min
-             * @description [DERIVED] Min respiratory rate (breaths/min); OSCAR session summary (OSCAR imports only)
+             * @description Min respiratory rate (breaths/min); OSCAR session summary (OSCAR imports only)
              */
             respiratory_rate_min?: number | null
             /**
              * Rin
-             * @description [DEVICE] RERA index
+             * @description RERA index
              */
             rin?: number | null
             /**
              * Spo2 95Th
-             * @description [DEVICE] 95th percentile SpO2 (%)
+             * @description 95th percentile SpO2 (%)
              */
             spo2_95th?: number | null
             /**
              * Spo2 Max
-             * @description [DERIVED] Max SpO2 (%); recomputed from the waveform when available, otherwise the device's value
+             * @description Max SpO2 (%); recomputed from the waveform when available, otherwise the device's value
              */
             spo2_max?: number | null
             /**
              * Spo2 Mean
-             * @description [DERIVED] Mean SpO2 (%)
+             * @description Mean SpO2 (%)
              */
             spo2_mean?: number | null
             /**
              * Spo2 Median
-             * @description [DEVICE] Median SpO2 (%)
+             * @description Median SpO2 (%)
              */
             spo2_median?: number | null
             /**
              * Spo2 Min
-             * @description [DERIVED] Min SpO2 (%)
+             * @description Min SpO2 (%)
              */
             spo2_min?: number | null
             /**
              * Spo2 Time Below 90
-             * @description [DERIVED] Seconds with SpO2 below 90%
+             * @description Seconds with SpO2 below 90%
              */
             spo2_time_below_90?: number | null
             /**
              * Spont Cyc Pct
-             * @description [DEVICE] Percent of breaths spontaneously cycled
+             * @description Percent of breaths spontaneously cycled
              */
             spont_cyc_pct?: number | null
             /**
              * Ti 95Th
-             * @description [DEVICE] 95th percentile inspiratory time (s)
+             * @description 95th percentile inspiratory time (s)
              */
             ti_95th?: number | null
             /**
              * Ti Max
-             * @description [DEVICE] Max inspiratory time (s)
+             * @description Max inspiratory time (s)
              */
             ti_max?: number | null
             /**
              * Ti Median
-             * @description [DEVICE] Median inspiratory time (s)
+             * @description Median inspiratory time (s)
              */
             ti_median?: number | null
             /**
              * Tidal Volume 95Th
-             * @description [DEVICE] 95th percentile tidal volume (mL)
+             * @description 95th percentile tidal volume (mL)
              */
             tidal_volume_95th?: number | null
             /**
              * Tidal Volume Max
-             * @description [DEVICE] Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports
+             * @description Max tidal volume (mL); device STR value on ResMed, OSCAR session summary on OSCAR imports
              */
             tidal_volume_max?: number | null
             /**
              * Tidal Volume Mean
-             * @description [DEVICE] Mean tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports
+             * @description Mean tidal volume (mL); device STR median on ResMed, OSCAR session average on OSCAR imports
              */
             tidal_volume_mean?: number | null
             /**
              * Tidal Volume Min
-             * @description [DERIVED] Min tidal volume (mL); OSCAR session summary (OSCAR imports only)
+             * @description Min tidal volume (mL); OSCAR session summary (OSCAR imports only)
              */
             tidal_volume_min?: number | null
             /**
              * Uai
-             * @description [DEVICE] Unknown apnea index
+             * @description Unknown apnea index
              */
             uai?: number | null
             /**
              * Unclassified Apneas
-             * @description [DEVICE] Device-scored unclassified apnea count; null in API responses when the device has never scored one, while exports keep the raw 0
+             * @description Device-scored unclassified apnea count; null in API responses when the device has never scored one, while exports keep the raw 0
              */
             unclassified_apneas?: number | null
             /**
              * Usage Hours
-             * @description [DERIVED] Mask-on therapy hours
+             * @description Mask-on therapy hours
              */
             usage_hours?: number | null
             /**
              * Usage Hours Device
-             * @description [DEVICE] Device-reported (STR) mask-on hours for the whole day, not this session: the same daily value is repeated on every session of the day
+             * @description Device-reported (STR) mask-on hours for the whole day, not this session: the same daily value is repeated on every session of the day
              */
             usage_hours_device?: number | null
         }
@@ -6281,32 +6281,32 @@ export interface components {
             date: string
             /**
              * Device Ahi
-             * @description [DEVICE] Device AHI (events/hr)
+             * @description Device AHI (events/hr)
              */
             device_ahi?: number | null
             /**
              * Device Cai
-             * @description [DEVICE] Device CAI (central apnea index, events/hr)
+             * @description Device CAI (central apnea index, events/hr)
              */
             device_cai?: number | null
             /**
              * Device Hi
-             * @description [DEVICE] Device HI (hypopnea index, events/hr)
+             * @description Device HI (hypopnea index, events/hr)
              */
             device_hi?: number | null
             /**
              * Device Oai
-             * @description [DEVICE] Device OAI (obstructive apnea index, events/hr)
+             * @description Device OAI (obstructive apnea index, events/hr)
              */
             device_oai?: number | null
             /**
              * Device Uai
-             * @description [DEVICE] Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)
+             * @description Device UAI (upper-airway/unclassified apnea index, events/hr; vAuto/bilevel only)
              */
             device_uai?: number | null
             /**
              * Duration Hours
-             * @description [DERIVED] Flow-waveform coverage (hours)
+             * @description Flow-waveform coverage (hours)
              */
             duration_hours: number
             /**
@@ -6326,7 +6326,7 @@ export interface components {
             hypopnea_sensitivity: number
             /**
              * Machine Event Count
-             * @description [DEVICE] Total machine events
+             * @description Total machine events
              */
             machine_event_count: number
             /**
@@ -6379,79 +6379,79 @@ export interface components {
         TherapySummary: {
             /**
              * Avg Ahi
-             * @description [DERIVED] Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
+             * @description Usage-weighted average of daily headline AHI (can mix device-reported and recounted days)
              */
             avg_ahi?: number | null
             /**
              * Avg Epap
-             * @description [DERIVED] Average EPAP (cmH2O)
+             * @description Average EPAP (cmH2O)
              */
             avg_epap?: number | null
             /**
              * Avg Hours
-             * @description [DERIVED] Average therapy hours per day with usage
+             * @description Average therapy hours per day with usage
              */
             avg_hours: number
             /**
              * Avg Leak
-             * @description [DERIVED] Usage-weighted mean of the daily median leak (L/min)
+             * @description Usage-weighted mean of the daily median leak (L/min)
              */
             avg_leak?: number | null
             /**
              * Avg Minute Ventilation
-             * @description [DERIVED] Average minute ventilation (L/min)
+             * @description Average minute ventilation (L/min)
              */
             avg_minute_ventilation?: number | null
             /**
              * Avg Pressure
-             * @description [DERIVED] Usage-weighted mean of the daily median pressure (cmH2O)
+             * @description Usage-weighted mean of the daily median pressure (cmH2O)
              */
             avg_pressure?: number | null
             /**
              * Avg Pulse
-             * @description [DERIVED] Average pulse (BPM)
+             * @description Average pulse (BPM)
              */
             avg_pulse?: number | null
             /**
              * Avg Rei
-             * @description [DERIVED] Average REI
+             * @description Average REI
              */
             avg_rei?: number | null
             /**
              * Avg Respiratory Rate
-             * @description [DERIVED] Average respiratory rate (breaths/min)
+             * @description Average respiratory rate (breaths/min)
              */
             avg_respiratory_rate?: number | null
             /**
              * Avg Spo2
-             * @description [DERIVED] Average SpO2 (%)
+             * @description Average SpO2 (%)
              */
             avg_spo2?: number | null
             /**
              * Avg Tidal Volume
-             * @description [DERIVED] Average tidal volume (mL)
+             * @description Average tidal volume (mL)
              */
             avg_tidal_volume?: number | null
             /**
              * Compliance Pct
-             * @description [DERIVED] days_compliant as a percent of the calendar days from first_date to last_date (to 0.1)
+             * @description days_compliant as a percent of the calendar days from first_date to last_date (to 0.1)
              * @default 0
              */
             compliance_pct: number
             /**
              * Days Compliant
-             * @description [DERIVED] Nights with at least 4 mask-on hours from enabled sessions, summed across devices
+             * @description Nights with at least 4 mask-on hours from enabled sessions, summed across devices
              * @default 0
              */
             days_compliant: number
             /**
              * Days Since Last
-             * @description [DERIVED] Days since the last therapy day
+             * @description Days since the last therapy day
              */
             days_since_last: number
             /**
              * Days With Data
-             * @description [DERIVED] Days with therapy hours from enabled sessions
+             * @description Days with therapy hours from enabled sessions
              */
             days_with_data: number
             /** Event Counts */
@@ -6470,27 +6470,27 @@ export interface components {
             last_date: string
             /**
              * Max Pressure
-             * @description [DERIVED] Highest daily median pressure (cmH2O)
+             * @description Highest daily median pressure (cmH2O)
              */
             max_pressure?: number | null
             /**
              * Min Pressure
-             * @description [DERIVED] Lowest daily median pressure (cmH2O)
+             * @description Lowest daily median pressure (cmH2O)
              */
             min_pressure?: number | null
             /**
              * Min Spo2
-             * @description [DERIVED] Minimum SpO2 (%)
+             * @description Minimum SpO2 (%)
              */
             min_spo2?: number | null
             /**
              * Total Hours
-             * @description [DERIVED] Total therapy hours
+             * @description Total therapy hours
              */
             total_hours: number
             /**
              * Total Spo2 Time Below 90
-             * @description [DERIVED] Total seconds with SpO2 below 90%
+             * @description Total seconds with SpO2 below 90%
              * @default 0
              */
             total_spo2_time_below_90: number
@@ -6554,35 +6554,35 @@ export interface components {
          * @description Per-period trend series for ``GET /stats/trends``.
          */
         TrendsResponse: {
-            /** @description [DERIVED] Average daily headline AHI per period (can mix device-reported and recounted days) */
+            /** @description Average daily headline AHI per period (can mix device-reported and recounted days) */
             ahi: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average daily headline CAI per period (can mix device-reported and recounted days) */
+            /** @description Average daily headline CAI per period (can mix device-reported and recounted days) */
             cai: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average EPAP (cmH2O) per period */
+            /** @description Average EPAP (cmH2O) per period */
             epap: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average daily headline HI per period (can mix device-reported and recounted days) */
+            /** @description Average daily headline HI per period (can mix device-reported and recounted days) */
             hi: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average leak (L/min) per period */
+            /** @description Average leak (L/min) per period */
             leak: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average minute ventilation (L/min) per period */
+            /** @description Average minute ventilation (L/min) per period */
             mv: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average daily headline OAI per period (can mix device-reported and recounted days) */
+            /** @description Average daily headline OAI per period (can mix device-reported and recounted days) */
             oai: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average pressure (cmH2O) per period */
+            /** @description Average pressure (cmH2O) per period */
             pressure: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average pulse (BPM) per period */
+            /** @description Average pulse (BPM) per period */
             pulse: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average device-scored RERA index per period */
+            /** @description Average device-scored RERA index per period */
             rera: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average respiratory rate (breaths/min) per period */
+            /** @description Average respiratory rate (breaths/min) per period */
             rr: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average sleep efficiency % per night, per period (Apple Health) */
+            /** @description Average sleep efficiency % per night, per period (Apple Health) */
             sleep_efficiency?: components['schemas']['TrendSeries'] | null
-            /** @description [DERIVED] Average SpO2 (%) per period */
+            /** @description Average SpO2 (%) per period */
             spo2: components['schemas']['TrendSeries']
-            /** @description [DERIVED] Average total sleep hours per night, per period (Apple Health) */
+            /** @description Average total sleep hours per night, per period (Apple Health) */
             total_sleep_hours?: components['schemas']['TrendSeries'] | null
-            /** @description [DERIVED] Average therapy hours per day, per period */
+            /** @description Average therapy hours per day, per period */
             usage: components['schemas']['TrendSeries']
         }
         /** UserInfo */
@@ -6868,7 +6868,7 @@ export interface components {
             returned_samples: number
             /**
              * Sample Rate
-             * @description [DEVICE] Sample rate (Hz)
+             * @description Sample rate (Hz)
              */
             sample_rate: number
             /** Timestamps */
@@ -6879,7 +6879,7 @@ export interface components {
             unit: string
             /**
              * Values
-             * @description [DEVICE] Waveform samples (possibly LTTB-downsampled)
+             * @description Waveform samples (possibly LTTB-downsampled)
              */
             values: number[]
         }
@@ -6890,17 +6890,17 @@ export interface components {
         WaveformInfo: {
             /**
              * Duration Hours
-             * @description [DEVICE] Recorded duration in hours
+             * @description Recorded duration in hours
              */
             duration_hours: number
             /**
              * Sample Count
-             * @description [DEVICE] Number of samples
+             * @description Number of samples
              */
             sample_count: number
             /**
              * Sample Rate
-             * @description [DEVICE] Sample rate (Hz)
+             * @description Sample rate (Hz)
              */
             sample_rate: number
             /** Unit */

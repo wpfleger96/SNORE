@@ -16,12 +16,11 @@ from snore.cli.decorators import (
 from snore.cli.display import (
     console,
     fmt_sig,
+    mark_experimental,
     mark_field,
-    mark_provenance,
     print_footer,
     print_header,
 )
-from snore.provenance import Provenance
 from snore.validation.rera_report import ReraAggregateMetrics
 
 
@@ -87,16 +86,11 @@ async def validate_rera(
         console.print(f"Skipped (error):          {agg.sessions_skipped_error}")
 
         console.print("\nEvent counts / densities (per therapy hour):")
-        machine_re_density = mark_field(
-            f"{fmt_sig(agg.machine_re_density)}/h",
-            ReraAggregateMetrics,
-            "machine_re_density",
-        )
         count_rows = [
             (
-                mark_field("Machine RE", ReraAggregateMetrics, "total_machine_re"),
+                "Machine RE",
                 agg.total_machine_re,
-                machine_re_density,
+                f"{fmt_sig(agg.machine_re_density)}/h",
             ),
             (
                 mark_field("Amplitude", ReraAggregateMetrics, "total_amplitude_reras"),
@@ -121,7 +115,7 @@ async def validate_rera(
 
         if agg.sessions_with_machine_re > 0:
             console.print(
-                f"\n{mark_provenance('Scores', Provenance.EXPERIMENTAL)} over sessions with machine RE (amplitude | proxy):"
+                f"\n{mark_experimental('Scores')} over sessions with machine RE (amplitude | proxy):"
             )
             console.print(
                 f"  Sensitivity (mean):   "
@@ -163,11 +157,11 @@ async def validate_rera(
             shown = scored[:_table_cap]
             if len(scored) > _table_cap:
                 header = (
-                    f"\n{mark_provenance('Scored sessions', Provenance.EXPERIMENTAL)} (top {_table_cap} of {len(scored)} "
+                    f"\n{mark_experimental('Scored sessions')} (top {_table_cap} of {len(scored)} "
                     "by machine RE; amplitude / proxy):"
                 )
             else:
-                header = f"\n{mark_provenance('Scored sessions', Provenance.EXPERIMENTAL)} ({len(scored)}; amplitude / proxy):"
+                header = f"\n{mark_experimental('Scored sessions')} ({len(scored)}; amplitude / proxy):"
             console.print(header)
             console.print(
                 f"{'Date':<12} {'ID':<6} {'RE':<4} "

@@ -211,7 +211,7 @@ def profile_scoped_command(f: Any) -> Any:
     ``CliCtx``, runs the body under ``asyncio.run``, and returns its value.
     ``click.ClickException`` raised inside the body propagates unchanged.
 
-    Provenance markers emitted by the body are collected and their legend is
+    Experimental markers emitted by the body are collected and their legend is
     printed once after it finishes, including when it raises.
 
     An explicit ``--db`` must already exist: since ``init_database`` silently
@@ -220,7 +220,7 @@ def profile_scoped_command(f: Any) -> Any:
     import asyncio  # noqa: PLC0415
     import functools  # noqa: PLC0415
 
-    from snore.cli.display import provenance_legend  # noqa: PLC0415
+    from snore.cli.display import experimental_legend  # noqa: PLC0415
 
     @functools.wraps(f)
     def wrapper(
@@ -237,7 +237,7 @@ def profile_scoped_command(f: Any) -> Any:
             async with profile_session(db, actor_user, actor_profile) as ctx:
                 return await f(ctx, *args, **kwargs)
 
-        with provenance_legend():
+        with experimental_legend():
             return asyncio.run(_run())
 
     return db_option(actor_options(wrapper))

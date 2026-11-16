@@ -51,7 +51,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import experimental_field
 
 
 class ChannelComparison(BaseModel):
@@ -61,25 +61,21 @@ class ChannelComparison(BaseModel):
         default=0,
         description="Number of (SNORE, device) pairs after dropping NaN and zero-device windows",
     )
-    spearman_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    spearman_r: float | None = experimental_field(
         "Spearman r between SNORE per-breath value and device breath-window average; "
         "None if n < 3 or either side is constant",
         default=None,
     )
-    spearman_p: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "p-value for spearman_r", default=None
+    spearman_p: float | None = experimental_field(
+        "p-value for spearman_r", default=None
     )
-    median_abs_error: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    median_abs_error: float | None = experimental_field(
         "Median |SNORE − device| in native units (bpm / mL / s / pp); "
         "None if n_pairs == 0",
         default=None,
     )
-    mean_bias: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean (SNORE − device) in native units; None if n_pairs == 0",
-        default=None,
+    mean_bias: float | None = experimental_field(
+        "Mean (SNORE − device) in native units; None if n_pairs == 0", default=None
     )
     skipped_reason: str | None = Field(
         default=None,
@@ -97,20 +93,14 @@ class ChannelAggregateMetrics(BaseModel):
     sessions_with_data: int = Field(
         description="Sessions where this channel has at least one aligned pair"
     )
-    mean_spearman_r: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean Spearman r over sessions with a non-None spearman_r",
-        default=None,
+    mean_spearman_r: float | None = experimental_field(
+        "Mean Spearman r over sessions with a non-None spearman_r", default=None
     )
-    mean_median_abs_error: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean of per-session median_abs_error over sessions with data",
-        default=None,
+    mean_median_abs_error: float | None = experimental_field(
+        "Mean of per-session median_abs_error over sessions with data", default=None
     )
-    mean_bias: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Mean of per-session mean_bias over sessions with data",
-        default=None,
+    mean_bias: float | None = experimental_field(
+        "Mean of per-session mean_bias over sessions with data", default=None
     )
 
 
@@ -140,9 +130,7 @@ class BreathTrendsSessionValidation(BaseModel):
 
     session_id: int = Field(description="Database session ID")
     date: str = Field(description="Session date (YYYY-MM-DD)")
-    duration_hours: float = provenance_field(
-        Provenance.DEVICE, "Session duration in hours"
-    )
+    duration_hours: float = Field(description="Session duration in hours")
     parser_version: str = Field(description="Waveform parser/import version tag")
     skipped_reason: str | None = Field(
         default=None,
@@ -155,15 +143,12 @@ class BreathTrendsSessionValidation(BaseModel):
             "'error' — unhandled exception during session validation; details in logs."
         ),
     )
-    n_breaths: int = provenance_field(
-        Provenance.EXPERIMENTAL,
-        (
-            "Count of SNORE-segmented leak-valid breaths with timing columns "
-            "fetched for this session.  This is the count BEFORE per-channel alignment filtering, so it is an upper "
-            "bound across all channels; the authoritative per-channel count is each "
-            "channel's `n_pairs`.  Intentionally differs from FL's `n_breaths_compared`, "
-            "which counts breaths used in the FL comparison."
-        ),
+    n_breaths: int = experimental_field(
+        "Count of SNORE-segmented leak-valid breaths with timing columns "
+        "fetched for this session.  This is the count BEFORE per-channel alignment filtering, so it is an upper "
+        "bound across all channels; the authoritative per-channel count is each "
+        "channel's `n_pairs`.  Intentionally differs from FL's `n_breaths_compared`, "
+        "which counts breaths used in the FL comparison.",
         default=0,
     )
     channels: dict[str, ChannelComparison] = Field(

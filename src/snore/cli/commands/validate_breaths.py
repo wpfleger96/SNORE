@@ -13,8 +13,7 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, mark_provenance, print_footer, print_header
-from snore.provenance import Provenance
+from snore.cli.display import console, mark_experimental, print_footer, print_header
 
 
 @click.command()
@@ -78,7 +77,7 @@ async def validate_breaths(
 
         if agg.sessions_compared > 0:
             console.print(
-                f"\n{mark_provenance('Aggregate Metrics', Provenance.EXPERIMENTAL)} (over sessions with channel data):"
+                f"\n{mark_experimental('Aggregate Metrics')} (over sessions with channel data):"
             )
 
             def _fmt(v: float | None, precision: int = 3) -> str:
@@ -109,7 +108,7 @@ async def validate_breaths(
 
         if compared_sessions:
             console.print(
-                f"\n{mark_provenance('Per-Session Results', Provenance.EXPERIMENTAL)} (MAE per channel):"
+                f"\n{mark_experimental('Per-Session Results')} (MAE per channel):"
             )
             console.print(
                 f"{'Date':<12} {'ID':<6} {'N':<6} "

@@ -19,11 +19,9 @@ Absent data is ``null`` with a companion ``*_reason`` field
 (e.g. ``leak_above_24_pct: null, leak_above_24_pct_reason: "channel_absent"``).
 All measurement fields carry their unit in the field name or tool docstring.
 
-Metric fields declare a provenance tier via ``provenance_field`` (the tier
-REST/OpenAPI shows).  ``docs://schemas`` keeps only the experimental tag
-(``[EXPERIMENTAL]`` description prefix, ``x-provenance: experimental``):
-``model_to_schema`` strips the device/derived tags, since an unflagged MCP
-field is device data or computed from it.
+Experimental metric fields are declared with ``experimental_field``
+(``[EXPERIMENTAL]`` description prefix, ``x-provenance: experimental``); an
+untagged field is device data or computed from it.
 """
 
 from __future__ import annotations
@@ -35,12 +33,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field
 
 from snore.metrics import pooled_percentile_description
-from snore.provenance import (
-    IndexSource,
-    Provenance,
-    description_prefix,
-    provenance_field,
-)
+from snore.provenance import IndexSource, experimental_field
 from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
     INDEX_SOURCE_DESCRIPTION,
@@ -170,8 +163,10 @@ class DataOverviewResponse(BaseModel):
     analysis_session_count: int = 0
     apple_health: HealthNightCoverage | None = Field(
         default=None,
-        description="The first and last night dates and the number of nights with "
-        "Apple Health sleep data; null when the profile has none",
+        description=(
+            "The first and last night dates and the number of nights with "
+            "Apple Health sleep data; null when the profile has none"
+        ),
     )
     timezone_status: str = "unknown"
     timezone_name: str | None = None
@@ -184,11 +179,9 @@ class SettingsEpoch(BaseModel):
 
     start_date: date
     end_date: date
-    nights: int = provenance_field(
-        Provenance.DERIVED, "Nights between start_date and end_date."
-    )
-    settings: dict[str, str | None] = provenance_field(
-        Provenance.DEVICE, "Therapy settings recorded by the device."
+    nights: int = Field(description="Nights between start_date and end_date.")
+    settings: dict[str, str | None] = Field(
+        description="Therapy settings recorded by the device."
     )
     changed_keys: list[str] = []
     device_id: int | None = None
@@ -203,9 +196,11 @@ class SettingsTimelineResponse(BaseModel):
     total_epochs: int
     device_capabilities_by_device: dict[str, DeviceCapabilities] = Field(
         default={},
-        description="Capabilities keyed by device_id: a timeline can span "
-        "several devices, so this replaces the single device_capabilities "
-        "field of single-device tools.",
+        description=(
+            "Capabilities keyed by device_id: a timeline can span "
+            "several devices, so this replaces the single device_capabilities "
+            "field of single-device tools."
+        ),
     )
 
 
@@ -235,11 +230,12 @@ class NightlyChannelFields(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    leak_above_24_pct: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Percent of leak samples at or above 24 L/min, OSCAR's time over the "
-        "default redline.",
+    leak_above_24_pct: float | None = Field(
         default=None,
+        description=(
+            "Percent of leak samples at or above 24 L/min, OSCAR's time over the "
+            "default redline."
+        ),
     )
     leak_above_24_pct_reason: str | None = _reason(
         f"Why leak_above_24_pct is null: {_CHANNEL_ABSENT}, 'channel_corrupt' (a "
@@ -249,39 +245,31 @@ class NightlyChannelFields(BaseModel):
 
     # Device flow-limitation ("fl") and snore channels.  Negative sentinel
     # values filtered before aggregation; zeros retained.
-    device_flg_median: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Median of the device flow-limitation channel (0–1 unitless).",
+    device_flg_median: float | None = Field(
         default=None,
+        description="Median of the device flow-limitation channel (0–1 unitless).",
     )
-    device_flg_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        "95th percentile of the device flow-limitation channel (0–1 unitless).",
+    device_flg_95th: float | None = Field(
         default=None,
+        description="95th percentile of the device flow-limitation channel (0–1 unitless).",
     )
-    device_flg_max: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Maximum of the device flow-limitation channel (0–1 unitless).",
+    device_flg_max: float | None = Field(
         default=None,
+        description="Maximum of the device flow-limitation channel (0–1 unitless).",
     )
     device_flg_reason: str | None = _reason(
         "Why the device_flg_* values are null: "
         f"{_CHANNEL_ABSENT_OR_UNDECODABLE} or {_NO_SESSIONS}."
     )
-    snore_median: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Median of the device snore channel (0–5 unitless).",
-        default=None,
+    snore_median: float | None = Field(
+        default=None, description="Median of the device snore channel (0–5 unitless)."
     )
-    snore_95th: float | None = provenance_field(
-        Provenance.DERIVED,
-        "95th percentile of the device snore channel (0–5 unitless).",
+    snore_95th: float | None = Field(
         default=None,
+        description="95th percentile of the device snore channel (0–5 unitless).",
     )
-    snore_pct_time: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Fraction of snore-channel samples (0–1) above 0.5.",
-        default=None,
+    snore_pct_time: float | None = Field(
+        default=None, description="Fraction of snore-channel samples (0–1) above 0.5."
     )
     snore_reason: str | None = _reason(
         "Why snore_median and snore_95th are null: "
@@ -311,9 +299,11 @@ def _respiratory_source(value_field: str) -> Any:
     """The source field of a NightlyRow respiratory value."""
     return Field(
         default=None,
-        description=f"Source of {value_field}: 'device' (the stored summary "
-        "value) or 'derived' (the median of the night's pooled waveform "
-        f"samples); null when {value_field} is null.",
+        description=(
+            f"Source of {value_field}: 'device' (the stored summary "
+            "value) or 'derived' (the median of the night's pooled waveform "
+            f"samples); null when {value_field} is null."
+        ),
     )
 
 
@@ -323,176 +313,162 @@ class NightlyRow(NightlyChannelFields):
     model_config = ConfigDict(populate_by_name=True)
 
     date: date
-    usage_hours: float | None = provenance_field(
-        Provenance.DERIVED, "Mask-on therapy hours for the night.", default=None
+    usage_hours: float | None = Field(
+        default=None, description="Mask-on therapy hours for the night."
     )
     session_count: int = 0
 
     # Headline indices: the device-reported daily value when trusted, otherwise
     # SNORE's recount (index_source says which); the recount, when computable,
     # is in *_computed.
-    ahi: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Headline AHI (events/hr): {HEADLINE_INDEX_DESCRIPTION}.",
-        source_field="index_source",
+    ahi: float | None = Field(
         default=None,
+        description=f"Headline AHI (events/hr): {HEADLINE_INDEX_DESCRIPTION}.",
     )
-    oai: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Obstructive apnea index (events/hr); same source rule as ahi.",
-        source_field="index_source",
+    oai: float | None = Field(
         default=None,
+        description="Obstructive apnea index (events/hr); same source rule as ahi.",
     )
-    cai: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Central apnea index (events/hr); same source rule as ahi.",
-        source_field="index_source",
+    cai: float | None = Field(
         default=None,
+        description="Central apnea index (events/hr); same source rule as ahi.",
     )
-    hi: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Hypopnea index (events/hr); same source rule as ahi.",
-        source_field="index_source",
-        default=None,
+    hi: float | None = Field(
+        default=None, description="Hypopnea index (events/hr); same source rule as ahi."
     )
     index_source: IndexSource | None = Field(
         default=None, description=f"{INDEX_SOURCE_DESCRIPTION}."
     )
-    ahi_computed: float | None = provenance_field(
-        Provenance.DERIVED,
-        "SNORE recount AHI (events/hr): device-scored events over SNORE mask-on "
-        "hours, usage-weighted across sessions; null when there are no mask-on "
-        "hours or no session statistics.",
+    ahi_computed: float | None = Field(
         default=None,
+        description=(
+            "SNORE recount AHI (events/hr): device-scored events over SNORE mask-on "
+            "hours, usage-weighted across sessions; null when there are no mask-on "
+            "hours or no session statistics."
+        ),
     )
-    oai_computed: float | None = provenance_field(
-        Provenance.DERIVED, "SNORE recount OAI (see ahi_computed).", default=None
+    oai_computed: float | None = Field(
+        default=None, description="SNORE recount OAI (see ahi_computed)."
     )
-    cai_computed: float | None = provenance_field(
-        Provenance.DERIVED, "SNORE recount CAI (see ahi_computed).", default=None
+    cai_computed: float | None = Field(
+        default=None, description="SNORE recount CAI (see ahi_computed)."
     )
-    hi_computed: float | None = provenance_field(
-        Provenance.DERIVED, "SNORE recount HI (see ahi_computed).", default=None
+    hi_computed: float | None = Field(
+        default=None, description="SNORE recount HI (see ahi_computed)."
     )
 
-    obstructive_apneas: int | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-scored obstructive apneas, summed across the night's sessions.",
+    obstructive_apneas: int | None = Field(
         default=None,
+        description="Device-scored obstructive apneas, summed across the night's sessions.",
     )
-    central_apneas: int | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-scored central apneas including clear airway events, summed across "
-        "the night's sessions.",
+    central_apneas: int | None = Field(
         default=None,
+        description=(
+            "Device-scored central apneas including clear airway events, summed across "
+            "the night's sessions."
+        ),
     )
-    hypopneas: int | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-scored hypopneas, summed across the night's sessions.",
+    hypopneas: int | None = Field(
         default=None,
+        description="Device-scored hypopneas, summed across the night's sessions.",
     )
-    reras: int | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-scored RERAs, summed across the night's sessions; null with "
-        "reras_reason='not_reported_by_device' when the device has never scored "
-        "one, not a zero.",
+    reras: int | None = Field(
         default=None,
+        description=(
+            "Device-scored RERAs, summed across the night's sessions; null with "
+            "reras_reason='not_reported_by_device' when the device has never scored "
+            "one, not a zero."
+        ),
     )
     reras_reason: str | None = _reason(
         "'not_reported_by_device' when reras is null because the device has never "
         "scored a RERA (absent, not zero)."
     )
-    unclassified_apneas: int | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-scored unclassified apneas, summed across the night's sessions; "
-        "null with unclassified_apneas_reason='not_reported_by_device' when the "
-        "device has never scored one, not a zero.",
+    unclassified_apneas: int | None = Field(
         default=None,
+        description=(
+            "Device-scored unclassified apneas, summed across the night's sessions; "
+            "null with unclassified_apneas_reason='not_reported_by_device' when the "
+            "device has never scored one, not a zero."
+        ),
     )
     unclassified_apneas_reason: str | None = _reason(
         "'not_reported_by_device' when unclassified_apneas is null because the "
         "device has never scored one (absent, not zero)."
     )
 
-    pressure_median_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED,
-        pooled_percentile_description("Median", "pressure", "cmH₂O"),
+    pressure_median_cmh2o: float | None = Field(
         default=None,
+        description=pooled_percentile_description("Median", "pressure", "cmH₂O"),
     )
-    pressure_95th_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED,
-        pooled_percentile_description("95th percentile", "pressure", "cmH₂O"),
+    pressure_95th_cmh2o: float | None = Field(
         default=None,
+        description=pooled_percentile_description(
+            "95th percentile", "pressure", "cmH₂O"
+        ),
     )
-    epap_median_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED,
-        pooled_percentile_description("Median", "EPAP", "cmH₂O"),
+    epap_median_cmh2o: float | None = Field(
         default=None,
+        description=pooled_percentile_description("Median", "EPAP", "cmH₂O"),
     )
 
-    leak_median_lpm: float | None = provenance_field(
-        Provenance.DERIVED,
-        pooled_percentile_description("Median", "leak", "L/min"),
+    leak_median_lpm: float | None = Field(
         default=None,
+        description=pooled_percentile_description("Median", "leak", "L/min"),
     )
-    leak_95th_lpm: float | None = provenance_field(
-        Provenance.DERIVED,
-        pooled_percentile_description("95th percentile", "leak", "L/min"),
+    leak_95th_lpm: float | None = Field(
         default=None,
+        description=pooled_percentile_description("95th percentile", "leak", "L/min"),
     )
-    rr_mean_bpm: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Respiratory rate (breaths/min): {_NIGHT_RESPIRATORY_SOURCE}; "
-        "rr_mean_source says which.",
-        source_field="rr_mean_source",
+    rr_mean_bpm: float | None = Field(
         default=None,
+        description=(
+            f"Respiratory rate (breaths/min): {_NIGHT_RESPIRATORY_SOURCE}; "
+            "rr_mean_source says which."
+        ),
     )
     rr_mean_source: IndexSource | None = _respiratory_source("rr_mean_bpm")
-    tv_mean_ml: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Tidal volume (mL): {_NIGHT_RESPIRATORY_SOURCE}; tv_mean_source says which.",
-        source_field="tv_mean_source",
+    tv_mean_ml: float | None = Field(
         default=None,
+        description=f"Tidal volume (mL): {_NIGHT_RESPIRATORY_SOURCE}; tv_mean_source says which.",
     )
     tv_mean_source: IndexSource | None = _respiratory_source("tv_mean_ml")
-    mv_mean_lpm: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Minute ventilation (L/min): {_NIGHT_RESPIRATORY_SOURCE}; "
-        "mv_mean_source says which.",
-        source_field="mv_mean_source",
+    mv_mean_lpm: float | None = Field(
         default=None,
+        description=(
+            f"Minute ventilation (L/min): {_NIGHT_RESPIRATORY_SOURCE}; "
+            "mv_mean_source says which."
+        ),
     )
     mv_mean_source: IndexSource | None = _respiratory_source("mv_mean_lpm")
 
-    spo2_mean_pct: float | None = provenance_field(
-        Provenance.DERIVED, "Mean SpO₂ (%).", default=None
-    )
+    spo2_mean_pct: float | None = Field(default=None, description="Mean SpO₂ (%).")
 
-    ti_median_s: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Median inspiratory time (s): {_NIGHT_RESPIRATORY_SOURCE}; "
-        "ti_median_source says which. The ResMed stored value is whole "
-        "seconds (STR Ti; observed values are 1.0 or 2.0 s) while the pooled "
-        "waveform median is fine-grained, so the two sources can differ by "
-        "several tenths of a second. When null, ti_median_reason is "
-        f"{_NIGHT_RESPIRATORY_REASONS}.",
-        source_field="ti_median_source",
+    ti_median_s: float | None = Field(
         default=None,
+        description=(
+            f"Median inspiratory time (s): {_NIGHT_RESPIRATORY_SOURCE}; "
+            "ti_median_source says which. The ResMed stored value is whole "
+            "seconds (STR Ti; observed values are 1.0 or 2.0 s) while the pooled "
+            "waveform median is fine-grained, so the two sources can differ by "
+            "several tenths of a second. When null, ti_median_reason is "
+            f"{_NIGHT_RESPIRATORY_REASONS}."
+        ),
     )
     ti_median_source: IndexSource | None = _respiratory_source("ti_median_s")
     ti_median_reason: str | None = _reason(
         f"Why ti_median_s is null: {_NIGHT_RESPIRATORY_REASONS}."
     )
-    ie_ratio_median: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Median I:E ratio: {_NIGHT_RESPIRATORY_SOURCE}; ie_ratio_source says "
-        f"which. When null, ie_ratio_reason is {_NIGHT_RESPIRATORY_REASONS}. "
-        "The STR header's physical dimension is '%' (gain 1, observed values "
-        "about 44-54) and OSCAR reads it unconverted; how the device defines "
-        "that percentage is unconfirmed, so do not compare this value to "
-        "segmented_ie_ratio.",
-        source_field="ie_ratio_source",
+    ie_ratio_median: float | None = Field(
         default=None,
+        description=(
+            f"Median I:E ratio: {_NIGHT_RESPIRATORY_SOURCE}; ie_ratio_source says "
+            f"which. When null, ie_ratio_reason is {_NIGHT_RESPIRATORY_REASONS}. "
+            "The STR header's physical dimension is '%' (gain 1, observed values "
+            "about 44-54) and OSCAR reads it unconverted; how the device defines "
+            "that percentage is unconfirmed, so do not compare this value to "
+            "segmented_ie_ratio."
+        ),
     )
     ie_ratio_source: IndexSource | None = _respiratory_source("ie_ratio_median")
     ie_ratio_reason: str | None = _reason(
@@ -514,8 +490,7 @@ class ExperimentalNightlyRow(BaseModel):
     # DIFFERENT RERA definition from the per-session analysis-time
     # amplitude-crescendo detector (ModeResult.rdi); the two disagree by
     # construction.
-    rera_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    rera_index: float | None = experimental_field(
         "RERA-proxy events per mask-on hour of analyzed sessions, from "
         "flow-limitation runs (FL-run proxy, not device-reported); "
         "rera_index_reason='duration_zero' when those sessions have zero "
@@ -527,8 +502,7 @@ class ExperimentalNightlyRow(BaseModel):
         "RERA-proxy count exists but the analyzed sessions have zero mask-on "
         "hours, so the per-hour rate is undefined)."
     )
-    rdi: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    rdi: float | None = experimental_field(
         "SNORE-recount AHI (ahi_computed) plus the query-time experimental "
         "RERA-proxy index; compare to ahi_computed, not ahi. Inherits "
         "rera_index's fallback FL guesses and their sensitivity to waveform "
@@ -540,8 +514,7 @@ class ExperimentalNightlyRow(BaseModel):
         "'not_available' (the night has no ahi_computed)."
     )
 
-    fl_median: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    fl_median: float | None = experimental_field(
         "Median per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
         "flow-limited; lower = more flow-limited, the opposite direction of "
         "device_flg_*).",
@@ -550,23 +523,20 @@ class ExperimentalNightlyRow(BaseModel):
     fl_median_reason: str | None = _reason(
         f"Why fl_median is null: {_NOT_AVAILABLE_NIGHT}."
     )
-    fl_5th: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    fl_5th: float | None = experimental_field(
         "Nearest-rank 5th-percentile per-breath mid-inspiratory flattening "
         "(~1.0 unimpeded, <0.7 flow-limited; lower = more flow-limited); "
         "equals fl_min when the night has fewer than 20 leak-valid breaths.",
         default=None,
     )
     fl_5th_reason: str | None = _reason(f"Why fl_5th is null: {_NOT_AVAILABLE_NIGHT}.")
-    fl_min: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    fl_min: float | None = experimental_field(
         "Minimum per-breath mid-inspiratory flattening (~1.0 unimpeded, <0.7 "
         "flow-limited; lower = more flow-limited).",
         default=None,
     )
     fl_min_reason: str | None = _reason(f"Why fl_min is null: {_NOT_AVAILABLE_NIGHT}.")
-    fl_class_ge4_pct: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    fl_class_ge4_pct: float | None = experimental_field(
         "Percent of leak-valid, rule-matched classified breaths with "
         "flow_class >= 4; the confidence gate excludes fallback guesses "
         "(flow-limitation proxy).",
@@ -575,8 +545,7 @@ class ExperimentalNightlyRow(BaseModel):
     fl_class_ge4_pct_reason: str | None = _reason(
         f"Why fl_class_ge4_pct is null: {_NOT_AVAILABLE_NIGHT}."
     )
-    rera_proxy_count: int | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    rera_proxy_count: int | None = experimental_field(
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
         "ending in a recovery breath, over stored breath rows. "
         f"{RERA_PROXY_FALLBACK_NOTE}",
@@ -590,16 +559,13 @@ class ExperimentalNightlyRow(BaseModel):
     # (rera_proxy_count non-null), null otherwise.
     rera_proxy_version: str | None = None
 
-    segmented_ti_median_s: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Median inspiratory time (s) over SNORE-segmented breaths.",
-        default=None,
+    segmented_ti_median_s: float | None = experimental_field(
+        "Median inspiratory time (s) over SNORE-segmented breaths.", default=None
     )
     segmented_ti_median_reason: str | None = _reason(
         f"Why segmented_ti_median_s is null: {_NOT_AVAILABLE_NIGHT}."
     )
-    segmented_ie_ratio: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    segmented_ie_ratio: float | None = experimental_field(
         "Median I:E ratio over SNORE-segmented breaths (unitless Ti/Te); not "
         "comparable to the device ie_ratio_median.",
         default=None,
@@ -608,8 +574,7 @@ class ExperimentalNightlyRow(BaseModel):
         f"Why segmented_ie_ratio is null: {_NOT_AVAILABLE_NIGHT}."
     )
 
-    periodic_breathing_pct: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    periodic_breathing_pct: float | None = experimental_field(
         "Percent of analyzed (OK-session) time in periodic-breathing episodes "
         "found by analysis; 0.0 when detection ran and found none.",
         default=None,
@@ -629,14 +594,12 @@ class ComplianceFields(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     threshold_hours: float
-    days_compliant: int = provenance_field(
-        Provenance.DERIVED, "Calendar nights with usage at or above threshold_hours."
+    days_compliant: int = Field(
+        description="Calendar nights with usage at or above threshold_hours."
     )
-    days_total: int = provenance_field(
-        Provenance.DERIVED, "Calendar nights in the requested range."
-    )
-    compliance_pct: float = provenance_field(
-        Provenance.DERIVED, "days_compliant as a percent of days_total."
+    days_total: int = Field(description="Calendar nights in the requested range.")
+    compliance_pct: float = Field(
+        description="days_compliant as a percent of days_total."
     )
 
 
@@ -673,9 +636,11 @@ class NightDetailResponse(BaseModel):
     date: date
     device: DayDetail | None = Field(
         default=None,
-        description="The device night as GET /days/{date} serves it; null when the "
-        "date has none. health_sleep is the Day page's Apple Health summary; "
-        "apple_health is the fuller Apple night",
+        description=(
+            "The device night as GET /days/{date} serves it; null when the "
+            "date has none. health_sleep is the Day page's Apple Health summary; "
+            "apple_health is the fuller Apple night"
+        ),
     )
     sessions: list[NightSession] = Field(
         default_factory=list, description="The device night's sessions by start"
@@ -690,8 +655,10 @@ class AppleSleepStagesResponse(BaseModel):
 
     date: date
     stages: list[HealthSampleRead] = Field(
-        description="The night's Apple Health sleep-stage samples by start time; "
-        "value_text is the stage. Apple Health local wall-clock times"
+        description=(
+            "The night's Apple Health sleep-stage samples by start time; "
+            "value_text is the stage. Apple Health local wall-clock times"
+        )
     )
 
 
@@ -699,8 +666,10 @@ class AppleHealthNightsResponse(BaseModel):
     """Response from get_apple_health_nights."""
 
     nights: list[HealthNightSummaryRead] = Field(
-        description="Nights with Apple Health sleep data, newest first, as the web "
-        "Apple Health page lists them"
+        description=(
+            "Nights with Apple Health sleep data, newest first, as the web "
+            "Apple Health page lists them"
+        )
     )
     total_nights: int
     page: int
@@ -748,32 +717,31 @@ class EventContext(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     # Null companions' reasons live on EventRow.
-    pressure_at_event_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED,
-        f"Mean pressure over ±5 s around the event start (cmH₂O). {_END_ANCHOR_NOTE}",
+    pressure_at_event_cmh2o: float | None = Field(
         default=None,
+        description=f"Mean pressure over ±5 s around the event start (cmH₂O). {_END_ANCHOR_NOTE}",
     )
-    leak_at_event_lpm: float | None = provenance_field(
-        Provenance.DERIVED,
-        f"Mean leak over ±5 s around the event start (L/min). {_END_ANCHOR_NOTE}",
+    leak_at_event_lpm: float | None = Field(
         default=None,
+        description=f"Mean leak over ±5 s around the event start (L/min). {_END_ANCHOR_NOTE}",
     )
-    mv_prior_120s_lpm: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Mean of the device minute-ventilation channel over the 120 s before "
-        f"the event (L/min). {_PRIOR_WINDOW_NOTE}",
+    mv_prior_120s_lpm: float | None = Field(
         default=None,
+        description=(
+            "Mean of the device minute-ventilation channel over the 120 s before "
+            f"the event (L/min). {_PRIOR_WINDOW_NOTE}"
+        ),
     )
-    minutes_since_session_start: float | None = provenance_field(
-        Provenance.DEVICE,
-        f"Event start relative to session start (min). {_END_ANCHOR_NOTE}",
+    minutes_since_session_start: float | None = Field(
         default=None,
+        description=f"Event start relative to session start (min). {_END_ANCHOR_NOTE}",
     )
-    ps_delivered_cmh2o: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Delivered pressure support: mean(therapy pressure − EPAP) over ±5 s "
-        f"around the event start (cmH₂O). {_END_ANCHOR_NOTE}",
+    ps_delivered_cmh2o: float | None = Field(
         default=None,
+        description=(
+            "Delivered pressure support: mean(therapy pressure − EPAP) over ±5 s "
+            f"around the event start (cmH₂O). {_END_ANCHOR_NOTE}"
+        ),
     )
 
 
@@ -804,28 +772,31 @@ class EventRowBase(BaseModel):
 class EventRow(EventRowBase):
     """A single respiratory event with inline context."""
 
-    duration_seconds: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Device-recorded event duration (s); null with "
-        "duration_reason='not_recorded_by_device' when the device recorded none, "
-        "which is always the case for ResMed hypopneas and RERAs.",
+    duration_seconds: float | None = Field(
         default=None,
+        description=(
+            "Device-recorded event duration (s); null with "
+            "duration_reason='not_recorded_by_device' when the device recorded none, "
+            "which is always the case for ResMed hypopneas and RERAs."
+        ),
     )
     duration_reason: str | None = _reason(
         "'not_recorded_by_device' when duration_seconds is null (always for "
         "ResMed hypopneas and RERAs)."
     )
-    spo2_drop_pct: float | None = provenance_field(
-        Provenance.DEVICE,
-        "SpO₂ drop during the event (%), from the events table; null when the "
-        "source did not record it (no parser fills it today).",
+    spo2_drop_pct: float | None = Field(
         default=None,
+        description=(
+            "SpO₂ drop during the event (%), from the events table; null when the "
+            "source did not record it (no parser fills it today)."
+        ),
     )
-    peak_flow_limitation: float | None = provenance_field(
-        Provenance.DEVICE,
-        "Peak device flow-limitation value during the event, from the events "
-        "table; null when the source did not record it (no parser fills it today).",
+    peak_flow_limitation: float | None = Field(
         default=None,
+        description=(
+            "Peak device flow-limitation value during the event, from the events "
+            "table; null when the source did not record it (no parser fills it today)."
+        ),
     )
     # Context reasons are null when include_context=false.
     pressure_reason: str | None = _reason(
@@ -847,8 +818,9 @@ class EventRow(EventRowBase):
     )
     context: EventContext | None = Field(
         default=None,
-        description="Device-channel means around the event; null when "
-        "include_context=false.",
+        description=(
+            "Device-channel means around the event; null when include_context=false."
+        ),
     )
 
 
@@ -886,8 +858,7 @@ class ExperimentalEventContextRow(EventRowBase):
     Null values carry the companion ``*_reason`` field.
     """
 
-    mv_prior_120s_lpm: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    mv_prior_120s_lpm: float | None = experimental_field(
         "Mean minute ventilation over the 120 s before the event (L/min); may "
         f"be flow-derived, see mv_source. {_PRIOR_WINDOW_NOTE}",
         default=None,
@@ -897,8 +868,7 @@ class ExperimentalEventContextRow(EventRowBase):
         "a corrupt one, an event at the session start, or no samples in the "
         "window)."
     )
-    preceding_mv_slope_lpm_per_min: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    preceding_mv_slope_lpm_per_min: float | None = experimental_field(
         "Least-squares MV slope over the 60 s before the event (L/min per min). "
         f"{_PRIOR_WINDOW_NOTE}",
         default=None,
@@ -907,8 +877,7 @@ class ExperimentalEventContextRow(EventRowBase):
         "'not_available' when preceding_mv_slope_lpm_per_min is null (no MV "
         "series, or fewer than 2 MV samples in the 60 s window)."
     )
-    stability_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    stability_index: float | None = experimental_field(
         f"MV stdev / mean (CV) over the 60 s before the event. {_PRIOR_WINDOW_NOTE}",
         default=None,
     )
@@ -918,9 +887,11 @@ class ExperimentalEventContextRow(EventRowBase):
     )
     mv_source: str | None = Field(
         default=None,
-        description="MV series behind the three MV metrics: 'device' (device MV "
-        "channel), 'flow_derived' (computed from the flow waveform because the "
-        "device recorded no MV) or null (no MV or flow channel).",
+        description=(
+            "MV series behind the three MV metrics: 'device' (device MV "
+            "channel), 'flow_derived' (computed from the flow waveform because the "
+            "device recorded no MV) or null (no MV or flow channel)."
+        ),
     )
 
 
@@ -930,8 +901,10 @@ class ExperimentalEventContextResponse(EventsResponseBase):
     events: list[ExperimentalEventContextRow]
     mv_fallback_version: str | None = Field(
         default=None,
-        description="Version of the flow-derived MV fallback; non-null only when "
-        "some returned event has mv_source 'flow_derived'.",
+        description=(
+            "Version of the flow-derived MV fallback; non-null only when "
+            "some returned event has mv_source 'flow_derived'."
+        ),
     )
 
 
@@ -944,8 +917,8 @@ class CapabilityEntry(BaseModel):
     description: str
     unit: str | None = None
     present_in_dataset: bool
-    sample_rate_hz: float | None = provenance_field(
-        Provenance.DEVICE, "Channel sample rate (Hz).", default=None
+    sample_rate_hz: float | None = Field(
+        default=None, description="Channel sample rate (Hz)."
     )
 
 
@@ -989,93 +962,87 @@ class BreathTableRow(BaseModel):
     end_offset_seconds: float
     # Every measurement below comes from SNORE breath segmentation and
     # classification of the flow waveform.
-    ti_s: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Inspiratory time (s).", default=None
+    ti_s: float | None = experimental_field("Inspiratory time (s).", default=None)
+    te_s: float | None = experimental_field("Expiratory time (s).", default=None)
+    ttot_s: float | None = experimental_field("Total breath time (s).", default=None)
+    ie_ratio: float | None = experimental_field(
+        "Inspiratory:expiratory time ratio.", default=None
     )
-    te_s: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Expiratory time (s).", default=None
+    duty_cycle: float | None = experimental_field("Ti / Ttot.", default=None)
+    peak_insp_flow_lpm: float | None = experimental_field(
+        "Peak inspiratory flow (L/min).", default=None
     )
-    ttot_s: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Total breath time (s).", default=None
+    peak_exp_flow_lpm: float | None = experimental_field(
+        "Peak expiratory flow (L/min).", default=None
     )
-    ie_ratio: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Inspiratory:expiratory time ratio.", default=None
+    tidal_volume_ml: float | None = experimental_field(
+        "Tidal volume integrated from the flow waveform (mL).", default=None
     )
-    duty_cycle: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Ti / Ttot.", default=None
+    flatness_index: float | None = experimental_field(
+        "Inspiratory flatness index.", default=None
     )
-    peak_insp_flow_lpm: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Peak inspiratory flow (L/min).", default=None
+    mid_insp_flattening: float | None = experimental_field(
+        "Mid-inspiratory flattening score.", default=None
     )
-    peak_exp_flow_lpm: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Peak expiratory flow (L/min).", default=None
+    flow_class: int | None = experimental_field(
+        "Flow-limitation class (1–7).", default=None
     )
-    tidal_volume_ml: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Tidal volume integrated from the flow waveform (mL).",
-        default=None,
+    flow_class_confidence: float | None = experimental_field(
+        "Classifier confidence for flow_class.", default=None
     )
-    flatness_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Inspiratory flatness index.", default=None
+    is_recovery_breath: bool | None = experimental_field(
+        "Analysis-time recovery-breath flag (ends a RERA candidate).", default=None
     )
-    mid_insp_flattening: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Mid-inspiratory flattening score.", default=None
+    trigger_type: str | None = experimental_field(
+        "Inferred trigger type (heuristic).", default=None
     )
-    flow_class: int | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Flow-limitation class (1–7).", default=None
+    cycle_type: str | None = experimental_field(
+        "Inferred cycle type (heuristic).", default=None
     )
-    flow_class_confidence: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Classifier confidence for flow_class.", default=None
-    )
-    is_recovery_breath: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Analysis-time recovery-breath flag (ends a RERA candidate).",
-        default=None,
-    )
-    trigger_type: str | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Inferred trigger type (heuristic).", default=None
-    )
-    cycle_type: str | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Inferred cycle type (heuristic).", default=None
-    )
-    trigger_cycle_confidence: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Confidence of the trigger/cycle inference.",
-        default=None,
+    trigger_cycle_confidence: float | None = experimental_field(
+        "Confidence of the trigger/cycle inference.", default=None
     )
     trigger_cycle_applicability: str | None = None
     trigger_cycle_reason: str | None = Field(
         default=None,
-        description="Stored analysis code; currently 'unvalidated_device' when "
-        "trigger/cycle inference is not validated for this device, so "
-        "trigger_type and cycle_type are null.",
+        description=(
+            "Stored analysis code; currently 'unvalidated_device' when "
+            "trigger/cycle inference is not validated for this device, so "
+            "trigger_type and cycle_type are null."
+        ),
     )
-    leak_valid: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Breath is free of excess leak.", default=None
+    leak_valid: bool | None = experimental_field(
+        "Breath is free of excess leak.", default=None
     )
     leak_valid_reason: str | None = Field(
         default=None,
-        description="Stored analysis code when leak_valid is null; currently "
-        "'channel_absent' (no leak channel) or 'channel_unaligned' (the nearest "
-        "leak sample is more than 5 s from the breath).",
+        description=(
+            "Stored analysis code when leak_valid is null; currently "
+            "'channel_absent' (no leak channel) or 'channel_unaligned' (the nearest "
+            "leak sample is more than 5 s from the breath)."
+        ),
     )
-    ramp_active: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Breath falls in the pressure ramp.", default=None
+    ramp_active: bool | None = experimental_field(
+        "Breath falls in the pressure ramp.", default=None
     )
     ramp_active_reason: str | None = Field(
         default=None,
-        description="Stored analysis code when ramp_active is null; currently "
-        "'not_available' (ramp enable or ramp time unknown) or "
-        "'smart_ramp_indeterminate' (SmartRamp ends on sleep detection, not a "
-        "timer, so the ramp period cannot be placed).",
+        description=(
+            "Stored analysis code when ramp_active is null; currently "
+            "'not_available' (ramp enable or ramp time unknown) or "
+            "'smart_ramp_indeterminate' (SmartRamp ends on sleep detection, not a "
+            "timer, so the ramp period cannot be placed)."
+        ),
     )
-    mask_off: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Breath falls in a mask-off period.", default=None
+    mask_off: bool | None = experimental_field(
+        "Breath falls in a mask-off period.", default=None
     )
     mask_off_reason: str | None = Field(
         default=None,
-        description="Stored analysis code when mask_off is null; currently "
-        "'segments_unknown' (the session's mask-on segments are unknown).",
+        description=(
+            "Stored analysis code when mask_off is null; currently "
+            "'segments_unknown' (the session's mask-on segments are unknown)."
+        ),
     )
 
 
@@ -1089,30 +1056,24 @@ class BreathTableBin(BaseModel):
     timezone_name: str | None = None  # IANA name when user_declared
     bin_start_offset: float
     bin_end_offset: float
-    breath_count: int = provenance_field(
-        Provenance.EXPERIMENTAL, "SNORE-segmented breaths in the bin."
+    breath_count: int = experimental_field("SNORE-segmented breaths in the bin.")
+    flatness_index_median: float | None = experimental_field(
+        "Median flatness index in the bin.", default=None
     )
-    flatness_index_median: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Median flatness index in the bin.", default=None
+    mid_insp_flattening_median: float | None = experimental_field(
+        "Median mid-inspiratory flattening in the bin.", default=None
     )
-    mid_insp_flattening_median: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Median mid-inspiratory flattening in the bin.",
-        default=None,
+    flow_class_mode: int | None = experimental_field(
+        "Most common flow class in the bin.", default=None
     )
-    flow_class_mode: int | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Most common flow class in the bin.", default=None
+    tidal_volume_median_ml: float | None = experimental_field(
+        "Median tidal volume in the bin (mL).", default=None
     )
-    tidal_volume_median_ml: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Median tidal volume in the bin (mL).", default=None
+    ie_ratio_median: float | None = experimental_field(
+        "Median I:E ratio in the bin.", default=None
     )
-    ie_ratio_median: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Median I:E ratio in the bin.", default=None
-    )
-    leak_valid_fraction: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Fraction of breaths in the bin flagged leak-valid.",
-        default=None,
+    leak_valid_fraction: float | None = experimental_field(
+        "Fraction of breaths in the bin flagged leak-valid.", default=None
     )
     analysis_status: str
 
@@ -1128,9 +1089,11 @@ class BreathTableResponse(BaseModel):
     timezone_status: str = "unknown"
     timezone_name: str | None = None  # IANA name when user_declared
     analysis_status: str = Field(
-        description="'ok' (results present), 'not_run' (no analysis run) or "
-        "'stale_version' (the latest analysis is from an older algorithm "
-        "version)."
+        description=(
+            "'ok' (results present), 'not_run' (no analysis run) or "
+            "'stale_version' (the latest analysis is from an older algorithm "
+            "version)."
+        )
     )
     algo_versions: dict[str, Any] | None = None
     null_reason: str | None = _reason(
@@ -1140,11 +1103,13 @@ class BreathTableResponse(BaseModel):
         "from an older algorithm version; re-run it)."
     )
     is_binned: bool = Field(
-        description="True when bin_minutes was set: bins is populated and rows "
-        "is empty; false for raw rows."
+        description=(
+            "True when bin_minutes was set: bins is populated and rows "
+            "is empty; false for raw rows."
+        )
     )
-    total_breaths: int = provenance_field(
-        Provenance.EXPERIMENTAL, "SNORE-segmented breaths matching the query."
+    total_breaths: int = experimental_field(
+        "SNORE-segmented breaths matching the query."
     )
     page: int
     page_size: int
@@ -1183,23 +1148,22 @@ class WindowRow(BaseModel):
     window_start_offset: float
     window_end_offset: float
     reason_summary: str
-    worst_mid_insp_flattening: float | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    worst_mid_insp_flattening: float | None = experimental_field(
         "Lowest (most flow-limited) mid-inspiratory flattening in the window's "
         "anchor breath or FL run.",
         default=None,
     )
-    fl_run_length: int | None = provenance_field(
-        Provenance.EXPERIMENTAL,
-        "Length (breaths) of the flow-limitation run.",
-        default=None,
+    fl_run_length: int | None = experimental_field(
+        "Length (breaths) of the flow-limitation run.", default=None
     )
     anchor_event_offset: float | None = None
     analysis_result_id: int | None = None
     analysis_status: str = Field(
-        description=f"{_SESSION_ANALYSIS_STATUS} Always 'ok' for the FL-ranked "
-        "criteria, which read only sessions with a current analysis; ca_centered "
-        "windows can carry any value."
+        description=(
+            f"{_SESSION_ANALYSIS_STATUS} Always 'ok' for the FL-ranked "
+            "criteria, which read only sessions with a current analysis; ca_centered "
+            "windows can carry any value."
+        )
     )
     analysis_reason: str | None = _reason(
         "'analysis_not_run' when the window's session has no analysis "
@@ -1220,11 +1184,13 @@ class FindWindowsResponse(BaseModel):
     )
     criterion: str
     day_status: str = Field(
-        description="The date's sessions together: 'ok' (all have a current "
-        "analysis), 'not_run' (none analyzed, or no enabled session), 'stale' "
-        "(all analyses from an older algorithm version), 'partial' (any other "
-        "mix) or 'mixed_version' (current analyses with different algorithm "
-        f"versions; {_RESERVED_VERSION_CODE})."
+        description=(
+            "The date's sessions together: 'ok' (all have a current "
+            "analysis), 'not_run' (none analyzed, or no enabled session), 'stale' "
+            "(all analyses from an older algorithm version), 'partial' (any other "
+            "mix) or 'mixed_version' (current analyses with different algorithm "
+            f"versions; {_RESERVED_VERSION_CODE})."
+        )
     )
     session_coverage: list[SessionCoverageEntry] = Field(
         default=[], description="Per-session analysis status."
@@ -1246,13 +1212,15 @@ class FindWindowsResponse(BaseModel):
     )
     primary_mode: str | None = Field(
         default=None,
-        description="The sessions' shared primary detection mode; null when "
-        "they mix modes.",
+        description=(
+            "The sessions' shared primary detection mode; null when they mix modes."
+        ),
     )
     windows: list[WindowRow] = Field(
         default=[],
-        description="Worst first; for ca_centered, smallest CA offset from "
-        "session start first.",
+        description=(
+            "Worst first; for ca_centered, smallest CA offset from session start first."
+        ),
     )
     device_capabilities: DeviceCapabilities | None = None
 
@@ -1271,22 +1239,16 @@ class EpochSpec(BaseModel):
 class EpochDistribution(BaseModel):
     """Descriptive stats for one metric over one epoch (leak-valid breaths only).
 
-    The stats are derived; the containing ``EpochStats`` field's tier applies
-    when it is less certain (experimental for breath features).
+    The stats are computed from the epoch's values, and are experimental when
+    the containing ``EpochStats`` field is (breath features).
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    median: float | None = provenance_field(Provenance.DERIVED, "Median.", default=None)
-    iqr: float | None = provenance_field(
-        Provenance.DERIVED, "Interquartile range.", default=None
-    )
-    p95: float | None = provenance_field(
-        Provenance.DERIVED, "95th percentile.", default=None
-    )
-    n_breaths: int = provenance_field(
-        Provenance.DERIVED, "Count of leak-valid breaths in the epoch."
-    )
+    median: float | None = Field(default=None, description="Median.")
+    iqr: float | None = Field(default=None, description="Interquartile range.")
+    p95: float | None = Field(default=None, description="95th percentile.")
+    n_breaths: int = Field(description="Count of leak-valid breaths in the epoch.")
     n_nights: int
 
 
@@ -1295,20 +1257,18 @@ class DeviceEpochDistribution(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    median: float | None = provenance_field(Provenance.DERIVED, "Median.", default=None)
-    iqr: float | None = provenance_field(
-        Provenance.DERIVED, "Interquartile range.", default=None
-    )
-    p95: float | None = provenance_field(
-        Provenance.DERIVED, "95th percentile.", default=None
-    )
-    n_samples: int = provenance_field(
-        Provenance.DERIVED, "Count of valid device-channel samples.", default=0
+    median: float | None = Field(default=None, description="Median.")
+    iqr: float | None = Field(default=None, description="Interquartile range.")
+    p95: float | None = Field(default=None, description="95th percentile.")
+    n_samples: int = Field(
+        default=0, description="Count of valid device-channel samples."
     )
     n_nights: int = Field(
         default=0,
-        description="Calendar nights with at least one valid sample; a "
-        "two-session night counts once.",
+        description=(
+            "Calendar nights with at least one valid sample; a "
+            "two-session night counts once."
+        ),
     )
 
 
@@ -1344,22 +1304,18 @@ class EpochStats(BaseModel):
         "version_warnings."
     )
     primary_mode: str | None = None
-    mid_insp_flattening: EpochDistribution = provenance_field(
-        Provenance.EXPERIMENTAL, "Per-breath mid-inspiratory flattening."
+    mid_insp_flattening: EpochDistribution = experimental_field(
+        "Per-breath mid-inspiratory flattening."
     )
-    flatness_index: EpochDistribution = provenance_field(
-        Provenance.EXPERIMENTAL, "Per-breath flatness index."
-    )
-    flow_class_distribution: dict[str, int] = provenance_field(
-        Provenance.EXPERIMENTAL,
+    flatness_index: EpochDistribution = experimental_field("Per-breath flatness index.")
+    flow_class_distribution: dict[str, int] = experimental_field(
         "Breath counts by flow class (string keys '0', '1', ..., as JSON object "
         "keys are strings), rule-matched FL classifications only (classifier "
         "confidence clears the default gate); the class>=4 fraction reconciles "
         "with experimental_get_nightly_metrics' fl_class_ge4_pct.",
         default_factory=dict,
     )
-    flow_class_distribution_fallback: dict[str, int] = provenance_field(
-        Provenance.EXPERIMENTAL,
+    flow_class_distribution_fallback: dict[str, int] = experimental_field(
         "Low-confidence fallback guesses: breaths triaged on flatness alone when "
         "no shape rule matched, stamped at exactly the default confidence, "
         "reported separately from flow_class_distribution so they "
@@ -1367,14 +1323,11 @@ class EpochStats(BaseModel):
         "are excluded from both distributions.",
         default_factory=dict,
     )
-    tidal_volume_ml: EpochDistribution = provenance_field(
-        Provenance.EXPERIMENTAL, "Per-breath tidal volume integrated from flow (mL)."
+    tidal_volume_ml: EpochDistribution = experimental_field(
+        "Per-breath tidal volume integrated from flow (mL)."
     )
-    ie_ratio: EpochDistribution = provenance_field(
-        Provenance.EXPERIMENTAL, "Per-breath I:E ratio."
-    )
-    rera_proxy_count: int | None = provenance_field(
-        Provenance.EXPERIMENTAL,
+    ie_ratio: EpochDistribution = experimental_field("Per-breath I:E ratio.")
+    rera_proxy_count: int | None = experimental_field(
         "Count from the query-time FL-run proxy: runs of flow_class >= 4 "
         f"ending in a recovery breath. {RERA_PROXY_FALLBACK_NOTE}",
         default=None,
@@ -1417,16 +1370,16 @@ class DeviceEpochStats(BaseModel):
         description="Representative therapy settings observed in the epoch.",
     )
     # Null stats when the channel has no valid samples in the epoch's sessions.
-    device_flg: DeviceEpochDistribution = provenance_field(
-        Provenance.DERIVED,
-        "Device flow-limitation channel samples (0–1 unitless), excluding "
-        "negative sentinels.",
+    device_flg: DeviceEpochDistribution = Field(
         default_factory=DeviceEpochDistribution,
+        description=(
+            "Device flow-limitation channel samples (0–1 unitless), excluding "
+            "negative sentinels."
+        ),
     )
-    snore_dist: DeviceEpochDistribution = provenance_field(
-        Provenance.DERIVED,
-        "Device snore channel samples (0–5 unitless), zeros included.",
+    snore_dist: DeviceEpochDistribution = Field(
         default_factory=DeviceEpochDistribution,
+        description="Device snore channel samples (0–5 unitless), zeros included.",
     )
 
 
@@ -1445,10 +1398,12 @@ class CompareEpochsResponse(BaseModel):
     )
     rx_violations: list[EpochRxViolationRow] = Field(
         default=[],
-        description="Therapy-settings changes inside each epoch's date range; "
-        "split affected epochs at change_dates. Sessions with no recorded "
-        "settings are skipped, so a change is reported only between sessions "
-        "that both have settings.",
+        description=(
+            "Therapy-settings changes inside each epoch's date range; "
+            "split affected epochs at change_dates. Sessions with no recorded "
+            "settings are skipped, so a change is reported only between sessions "
+            "that both have settings."
+        ),
     )
 
 
@@ -1467,17 +1422,21 @@ class ExperimentalCompareEpochsResponse(BaseModel):
     )
     rx_violations: list[EpochRxViolationRow] = Field(
         default=[],
-        description="Therapy-settings changes inside each epoch's date range; "
-        "split affected epochs at change_dates. Sessions with no recorded "
-        "settings are skipped, so a change is reported only between sessions "
-        "that both have settings.",
+        description=(
+            "Therapy-settings changes inside each epoch's date range; "
+            "split affected epochs at change_dates. Sessions with no recorded "
+            "settings are skipped, so a change is reported only between sessions "
+            "that both have settings."
+        ),
     )
     version_warnings: list[str] = Field(
         default=[],
-        description="One message per algorithm-identity field (or "
-        "rera_proxy_version) that differs across the epochs' sessions; "
-        "distributions are still computed. Always empty today ("
-        f"{_RESERVED_VERSION_CODE}, and rera_proxy_version is a single constant).",
+        description=(
+            "One message per algorithm-identity field (or "
+            "rera_proxy_version) that differs across the epochs' sessions; "
+            "distributions are still computed. Always empty today ("
+            f"{_RESERVED_VERSION_CODE}, and rera_proxy_version is a single constant)."
+        ),
     )
 
 
@@ -1493,22 +1452,21 @@ class WaveformChannelSchema(BaseModel):
 
     channel_type: str
     unit: str | None = None
-    sample_rate_hz: float = provenance_field(
-        Provenance.DEVICE, "Channel sample rate (Hz)."
-    )
+    sample_rate_hz: float = Field(description="Channel sample rate (Hz).")
     offset_seconds: list[float] = Field(
         description="Sample positions in seconds from the session start."
     )
-    values: list[float] = provenance_field(
-        Provenance.DEVICE,
-        "Device samples; when is_downsampled, LTTB keeps a subset of them. "
-        "Categorical channels (trigger_cycle) are never LTTB-thinned: with "
-        "max_points they keep the first sample of each run of equal codes, both "
-        "edges of each recording (mask-off) gap, and the last sample, so the "
-        "result may exceed max_points. Read each categorical value as holding "
-        "until the next offset; two equal consecutive values mark a gap (or the "
-        "window's end). sample_rate_hz is the device's recording rate, not the "
-        "spacing of the returned points.",
+    values: list[float] = Field(
+        description=(
+            "Device samples; when is_downsampled, LTTB keeps a subset of them. "
+            "Categorical channels (trigger_cycle) are never LTTB-thinned: with "
+            "max_points they keep the first sample of each run of equal codes, both "
+            "edges of each recording (mask-off) gap, and the last sample, so the "
+            "result may exceed max_points. Read each categorical value as holding "
+            "until the next offset; two equal consecutive values mark a gap (or the "
+            "window's end). sample_rate_hz is the device's recording rate, not the "
+            "spacing of the returned points."
+        )
     )
     original_sample_count: int  # pre-downsampling count within the window
     # True when fewer samples were returned than the raw window held: a
@@ -1524,26 +1482,34 @@ class WaveformWindowResponse(BaseModel):
     session_id: int | None = None  # null when no session on the date
     session_start_wall_clock: str | None = Field(
         default=None,
-        description="ISO 8601 device wall-clock of the session start; "
-        "offset-qualified when timezone_status is 'user_declared', else naive. "
-        "Null when session_id is null.",
+        description=(
+            "ISO 8601 device wall-clock of the session start; "
+            "offset-qualified when timezone_status is 'user_declared', else naive. "
+            "Null when session_id is null."
+        ),
     )
     timezone_status: str = Field(
         default="unknown",
-        description="'unknown', or 'user_declared' when the profile declares an "
-        "IANA timezone (carried in timezone_name).",
+        description=(
+            "'unknown', or 'user_declared' when the profile declares an "
+            "IANA timezone (carried in timezone_name)."
+        ),
     )
     timezone_name: str | None = Field(
         default=None,
-        description="The profile's declared IANA timezone; null when "
-        "timezone_status is 'unknown'.",
+        description=(
+            "The profile's declared IANA timezone; null when "
+            "timezone_status is 'unknown'."
+        ),
     )
     window_start_offset_s: float
     window_end_offset_s: float
     channels: list[WaveformChannelSchema]
     missing_channels: list[str] = Field(
-        description="Requested channels the device did not record, or every "
-        "requested channel when the date has no session; not an error."
+        description=(
+            "Requested channels the device did not record, or every "
+            "requested channel when the date has no session; not an error."
+        )
     )
     missing_channel_reason: str | None = _reason(
         "'channel_absent' when missing_channels is non-empty."
@@ -1599,33 +1565,6 @@ SCHEMA_MODEL_MAP: dict[str, type[BaseModel]] = {
 }
 
 
-_UNFLAGGED_TIERS = (Provenance.DEVICE, Provenance.DERIVED)
-
-
-def _strip_unflagged_tiers(node: Any) -> None:
-    """Remove device/derived tags in place, keeping experimental ones."""
-    if isinstance(node, list):
-        for item in node:
-            _strip_unflagged_tiers(item)
-        return
-    if not isinstance(node, dict):
-        return
-    if node.get("x-provenance") in _UNFLAGGED_TIERS:
-        del node["x-provenance"]
-        node.pop("x-provenance-source", None)
-    description = node.get("description")
-    if isinstance(description, str):
-        for tier in _UNFLAGGED_TIERS:
-            description = description.removeprefix(description_prefix(tier))
-        node["description"] = description
-    for value in node.values():
-        _strip_unflagged_tiers(value)
-
-
 def model_to_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """JSON schema for a Pydantic model, tagging only experimental fields."""
-    # model_json_schema builds a fresh dict on every call, so editing it in place
-    # cannot leak into Pydantic's cached core schema.
-    schema = model.model_json_schema(mode="serialization")
-    _strip_unflagged_tiers(schema)
-    return schema
+    """Serialization-mode JSON schema for a Pydantic model (``docs://schemas``)."""
+    return model.model_json_schema(mode="serialization")

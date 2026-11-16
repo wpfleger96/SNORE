@@ -15,8 +15,7 @@ from snore.cli.decorators import (
     date_range_options_required,
     profile_scoped_command,
 )
-from snore.cli.display import console, mark_provenance, print_header
-from snore.provenance import Provenance
+from snore.cli.display import console, mark_experimental, print_header
 
 
 def _fmt_r(v: float | None) -> str:
@@ -101,9 +100,7 @@ async def validate_apple(
         )
 
         corr_table = Table(
-            title=mark_provenance(
-                "Cross-source Spearman correlations", Provenance.EXPERIMENTAL
-            )
+            title=mark_experimental("Cross-source Spearman correlations")
         )
         corr_table.add_column("Metric pair")
         corr_table.add_column("rho", justify="right")

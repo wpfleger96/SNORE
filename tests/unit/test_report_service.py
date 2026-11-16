@@ -9,10 +9,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.models import Day, Device, Session
-from snore.provenance import response_provenance
 from snore.services.report_service import ReportService
 from snore.services.schemas import TherapySummary
 from snore.services.stats_service import StatsService
+from tests.helpers.schema_tags import has_experimental_tag
 
 
 async def _create_day(
@@ -154,7 +154,8 @@ class TestReportService:
         }
         assert TherapySummary in models
         for model in models:
-            assert "experimental" not in response_provenance(model)
+            schema = model.model_json_schema(mode="serialization")
+            assert not has_experimental_tag(schema), model.__name__
 
     async def test_comparison_contains_both_range_headings_and_delta_sign(
         self, async_db_session, async_test_device

@@ -321,11 +321,12 @@ class TestExportCsv:
         result = await svc.export_csv(db_session, out)
 
         assert result.format == "csv"
-        assert (out / "sessions.csv").exists()
-        assert (out / "events.csv").exists()
-        assert (out / "settings.csv").exists()
-        assert (out / "columns.csv").exists()
-        assert result.files_written == 4
+        assert {p.name for p in out.iterdir()} == {
+            "sessions.csv",
+            "events.csv",
+            "settings.csv",
+        }
+        assert result.files_written == 3
 
     async def test_sessions_csv_content(
         self, db_session: AsyncSession, tmp_path: Path
@@ -347,29 +348,17 @@ class TestExportCsv:
         assert row["oai_device"] == ""
         assert row["timezone"] == "local"
 
-    async def test_columns_csv_covers_session_metric_columns(
+    async def test_sessions_csv_header_covers_metric_columns(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         svc = ExportService(1)
         out = tmp_path / "csv_export"
         await svc.export_csv(db_session, out)
 
-        with open(out / "columns.csv") as f:
-            reader = csv.DictReader(f)
-            assert reader.fieldnames == ["name", "provenance", "description"]
-            rows = {r["name"]: r for r in reader}
         with open(out / "sessions.csv") as f:
             session_columns = next(csv.reader(f))
 
-        metric_columns = ["duration_hours", *EXPORT_STAT_KEYS]
-        assert set(metric_columns) <= set(session_columns)
-        assert set(metric_columns) <= rows.keys()
-        assert all(r["description"] for r in rows.values())
-        assert not any(r["description"].startswith("[") for r in rows.values())
-        assert rows["ahi"]["provenance"] == "derived"
-        assert rows["ahi_device"]["provenance"] == "device"
-        assert rows["obstructive_apneas"]["provenance"] == "device"
-        assert rows["events.csv"]["provenance"] == "device"
+        assert {"duration_hours", *EXPORT_STAT_KEYS} <= set(session_columns)
 
     async def test_events_csv_content(
         self, db_session: AsyncSession, tmp_path: Path
@@ -454,7 +443,7 @@ class TestExportJson:
         assert s["events"][0]["event_type"] == "OA"
         assert s["settings"]["mode"] == "APAP"
 
-    async def test_json_header_declares_provenance(
+    async def test_json_header_format_1_2_without_provenance(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         svc = ExportService(1)
@@ -464,17 +453,8 @@ class TestExportJson:
         with open(out) as f:
             doc = json.load(f)
 
-        assert doc["snore_export_format"] == "1.1"
-        columns = doc["provenance"]["columns"]
-        assert columns.keys() == {"duration_hours", *EXPORT_STAT_KEYS}
-        assert columns["ahi"] == "derived"
-        assert columns["ahi_device"] == "device"
-        assert columns["obstructive_apneas"] == "device"
-        assert columns["usage_hours"] == "derived"
-        assert doc["provenance"]["sections"] == {
-            "events": "device",
-            "settings": "device",
-        }
+        assert doc["snore_export_format"] == "1.2"
+        assert "provenance" not in doc
         stats = doc["sessions"][0]["statistics"]
         assert stats["ahi_device"] == 3.2
         assert "oai_device" not in stats

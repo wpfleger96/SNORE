@@ -250,9 +250,9 @@ class TestCompareEpochsRoundtrip:
     async def test_only_the_experimental_tool_takes_metrics_and_disclaimer(
         self, mock_db_session: Any, mcp_client_factory: Any
     ) -> None:
-        from snore.provenance import PROVENANCE_NOTES, Provenance  # noqa: PLC0415
+        from snore.provenance import EXPERIMENTAL_NOTE  # noqa: PLC0415
 
-        note = PROVENANCE_NOTES[Provenance.EXPERIMENTAL]
+        note = EXPERIMENTAL_NOTE
         async with mcp_client_factory(mock_db_session) as client:
             tools = {t.name: t for t in await client.list_tools()}
         default_tool = tools["compare_epochs"]

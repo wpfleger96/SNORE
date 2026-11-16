@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.constants import AHI_EVENT_TYPES
-from snore.provenance import Provenance, provenance_field
+from snore.provenance import experimental_field
 
 
 class AnalysisEvent(BaseModel):
@@ -24,25 +24,25 @@ class AnalysisEvent(BaseModel):
 
     event_type: str = Field(description="Event type")
     start_time: float = Field(description="Session offset (seconds from session start)")
-    duration: float = provenance_field(
-        Provenance.DEVICE,
-        "Event duration (seconds), 0 when the device recorded none; experimental "
-        "for programmatic events",
-        source_field="source",
+    duration: float = Field(
+        description=(
+            "Event duration (seconds), 0 when the device recorded none; experimental "
+            "for programmatic events"
+        ),
         ge=0,
     )
     source: str = Field(description="Event source (machine/programmatic)")
-    confidence: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Detection confidence", default=None, ge=0, le=1
+    confidence: float | None = experimental_field(
+        "Detection confidence", default=None, ge=0, le=1
     )
-    flow_reduction: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Flow reduction (0-1)", default=None, ge=0, le=1
+    flow_reduction: float | None = experimental_field(
+        "Flow reduction (0-1)", default=None, ge=0, le=1
     )
-    has_desaturation: bool | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Has SpO2 desaturation", default=None
+    has_desaturation: bool | None = experimental_field(
+        "Has SpO2 desaturation", default=None
     )
-    baseline_flow: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Baseline flow (L/min)", default=None
+    baseline_flow: float | None = experimental_field(
+        "Baseline flow (L/min)", default=None
     )
 
 
@@ -63,26 +63,26 @@ class AnalysisResult(BaseModel):
     """Results from session analysis."""
 
     session_id: int = Field(description="Database session ID")
-    session_duration_hours: float = provenance_field(
-        Provenance.DERIVED, "Flow-waveform coverage (hours)", ge=0
+    session_duration_hours: float = Field(
+        description="Flow-waveform coverage (hours)", ge=0
     )
-    total_breaths: int = provenance_field(
-        Provenance.EXPERIMENTAL, "Total breaths segmented", ge=0
-    )
+    total_breaths: int = experimental_field("Total breaths segmented", ge=0)
     machine_events: list[AnalysisEvent] = Field(description="Machine-flagged events")
-    machine_ahi: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, "
-        "not the device-reported AHI (None if no events)",
+    machine_ahi: float | None = Field(
         default=None,
+        description=(
+            "Machine-scored apneas + hypopneas per waveform-coverage hour; a recount, "
+            "not the device-reported AHI (None if no events)"
+        ),
         ge=0,
     )
-    machine_rdi: float | None = provenance_field(
-        Provenance.DERIVED,
-        "Mirrors machine_ahi (machine-scored apneas + hypopneas per "
-        "waveform-coverage hour); device-flagged RERAs are not added, so this is "
-        "not a true RDI (None if no events). Deprecated: read machine_ahi.",
+    machine_rdi: float | None = Field(
         default=None,
+        description=(
+            "Mirrors machine_ahi (machine-scored apneas + hypopneas per "
+            "waveform-coverage hour); device-flagged RERAs are not added, so this is "
+            "not a true RDI (None if no events). Deprecated: read machine_ahi."
+        ),
         ge=0,
         deprecated="machine_rdi mirrors machine_ahi; read machine_ahi instead",
     )
@@ -102,11 +102,11 @@ class AnalysisResult(BaseModel):
     periodic_breathing_episodes: list[dict[str, Any]] | None = Field(
         default=None, description="Time-localized periodic breathing episodes"
     )
-    pulse_change_count: int | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Total pulse change events detected", default=None
+    pulse_change_count: int | None = experimental_field(
+        "Total pulse change events detected", default=None
     )
-    pulse_change_index: float | None = provenance_field(
-        Provenance.EXPERIMENTAL, "Pulse changes per hour", default=None
+    pulse_change_index: float | None = experimental_field(
+        "Pulse changes per hour", default=None
     )
     timestamp_start: float = Field(
         default=0.0,

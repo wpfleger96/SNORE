@@ -2,8 +2,7 @@
 
 Supports:
 - raw: OSCAR-compatible SD card directory reconstruction from backups
-- csv: Parsed data as CSV files (sessions, events, settings, columns provenance
-  sidecar, optional waveforms)
+- csv: Parsed data as CSV files (sessions, events, settings, optional waveforms)
 - json: Parsed data as a single JSON document
 """
 
@@ -25,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from pydantic import BaseModel
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,44 +31,12 @@ from snore.constants import DEFAULT_RAW_BACKUP_DIR
 from snore.database import models
 from snore.metrics import EXPORT_STAT_KEYS
 from snore.parsers.base import RawFileManifest, session_night
-from snore.provenance import Provenance, field_description, field_provenance
 from snore.services.backup_service import BackupService
-from snore.services.schemas import SessionDetail, SessionStatistics
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Exported session measurement columns, each read from the response-schema
-# field that carries the same value.  Identifier columns (session id, dates,
-# device serial/model, therapy mode, timezone) carry no tier.
-_EXPORT_COLUMN_FIELDS: dict[str, type[BaseModel]] = {
-    "duration_hours": SessionDetail,
-    **dict.fromkeys(EXPORT_STAT_KEYS, SessionStatistics),
-}
-
-EXPORT_COLUMN_PROVENANCE: dict[str, Provenance] = {
-    name: field_provenance(model, name) for name, model in _EXPORT_COLUMN_FIELDS.items()
-}
-
-
-def _columns_csv_rows() -> list[list[str]]:
-    """Rows of the ``columns.csv`` provenance sidecar.
-
-    One row per ``sessions.csv`` measurement column; ``events.csv`` and
-    ``settings.csv`` get one whole-file row each since every value in them is
-    device data.
-    """
-    return [
-        ["name", "provenance", "description"],
-        *(
-            [name, tier, field_description(_EXPORT_COLUMN_FIELDS[name], name)]
-            for name, tier in EXPORT_COLUMN_PROVENANCE.items()
-        ),
-        ["events.csv", Provenance.DEVICE, "Device-scored events, verbatim."],
-        ["settings.csv", Provenance.DEVICE, "Device settings, verbatim."],
-    ]
 
 
 def _write_csv_rows(path: Path, rows: list[list[Any]], mode: str = "a") -> None:
@@ -335,7 +301,6 @@ class ExportService:
         # File I/O runs in worker threads so the event loop is never blocked;
         # rows are buffered per DB chunk to keep memory bounded.
         def _write_headers() -> None:
-            _write_csv_rows(output / "columns.csv", _columns_csv_rows(), mode="w")
             _write_csv_rows(sessions_path, [session_header], mode="w")
             _write_csv_rows(events_path, [event_header], mode="w")
             _write_csv_rows(settings_path, [setting_header], mode="w")
@@ -434,7 +399,7 @@ class ExportService:
             warnings.append("No sessions found for the specified filters.")
             return ExportResult(format="csv", output_path=output, warnings=warnings)
 
-        files_written += 4
+        files_written += 3
 
         return ExportResult(
             format="csv",
@@ -500,17 +465,10 @@ class ExportService:
 
         header = {
             "exported_at": datetime.now().isoformat(),
-            "snore_export_format": "1.1",
+            "snore_export_format": "1.2",
             "date_range": {
                 "from": date_from.isoformat() if date_from else None,
                 "to": date_to.isoformat() if date_to else None,
-            },
-            "provenance": {
-                "columns": EXPORT_COLUMN_PROVENANCE,
-                "sections": {
-                    "events": Provenance.DEVICE,
-                    "settings": Provenance.DEVICE,
-                },
             },
         }
         head = "{\n" + "".join(

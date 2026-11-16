@@ -342,7 +342,7 @@ FastAPI application serving the same data as the CLI through HTTP endpoints. Lau
 | db | `/db` | Stats, vacuum; reset (local mode only) |
 | validation | `/validate` | Batch validation report |
 
-**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return an Experimental-tagged field. `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list against `ui/src/tests/experimentalOperations.json`, which `ui/src/tests/experimentalBoundary.test.ts` uses to keep default pages off those operations.
+**Experimental operations:** operations that return SNORE's own heuristics carry the FastAPI `experimental` tag: everything on the analysis and validation routers (tagged at `include_router`), `GET /sessions/{id}/waveforms/compare`, `GET /days/{date}/experimental` and `GET /stats/experimental`. No other operation may return a field tagged experimental (`experimental_field`). `tests/unit/test_provenance_tags.py` enforces this and pins the tagged list against `ui/src/tests/experimentalOperations.json`, which `ui/src/tests/experimentalBoundary.test.ts` uses to keep default pages off those operations.
 
 **Key patterns:**
 - Dependency injection: `db: Session = Depends(get_db)` for database sessions
@@ -570,7 +570,7 @@ StaticRuntime     — stdio path; profile_id resolved at startup
 ActorRuntime      — OAuth HTTP path; profile_id from per-request context var
 ```
 
-`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 16 of the 18 tools (all except the waveform pair): open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `provenance` block → `_check_response_size`.
+`_scope_and_run(ctx, impl, *, tool_name, **kwargs)` in `tools/_scaffold.py` (re-exported from `server.py`) captures the common scaffold shared by 16 of the 18 tools (all except the waveform pair): open scope → call impl with `(db, profile_id=..., **kwargs)` → `model_dump(mode="json")` → add a top-level `"experimental": true` for `experimental_*` tools → `_check_response_size`.
 
 ### Tool Modules
 
@@ -609,7 +609,7 @@ Default tools return device data plus arithmetic of the kind OSCAR does. They do
 | Default: raw samples | `get_waveform` | Per-sample device arrays, windows ≤2 min and ≤1000 points |
 | Experimental | `experimental_get_nightly_metrics`, `experimental_get_event_context`, `experimental_compare_epochs`, `experimental_get_breath_table`, `experimental_find_windows` | Per-night FL, RERA-proxy, segmented-breath and periodic-breathing metrics; MV slope and stability per event; breath-feature distributions across epochs; per-breath rows and bins; window search |
 
-`tests/unit/test_mcp_provenance.py` enforces the split: `DEFAULT_TOOLS` maps each default tool to its response model, no default response may contain an Experimental-tagged field, and any tool outside that map must carry the `experimental_` prefix.
+`tests/unit/test_mcp_provenance.py` enforces the split: `DEFAULT_TOOLS` maps each default tool to its response model, no default response may contain a field tagged experimental (`experimental_field`), and any tool outside that map must carry the `experimental_` prefix.
 
 ---
 

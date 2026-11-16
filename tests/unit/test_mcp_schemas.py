@@ -16,7 +16,7 @@ from snore.mcp.schemas import (
     NightlyRow,
     model_to_schema,
 )
-from snore.provenance import Provenance, field_provenance
+from snore.provenance import is_experimental
 
 
 class TestSchemaModelMap:
@@ -136,9 +136,7 @@ class TestExperimentalNightlyRow:
                 "rera_proxy_version",
             }:
                 continue
-            assert field_provenance(ExperimentalNightlyRow, name) == (
-                Provenance.EXPERIMENTAL
-            ), name
+            assert is_experimental(ExperimentalNightlyRow, name), name
 
 
 class TestComplianceFields:

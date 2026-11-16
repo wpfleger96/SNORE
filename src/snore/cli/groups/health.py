@@ -25,7 +25,6 @@ from snore.cli.display import (
     ICON_STATS,
     Column,
     console,
-    mark_field,
     print_dry_run_complete,
     print_dry_run_header,
     print_footer,
@@ -36,8 +35,6 @@ from snore.cli.display import (
     print_table,
     print_warning,
 )
-from snore.provenance import field_provenance
-from snore.services.schemas import HealthNightDetailRead, HealthNightSummaryRead
 
 if TYPE_CHECKING:
     from snore.database.models import HealthSample
@@ -234,19 +231,11 @@ async def health_list(
     print_table(
         [
             Column("Date", 12),
-            Column(
-                "Sleep",
-                8,
-                field_provenance(HealthNightSummaryRead, "total_sleep_seconds"),
-            ),
-            Column(
-                "Eff%",
-                6,
-                field_provenance(HealthNightSummaryRead, "sleep_efficiency_pct"),
-            ),
-            Column("Core", 7, field_provenance(HealthNightSummaryRead, "core_seconds")),
-            Column("Deep", 7, field_provenance(HealthNightSummaryRead, "deep_seconds")),
-            Column("REM", 7, field_provenance(HealthNightSummaryRead, "rem_seconds")),
+            Column("Sleep", 8),
+            Column("Eff%", 6),
+            Column("Core", 7),
+            Column("Deep", 7),
+            Column("REM", 7),
             Column("Source", 0),
         ],
         (
@@ -328,17 +317,16 @@ async def health_show(ctx: CliCtx, night_date: datetime) -> None:
 
     # Summary totals block.
     print_header("Totals", ICON_STATS)
-    for label, field, value in [
-        ("Total sleep", "total_sleep_seconds", _fmt_hours(detail.total_sleep_seconds)),
-        ("Time in bed", "time_in_bed_seconds", _fmt_hours(detail.time_in_bed_seconds)),
-        ("Efficiency", "sleep_efficiency_pct", _fmt_pct(detail.sleep_efficiency_pct)),
-        ("Core", "core_seconds", _fmt_hours(detail.core_seconds)),
-        ("Deep", "deep_seconds", _fmt_hours(detail.deep_seconds)),
-        ("REM", "rem_seconds", _fmt_hours(detail.rem_seconds)),
-        ("Awake", "awake_seconds", _fmt_hours(detail.awake_seconds)),
-        ("Stage coverage", "stage_coverage_pct", _fmt_pct(detail.stage_coverage_pct)),
+    for label, value in [
+        ("Total sleep", _fmt_hours(detail.total_sleep_seconds)),
+        ("Time in bed", _fmt_hours(detail.time_in_bed_seconds)),
+        ("Efficiency", _fmt_pct(detail.sleep_efficiency_pct)),
+        ("Core", _fmt_hours(detail.core_seconds)),
+        ("Deep", _fmt_hours(detail.deep_seconds)),
+        ("REM", _fmt_hours(detail.rem_seconds)),
+        ("Awake", _fmt_hours(detail.awake_seconds)),
+        ("Stage coverage", _fmt_pct(detail.stage_coverage_pct)),
     ]:
-        label = mark_field(label, HealthNightDetailRead, field)
         console.print(f"  {label:<18} {value}", markup=False, highlight=False)
     print_footer()
 
