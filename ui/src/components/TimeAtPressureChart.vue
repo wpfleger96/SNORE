@@ -68,13 +68,16 @@ function options(colors: AxisColors): Omit<uPlot.Options, 'width'> {
             // Off the AHI event palette, so lines and event points never share a colour.
             { ...minutes, label: 'Pressure', stroke: PRESSURE_COLOR },
             ...(props.tap?.epap_seconds ? [{ ...minutes, label: 'EPAP', stroke: EPAP_COLOR }] : []),
-            ...eventTypes.value.map((type) => ({
-                label: type,
-                scale: 'events',
-                stroke: EVENT_SOLID_COLORS[type] ?? 'rgba(100, 100, 100, 0.85)',
-                paths: () => null,
-                points: { show: true, size: 7 },
-            })),
+            ...eventTypes.value.map((type) => {
+                const color = EVENT_SOLID_COLORS[type] ?? 'rgba(100, 100, 100, 0.85)'
+                return {
+                    label: type,
+                    scale: 'events',
+                    stroke: color,
+                    paths: () => null,
+                    points: { show: true, size: 7, fill: color },
+                }
+            }),
         ],
     }
 }

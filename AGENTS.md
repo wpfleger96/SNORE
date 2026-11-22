@@ -387,11 +387,11 @@ at `MAX_EPOCH_NIGHTS` (`services/breath/dtos.py`), in the service and at the MCP
 
 The pressure, EPAP and leak 99.5th and Time at Pressure (`services/pressure_views.py`) sit beside
 the leak redline views on session and day detail, also skipped with `include_channel_stats=False`.
-They read each session's
-`SUMMARY_CHANNELS` choice (`summary_channel_choices` in `database/day_manager.py`) over the sessions
-the stored median and 95th cover (`contributing_prefixes`), with the stored values' linear
-`np.percentile`, so they match those columns without new ones;
-`tests/integration/test_pressure_views.py` pins the 99.5th's sessions to the stored 95th's.
+They read each session's `SUMMARY_CHANNELS` choice (`summary_channel_choices` in
+`database/day_manager.py`) over the sessions the stored median and 95th cover
+(`contributing_prefixes`), with the stored values' linear `np.percentile`, so they match those
+columns without new ones; `tests/integration/test_pressure_views.py` pins the 99.5th's sessions to
+the stored 95th's.
 `running_ahi` (`services/running_ahi.py`) reads events and mask-on segments only. Time at Pressure
 and `running_ahi` both use `ahi_event_flags` (`services/event_service.py`) for event flag times.
 
