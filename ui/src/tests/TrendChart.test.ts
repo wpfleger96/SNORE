@@ -50,8 +50,19 @@ const BREAKDOWN = [
     { label: 'HI', values: [0.6, 0.5, null], color: '#c' },
 ]
 
+type RangeFn = (u: unknown, min: number, max: number) => [number, number]
+type Axis = { values?: (...a: unknown[]) => string[]; incrs?: number[] }
+
 function series(): Series[] {
     return (mockState.opts?.series as Series[]).slice(1)
+}
+
+function scaleRange(key: 'x' | 'y'): RangeFn | undefined {
+    return (mockState.opts?.scales as Record<string, { range?: RangeFn }>)[key].range
+}
+
+function ts(label: string): number {
+    return new Date(`${label}T00:00:00`).getTime() / 1000
 }
 
 describe('TrendChart', () => {
@@ -75,6 +86,63 @@ describe('TrendChart', () => {
         expect(cai.value!(null, 0.4, 2, 1)).toBe('--')
     })
 
+    it('test_stacked_y_axis_starts_at_zero', () => {
+        mount(TrendChart, { props: { labels: LABELS, datasets: BREAKDOWN, stacked: true } })
+
+        const range = scaleRange('y')!
+        expect(range(null, 0.4, 1.4)).toEqual([0, 1.4 * 1.1])
+        expect(range(null, 0, 0)).toEqual([0, 1])
+    })
+
+    it('test_stacked_x_axis_pads_half_a_period_at_each_end', () => {
+        const labels = ['2026-04-06', '2026-04-13', '2026-04-20']
+        mount(TrendChart, { props: { labels, datasets: BREAKDOWN, stacked: true } })
+
+        const range = scaleRange('x')!
+        const [first, last] = [ts(labels[0]), ts(labels[2])]
+        const halfWeek = 3.5 * 86400
+        expect(range(null, first, last)).toEqual([first - halfWeek, last + halfWeek])
+        // A zoom, or a redraw of the padded range, is kept as given.
+        expect(range(null, first - halfWeek, last + halfWeek)).toEqual([
+            first - halfWeek,
+            last + halfWeek,
+        ])
+        expect(range(null, first + 100, last)).toEqual([first + 100, last])
+    })
+
+    it('test_plain_chart_keeps_uplot_default_scales', () => {
+        mount(TrendChart, { props: { labels: LABELS, datasets: BREAKDOWN } })
+
+        expect(scaleRange('x')).toBeUndefined()
+        expect((mockState.opts?.scales as Record<string, unknown>).y).toBeUndefined()
+    })
+
+    it('test_format_value_ticks_on_whole_hour_increments', () => {
+        mount(TrendChart, {
+            props: {
+                labels: LABELS.slice(0, 1),
+                datasets: [{ label: 'Bedtime', values: [11.5], color: '#a' }],
+                formatValue: (v: number) => `${v}h`,
+            },
+        })
+
+        expect((mockState.opts?.axes as Axis[])[1].incrs).toEqual([1, 2, 3, 6, 12])
+    })
+
+    it('test_format_value_change_rebuilds_chart', async () => {
+        const wrapper = mount(TrendChart, {
+            props: {
+                labels: LABELS.slice(0, 1),
+                datasets: [{ label: 'Bedtime', values: [11.5], color: '#a' }],
+                formatValue: (v: number) => `${v}h`,
+            },
+        })
+
+        await wrapper.setProps({ formatValue: (v: number) => `${v} hours` })
+
+        expect((mockState.opts?.axes as Axis[])[1].values!(null, [11])).toEqual(['11 hours'])
+    })
+
     it('test_format_value_formats_axis_ticks_and_legend', () => {
         const format = (v: number) => `${v}h`
         mount(TrendChart, {
@@ -85,7 +153,7 @@ describe('TrendChart', () => {
             },
         })
 
-        const yAxis = (mockState.opts?.axes as { values?: (...a: unknown[]) => string[] }[])[1]
+        const yAxis = (mockState.opts?.axes as Axis[])[1]
         expect(yAxis.values!(null, [11, 12])).toEqual(['11h', '12h'])
         expect(series()[0].value!(null, 11.5, 1, 0)).toBe('11.5h')
     })

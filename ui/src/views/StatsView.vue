@@ -92,7 +92,7 @@
                         :datasets="metricDatasets(key)"
                         :height="200"
                         :sync-key="trendSync"
-                        :stacked="METRIC_CONFIG[key].stacked"
+                        :stacked="isStacked(key)"
                         :format-value="METRIC_CONFIG[key].formatValue"
                     />
                 </div>
@@ -139,8 +139,9 @@ type MetricSeries = { key: SeriesKey; label: string; color: string }
 // ────────────────────────────── Metric config ──────────────────────────────
 
 // glossaryKey is the GLOSSARY key for InfoHint; differs from the METRIC_CONFIG entry key for rr
-// (glossary: resp_rate) and the device-channel series. Labels are composed from GLOSSARY where the
-// label matches the desired display name; the others keep local names because theirs differ.
+// (glossary: resp_rate), time_in_apnea (time_in_apnea_trend) and the device-channel series.
+// Labels are composed from GLOSSARY where the label matches the desired display name; the others
+// keep local names because theirs differ.
 // hideWhenEmpty marks a series a device may never produce, so isOffered drops its toggle when the
 // series is all null. A metric with parts draws each part as its own series on one chart.
 const METRIC_CONFIG: Record<
@@ -149,9 +150,8 @@ const METRIC_CONFIG: Record<
         label: string
         glossaryKey: string
         hideWhenEmpty?: boolean
-        stacked?: boolean
         formatValue?: (value: number) => string
-    } & ({ key: SeriesKey; color: string } | { parts: MetricSeries[] })
+    } & ({ key: SeriesKey; color: string } | { parts: MetricSeries[]; stacked?: boolean })
 > = {
     ahi: {
         label: `${GLOSSARY.ahi.label} (events/hr)`,
@@ -241,7 +241,7 @@ const METRIC_CONFIG: Record<
             { key: 'oai', label: GLOSSARY.oai.label, color: '#be123c' },
             { key: 'cai', label: GLOSSARY.cai.label, color: '#0284c7' },
             { key: 'hi', label: GLOSSARY.hi.label, color: '#ca8a04' },
-            { key: 'uai', label: 'UAI', color: '#64748b' },
+            { key: 'uai', label: GLOSSARY.uai.label, color: '#64748b' },
         ],
     },
     rera: {
@@ -254,7 +254,7 @@ const METRIC_CONFIG: Record<
     // OSCAR's TTIA chart (overview.cpp:302-304), as the mean per night with therapy.
     time_in_apnea: {
         label: `${GLOSSARY.time_in_apnea.label} (min)`,
-        glossaryKey: 'time_in_apnea',
+        glossaryKey: 'time_in_apnea_trend',
         key: 'time_in_apnea',
         color: '#9333ea',
     },
@@ -435,6 +435,11 @@ const trendSeries = computed<Partial<Record<keyof TrendData | PeriodSeriesKey, S
 function metricSeries(key: string): MetricSeries[] {
     const cfg = METRIC_CONFIG[key]
     return 'parts' in cfg ? cfg.parts : [{ key: cfg.key, label: cfg.label, color: cfg.color }]
+}
+
+function isStacked(key: string): boolean {
+    const cfg = METRIC_CONFIG[key]
+    return 'parts' in cfg && cfg.stacked === true
 }
 
 function hasData(key: string): boolean {

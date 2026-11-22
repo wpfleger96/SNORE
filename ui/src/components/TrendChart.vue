@@ -30,7 +30,7 @@ const props = defineProps<{
     syncKey?: uPlot.SyncPubSub
     // Stacks the datasets as bars, the first at the bottom.
     stacked?: boolean
-    // Formats y-axis ticks and legend values.
+    // Formats legend values and y-axis ticks, which land on whole hours (for clock times).
     formatValue?: (value: number) => string
 }>()
 
@@ -61,6 +61,23 @@ function stackedSeries(): DrawnSeries[] {
         .reverse()
 }
 
+// Half the smallest spacing between periods (12 hours for a single period), so padding the x
+// scale by it on each side draws the first and last bars whole.
+function halfPeriod(timestamps: number[]): number {
+    const gaps = timestamps.slice(1).map((t, i) => t - timestamps[i])
+    return gaps.length ? Math.min(...gaps) / 2 : 43200
+}
+
+// Pads the data's extent by half a period; any other range (a zoom, a redraw of the padded range)
+// is kept as given, so the padding never compounds.
+function paddedXRange(timestamps: number[]): uPlot.Range.Function {
+    const first = timestamps[0]
+    const last = timestamps[timestamps.length - 1]
+    const pad = halfPeriod(timestamps)
+    return (_u, min, max) =>
+        min === first && (max === last || first === last) ? [first - pad, last + pad] : [min, max]
+}
+
 function createChart(): void {
     if (!containerRef.value || !props.labels.length) return
 
@@ -81,7 +98,12 @@ function createChart(): void {
             sync: props.syncKey ? { key: props.syncKey.key } : undefined,
             drag: { x: true, y: false, setScale: true },
         },
-        scales: { x: { time: true } },
+        scales: props.stacked
+            ? {
+                  x: { time: true, range: paddedXRange(timestamps) },
+                  y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] },
+              }
+            : { x: { time: true } },
         axes: [
             {
                 space: 80,
@@ -94,7 +116,12 @@ function createChart(): void {
                 stroke: colors.axis,
                 grid: { stroke: colors.grid },
                 ticks: { stroke: colors.axis },
-                ...(format ? { values: (_u: uPlot, splits: number[]) => splits.map(format) } : {}),
+                ...(format
+                    ? {
+                          incrs: [1, 2, 3, 6, 12],
+                          values: (_u: uPlot, splits: number[]) => splits.map(format),
+                      }
+                    : {}),
             },
         ],
         series: [
@@ -143,7 +170,15 @@ onBeforeUnmount(() => {
 })
 
 watch(
-    () => [props.labels, props.datasets, props.height, props.syncKey, props.stacked] as const,
+    () =>
+        [
+            props.labels,
+            props.datasets,
+            props.height,
+            props.syncKey,
+            props.stacked,
+            props.formatValue,
+        ] as const,
     () => createChart(),
     { deep: true },
 )

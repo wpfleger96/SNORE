@@ -317,7 +317,7 @@ describe('StatsView', () => {
 
             const wrapper = await mountAndLoad()
 
-            expect(chart(wrapper).props('stacked')).toBeUndefined()
+            expect(chart(wrapper).props('stacked')).toBe(false)
             expect(chart(wrapper).props('datasets')).toEqual([
                 expect.objectContaining({ label: 'Bedtime', values: [11.5, 12.25] }),
                 expect.objectContaining({ label: 'Wake', values: [19, 19.5] }),
@@ -338,6 +338,13 @@ describe('StatsView', () => {
             expect(chart(wrapper).props('datasets')).toEqual([
                 expect.objectContaining({ label: 'Time in Apnea (min)', values: [4.5] }),
             ])
+            // A per-night mean over the period, not the Day page's nightly total.
+            expect(
+                wrapper
+                    .find('.trend-metric')
+                    .findComponent({ name: 'InfoHint' })
+                    .props('glossaryKey'),
+            ).toBe('time_in_apnea_trend')
         })
 
         it('test_all_null_tidal_volume_offers_no_toggle', async () => {
