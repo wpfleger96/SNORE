@@ -18,6 +18,7 @@ from snore.services.channel_stats import (
     _STATISTICS,
     ChannelHistograms,
     channel_histogram,
+    channel_series_histogram,
     histogram_distribution,
     mask_on_spans,
     pool_channel_stats,
@@ -239,6 +240,48 @@ def test_respiratory_sample_above_the_parser_range_is_left_out_of_the_max(
     pooled = pool_channel_stats(histograms, [1])
 
     assert getattr(pooled, f"{prefix}_max") == 1.0
+
+
+def _sample_values(histogram: tuple[np.ndarray, np.ndarray]) -> list[float]:
+    values, counts = histogram
+    return [float(v) for v in np.repeat(values, counts)]
+
+
+@pytest.mark.parametrize("channel", ["rr", "tv", "mv", "ti", "ie_ratio"])
+def test_series_histogram_drops_each_runs_computed_lead_in(channel: str) -> None:
+    # 2 s samples: a run from 0 s to 22 s, a mask-off gap, a run from 600 s to
+    # 620 s.  Each run reads zero for its first 20 s.
+    first, second = np.arange(0.0, 24.0, 2.0), np.arange(600.0, 622.0, 2.0)
+    offsets = np.concatenate([first, second])
+    values = np.concatenate(
+        [np.zeros(10), _samples(3.0, 4.0), np.zeros(10), _samples(5.0)]
+    ).astype(np.float32)
+
+    histogram = channel_series_histogram(channel, offsets, values, 0.5)
+
+    assert _sample_values(histogram) == [3.0, 4.0, 5.0]
+
+
+def test_series_histogram_keeps_a_run_already_trimmed_by_oscar() -> None:
+    offsets = np.array([20.0, 22.0, 24.0])
+
+    histogram = channel_series_histogram("rr", offsets, _samples(3.0, 4.0, 5.0), 0.5)
+
+    assert _sample_values(histogram) == [3.0, 4.0, 5.0]
+
+
+@pytest.mark.parametrize("channel", ["fl", "snore", "pulse"])
+def test_series_histogram_keeps_the_lead_in_of_a_measured_channel(
+    channel: str,
+) -> None:
+    offsets = np.array([0.0, 2.0])
+
+    histogram = channel_series_histogram(channel, offsets, _samples(0.0, 60.0), 0.5)
+
+    assert (
+        histogram[0].tolist()
+        == channel_histogram(channel, _samples(0.0, 60.0))[0].tolist()
+    )
 
 
 def test_channel_registry_names_every_device_channel_stats_field() -> None:

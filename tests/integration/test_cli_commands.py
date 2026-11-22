@@ -1523,7 +1523,9 @@ class TestSessionShowExpanded:
 
         assert result.exit_code == 0
         output = result.output
-        flow_limitation = output[output.index("Flow Limitation:") :]
+        flow_limitation = output[
+            output.index("Flow Limitation:") : output.index("Snore:")
+        ]
         assert "Min: 0.00" in flow_limitation
         assert "Median: 0.25" in flow_limitation
         assert "95th percentile: 0.50" in flow_limitation

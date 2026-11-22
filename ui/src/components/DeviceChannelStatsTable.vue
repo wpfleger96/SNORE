@@ -1,15 +1,27 @@
 <template>
     <section v-if="rows.length" class="section-card">
         <h2>Device Channel Statistics</h2>
-        <Table>
+        <div v-if="isMobile" class="card-list">
+            <div v-for="row in rows" :key="row.glossaryKey" class="data-card">
+                <div class="data-card-header">
+                    <span>
+                        {{ GLOSSARY[row.glossaryKey].label }}
+                        <InfoHint :glossary-key="row.glossaryKey" />
+                    </span>
+                </div>
+                <div v-for="(stat, i) in STATISTICS" :key="stat.key" class="data-card-row">
+                    <span class="data-card-label">{{ stat.label }}</span>
+                    <span class="data-card-value">{{ row.cells[i] }}</span>
+                </div>
+            </div>
+        </div>
+        <Table v-else>
             <TableHeader>
                 <TableRow>
                     <TableHead>Channel</TableHead>
-                    <TableHead>Min</TableHead>
-                    <TableHead>Median</TableHead>
-                    <TableHead>95th</TableHead>
-                    <TableHead>99.5th</TableHead>
-                    <TableHead>Max</TableHead>
+                    <TableHead v-for="stat in STATISTICS" :key="stat.key">
+                        {{ stat.label }}
+                    </TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
@@ -18,8 +30,8 @@
                         {{ GLOSSARY[row.glossaryKey].label }}
                         <InfoHint :glossary-key="row.glossaryKey" />
                     </TableCell>
-                    <TableCell v-for="(value, i) in row.values" :key="i">
-                        {{ value?.toFixed(row.decimals) ?? '---' }}
+                    <TableCell v-for="(stat, i) in STATISTICS" :key="stat.key">
+                        {{ row.cells[i] }}
                     </TableCell>
                 </TableRow>
             </TableBody>
@@ -38,12 +50,15 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import InfoHint from '@/components/InfoHint.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { GLOSSARY } from '@/utils/glossary'
 import type { DeviceChannelStats } from '@/types'
 
 const props = defineProps<{ stats?: DeviceChannelStats | null }>()
 
-// Each channel's fields are `<field>_<statistic>` for every entry of STATISTICS.
+const { isMobile } = useIsMobile()
+
+// Each channel's fields are `<field>_<key>` for every entry of STATISTICS.
 const CHANNELS = [
     { glossaryKey: 'fl_device', field: 'device_flg', decimals: 2 },
     { glossaryKey: 'snore_device', field: 'snore', decimals: 2 },
@@ -54,15 +69,26 @@ const CHANNELS = [
     { glossaryKey: 'ie_ratio_device', field: 'ie_ratio', decimals: 1 },
     { glossaryKey: 'pulse_device', field: 'pulse', decimals: 0 },
 ] as const
-const STATISTICS = ['min', 'median', '95th', '99_5th', 'max'] as const
+const STATISTICS = [
+    { key: 'min', label: 'Min' },
+    { key: 'median', label: 'Median' },
+    { key: '95th', label: '95th' },
+    { key: '99_5th', label: '99.5th' },
+    { key: 'max', label: 'Max' },
+] as const
 
 const rows = computed(() => {
     const s = props.stats
     if (!s) return []
     return CHANNELS.map(({ glossaryKey, field, decimals }) => ({
         glossaryKey,
+        values: STATISTICS.map(({ key }) => s[`${field}_${key}` as const]),
         decimals,
-        values: STATISTICS.map((stat) => s[`${field}_${stat}` as const]),
-    })).filter((row) => row.values.some((value) => value != null))
+    }))
+        .filter((row) => row.values.some((value) => value != null))
+        .map(({ glossaryKey, values, decimals }) => ({
+            glossaryKey,
+            cells: values.map((value) => value?.toFixed(decimals) ?? '---'),
+        }))
 })
 </script>

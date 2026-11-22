@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import type { DeviceChannelStats } from '@/types'
+import { setMediaMatches } from './matchMedia'
 
 vi.mock('@/components/InfoHint.vue', () => ({
     default: { template: '<span class="info-hint-stub" />' },
@@ -60,6 +61,39 @@ function bodyRows(wrapper: VueWrapper): string[][] {
 }
 
 describe('DeviceChannelStatsTable', () => {
+    afterEach(() => setMediaMatches(false))
+
+    it('test_headers_name_each_statistic_in_column_order', () => {
+        const headers = mountStats(FULL_STATS)
+            .findAll('thead th')
+            .map((cell) => cell.text())
+        expect(headers).toEqual(['Channel', 'Min', 'Median', '95th', '99.5th', 'Max'])
+    })
+
+    it('test_mobile_renders_one_card_per_channel_with_labelled_statistics', () => {
+        setMediaMatches(true)
+        const wrapper = mountStats({ snore_median: 0.1, snore_max: 4.25 })
+
+        expect(wrapper.find('table').exists()).toBe(false)
+        const cards = wrapper.findAll('.data-card')
+        expect(cards).toHaveLength(1)
+        expect(cards[0]!.find('.data-card-header').text()).toBe('Snore (device)')
+        expect(
+            cards[0]!
+                .findAll('.data-card-row')
+                .map((row) => [
+                    row.find('.data-card-label').text(),
+                    row.find('.data-card-value').text(),
+                ]),
+        ).toEqual([
+            ['Min', '---'],
+            ['Median', '0.10'],
+            ['95th', '---'],
+            ['99.5th', '---'],
+            ['Max', '4.25'],
+        ])
+    })
+
     it('test_heading_names_all_device_channels', () => {
         expect(mountStats(FULL_STATS).find('h2').text()).toBe('Device Channel Statistics')
     })

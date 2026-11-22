@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession
 
 from snore.database.models import Day, Session, Waveform
+from snore.services.channel_stats import COMPUTED_CHANNELS, COMPUTED_LEAD_IN_SECONDS
 from snore.services.schemas import DeviceChannelStats
 
 _NIGHT = date(2025, 3, 1)
@@ -17,7 +18,8 @@ _NIGHT = date(2025, 3, 1)
 def _add_channel(
     db_session: DbSession, session: Session, channel: str, values: list[float]
 ) -> None:
-    pairs = [(i * 2.0, value) for i, value in enumerate(values)]
+    start = COMPUTED_LEAD_IN_SECONDS if channel in COMPUTED_CHANNELS else 0.0
+    pairs = [(start + i * 2.0, value) for i, value in enumerate(values)]
     db_session.add(
         Waveform(
             session_id=session.id,
