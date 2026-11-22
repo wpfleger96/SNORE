@@ -6,10 +6,10 @@ from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.constants import OPTIONAL_EVENT_COUNT_FIELDS
+from snore.constants import AHI_EVENT_TYPES, OPTIONAL_EVENT_COUNT_FIELDS
 from snore.database import models
 from snore.exceptions import NotFoundError
 from snore.metrics import reported_count
@@ -17,6 +17,7 @@ from snore.services._base import ProfileScopedService, session_device_join
 
 __all__ = [
     "EventService",
+    "apnea_seconds_by_session",
     "device_event_types",
     "device_reported_types",
     "reported_counts",
@@ -50,6 +51,34 @@ async def device_event_types(
 async def device_reported_types(db_session: AsyncSession, device_id: int) -> set[str]:
     """``device_event_types`` for one device."""
     return (await device_event_types(db_session, [device_id]))[device_id]
+
+
+async def apnea_seconds_by_session(
+    db_session: AsyncSession, session_ids: Collection[int]
+) -> dict[int, float]:
+    """Return each session's total time in apnea, in seconds.
+
+    OSCAR's "Total time in apnea" (``daily.cpp:1636-1642``): the summed
+    durations of the AHI event types.  An event with no recorded duration, on
+    ResMed every hypopnea, adds nothing; OSCAR stores that duration as -1, so
+    its total is one second lower per such event.  Every requested
+    id gets an entry, 0.0 when it has no such event.  ``session_ids`` must
+    already be scoped to the caller: nothing here checks ownership.
+    """
+    totals = dict.fromkeys(session_ids, 0.0)
+    if not totals:
+        return totals
+    rows = await db_session.execute(
+        select(models.Event.session_id, func.sum(models.Event.duration_seconds))
+        .where(
+            models.Event.session_id.in_(totals),
+            models.Event.event_type.in_(AHI_EVENT_TYPES),
+        )
+        .group_by(models.Event.session_id)
+    )
+    for session_id, seconds in rows:
+        totals[session_id] = seconds or 0.0
+    return totals
 
 
 def reported_counts(

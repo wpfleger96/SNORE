@@ -159,7 +159,7 @@ src/snore/
 │   ├── database_service.py  # DB stats + device listing (system/metadata)
 │   ├── day_recompute.py     # recompute_all_days: shared by `db recompute-days` and the admin job
 │   ├── day_service.py       # Day aggregation
-│   ├── event_service.py     # Event queries, device_event_types, reported_counts
+│   ├── event_service.py     # Event queries, device_event_types, reported_counts, apnea_seconds_by_session
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── leak_redline.py      # Time over the 24 L/min leak redline and OSCAR Large Leak spans, on read
 │   ├── lttb.py              # LTTB downsampling algorithm

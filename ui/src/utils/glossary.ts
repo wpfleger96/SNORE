@@ -101,6 +101,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         label: 'Flow Limitations',
         short: 'Breaths or periods where the inspiratory airflow shape is flattened by partial airway narrowing.',
     },
+    time_in_apnea: {
+        label: 'Time in Apnea',
+        short: 'Summed duration of the device-scored apneas and hypopneas, as OSCAR’s Daily page shows it.',
+        long: 'Adds up the duration the device recorded for each event that counts toward AHI; RERAs and flow limitations are not included. ResMed records no duration for hypopneas, so on ResMed this is time in apnea only. OSCAR counts each of those hypopneas as −1 second, so its total reads lower by the hypopnea count.',
+    },
     fl_class_ge4_pct: {
         label: 'FL Class ≥4',
         short: 'Share of confidently-classified breaths with a flow-limitation class of 4 or higher (more flattened inspiratory shapes).',

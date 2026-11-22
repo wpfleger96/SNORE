@@ -433,6 +433,9 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
 
     console.print("\n  Data:")
     console.print(f"    Events: {detail.event_count}")
+    console.print(
+        f"    Time in Apnea: {format_time_offset(detail.time_in_apnea_seconds)}"
+    )
     console.print(f"    Waveforms: {detail.waveform_count}")
     if detail.waveform_types:
         console.print(
