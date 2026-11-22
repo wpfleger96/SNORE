@@ -27,15 +27,16 @@ from snore.analysis.shared.versioning import (
 from snore.constants import COMPLIANCE_THRESHOLD_HOURS
 from snore.constants import FlowLimitationConstants as FLC
 from snore.database import models
-from snore.database.waveform_blobs import decode_channel_blobs
+from snore.database.waveform_blobs import decode_channel_blobs, decode_channel_series
 from snore.provenance import IndexSource
 from snore.services.channel_stats import (
     ChannelHistogram,
     ChannelHistograms,
     PooledHistogram,
     channel_histogram,
+    channel_series_histogram,
     pool_histograms,
-    pooled_channel_distribution,
+    pooled_channel_statistics,
     pooled_distribution,
     pooled_share_above,
 )
@@ -312,10 +313,10 @@ def _pooled_respiratory(
     """
     if any(sid in corrupt_sessions for sid in session_ids):
         return NightlyRespiratoryValue(reason=NullReason.CHANNEL_CORRUPT)
-    distribution = pooled_channel_distribution(by_session, session_ids)
-    if distribution is not None:
+    statistics = pooled_channel_statistics(by_session, session_ids)
+    if statistics is not None:
         return NightlyRespiratoryValue(
-            value=distribution[0], source=IndexSource.DERIVED
+            value=statistics["median"], source=IndexSource.DERIVED
         )
     any_stored = any(value is not None for value in stored)
     return NightlyRespiratoryValue(
@@ -826,11 +827,11 @@ class NightlyMixin(_BreathServiceCore):
                     )
             if not fallback:
                 continue
-            histograms, corrupt = await decode_channel_blobs(
+            histograms, corrupt = await decode_channel_series(
                 self._db,
                 [sid for d in fallback for sid in session_ids[d]],
                 (channel,),
-                channel_histogram,
+                channel_series_histogram,
             )
             for d, night_stored in fallback.items():
                 values[d][channel] = _pooled_respiratory(

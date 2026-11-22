@@ -671,33 +671,55 @@ class DeviceChannelStats(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    device_flg_min: float | None = _pooled_field("Minimum", _FL_CHANNEL)
     device_flg_median: float | None = _pooled_field("Median", _FL_CHANNEL)
     device_flg_95th: float | None = _pooled_field("95th percentile", _FL_CHANNEL)
+    device_flg_99_5th: float | None = _pooled_field("99.5th percentile", _FL_CHANNEL)
     device_flg_max: float | None = _pooled_field("Maximum", _FL_CHANNEL)
+    snore_min: float | None = _pooled_field("Minimum", _SNORE_CHANNEL)
     snore_median: float | None = _pooled_field("Median", _SNORE_CHANNEL)
     snore_95th: float | None = _pooled_field("95th percentile", _SNORE_CHANNEL)
+    snore_99_5th: float | None = _pooled_field("99.5th percentile", _SNORE_CHANNEL)
     snore_max: float | None = _pooled_field("Maximum", _SNORE_CHANNEL)
+    respiratory_rate_min: float | None = _waveform_field("Minimum", _RR_CHANNEL)
     respiratory_rate_median: float | None = _waveform_field("Median", _RR_CHANNEL)
     respiratory_rate_95th: float | None = _waveform_field(
         "95th percentile", _RR_CHANNEL
     )
+    respiratory_rate_99_5th: float | None = _waveform_field(
+        "99.5th percentile", _RR_CHANNEL
+    )
     respiratory_rate_max: float | None = _waveform_field("Maximum", _RR_CHANNEL)
+    tidal_volume_min: float | None = _waveform_field("Minimum", _TV_CHANNEL)
     tidal_volume_median: float | None = _waveform_field("Median", _TV_CHANNEL)
     tidal_volume_95th: float | None = _waveform_field("95th percentile", _TV_CHANNEL)
+    tidal_volume_99_5th: float | None = _waveform_field(
+        "99.5th percentile", _TV_CHANNEL
+    )
     tidal_volume_max: float | None = _waveform_field("Maximum", _TV_CHANNEL)
+    minute_ventilation_min: float | None = _waveform_field("Minimum", _MV_CHANNEL)
     minute_ventilation_median: float | None = _waveform_field("Median", _MV_CHANNEL)
     minute_ventilation_95th: float | None = _waveform_field(
         "95th percentile", _MV_CHANNEL
     )
+    minute_ventilation_99_5th: float | None = _waveform_field(
+        "99.5th percentile", _MV_CHANNEL
+    )
     minute_ventilation_max: float | None = _waveform_field("Maximum", _MV_CHANNEL)
+    ti_min: float | None = _waveform_field("Minimum", _TI_CHANNEL)
     ti_median: float | None = _waveform_field("Median", _TI_CHANNEL)
     ti_95th: float | None = _waveform_field("95th percentile", _TI_CHANNEL)
+    ti_99_5th: float | None = _waveform_field("99.5th percentile", _TI_CHANNEL)
     ti_max: float | None = _waveform_field("Maximum", _TI_CHANNEL)
+    ie_ratio_min: float | None = _waveform_field("Minimum", _IE_CHANNEL)
     ie_ratio_median: float | None = _waveform_field("Median", _IE_CHANNEL)
     ie_ratio_95th: float | None = _waveform_field("95th percentile", _IE_CHANNEL)
+    ie_ratio_99_5th: float | None = _waveform_field("99.5th percentile", _IE_CHANNEL)
     ie_ratio_max: float | None = _waveform_field("Maximum", _IE_CHANNEL)
+    pulse_min: float | None = _waveform_field("Minimum", _PULSE_CHANNEL)
     pulse_median: float | None = _waveform_field("Median", _PULSE_CHANNEL)
     pulse_95th: float | None = _waveform_field("95th percentile", _PULSE_CHANNEL)
+    pulse_99_5th: float | None = _waveform_field("99.5th percentile", _PULSE_CHANNEL)
     pulse_max: float | None = _waveform_field("Maximum", _PULSE_CHANNEL)
 
 

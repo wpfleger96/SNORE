@@ -782,12 +782,15 @@ async def test_day_pools_respiratory_and_pulse_channels(
 
     # rr pools [0, 12, 14, 16, 20]: the zero counts, the -1 sentinel does not.
     assert (
+        stats.respiratory_rate_min,
         stats.respiratory_rate_median,
         stats.respiratory_rate_95th,
+        stats.respiratory_rate_99_5th,
         stats.respiratory_rate_max,
-    ) == (14.0, 20.0, 20.0)
+    ) == (0.0, 14.0, 20.0, 20.0, 20.0)
     assert (stats.tidal_volume_median, stats.tidal_volume_max) == (475.0, 500.0)
-    assert (stats.pulse_median, stats.pulse_max) == (65.0, 70.0)
+    # pulse drops the -1 sentinel, so the minimum is the lowest real reading.
+    assert (stats.pulse_min, stats.pulse_median, stats.pulse_max) == (60.0, 65.0, 70.0)
     assert stats.minute_ventilation_median is None
     assert stats.device_flg_median is None
 

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession
 
 from snore.database.models import Day, Session, Waveform
+from snore.services.channel_stats import COMPUTED_CHANNELS, COMPUTED_LEAD_IN_SECONDS
 from snore.services.schemas import DeviceChannelStats
 
 _NIGHT = date(2025, 3, 1)
@@ -17,7 +18,8 @@ _NIGHT = date(2025, 3, 1)
 def _add_channel(
     db_session: DbSession, session: Session, channel: str, values: list[float]
 ) -> None:
-    pairs = [(i * 2.0, value) for i, value in enumerate(values)]
+    start = COMPUTED_LEAD_IN_SECONDS if channel in COMPUTED_CHANNELS else 0.0
+    pairs = [(start + i * 2.0, value) for i, value in enumerate(values)]
     db_session.add(
         Waveform(
             session_id=session.id,
@@ -56,14 +58,20 @@ def night(db_session, test_device, test_session_factory):
 # Channels the night has no waveform for serialize as null.
 _EXPECTED_STATS = {
     **dict.fromkeys(DeviceChannelStats.model_fields),
+    "device_flg_min": 0.0,
     "device_flg_median": 0.25,
     "device_flg_95th": 0.5,
+    "device_flg_99_5th": 0.5,
     "device_flg_max": 0.5,
+    "snore_min": 0.0,
     "snore_median": 1.0,
     "snore_95th": 2.0,
+    "snore_99_5th": 2.0,
     "snore_max": 2.0,
+    "respiratory_rate_min": 12.0,
     "respiratory_rate_median": 14.0,
     "respiratory_rate_95th": 16.0,
+    "respiratory_rate_99_5th": 16.0,
     "respiratory_rate_max": 16.0,
 }
 

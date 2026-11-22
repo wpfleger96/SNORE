@@ -5,7 +5,7 @@ export interface GlossaryEntry {
 }
 
 const POOLED_CHANNEL_NOTE =
-    "Median, 95th percentile and maximum are computed from the recorded samples, pooled across the night's enabled sessions (or the one session on a session page), not averaged per session. The device's stored summary values shown elsewhere on the page are not computed this way (on ResMed they cover the whole therapy day), so the two can differ."
+    "Minimum, median, 95th and 99.5th percentiles and maximum are computed from the recorded samples, pooled across the night's enabled sessions (or the one session on a session page), not averaged per session. Breathing rate, tidal volume, minute ventilation, Ti and I:E leave out the first 20 seconds after each mask-on, which read zero before the device has scored a breath, as in OSCAR. The device's stored summary values shown elsewhere on the page are not computed this way (on ResMed they cover the whole therapy day), so the two can differ."
 
 export const GLOSSARY: Record<string, GlossaryEntry> = {
     session_duration_hours: {

@@ -36,7 +36,7 @@ from snore.constants import (
     TI_VALID_RANGE_S,
     TIDAL_VOLUME_VALID_RANGE_ML,
 )
-from snore.database.waveform_blobs import decode_channel_blobs
+from snore.database.waveform_blobs import decode_channel_series, recording_gaps
 from snore.services.schemas import DeviceChannelStats, MaskOnSpan
 from snore.therapy_hours import parse_mask_on_segments
 from snore.utils.stats import nearest_rank_index
@@ -45,17 +45,20 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CHANNEL_RANGES",
+    "COMPUTED_CHANNELS",
+    "COMPUTED_LEAD_IN_SECONDS",
     "REPORTED_CHANNELS",
     "ChannelHistogram",
     "ChannelHistograms",
     "PooledHistogram",
     "channel_histogram",
+    "channel_series_histogram",
     "histogram_distribution",
     "load_channel_histograms",
     "mask_on_spans",
     "pool_channel_stats",
     "pool_histograms",
-    "pooled_channel_distribution",
+    "pooled_channel_statistics",
     "pooled_count",
     "pooled_distribution",
     "pooled_median",
@@ -82,8 +85,13 @@ CHANNEL_RANGES: dict[str, tuple[float, float]] = {
     "ie_ratio": IE_RATIO_VALID_RANGE,
     "pulse": PULSE_VALID_RANGE,
 }
+# The channels the device computes per breath, which read zero until it has
+# scored one.  OSCAR's ResMed loader drops the first 20 s of each file of them
+# (``resmed_loader.cpp:4290-4294``); a file is a recording run here.
+COMPUTED_CHANNELS = frozenset({"rr", "tv", "mv", "ti", "ie_ratio"})
+COMPUTED_LEAD_IN_SECONDS = 20.0
 # The channels ``DeviceChannelStats`` reports, and the prefix of each one's
-# ``_median``, ``_95th`` and ``_max`` fields.
+# ``_STATISTICS`` fields.
 _CHANNEL_PREFIXES = {
     "fl": "device_flg",
     "snore": "snore",
@@ -96,7 +104,10 @@ _CHANNEL_PREFIXES = {
 }
 # What session and day detail load: every channel ``DeviceChannelStats`` reports.
 REPORTED_CHANNELS = tuple(_CHANNEL_PREFIXES)
-_STATISTICS = ("median", "95th", "max")
+# OSCAR's Daily statistics columns are Min, Median, 95% and a Max that is the
+# 99.5th percentile on ResMed (``daily.cpp:1534``, ``profiles.cpp:704``); SNORE
+# also reports the true max.
+_STATISTICS = ("min", "median", "95th", "99_5th", "max")
 _ROUND_DIGITS = 4
 
 # A session's usable samples as ascending distinct values and how often each occurs.
@@ -115,6 +126,24 @@ def channel_histogram(channel: str, values: np.ndarray) -> ChannelHistogram:
     usable = values[np.isfinite(values) & (values >= low) & (values <= high)]
     unique_values, counts = np.unique(usable, return_counts=True)
     return unique_values, counts
+
+
+def channel_series_histogram(
+    channel: str, offsets: np.ndarray, values: np.ndarray, sample_rate: float
+) -> ChannelHistogram:
+    """``channel_histogram`` without a computed channel's lead-in.
+
+    A run starts at offset 0 and after each recording gap; the samples in the
+    first ``COMPUTED_LEAD_IN_SECONDS`` of each run are dropped, so a first run
+    already trimmed as OSCAR's loader stores it, starting 20 s in, loses nothing.
+    """
+    if channel in COMPUTED_CHANNELS and offsets.size:
+        run_starts = np.concatenate(
+            ([0.0], offsets[1:][recording_gaps(offsets, sample_rate)])
+        )
+        own_start = run_starts[np.searchsorted(run_starts, offsets, side="right") - 1]
+        values = values[offsets >= own_start + COMPUTED_LEAD_IN_SECONDS]
+    return channel_histogram(channel, values)
 
 
 def pool_histograms(histograms: Sequence[ChannelHistogram]) -> PooledHistogram:
@@ -202,27 +231,37 @@ async def load_channel_histograms(
     corrupt, which logs a warning.  ``decode_channel_blobs`` does no ownership
     check, so callers pass ids already scoped to the profile.
     """
-    histograms, _ = await decode_channel_blobs(
-        db, session_ids, channels, channel_histogram
+    histograms, _ = await decode_channel_series(
+        db, session_ids, channels, channel_series_histogram
     )
     return histograms
 
 
-def pooled_channel_distribution(
+def pooled_channel_statistics(
     by_session: Mapping[int, ChannelHistogram], session_ids: Iterable[int]
-) -> tuple[float, float, float] | None:
-    """One channel's ``(median, 95th, max)`` over the pooled ``session_ids``.
+) -> dict[str, float] | None:
+    """One channel's ``_STATISTICS`` over the pooled ``session_ids``, by name.
 
     Rounded as ``DeviceChannelStats`` reports them; ``None`` when none of the
-    sessions has a usable sample.
+    sessions has a usable sample.  Both percentiles are nearest rank.
     """
-    distribution = histogram_distribution(
+    pooled = pool_histograms(
         [by_session[sid] for sid in session_ids if sid in by_session]
     )
-    if distribution is None:
+    n = pooled_count(pooled)
+    if n == 0:
         return None
-    median, p95, maximum = (round(value, _ROUND_DIGITS) for value in distribution)
-    return median, p95, maximum
+    values = (
+        float(pooled[0][0]),
+        pooled_median(pooled),
+        value_at_rank(pooled, nearest_rank_index(n, 0.95)),
+        value_at_rank(pooled, nearest_rank_index(n, 0.995)),
+        float(pooled[0][-1]),
+    )
+    return {
+        stat: round(value, _ROUND_DIGITS)
+        for stat, value in zip(_STATISTICS, values, strict=True)
+    }
 
 
 def pool_channel_stats(
@@ -238,10 +277,9 @@ def pool_channel_stats(
     for channel, prefix in _CHANNEL_PREFIXES.items():
         if channel not in histograms:
             continue
-        distribution = pooled_channel_distribution(histograms[channel], session_ids)
-        if distribution is not None:
-            for stat, value in zip(_STATISTICS, distribution, strict=True):
-                fields[f"{prefix}_{stat}"] = value
+        statistics = pooled_channel_statistics(histograms[channel], session_ids)
+        for stat, value in (statistics or {}).items():
+            fields[f"{prefix}_{stat}"] = value
     return DeviceChannelStats.model_validate(fields) if fields else None
 
 

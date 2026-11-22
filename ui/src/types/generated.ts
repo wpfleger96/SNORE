@@ -3318,6 +3318,11 @@ export interface components {
              */
             device_flg_95th?: number | null
             /**
+             * Device Flg 99 5Th
+             * @description 99.5th percentile of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             */
+            device_flg_99_5th?: number | null
+            /**
              * Device Flg Max
              * @description Maximum of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
              */
@@ -3328,10 +3333,20 @@ export interface components {
              */
             device_flg_median?: number | null
             /**
+             * Device Flg Min
+             * @description Minimum of the device flow-limitation channel (0-1 unitless), excluding mask-off sentinels, pooled
+             */
+            device_flg_min?: number | null
+            /**
              * Ie Ratio 95Th
              * @description 95th percentile of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ie_ratio_95th?: number | null
+            /**
+             * Ie Ratio 99 5Th
+             * @description 99.5th percentile of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            ie_ratio_99_5th?: number | null
             /**
              * Ie Ratio Max
              * @description Maximum of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3343,10 +3358,20 @@ export interface components {
              */
             ie_ratio_median?: number | null
             /**
+             * Ie Ratio Min
+             * @description Minimum of the device I:E ratio channel (%), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            ie_ratio_min?: number | null
+            /**
              * Minute Ventilation 95Th
              * @description 95th percentile of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             minute_ventilation_95th?: number | null
+            /**
+             * Minute Ventilation 99 5Th
+             * @description 99.5th percentile of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            minute_ventilation_99_5th?: number | null
             /**
              * Minute Ventilation Max
              * @description Maximum of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3358,10 +3383,20 @@ export interface components {
              */
             minute_ventilation_median?: number | null
             /**
+             * Minute Ventilation Min
+             * @description Minimum of the device minute ventilation channel (L/min), pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            minute_ventilation_min?: number | null
+            /**
              * Pulse 95Th
              * @description 95th percentile of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             pulse_95th?: number | null
+            /**
+             * Pulse 99 5Th
+             * @description 99.5th percentile of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            pulse_99_5th?: number | null
             /**
              * Pulse Max
              * @description Maximum of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3373,10 +3408,20 @@ export interface components {
              */
             pulse_median?: number | null
             /**
+             * Pulse Min
+             * @description Minimum of the oximeter pulse channel (bpm), excluding invalid readings, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            pulse_min?: number | null
+            /**
              * Respiratory Rate 95Th
              * @description 95th percentile of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             respiratory_rate_95th?: number | null
+            /**
+             * Respiratory Rate 99 5Th
+             * @description 99.5th percentile of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            respiratory_rate_99_5th?: number | null
             /**
              * Respiratory Rate Max
              * @description Maximum of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3388,10 +3433,20 @@ export interface components {
              */
             respiratory_rate_median?: number | null
             /**
+             * Respiratory Rate Min
+             * @description Minimum of the device respiratory rate channel (breaths/min), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            respiratory_rate_min?: number | null
+            /**
              * Snore 95Th
              * @description 95th percentile of the device snore channel (0-5 unitless), pooled
              */
             snore_95th?: number | null
+            /**
+             * Snore 99 5Th
+             * @description 99.5th percentile of the device snore channel (0-5 unitless), pooled
+             */
+            snore_99_5th?: number | null
             /**
              * Snore Max
              * @description Maximum of the device snore channel (0-5 unitless), pooled
@@ -3403,10 +3458,20 @@ export interface components {
              */
             snore_median?: number | null
             /**
+             * Snore Min
+             * @description Minimum of the device snore channel (0-5 unitless), pooled
+             */
+            snore_min?: number | null
+            /**
              * Ti 95Th
              * @description 95th percentile of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             ti_95th?: number | null
+            /**
+             * Ti 99 5Th
+             * @description 99.5th percentile of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            ti_99_5th?: number | null
             /**
              * Ti Max
              * @description Maximum of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3418,10 +3483,20 @@ export interface components {
              */
             ti_median?: number | null
             /**
+             * Ti Min
+             * @description Minimum of the device inspiratory time channel (seconds), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            ti_min?: number | null
+            /**
              * Tidal Volume 95Th
              * @description 95th percentile of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             tidal_volume_95th?: number | null
+            /**
+             * Tidal Volume 99 5Th
+             * @description 99.5th percentile of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            tidal_volume_99_5th?: number | null
             /**
              * Tidal Volume Max
              * @description Maximum of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
@@ -3432,6 +3507,11 @@ export interface components {
              * @description Median of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
              */
             tidal_volume_median?: number | null
+            /**
+             * Tidal Volume Min
+             * @description Minimum of the device tidal volume channel (mL), excluding out-of-range samples, pooled; computed from the recorded waveform samples, unlike the same-named stored summary in session statistics (on ResMed, one STR value for the whole therapy day), so the two can differ in value and unit
+             */
+            tidal_volume_min?: number | null
         }
         /**
          * DeviceDetail

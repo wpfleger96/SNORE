@@ -31,6 +31,7 @@ from snore.database.models import (
     Waveform,
 )
 from snore.database.session import cleanup_database
+from snore.services.channel_stats import COMPUTED_CHANNELS, COMPUTED_LEAD_IN_SECONDS
 
 
 @pytest.fixture(autouse=True)
@@ -168,8 +169,13 @@ async def _make_channel_waveform(
     channel: str,
     values: list[float],
 ) -> Waveform:
-    """Store ``values`` as a ``channel`` waveform blob sampled every 2 seconds."""
-    pairs = [(i * 2.0, value) for i, value in enumerate(values)]
+    """Store ``values`` as a ``channel`` waveform blob sampled every 2 seconds.
+
+    A device-computed channel starts after the lead-in that channel statistics
+    drop, so every value counts.
+    """
+    start = COMPUTED_LEAD_IN_SECONDS if channel in COMPUTED_CHANNELS else 0.0
+    pairs = [(start + i * 2.0, value) for i, value in enumerate(values)]
     waveform = Waveform(
         session_id=session.id,
         waveform_type=channel,
