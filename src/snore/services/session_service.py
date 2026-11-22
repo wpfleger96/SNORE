@@ -23,7 +23,11 @@ from snore.services.channel_stats import (
     mask_on_spans,
     pool_channel_stats,
 )
-from snore.services.event_service import device_reported_types, reported_counts
+from snore.services.event_service import (
+    apnea_seconds_by_session,
+    device_reported_types,
+    reported_counts,
+)
 from snore.services.leak_redline import LeakSource, load_leak_redline
 from snore.services.mask_log_service import MaskLogService
 from snore.services.schemas import (
@@ -285,6 +289,7 @@ class SessionService(ProfileScopedService):
                 ],
             )
 
+        apnea_seconds = await apnea_seconds_by_session(self.db_session, [session.id])
         duration_seconds = session.duration_seconds or 0.0
         return SessionDetail(
             id=session.id,
@@ -315,6 +320,7 @@ class SessionService(ProfileScopedService):
             settings=settings_list,
             active_mask=active_mask,
             channel_stats=channel_stats,
+            time_in_apnea_seconds=apnea_seconds[session.id],
             leak_redline=leak_redline,
             mask_on_spans=mask_on_spans(
                 session.id, session.start_time, session.mask_on_segments

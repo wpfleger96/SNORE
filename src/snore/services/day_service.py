@@ -21,7 +21,11 @@ from snore.services.channel_stats import (
     mask_on_spans,
     pool_channel_stats,
 )
-from snore.services.event_service import device_reported_types, reported_counts
+from snore.services.event_service import (
+    apnea_seconds_by_session,
+    device_reported_types,
+    reported_counts,
+)
 from snore.services.leak_redline import LeakSource, load_leak_redline
 from snore.services.schemas import (
     DayDetail,
@@ -222,6 +226,7 @@ class DayService(ProfileScopedService):
                 for row in enabled_rows
             ],
         )
+        apnea_seconds = await apnea_seconds_by_session(self.db_session, enabled_ids)
         spans = _day_mask_on_spans(
             [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
         )
@@ -256,6 +261,9 @@ class DayService(ProfileScopedService):
                 "session_ids": [row.id for row in session_rows],
                 "health_sleep": health_sleep,
                 "channel_stats": pool_channel_stats(histograms, enabled_ids),
+                "time_in_apnea_seconds": (
+                    sum(apnea_seconds.values()) if enabled_ids else None
+                ),
                 "leak_redline": leak_redline,
                 "mask_on_spans": spans,
             }

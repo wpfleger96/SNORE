@@ -260,6 +260,12 @@
                             glossary-key="reras"
                         />
                         <StatCard
+                            label="Time in Apnea"
+                            :value="session.time_in_apnea_seconds"
+                            :display="formatTimeOffset(session.time_in_apnea_seconds)"
+                            glossary-key="time_in_apnea"
+                        />
+                        <StatCard
                             v-if="session.statistics.flow_limitations != null"
                             label="Flow Limitations"
                             :value="session.statistics.flow_limitations"
@@ -1073,6 +1079,7 @@ import {
     formatDateWithWeekday,
     formatDateFull,
     formatDateTime,
+    formatTimeOffset,
     secToHours,
 } from '@/utils/formatting'
 import { maskEntryName, styleLabel } from '@/utils/maskOptions'

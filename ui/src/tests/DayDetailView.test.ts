@@ -230,6 +230,28 @@ describe('DayDetailView date changes', () => {
     })
 })
 
+describe('DayDetailView time in apnea', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('test_time_in_apnea_renders_as_clock_duration', async () => {
+        const card = findCard(
+            await mountDay(makeDay({ time_in_apnea_seconds: 3725.4 })),
+            'Time in Apnea',
+        )
+        expect(card?.find('.stat-value').text()).toBe('1:02:05')
+    })
+
+    it('test_day_without_enabled_session_shows_empty_time_in_apnea', async () => {
+        const card = findCard(
+            await mountDay(makeDay({ time_in_apnea_seconds: null })),
+            'Time in Apnea',
+        )
+        expect(card?.find('.stat-value').text()).toBe('---')
+    })
+})
+
 describe('DayDetailView leak redline', () => {
     beforeEach(() => {
         vi.clearAllMocks()

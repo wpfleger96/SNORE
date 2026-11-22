@@ -1572,6 +1572,17 @@ class TestSessionShowExpanded:
         assert "Time over redline: 50.0%" in leak
         assert "2025-10-01 22:00:02 to 22:00:06, Duration: 4s" in leak
 
+    def test_session_show_displays_time_in_apnea(
+        self, cli_runner, db_with_apnea_events
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(db_with_apnea_events)],
+        )
+
+        assert result.exit_code == 0
+        assert "Time in Apnea: 1:02:05" in result.output
+
     def test_session_show_omits_absent_device_detail(
         self, cli_runner, db_with_device_channels
     ):
@@ -1700,6 +1711,24 @@ async def db_with_device_channels(populated_test_db_full):
             [(0.0, 10.0), (2.0, 30.0), (4.0, 30.0), (6.0, 5.0)], dtype=np.float32
         ).tobytes()
         leak.sample_count = 4
+    return populated_test_db_full
+
+
+@pytest.fixture
+async def db_with_apnea_events(populated_test_db_full):
+    """``populated_test_db_full`` with an hour-plus of apneas and an undurated
+    hypopnea on the first session."""
+    async with session_scope() as session:
+        first = await session.get(models.Session, 1)
+        for event_type, seconds in [("OA", 3600.0), ("CA", 125.6), ("H", None)]:
+            session.add(
+                models.Event(
+                    session_id=first.id,
+                    event_type=event_type,
+                    start_time=first.start_time,
+                    duration_seconds=seconds,
+                )
+            )
     return populated_test_db_full
 
 

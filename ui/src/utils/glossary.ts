@@ -166,6 +166,11 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Unintentional air leak rate from the mask, in L/min.',
         long: 'Sustained large leaks reduce therapy effectiveness and can hide events from detection. Percentile variants summarize the night’s leak distribution.',
     },
+    time_in_apnea: {
+        label: 'Total Time in Apnea',
+        short: 'Summed duration of the device-scored apneas and hypopneas, as OSCAR’s Daily page shows it.',
+        long: 'Adds up the duration the device recorded for each event that counts toward AHI. ResMed records no duration for hypopneas, so on ResMed this is time in apnea only, as in OSCAR.',
+    },
     leak_redline: {
         label: 'Time Over Leak Redline',
         short: 'Share of the leak samples at or above 24 L/min, OSCAR’s default leak redline.',
