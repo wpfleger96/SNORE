@@ -108,6 +108,14 @@ describe('SessionDetailView respiratory event cards', () => {
         expect(findCard(wrapper, label)?.find('.stat-value').text()).toBe('0')
     })
 
+    it('test_time_in_apnea_renders_as_clock_duration_and_zero', async () => {
+        const shown = await mountSession({}, { time_in_apnea_seconds: 221.6 })
+        expect(findCard(shown, 'Time in Apnea')?.find('.stat-value').text()).toBe('0:03:41')
+
+        const zero = await mountSession({}, { time_in_apnea_seconds: 0 })
+        expect(findCard(zero, 'Time in Apnea')?.find('.stat-value').text()).toBe('0:00:00')
+    })
+
     it('test_null_rei_hides_card_and_value_shows_it', async () => {
         const hidden = await mountSession({ rei: null })
         expect(findCard(hidden, 'REI')).toBeUndefined()

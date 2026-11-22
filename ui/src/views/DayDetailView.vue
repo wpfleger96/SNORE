@@ -68,6 +68,16 @@
                 :decimals="0"
                 glossary-key="reras"
             />
+            <StatCard
+                label="Time in Apnea"
+                :value="data.time_in_apnea_seconds ?? null"
+                :display="
+                    data.time_in_apnea_seconds != null
+                        ? formatTimeOffset(data.time_in_apnea_seconds)
+                        : null
+                "
+                glossary-key="time_in_apnea"
+            />
         </div>
 
         <p class="mb-6">
@@ -353,7 +363,7 @@ import {
 import { Loader2, ArrowLeft } from '@lucide/vue'
 import { getDay } from '@/api/days'
 import { useApiLoad } from '@/composables/useApiLoad'
-import { formatDateWithWeekday, secToHours } from '@/utils/formatting'
+import { formatDateWithWeekday, formatTimeOffset, secToHours } from '@/utils/formatting'
 import ErrorState from '@/components/ErrorState.vue'
 
 const props = defineProps<{ dayDate: string }>()

@@ -1,7 +1,8 @@
 """get_night_detail: one night as the web Day page shows it.
 
 Combines ``DayService.get_day`` (the device night), each of its sessions'
-Statistics row (what the Session page shows, without decoding waveforms) and
+Statistics row and time in apnea (what the Session page shows, without decoding
+waveforms) and
 ``HealthService.get_night_detail`` (the Apple Health night).  Every query is
 profile-scoped through Device.profile_id (Apple Health by profile_id).
 """
@@ -26,7 +27,10 @@ from snore.mcp.tools._service_errors import (
 )
 from snore.services.breath.dtos import DeviceAmbiguityError
 from snore.services.day_service import DayService
-from snore.services.event_service import device_reported_types
+from snore.services.event_service import (
+    apnea_seconds_by_session,
+    device_reported_types,
+)
 from snore.services.health_service import HealthService
 from snore.services.schemas import DayDetail
 from snore.services.session_service import session_statistics
@@ -111,7 +115,7 @@ async def _only_night_device_id(
 async def _night_sessions(
     db_session: AsyncSession, profile_id: int, day: DayDetail
 ) -> list[NightSession]:
-    """The day's sessions with their Statistics rows, ascending by start.
+    """The day's sessions with their Statistics rows and time in apnea, by start.
 
     Only the served Session columns are selected: the JSON columns decode
     through ``ValidatedJSON``, which raises on an invalid stored value.
@@ -139,6 +143,7 @@ async def _night_sessions(
         )
     ).all()
     reported = await device_reported_types(db_session, day.device_id)
+    apnea_seconds = await apnea_seconds_by_session(db_session, [row.id for row in rows])
     return [
         NightSession(
             id=row.id,
@@ -146,6 +151,7 @@ async def _night_sessions(
             end_time=row.end_time,
             enabled=row.enabled,
             therapy_mode=row.therapy_mode,
+            time_in_apnea_seconds=apnea_seconds[row.id],
             statistics=(
                 session_statistics(row.Statistics, row.import_source, reported)
                 if row.Statistics is not None

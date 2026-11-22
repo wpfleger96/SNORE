@@ -38,6 +38,7 @@ from snore.services.schemas import (
     HEADLINE_INDEX_DESCRIPTION,
     INDEX_SOURCE_DESCRIPTION,
     RERA_PROXY_FALLBACK_NOTE,
+    TIME_IN_APNEA_DESCRIPTION,
     DayDetail,
     HealthNightCoverage,
     HealthNightDetailRead,
@@ -625,6 +626,9 @@ class NightSession(BaseModel):
     end_time: datetime = Field(description="Device wall-clock session end")
     enabled: bool
     therapy_mode: str | None = None
+    time_in_apnea_seconds: float = Field(
+        description=TIME_IN_APNEA_DESCRIPTION.format(scope="this session's")
+    )
     statistics: SessionStatistics | None = Field(
         default=None, description="Null when the session has no statistics row"
     )

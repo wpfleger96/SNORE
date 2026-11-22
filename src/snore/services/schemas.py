@@ -23,6 +23,7 @@ from snore.provenance import IndexSource, experimental_field
 __all__ = [
     "HEADLINE_INDEX_DESCRIPTION",
     "INDEX_SOURCE_DESCRIPTION",
+    "TIME_IN_APNEA_DESCRIPTION",
     "PeriodStatistics",
     "EventValidationResult",
     "DatabaseStats",
@@ -785,6 +786,14 @@ class LeakRedlineStats(BaseModel):
     )
 
 
+TIME_IN_APNEA_DESCRIPTION = (
+    "OSCAR's total time in apnea: the summed durations of {scope} device-scored "
+    "obstructive, central, mixed and unclassified apneas and hypopneas, in "
+    "seconds (RERAs and flow limitations excluded). Events with no recorded "
+    "duration add nothing, which on ResMed is every hypopnea."
+)
+
+
 class SessionDetail(BaseModel):
     """Detailed view of a single session with all metadata."""
 
@@ -818,6 +827,9 @@ class SessionDetail(BaseModel):
         description="This session's device channel statistics, whether or not it "
         "is enabled; null when it has none of the channels, and always null on "
         "PATCH responses, which omit it",
+    )
+    time_in_apnea_seconds: float = Field(
+        description=TIME_IN_APNEA_DESCRIPTION.format(scope="this session's")
     )
     leak_redline: LeakRedlineStats | None = Field(
         default=None,
@@ -1254,6 +1266,12 @@ class DayDetail(DayListItem):
         default=None,
         description="Device channel statistics over the pooled samples of the "
         "day's enabled sessions; null when none has any of the channels",
+    )
+    time_in_apnea_seconds: float | None = Field(
+        description=TIME_IN_APNEA_DESCRIPTION.format(
+            scope="the day's enabled sessions'"
+        )
+        + " Null when the day has no enabled session.",
     )
     leak_redline: LeakRedlineStats | None = Field(
         default=None,

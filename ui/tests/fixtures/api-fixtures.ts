@@ -1349,6 +1349,7 @@ export const sessionDetailFixture: SessionDetail = {
         pulse_99_5th: null,
         pulse_max: null,
     },
+    time_in_apnea_seconds: 221,
     leak_redline: {
         leak_above_24_pct: 0.8,
         large_leak_pct: 0.82,
