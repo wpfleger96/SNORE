@@ -19,17 +19,21 @@ Time at Pressure follows ``Graphs/MinutesAtPressure.cpp``:
   (``rawToBucketId``, ``:298-302``), capped at 60 cmH2O (``:125``, ``:516``);
 - a sample holds its bucket until the next sample, and a session's last sample
   adds nothing (``updateTimes``, ``:451-541``);
+- pressure and EPAP samples in the first 10 seconds of each recording segment
+  add nothing, as OSCAR's ResMed loader drops them while pressure settles
+  (``resmed_loader.cpp:4284-4287``); the 99.5th keeps them, as the stored 95th
+  does;
 - an event counts in the bucket of the last pressure sample at or before its
   flag time, or of the first sample when flagged before any (``updateFlagData``,
-  ``:323-357``); events count against pressure only, never EPAP, and RERAs,
-  flow limitation and snore are not counted (``:589-593``).
+  ``:323-357``), and not at all when flagged after the last sample; only AHI
+  event types count, against pressure only, never EPAP (``:589-593``).
 
 Differences that are deliberate:
 
 - spans (CSR, Large Leak), which OSCAR shades behind the chart, are left out;
-- a recording gap ends the time of the sample before it, since a SNORE session
-  holds every mask-on segment where OSCAR makes each its own session
-  (``resmed_loader.cpp:3266-3294``);
+- a recording gap ends the time of the sample before it, and an event flagged
+  inside one is not counted, since a SNORE session holds every mask-on segment
+  where OSCAR makes each its own session (``resmed_loader.cpp:3266-3294``);
 - a non-finite sample adds no time and an event at one is not counted, where
   OSCAR's ResMed loader carries the previous value through a sentinel
   (``resmed_loader.cpp:4351``);
@@ -48,6 +52,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.database.day_manager import (
     POOLED_PERCENTILE_SOURCES,
+    contributing_prefixes,
+    has_usable_samples,
     summary_channel_choices,
 )
 from snore.database.models import Statistics
@@ -56,13 +62,14 @@ from snore.database.waveform_blobs import (
     decode_channel_series,
     recording_gaps,
 )
+from snore.services.event_service import EventFlags
 from snore.services.schemas import TimeAtPressure
-from snore.therapy_hours import effective_session_hours
 
 __all__ = ["PressureSource", "PressureViews", "load_pressure_views"]
 
 _BUCKETS_PER_CMH2O = 5
 _MAX_BUCKET = 60 * _BUCKETS_PER_CMH2O
+_SETTLE_SECONDS = 10.0
 
 # One session's stored series: (offsets in seconds, samples, sample rate).
 type _Series = tuple[np.ndarray, np.ndarray, float]
@@ -80,17 +87,12 @@ class PressureSource(BaseModel):
         cls, session_id: int, stats: Statistics | None, duration_seconds: float | None
     ) -> PressureSource:
         """The source for a session, from its stored statistics."""
-        if (
-            stats is None
-            or effective_session_hours(stats.usage_hours, duration_seconds) <= 0
-        ):
-            return cls(session_id=session_id, prefixes=frozenset())
         return cls(
             session_id=session_id,
-            prefixes=frozenset(
-                prefix
-                for prefix, columns in POOLED_PERCENTILE_SOURCES.items()
-                if any(getattr(stats, name) is not None for name in columns)
+            prefixes=(
+                contributing_prefixes(stats, duration_seconds)
+                if stats is not None
+                else frozenset()
             ),
         )
 
@@ -117,13 +119,16 @@ async def _covered_series(
     """Prefix -> the covered sessions' series, or None when any is unusable."""
     usable: dict[tuple[str, int], _Series] = {}
     chosen = await summary_channel_choices(db, [s.session_id for s in sources])
+    # Leak is decoded here as well as for the leak redline histogram on
+    # purpose: its 99.5th needs the raw samples for the linear percentile
+    # that matches the stored 95th, which a histogram cannot give.
     for channel, keys in chosen.items():
         values, _ = await decode_channel_series(
             db, [session_id for _, session_id in keys], [channel], _keep_series
         )
         for prefix, session_id in keys:
             series = values[channel].get(session_id)
-            if series is not None and np.isfinite(series[1]).any():
+            if series is not None and has_usable_samples(series[1]):
                 usable[(prefix, session_id)] = series
     covered: dict[str, dict[int, _Series] | None] = {}
     for prefix in POOLED_PERCENTILE_SOURCES:
@@ -148,11 +153,25 @@ def _bucket_ids(values: np.ndarray) -> np.ndarray:
     return np.clip(np.floor(position), 0, _MAX_BUCKET).astype(np.intp)
 
 
+def _held_seconds(offsets: np.ndarray, sample_rate: float) -> np.ndarray:
+    """Seconds each sample holds its bucket.
+
+    Until the next sample, nothing for a segment's last sample, and nothing in
+    a segment's first ``_SETTLE_SECONDS``.
+    """
+    gaps = recording_gaps(offsets, sample_rate)
+    held = np.append(np.diff(offsets), 0.0)
+    held[:-1][gaps] = 0.0
+    starts = np.concatenate(([True], gaps))
+    segment_start = offsets[starts][np.cumsum(starts) - 1]
+    held[offsets - segment_start < _SETTLE_SECONDS] = 0.0
+    return held
+
+
 def _seconds_by_bucket(series: Mapping[int, _Series]) -> np.ndarray:
     total = np.zeros(_MAX_BUCKET + 1)
     for offsets, values, sample_rate in series.values():
-        held = np.append(np.diff(offsets), 0.0)
-        held[:-1][recording_gaps(offsets, sample_rate)] = 0.0
+        held = _held_seconds(offsets, sample_rate)
         finite = np.isfinite(values)
         total += np.bincount(
             _bucket_ids(values[finite]),
@@ -163,22 +182,24 @@ def _seconds_by_bucket(series: Mapping[int, _Series]) -> np.ndarray:
 
 
 def _events_by_bucket(
-    series: Mapping[int, _Series],
-    flags: Mapping[int, Sequence[tuple[str, float]]],
+    series: Mapping[int, _Series], flags: EventFlags
 ) -> dict[str, np.ndarray]:
     counts: dict[str, np.ndarray] = {}
-    for session_id, (offsets, values, _) in series.items():
+    for session_id, (offsets, values, sample_rate) in series.items():
         if not flags[session_id]:
             continue
         types = np.array([event_type for event_type, _ in flags[session_id]])
         times = np.array([offset for _, offset in flags[session_id]])
-        at = values[np.maximum(np.searchsorted(offsets, times, side="right") - 1, 0)]
-        finite = np.isfinite(at)
-        buckets = _bucket_ids(at[finite])
-        for event_type in np.unique(types[finite]).tolist():
+        # The last sample at or before each flag, or the first when before any.
+        at = np.maximum(np.searchsorted(offsets, times, side="right") - 1, 0)
+        gap_after = np.append(recording_gaps(offsets, sample_rate), False)
+        in_gap = gap_after[at] & (times > offsets[at])
+        kept = (times <= offsets[-1]) & ~in_gap & np.isfinite(values[at])
+        buckets = _bucket_ids(values[at[kept]])
+        for event_type in np.unique(types[kept]).tolist():
             counts.setdefault(event_type, np.zeros(_MAX_BUCKET + 1, dtype=np.int64))
             counts[event_type] += np.bincount(
-                buckets[types[finite] == event_type], minlength=_MAX_BUCKET + 1
+                buckets[types[kept] == event_type], minlength=_MAX_BUCKET + 1
             )
     return counts
 
@@ -186,7 +207,7 @@ def _events_by_bucket(
 def _time_at_pressure(
     pressure: Mapping[int, _Series],
     epap: Mapping[int, _Series] | None,
-    flags: Mapping[int, Sequence[tuple[str, float]]],
+    flags: EventFlags,
 ) -> TimeAtPressure | None:
     pressure_seconds = _seconds_by_bucket(pressure)
     epap_seconds = _seconds_by_bucket(epap) if epap is not None else None
@@ -218,7 +239,7 @@ def _time_at_pressure(
 async def load_pressure_views(
     db: AsyncSession,
     sources: Sequence[PressureSource],
-    flags: Mapping[int, Sequence[tuple[str, float]]],
+    flags: EventFlags,
 ) -> PressureViews:
     """The 99.5ths and Time at Pressure over ``sources``.
 

@@ -801,17 +801,21 @@ class TimeAtPressure(BaseModel):
     )
     pressure_seconds: list[float] = Field(
         description="Seconds the pressure channel behind pressure_median spent in "
-        "each bucket, over the sessions that value covers"
+        "each bucket, over the sessions that value covers; the first 10 s of each "
+        "recording segment add nothing, as in OSCAR"
     )
     epap_seconds: list[float] | None = Field(
         default=None,
         description="Seconds EPAP spent in each bucket, over the sessions "
-        "epap_median covers; null when none has a usable EPAP channel",
+        "epap_median covers, skipping each recording segment's first 10 s; null "
+        "when no session has a stored EPAP value and mask-on time, or any that "
+        "has lacks a usable EPAP channel",
     )
     event_counts: dict[str, list[int]] = Field(
         description="Per device-scored AHI event type with at least one event "
         "(OA, CA, CAA, MA, UA, H): how many were flagged while the pressure "
-        "channel was in each bucket"
+        "channel was in each bucket; one flagged in a recording gap or after "
+        "the last sample is not counted"
     )
 
 
@@ -820,7 +824,7 @@ class RunningAhiSegment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    session_id: int
+    session_id: int = Field(description="The session the segment belongs to")
     start: datetime = Field(
         description="Device wall-clock start of the segment, the time of values[0]"
     )
@@ -836,9 +840,10 @@ def _p99_5_field(channel: str, unit: str, scope: str) -> Any:
     return Field(
         default=None,
         description=f"99.5th percentile of {scope} pooled {channel} samples "
-        f"({unit}), OSCAR's Max column on ResMed: the same channel and linear "
-        "method as the 95th. Null when no session has the channel or any has no "
-        "usable stored waveform for it",
+        f"({unit}), OSCAR's Max column on ResMed: the same channel, sessions and "
+        f"linear method as the 95th, over the sessions with a stored {channel} "
+        "median or 95th and mask-on time. Null when there are none or any has no "
+        "usable stored waveform for the channel",
     )
 
 
@@ -898,8 +903,10 @@ class SessionDetail(BaseModel):
     leak_99_5th: float | None = _p99_5_field("leak", "L/min", "this session's")
     time_at_pressure: TimeAtPressure | None = Field(
         default=None,
-        description="This session's Time at Pressure; null when its pressure "
-        "channel is absent or unusable, and always null on PATCH responses",
+        description="This session's Time at Pressure; null when it has no stored "
+        "pressure median or 95th, no mask-on time, an absent or unusable pressure "
+        "channel, or no time or events in any bucket, and always null on PATCH "
+        "responses",
     )
     running_ahi: list[RunningAhiSegment] | None = Field(
         default=None,
@@ -1360,8 +1367,10 @@ class DayDetail(DayListItem):
     )
     time_at_pressure: TimeAtPressure | None = Field(
         default=None,
-        description="Time at Pressure over the day's enabled sessions; null when "
-        "none has a pressure channel or any one's is unusable",
+        description="Time at Pressure over the day's enabled sessions with a "
+        "stored pressure median or 95th and mask-on time; null when there are "
+        "none, any has an absent or unusable pressure channel, or no bucket has "
+        "time or events",
     )
     running_ahi: list[RunningAhiSegment] | None = Field(
         default=None,

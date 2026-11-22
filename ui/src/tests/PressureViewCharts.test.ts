@@ -32,7 +32,7 @@ vi.mock('@/components/InfoHint.vue', () => ({
 
 import RunningAhiChart from '@/components/RunningAhiChart.vue'
 import TimeAtPressureChart from '@/components/TimeAtPressureChart.vue'
-import type { RunningAhiSegment, TimeAtPressure } from '@/types'
+import { EVENT_SOLID_COLORS, type RunningAhiSegment, type TimeAtPressure } from '@/types'
 
 function lastChart() {
     const chart = built.at(-1)
@@ -55,8 +55,34 @@ describe('RunningAhiChart', () => {
         const [xs, ys] = lastChart().data
         const start = new Date('2026-05-03T22:00:00').getTime() / 1000
         const second = new Date('2026-05-03T23:30:00').getTime() / 1000
-        expect(xs).toEqual([start, start + 60, second - 30, second])
+        expect(xs).toEqual([start, start + 60, (start + 60 + second) / 2, second])
         expect(ys).toEqual([0, 1, null, 2])
+    })
+
+    it('test_adjacent_segments_break_between_their_minutes', () => {
+        const segments: RunningAhiSegment[] = [
+            { session_id: 1, start: '2026-05-03T22:00:00', values: [0, 1] },
+            { session_id: 2, start: '2026-05-03T22:02:00', values: [2] },
+        ]
+        mount(RunningAhiChart, { props: { segments } })
+
+        const [xs, ys] = lastChart().data
+        const start = new Date('2026-05-03T22:00:00').getTime() / 1000
+        expect(xs).toEqual([start, start + 60, start + 90, start + 120])
+        expect(ys).toEqual([0, 1, null, 2])
+    })
+
+    it('test_overlapping_segment_cuts_the_earlier_one_short', () => {
+        const segments: RunningAhiSegment[] = [
+            { session_id: 1, start: '2026-05-03T22:00:00', values: [0, 1, 2, 3] },
+            { session_id: 2, start: '2026-05-03T22:02:00', values: [5, 6] },
+        ]
+        mount(RunningAhiChart, { props: { segments } })
+
+        const [xs, ys] = lastChart().data
+        const start = new Date('2026-05-03T22:00:00').getTime() / 1000
+        expect(xs).toEqual([start, start + 60, start + 90, start + 120, start + 180])
+        expect(ys).toEqual([0, 1, null, 5, 6])
     })
 
     it('test_no_segments_renders_nothing', () => {
@@ -98,6 +124,39 @@ describe('TimeAtPressureChart', () => {
         const { opts, data } = lastChart()
         expect(data[2]).toEqual([0, 0.5])
         expect(opts.series.map((s) => s.label)).toEqual([undefined, 'Pressure', 'EPAP', 'OA'])
+    })
+
+    it('test_no_events_plots_only_minutes', () => {
+        mount(TimeAtPressureChart, { props: { tap: { ...tap, event_counts: {} } } })
+
+        const { opts, data } = lastChart()
+        expect(data).toEqual([
+            [8, 8.2],
+            [2, 1],
+        ])
+        expect(opts.series.map((s) => s.label)).toEqual([undefined, 'Pressure'])
+    })
+
+    it('test_clear_airway_apneas_plot_as_central', () => {
+        mount(TimeAtPressureChart, {
+            props: { tap: { ...tap, event_counts: { CA: [1, 0], CAA: [0, 2] } } },
+        })
+
+        const { opts, data } = lastChart()
+        expect(data[2]).toEqual([1, 2])
+        expect(opts.series.map((s) => s.label)).toEqual([undefined, 'Pressure', 'CA'])
+    })
+
+    it('test_lines_never_share_an_event_colour', () => {
+        mount(TimeAtPressureChart, { props: { tap: { ...tap, epap_seconds: [0, 30] } } })
+
+        const { opts } = lastChart()
+        const [, pressure, epap, oa] = opts.series
+        expect(oa?.stroke).toBe(EVENT_SOLID_COLORS.OA)
+        const palette = Object.values(EVENT_SOLID_COLORS).map((c) => c.replace(/, 0\.85\)$/, ')'))
+        for (const line of [pressure, epap]) {
+            expect(palette).not.toContain(String(line?.stroke).replace(/^rgb\(/, 'rgba('))
+        }
     })
 
     it('test_null_renders_nothing', () => {

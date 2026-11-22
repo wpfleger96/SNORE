@@ -424,6 +424,12 @@ def _print_leak_redline(leak: LeakRedlineStats) -> None:
         )
 
 
+def _minutes(seconds: float) -> str:
+    """Seconds as minutes to 0.1, with time too short to round up as ``<0.1``."""
+    minutes = seconds / 60
+    return "<0.1" if 0 < minutes < 0.05 else f"{minutes:.1f}"
+
+
 def _print_time_at_pressure(tap: TimeAtPressure) -> None:
     """Print the minutes and AHI events at each occupied pressure bucket."""
     console.print("\n  Time at Pressure:")
@@ -442,8 +448,8 @@ def _print_time_at_pressure(tap: TimeAtPressure) -> None:
         rows.append(
             [
                 f"{pressure:.1f}",
-                f"{tap.pressure_seconds[i] / 60:.1f}",
-                *([f"{epap[i] / 60:.1f}"] if epap is not None else []),
+                _minutes(tap.pressure_seconds[i]),
+                *([_minutes(epap[i])] if epap is not None else []),
                 *(str(count) for count in counts),
             ]
         )
@@ -454,7 +460,8 @@ def _print_running_ahi(segments: list[RunningAhiSegment]) -> None:
     """Print each mask-on segment's running AHI peak and when it was reached."""
     console.print("\n  Running AHI (60-minute window):")
     for segment in segments:
-        peak = max(segment.values, default=0)
+        # A segment always has at least one value.
+        peak = max(segment.values)
         at = segment.start + timedelta(minutes=segment.values.index(peak))
         console.print(
             f"    Segment from {segment.start:%Y-%m-%d %H:%M}: "

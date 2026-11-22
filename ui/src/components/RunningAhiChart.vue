@@ -17,14 +17,21 @@ const props = defineProps<{ segments?: RunningAhiSegment[] | null }>()
 
 const STEP_SECONDS = 60
 
-// One point per minute; a null between segments breaks the line over mask-off time.
+// One point per minute; a null midway between segments breaks the line over
+// mask-off time.  A segment that starts before the previous one ends (sessions
+// can overlap) cuts it short, since uPlot needs ascending x values.
 const data = computed<uPlot.AlignedData>(() => {
     const xs: number[] = []
     const ys: (number | null)[] = []
     for (const segment of props.segments ?? []) {
         const start = parseLocalDate(segment.start).getTime() / 1000
-        if (xs.length) {
-            xs.push(start - STEP_SECONDS / 2)
+        while ((xs.at(-1) ?? -Infinity) >= start) {
+            xs.pop()
+            ys.pop()
+        }
+        const previous = xs.at(-1)
+        if (previous !== undefined) {
+            xs.push((previous + start) / 2)
             ys.push(null)
         }
         segment.values.forEach((value, i) => {

@@ -37,7 +37,7 @@ from snore.services.schemas import (
     HealthNightSummaryRead,
     MaskOnSpan,
 )
-from snore.therapy_hours import effective_session_hours
+from snore.therapy_hours import effective_session_hours, parse_mask_on_segments
 
 if TYPE_CHECKING:
     from snore.analysis.shared.versioning import NullReason
@@ -86,17 +86,15 @@ def _decode_stored_segments(session_id: int, stored: str | None) -> object:
 
 
 def _day_mask_on_spans(
-    sessions: Sequence[tuple[int, datetime, str | None]],
+    sessions: Sequence[tuple[int, datetime, object]],
 ) -> list[MaskOnSpan] | None:
-    """Spans of ``(id, start_time, stored segments)``, ``None`` if any is unknown.
+    """Spans of ``(id, start_time, decoded segments)``, ``None`` if any is unknown.
 
     Sessions can overlap, so the spans are sorted rather than concatenated.
     """
     spans: list[MaskOnSpan] = []
-    for session_id, start_time, stored in sessions:
-        session_spans = mask_on_spans(
-            session_id, start_time, _decode_stored_segments(session_id, stored)
-        )
+    for session_id, start_time, decoded in sessions:
+        session_spans = mask_on_spans(session_id, start_time, decoded)
         if session_spans is None:
             return None
         spans.extend(session_spans)
@@ -214,6 +212,10 @@ class DayService(ProfileScopedService):
         # Like the Day aggregates, device detail covers enabled sessions only.
         enabled_rows = [row for row in session_rows if row.enabled]
         enabled_ids = [row.id for row in enabled_rows]
+        segments = {
+            row.id: _decode_stored_segments(row.id, row.mask_on_segments)
+            for row in enabled_rows
+        }
         histograms = await load_channel_histograms(
             self.db_session, enabled_ids, REPORTED_CHANNELS
         )
@@ -247,16 +249,14 @@ class DayService(ProfileScopedService):
                     session_id=row.id,
                     start_time=row.start_time,
                     end_time=row.end_time,
-                    mask_on_segments=_decode_stored_segments(
-                        row.id, row.mask_on_segments
-                    ),
+                    mask_on_segments=parse_mask_on_segments(segments[row.id], row.id),
                 )
                 for row in enabled_rows
             ],
             flags,
         )
         spans = _day_mask_on_spans(
-            [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
+            [(row.id, row.start_time, segments[row.id]) for row in enabled_rows]
         )
 
         health_summary_row = (

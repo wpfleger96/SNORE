@@ -162,9 +162,9 @@ src/snore/
 │   ├── event_service.py     # Event queries, device_event_types, reported_counts, apnea_seconds_by_session
 │   ├── export_service.py    # Data export (CSV, JSON)
 │   ├── leak_redline.py      # Time over the 24 L/min leak redline and OSCAR Large Leak spans, on read
+│   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── pressure_views.py    # Pressure/EPAP/leak 99.5th and OSCAR Time at Pressure, on read
 │   ├── running_ahi.py       # OSCAR running AHI per mask-on segment, from device events
-│   ├── lttb.py              # LTTB downsampling algorithm
 │   ├── session_service.py   # Session management
 │   ├── stats_service.py     # Statistics calculations
 │   ├── tidal_volume.py      # tidal_volume_ml: stored Statistics.tidal_volume_* (mixed units) to mL
@@ -380,15 +380,20 @@ value (`tests/integration/test_leak_redline.py` pins them equal); `large_leak_sp
 `recording_gaps` (`database/waveform_blobs.py`), shared with `_run_starts`. A response lists at most
 `MAX_LARGE_LEAK_SPANS` spans (the longest), while `large_leak_pct` and `large_leak_span_count` cover
 all of them. Callers passing `include_channel_stats=False` skip it, and list, trend and period paths
-never decode leak. The pressure, EPAP and leak 99.5th and Time at Pressure (`services/pressure_views.py`)
-sit on the same session and day detail, behind the same flag: they read each session's
-`SUMMARY_CHANNELS` choice (`summary_channel_choices` in `database/day_manager.py`) over the sessions
-the stored median and 95th cover, with the stored values' linear `np.percentile`, so they match those
-columns without new ones. `running_ahi` (`services/running_ahi.py`) reads events and mask-on
-segments only. Both use `ahi_event_flags` (`services/event_service.py`) for event flag times. The nightly summary decodes
+never decode leak. The nightly summary decodes
 only the nights on the requested page, while compliance still covers the whole range. Each
 `compare_epochs` call decodes the union of its epochs' sessions once. Both epoch tools cap an epoch
 at `MAX_EPOCH_NIGHTS` (`services/breath/dtos.py`), in the service and at the MCP boundary.
+
+The pressure, EPAP and leak 99.5th and Time at Pressure (`services/pressure_views.py`) sit beside
+the leak redline views on session and day detail, also skipped with `include_channel_stats=False`.
+They read each session's
+`SUMMARY_CHANNELS` choice (`summary_channel_choices` in `database/day_manager.py`) over the sessions
+the stored median and 95th cover (`contributing_prefixes`), with the stored values' linear
+`np.percentile`, so they match those columns without new ones;
+`tests/integration/test_pressure_views.py` pins the 99.5th's sessions to the stored 95th's.
+`running_ahi` (`services/running_ahi.py`) reads events and mask-on segments only. Time at Pressure
+and `running_ahi` both use `ahi_event_flags` (`services/event_service.py`) for event flag times.
 
 `experimental_compare_epochs` and `experimental_get_nightly_metrics` (with `GET /days/{date}/experimental`,
 which shares its code) read breaths through `stream_run_reductions` (`services/breath/breath_stream.py`):

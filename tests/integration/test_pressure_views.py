@@ -8,9 +8,11 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pytest
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from snore.database.models import Device, Event, Session, Statistics
+from snore.database.day_manager import DayManager
+from snore.database.models import Device, Event, Session, Statistics, Waveform
 from snore.mcp.tools.night_detail import get_night_detail
 from snore.services.day_service import DayService
 from snore.services.session_service import SessionService
@@ -38,15 +40,21 @@ async def _add_stats(db: AsyncSession, session: Session, **values: float) -> Non
     await db.flush()
 
 
-async def _second_session(db: AsyncSession, first: Session) -> Session:
+async def _second_session(
+    db: AsyncSession,
+    first: Session,
+    start: datetime = _SECOND_START,
+    *,
+    enabled: bool = True,
+) -> Session:
     second = Session(
         device_id=first.device_id,
         day_id=first.day_id,
-        device_session_id="second",
-        start_time=_SECOND_START,
-        end_time=_SECOND_START + timedelta(hours=1),
+        device_session_id=f"second_{start.isoformat()}",
+        start_time=start,
+        end_time=start + timedelta(hours=1),
         duration_seconds=3600.0,
-        enabled=True,
+        enabled=enabled,
     )
     db.add(second)
     await db.flush()
@@ -90,7 +98,7 @@ async def test_99_5th_is_null_when_a_covered_session_has_no_waveform(
     await _add_stats(async_db_session, first, pressure_95th=10.0)
     await _add_stats(async_db_session, second, pressure_95th=12.0)
     await _make_channel_waveform(
-        async_db_session, first, "therapy_pressure", [10.0] * 5
+        async_db_session, first, "therapy_pressure", [10.0] * 10
     )
 
     day = await DayService(async_db_session, profile_id).get_day(_NIGHT)
@@ -129,17 +137,20 @@ async def test_day_time_at_pressure_counts_events_at_their_flag_pressure(
     profile_id, device = profile_device
     _, first = await _make_day_session(async_db_session, device, _NIGHT, 1.0)
     await _add_stats(async_db_session, first, pressure_95th=1.0)
-    # 8 cmH2O for 10 s, then 12 cmH2O.
+    # Settling at 10 cmH2O for 10 s, 8 cmH2O for 10 s, then 12 cmH2O.
     await _make_channel_waveform(
-        async_db_session, first, "therapy_pressure", [8.0] * 5 + [12.0] * 5
+        async_db_session,
+        first,
+        "therapy_pressure",
+        [10.0] * 5 + [8.0] * 5 + [12.0] * 5,
     )
-    # Starts at 8 s but is flagged at its end, 14 s, during 12 cmH2O.
+    # Starts at 18 s but is flagged at its end, 24 s, during 12 cmH2O.
     async_db_session.add_all(
         [
             Event(
                 session_id=first.id,
                 event_type="OA",
-                start_time=first.start_time + timedelta(seconds=8),
+                start_time=first.start_time + timedelta(seconds=18),
                 duration_seconds=6.0,
             ),
             Event(
@@ -157,6 +168,7 @@ async def test_day_time_at_pressure_counts_events_at_their_flag_pressure(
 
     assert tap is not None
     seconds = dict(zip(tap.pressures, tap.pressure_seconds, strict=True))
+    assert seconds[10.0] == 0.0
     assert seconds[8.0] == 10.0
     assert seconds[12.0] == 8.0
     assert set(tap.event_counts) == {"OA"}
@@ -227,3 +239,125 @@ async def test_mcp_night_detail_device_carries_the_views(
     assert night.device.pressure_99_5th == day.pressure_99_5th == 9.0
     assert night.device.time_at_pressure == day.time_at_pressure
     assert night.device.running_ahi == day.running_ahi
+
+
+async def test_99_5th_covers_the_sessions_behind_the_stored_95th(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    day, first = await _make_day_session(async_db_session, device, _NIGHT, 1.0)
+    fallback = await _second_session(async_db_session, first)
+    disabled = await _second_session(
+        async_db_session, first, _SECOND_START + timedelta(hours=1), enabled=False
+    )
+    no_stats = await _second_session(
+        async_db_session, first, _SECOND_START + timedelta(hours=2)
+    )
+    pressure = {first: list(range(4, 14)), fallback: list(range(10, 30))}
+    pressure |= {disabled: [40] * 10, no_stats: [50] * 10}
+    for session, values in pressure.items():
+        if session is not no_stats:
+            await _add_stats(
+                async_db_session,
+                session,
+                pressure_95th=1.0,
+                epap_95th=1.0,
+                leak_95th=1.0,
+            )
+        # The fallback session has mask pressure only.
+        channel = "pressure" if session is fallback else "therapy_pressure"
+        samples = [float(v) for v in values]
+        await _make_channel_waveform(async_db_session, session, channel, samples)
+        await _make_channel_waveform(
+            async_db_session, session, "epap", [v - 4 for v in samples]
+        )
+        await _make_channel_waveform(
+            async_db_session, session, "leak", [v * 2 for v in samples]
+        )
+
+    await DayManager.aggregate_day_statistics(day, async_db_session)
+    detail = await DayService(async_db_session, profile_id).get_day(_NIGHT)
+
+    covered = np.array([float(v) for v in pressure[first] + pressure[fallback]])
+    for prefix, pooled in (
+        ("pressure", covered),
+        ("epap", covered - 4),
+        ("leak", covered * 2),
+    ):
+        stored_95th = getattr(day, f"{prefix}_95th")
+        assert stored_95th == pytest.approx(np.percentile(pooled, 95))
+        assert getattr(detail, f"{prefix}_99_5th") == pytest.approx(
+            np.percentile(pooled, 99.5)
+        )
+    assert detail.time_at_pressure is not None
+    assert max(detail.time_at_pressure.pressures) < 40.0
+
+
+async def test_epap_missing_for_one_covered_session_nulls_only_epap(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    _, first = await _make_day_session(async_db_session, device, _NIGHT, 1.0)
+    second = await _second_session(async_db_session, first)
+    for session in (first, second):
+        await _add_stats(async_db_session, session, pressure_95th=1.0, epap_95th=1.0)
+        await _make_channel_waveform(
+            async_db_session, session, "therapy_pressure", [10.0] * 10
+        )
+    await _make_channel_waveform(async_db_session, first, "epap", [6.0] * 10)
+
+    day = await DayService(async_db_session, profile_id).get_day(_NIGHT)
+
+    assert day.pressure_99_5th == 10.0
+    assert day.epap_99_5th is None
+    assert day.time_at_pressure is not None
+    assert day.time_at_pressure.epap_seconds is None
+
+
+async def test_blob_with_unusable_offsets_nulls_the_views(
+    async_db_session: AsyncSession, profile_device: tuple[int, Device]
+) -> None:
+    profile_id, device = profile_device
+    _, first = await _make_day_session(async_db_session, device, _NIGHT, 1.0)
+    await _add_stats(async_db_session, first, pressure_95th=1.0)
+    pairs = [(0.0, 10.0), (0.0, 10.0), (2.0, 10.0)]
+    async_db_session.add(
+        Waveform(
+            session_id=first.id,
+            waveform_type="therapy_pressure",
+            sample_rate=0.5,
+            data_blob=np.array(pairs, dtype=np.float32).tobytes(),
+            sample_count=len(pairs),
+        )
+    )
+    await async_db_session.flush()
+
+    day = await DayService(async_db_session, profile_id).get_day(_NIGHT)
+
+    assert day.pressure_99_5th is None
+    assert day.time_at_pressure is None
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected_lengths"),
+    [("[]", []), ("[[100.0, 0.0]]", [60]), ("not json", [60])],
+    ids=["known-zero", "inverted", "invalid-json"],
+)
+async def test_day_running_ahi_with_empty_or_invalid_segments(
+    async_db_session: AsyncSession,
+    profile_device: tuple[int, Device],
+    stored: str,
+    expected_lengths: list[int],
+) -> None:
+    profile_id, device = profile_device
+    _, first = await _make_day_session(async_db_session, device, _NIGHT, 1.0)
+    await async_db_session.execute(
+        text("UPDATE sessions SET mask_on_segments = :stored WHERE id = :id"),
+        {"stored": stored, "id": first.id},
+    )
+
+    day = await DayService(async_db_session, profile_id).get_day(_NIGHT)
+
+    assert day.running_ahi is not None
+    # Unknown segments cover the whole session.
+    assert [len(segment.values) for segment in day.running_ahi] == expected_lengths

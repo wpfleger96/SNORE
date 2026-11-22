@@ -1600,14 +1600,9 @@ class TestSessionShowExpanded:
         output = result.output
         assert "99.5th percentile: 2.0 cmH₂O" in output
         tap = output[output.index("Time at Pressure:") : output.index("Running AHI")]
-        assert tap.split("\n")[1].split() == [
-            "cmH₂O",
-            "Pressure",
-            "min",
-            "CA",
-            "H",
-            "OA",
-        ]
+        # The OA and CA are flagged after the last pressure sample, so only the
+        # undurated H, flagged at the session start, is counted.
+        assert tap.split("\n")[1].split() == ["cmH₂O", "Pressure", "min", "H"]
         # The hour-long OA is flagged at its end, 23:00, and joins the CA and H.
         assert "Segment from 2025-10-01 22:00: Peak 3/h at 23:00" in output
 

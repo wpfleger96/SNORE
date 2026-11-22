@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -16,7 +16,9 @@ from snore.metrics import reported_count
 from snore.services._base import ProfileScopedService, session_device_join
 
 __all__ = [
+    "EventFlags",
     "EventService",
+    "ahi_event_flags",
     "apnea_seconds_by_session",
     "device_event_types",
     "device_reported_types",
@@ -79,6 +81,10 @@ async def apnea_seconds_by_session(
     for session_id, seconds in rows:
         totals[session_id] = seconds or 0.0
     return totals
+
+
+# Session id -> its AHI events as (event_type, flag offset in seconds).
+type EventFlags = Mapping[int, Sequence[tuple[str, float]]]
 
 
 async def ahi_event_flags(

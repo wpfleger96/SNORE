@@ -109,7 +109,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     time_at_pressure: {
         label: 'Time at Pressure',
         short: 'Minutes spent at each pressure, in 0.2 cmH₂O steps, with the device-scored apneas and hypopneas flagged at each, as OSCAR’s Daily page shows it.',
-        long: 'Each pressure sample counts until the next one, so mask-off gaps add nothing. An event counts at the pressure delivered when the device flagged it; RERAs, flow limitations and snores are not counted. Covers the same channel and sessions as the pressure median.',
+        long: 'Each pressure sample counts until the next one, so mask-off gaps add nothing, and the first 10 seconds after each mask-on are skipped while pressure settles, as in OSCAR. An event counts at the pressure delivered when the device flagged it; RERAs, flow limitations and snores are not counted. Covers the same channel and sessions as the pressure median.',
     },
     running_ahi: {
         label: 'Running AHI',

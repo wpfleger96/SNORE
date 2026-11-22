@@ -12,6 +12,8 @@ import pytest
 from snore.database import models
 from snore.metrics import DAY_METRIC_STAT_COLUMNS, EXPORT_STAT_KEYS, SESSION_METRICS
 from snore.parsers.unified import SessionStatistics as UnifiedSessionStatistics
+from snore.services.pressure_views import PressureViews
+from snore.services.schemas import DayDetail, SessionDetail
 from snore.services.schemas import SessionStatistics as ServiceSessionStatistics
 
 pytestmark = pytest.mark.unit
@@ -143,3 +145,11 @@ def test_export_stat_keys_subset_of_session_metrics() -> None:
     assert not unknown, (
         f"metrics.EXPORT_STAT_KEYS not in SESSION_METRICS: {sorted(unknown)}"
     )
+
+
+@pytest.mark.parametrize("detail", [SessionDetail, DayDetail])
+def test_pressure_views_fields_match_the_detail_fields(detail: type) -> None:
+    """Session and day detail splat ``PressureViews.model_dump()`` into themselves."""
+    for name, field in PressureViews.model_fields.items():
+        assert name in detail.model_fields, name
+        assert detail.model_fields[name].annotation == field.annotation, name

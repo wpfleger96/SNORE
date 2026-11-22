@@ -3035,7 +3035,7 @@ export interface components {
             epap_95th?: number | null
             /**
              * Epap 99 5Th
-             * @description 99.5th percentile of the day's enabled sessions' pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of the day's enabled sessions' pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored EPAP median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             epap_99_5th?: number | null
             /**
@@ -3084,7 +3084,7 @@ export interface components {
             leak_95th?: number | null
             /**
              * Leak 99 5Th
-             * @description 99.5th percentile of the day's enabled sessions' pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of the day's enabled sessions' pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored leak median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             leak_99_5th?: number | null
             /**
@@ -3132,7 +3132,7 @@ export interface components {
             pressure_95th?: number | null
             /**
              * Pressure 99 5Th
-             * @description 99.5th percentile of the day's enabled sessions' pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of the day's enabled sessions' pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored pressure median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             pressure_99_5th?: number | null
             /**
@@ -3174,7 +3174,7 @@ export interface components {
              * @description Min SpO2 (%)
              */
             spo2_min?: number | null
-            /** @description Time at Pressure over the day's enabled sessions; null when none has a pressure channel or any one's is unusable */
+            /** @description Time at Pressure over the day's enabled sessions with a stored pressure median or 95th and mask-on time; null when there are none, any has an absent or unusable pressure channel, or no bucket has time or events */
             time_at_pressure?: components['schemas']['TimeAtPressure'] | null
             /**
              * Time In Apnea Seconds
@@ -5659,7 +5659,10 @@ export interface components {
          * @description OSCAR's running AHI over one mask-on segment.
          */
         RunningAhiSegment: {
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The session the segment belongs to
+             */
             session_id: number
             /**
              * Start
@@ -5822,7 +5825,7 @@ export interface components {
             end_time: string
             /**
              * Epap 99 5Th
-             * @description 99.5th percentile of this session's pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of this session's pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored EPAP median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             epap_99_5th?: number | null
             /** Event Count */
@@ -5837,7 +5840,7 @@ export interface components {
             import_source?: string | null
             /**
              * Leak 99 5Th
-             * @description 99.5th percentile of this session's pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of this session's pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored leak median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             leak_99_5th?: number | null
             /** @description This session's time over the leak redline and Large Leak spans; null when it has no valid leak sample or its leak data is unusable, and always null on PATCH responses */
@@ -5851,7 +5854,7 @@ export interface components {
             parser_version?: string | null
             /**
              * Pressure 99 5Th
-             * @description 99.5th percentile of this session's pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             * @description 99.5th percentile of this session's pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel, sessions and linear method as the 95th, over the sessions with a stored pressure median or 95th and mask-on time. Null when there are none or any has no usable stored waveform for the channel
              */
             pressure_99_5th?: number | null
             /**
@@ -5875,7 +5878,7 @@ export interface components {
             therapy_day: string
             /** Therapy Mode */
             therapy_mode: string | null
-            /** @description This session's Time at Pressure; null when its pressure channel is absent or unusable, and always null on PATCH responses */
+            /** @description This session's Time at Pressure; null when it has no stored pressure median or 95th, no mask-on time, an absent or unusable pressure channel, or no time or events in any bucket, and always null on PATCH responses */
             time_at_pressure?: components['schemas']['TimeAtPressure'] | null
             /**
              * Time In Apnea Seconds
@@ -6657,19 +6660,19 @@ export interface components {
         TimeAtPressure: {
             /**
              * Epap Seconds
-             * @description Seconds EPAP spent in each bucket, over the sessions epap_median covers; null when none has a usable EPAP channel
+             * @description Seconds EPAP spent in each bucket, over the sessions epap_median covers, skipping each recording segment's first 10 s; null when no session has a stored EPAP value and mask-on time, or any that has lacks a usable EPAP channel
              */
             epap_seconds?: number[] | null
             /**
              * Event Counts
-             * @description Per device-scored AHI event type with at least one event (OA, CA, CAA, MA, UA, H): how many were flagged while the pressure channel was in each bucket
+             * @description Per device-scored AHI event type with at least one event (OA, CA, CAA, MA, UA, H): how many were flagged while the pressure channel was in each bucket; one flagged in a recording gap or after the last sample is not counted
              */
             event_counts: {
                 [key: string]: number[]
             }
             /**
              * Pressure Seconds
-             * @description Seconds the pressure channel behind pressure_median spent in each bucket, over the sessions that value covers
+             * @description Seconds the pressure channel behind pressure_median spent in each bucket, over the sessions that value covers; the first 10 s of each recording segment add nothing, as in OSCAR
              */
             pressure_seconds: number[]
             /**

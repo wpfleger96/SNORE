@@ -47,7 +47,7 @@ from snore.services.schemas import (
 )
 from snore.services.tidal_volume import tidal_volume_ml
 from snore.services.waveform_service import clear_waveform_array_cache
-from snore.therapy_hours import effective_session_hours
+from snore.therapy_hours import effective_session_hours, parse_mask_on_segments
 from snore.utils.db_chunk import iter_id_chunks
 
 __all__ = ["SessionService", "session_statistics"]
@@ -292,7 +292,9 @@ class SessionService(ProfileScopedService):
                         session_id=session.id,
                         start_time=session.start_time,
                         end_time=session.end_time,
-                        mask_on_segments=session.mask_on_segments,
+                        mask_on_segments=parse_mask_on_segments(
+                            session.mask_on_segments, session.id
+                        ),
                     )
                 ],
                 flags,

@@ -15,27 +15,34 @@ Two differences are deliberate:
   (``resmed_loader.cpp:3266-3294``); here each mask-on segment is its own
   series, and its window never reaches into an earlier segment, which is what
   OSCAR plots.  A session whose segments are unknown is one segment, from its
-  start to its end, and stored segments are clipped to that span.
+  start to its end, and stored segments are clipped to that span.  A segment
+  longer than ``MAX_RUNNING_AHI_STEPS`` steps is skipped with a warning, as no
+  night is that long and its series would be unbounded.
 - OSCAR ends each series with a zero at the session's last sample
   (``calcs.cpp:1150``), which only closes the plotted line; it is left out.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import logging
+
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import numpy as np
 
 from pydantic import BaseModel
 
+from snore.services.event_service import EventFlags
 from snore.services.schemas import RunningAhiSegment
-from snore.therapy_hours import parse_mask_on_segments
 
 __all__ = ["RunningAhiSource", "running_ahi"]
 
+logger = logging.getLogger(__name__)
+
 RUNNING_AHI_WINDOW_SECONDS = 3600.0
 RUNNING_AHI_STEP_SECONDS = 60.0
+MAX_RUNNING_AHI_STEPS = 48 * 60
 
 
 class RunningAhiSource(BaseModel):
@@ -44,13 +51,12 @@ class RunningAhiSource(BaseModel):
     session_id: int
     start_time: datetime
     end_time: datetime
-    # The stored ``sessions.mask_on_segments`` value, decoded but unvalidated.
-    mask_on_segments: object
+    # ``parse_mask_on_segments`` of the stored value; None when unknown.
+    mask_on_segments: list[tuple[float, float]] | None
 
 
 def running_ahi(
-    sources: Sequence[RunningAhiSource],
-    flags: Mapping[int, Sequence[tuple[str, float]]],
+    sources: Sequence[RunningAhiSource], flags: EventFlags
 ) -> list[RunningAhiSegment]:
     """The running AHI of every mask-on segment of ``sources``, by start.
 
@@ -59,13 +65,21 @@ def running_ahi(
     segments: list[RunningAhiSegment] = []
     for source in sources:
         length = (source.end_time - source.start_time).total_seconds()
-        spans = parse_mask_on_segments(source.mask_on_segments, source.session_id)
+        spans = source.mask_on_segments
         if spans is None:
             spans = [(0.0, length)]
         times = np.array([offset for _, offset in flags[source.session_id]])
         for start, stored_end in spans:
             end = min(stored_end, length)
             if start >= end:
+                continue
+            if end - start > MAX_RUNNING_AHI_STEPS * RUNNING_AHI_STEP_SECONDS:
+                logger.warning(
+                    "Session %d: mask-on segment of %.0f s is too long for a "
+                    "running AHI; skipping it",
+                    source.session_id,
+                    end - start,
+                )
                 continue
             steps = np.arange(start, end, RUNNING_AHI_STEP_SECONDS)
             in_segment = times[(times >= start) & (times <= end)]

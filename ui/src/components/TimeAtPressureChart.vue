@@ -10,13 +10,27 @@ import { computed } from 'vue'
 import type uPlot from 'uplot'
 import InfoHint from '@/components/InfoHint.vue'
 import UPlotChart, { type AxisColors } from '@/components/UPlotChart.vue'
-import { EVENT_COLORS, type TimeAtPressure } from '@/types'
+import { EVENT_SOLID_COLORS, type TimeAtPressure } from '@/types'
 
 const props = defineProps<{ tap?: TimeAtPressure | null }>()
 
+const PRESSURE_COLOR = 'rgb(22, 163, 74)'
+const EPAP_COLOR = 'rgb(100, 116, 139)'
+
 const toMinutes = (seconds: number[]) => seconds.map((s) => s / 60)
 
-const eventTypes = computed(() => Object.keys(props.tap?.event_counts ?? {}))
+// Clear-airway apneas are central apneas on this chart, as on OSCAR's.
+const eventCounts = computed(() => {
+    const merged: Record<string, number[]> = {}
+    for (const [type, counts] of Object.entries(props.tap?.event_counts ?? {})) {
+        const key = type === 'CAA' ? 'CA' : type
+        const into = merged[key]
+        merged[key] = into ? into.map((count, i) => count + (counts[i] ?? 0)) : counts
+    }
+    return merged
+})
+
+const eventTypes = computed(() => Object.keys(eventCounts.value))
 
 // Minutes per bucket for pressure and EPAP, then one point series per event
 // type on its own scale; a bucket with no events of a type plots nothing.
@@ -28,7 +42,7 @@ const data = computed<uPlot.AlignedData>(() => {
         toMinutes(tap.pressure_seconds),
         ...(tap.epap_seconds ? [toMinutes(tap.epap_seconds)] : []),
         ...eventTypes.value.map((type) =>
-            (tap.event_counts[type] ?? []).map((count) => (count > 0 ? count : null)),
+            (eventCounts.value[type] ?? []).map((count) => (count > 0 ? count : null)),
         ),
     ]
 })
@@ -51,17 +65,13 @@ function options(colors: AxisColors): Omit<uPlot.Options, 'width'> {
         ],
         series: [
             { value: (_u, v) => (v == null ? '--' : `${v.toFixed(1)} cmH₂O`) },
-            { ...minutes, label: 'Pressure', stroke: 'rgb(37, 99, 235)' },
-            ...(props.tap?.epap_seconds
-                ? [{ ...minutes, label: 'EPAP', stroke: 'rgb(13, 148, 136)' }]
-                : []),
+            // Off the AHI event palette, so lines and event points never share a colour.
+            { ...minutes, label: 'Pressure', stroke: PRESSURE_COLOR },
+            ...(props.tap?.epap_seconds ? [{ ...minutes, label: 'EPAP', stroke: EPAP_COLOR }] : []),
             ...eventTypes.value.map((type) => ({
                 label: type,
                 scale: 'events',
-                stroke: (EVENT_COLORS[type] ?? 'rgba(100, 100, 100, 0.25)').replace(
-                    /[\d.]+\)$/,
-                    '1)',
-                ),
+                stroke: EVENT_SOLID_COLORS[type] ?? 'rgba(100, 100, 100, 0.85)',
                 paths: () => null,
                 points: { show: true, size: 7 },
             })),

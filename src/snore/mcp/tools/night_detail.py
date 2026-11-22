@@ -183,8 +183,6 @@ def register(mcp: FastMCP) -> None:
         night's values. ``leak_redline`` holds OSCAR's 24 L/min leak views, including
         Large Leak spans. At most 500 spans are listed, the longest;
         ``large_leak_span_count`` and ``large_leak_pct`` cover all of them.
-        ``time_at_pressure`` and ``running_ahi`` are OSCAR's Time at Pressure and
-        running AHI.
         ``apple_health`` is the Apple Health night; its stage timeline is in
         ``get_apple_sleep_stages``.
         Times are wall-clock with no UTC offset.
