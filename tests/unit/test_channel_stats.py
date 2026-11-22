@@ -1,4 +1,4 @@
-"""Median, 95th and max of device channels, pooling, and mask-on span arithmetic."""
+"""Device channel distributions, pooling, and mask-on span arithmetic."""
 
 import statistics
 
@@ -62,6 +62,20 @@ def _sorted_sample_maths(*sessions: np.ndarray) -> tuple[float, float, float]:
     p95 = percentile_nearest_rank(ordered, 0.95)
     assert p95 is not None
     return statistics.median(ordered), p95, ordered[-1]
+
+
+def _sorted_sample_statistics(*sessions: np.ndarray) -> tuple[float, ...]:
+    """Every ``DeviceChannelStats`` statistic, the slow way, in ``_STATISTICS`` order."""
+    ordered = sorted(float(v) for session in sessions for v in session)
+    median, p95, maximum = _sorted_sample_maths(*sessions)
+    p99_5 = percentile_nearest_rank(ordered, 0.995)
+    assert p99_5 is not None
+    return ordered[0], median, p95, p99_5, maximum
+
+
+def _channel_statistics(pooled: DeviceChannelStats | None, prefix: str) -> tuple:
+    assert pooled is not None
+    return tuple(getattr(pooled, f"{prefix}_{stat}") for stat in _STATISTICS)
 
 
 def test_distribution_of_no_sessions_is_none() -> None:
@@ -130,14 +144,21 @@ def test_histograms_equal_sorted_sample_maths(
         levels = rng.random(distinct_values, dtype=np.float32)
         sessions = [rng.choice(levels, size) for size in session_sizes]
 
-    expected = _sorted_sample_maths(*sessions)
-
-    assert _distribution(*sessions) == expected
+    assert _distribution(*sessions) == _sorted_sample_maths(*sessions)
     pooled = pool_channel_stats(_pool(snore=dict(enumerate(sessions))), range(9))
-    assert pooled is not None
-    assert (pooled.snore_median, pooled.snore_95th, pooled.snore_max) == tuple(
-        round(value, 4) for value in expected
+    assert _channel_statistics(pooled, "snore") == tuple(
+        round(value, 4) for value in _sorted_sample_statistics(*sessions)
     )
+
+
+def test_pool_99_5th_is_nearest_rank_below_the_max() -> None:
+    thousand = np.arange(1, 1001, dtype=np.float32)
+
+    pooled = pool_channel_stats(_pool(snore={1: thousand}), [1])
+
+    # min(int(1000 * 0.995), 999) = 995, the 996th smallest sample.
+    assert pooled.snore_99_5th == 996.0
+    assert (pooled.snore_min, pooled.snore_max) == (1.0, 1000.0)
 
 
 def test_fl_histogram_drops_the_sentinel_and_keeps_zeros() -> None:
@@ -182,11 +203,9 @@ def test_respiratory_channel_pools_sessions_like_sorted_samples(
 
     pooled = pool_channel_stats(histograms, [1, 2])
 
-    assert (
-        getattr(pooled, f"{prefix}_median"),
-        getattr(pooled, f"{prefix}_95th"),
-        getattr(pooled, f"{prefix}_max"),
-    ) == _sorted_sample_maths(first, second)
+    assert _channel_statistics(pooled, prefix) == _sorted_sample_statistics(
+        first, second
+    )
     assert pooled.device_flg_median is None
 
 
@@ -238,8 +257,8 @@ def test_pool_ignores_a_loaded_channel_it_does_not_report() -> None:
 
     pooled = pool_channel_stats(histograms, [1])
 
-    assert pooled == DeviceChannelStats(
-        device_flg_median=0.2, device_flg_95th=0.2, device_flg_max=0.2
+    assert pooled == DeviceChannelStats.model_validate(
+        {f"device_flg_{stat}": 0.2 for stat in _STATISTICS}
     )
 
 
@@ -305,6 +324,7 @@ def test_pool_differs_from_averaging_session_percentiles() -> None:
     # Averaging the per-session 95ths would read (0 + 1) / 2 = 0.5.
     assert pooled.device_flg_95th == 1.0
     assert pooled.device_flg_median == 0.0
+    assert pooled.device_flg_min == 0.0
 
 
 def test_pool_uses_only_the_requested_sessions() -> None:

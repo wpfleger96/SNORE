@@ -56,14 +56,20 @@ def night(db_session, test_device, test_session_factory):
 # Channels the night has no waveform for serialize as null.
 _EXPECTED_STATS = {
     **dict.fromkeys(DeviceChannelStats.model_fields),
+    "device_flg_min": 0.0,
     "device_flg_median": 0.25,
     "device_flg_95th": 0.5,
+    "device_flg_99_5th": 0.5,
     "device_flg_max": 0.5,
+    "snore_min": 0.0,
     "snore_median": 1.0,
     "snore_95th": 2.0,
+    "snore_99_5th": 2.0,
     "snore_max": 2.0,
+    "respiratory_rate_min": 12.0,
     "respiratory_rate_median": 14.0,
     "respiratory_rate_95th": 16.0,
+    "respiratory_rate_99_5th": 16.0,
     "respiratory_rate_max": 16.0,
 }
 

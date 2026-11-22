@@ -83,7 +83,7 @@ CHANNEL_RANGES: dict[str, tuple[float, float]] = {
     "pulse": PULSE_VALID_RANGE,
 }
 # The channels ``DeviceChannelStats`` reports, and the prefix of each one's
-# ``_median``, ``_95th`` and ``_max`` fields.
+# ``_STATISTICS`` fields.
 _CHANNEL_PREFIXES = {
     "fl": "device_flg",
     "snore": "snore",
@@ -96,7 +96,10 @@ _CHANNEL_PREFIXES = {
 }
 # What session and day detail load: every channel ``DeviceChannelStats`` reports.
 REPORTED_CHANNELS = tuple(_CHANNEL_PREFIXES)
-_STATISTICS = ("median", "95th", "max")
+# OSCAR's Daily statistics columns are Min, Median, 95% and a Max that is the
+# 99.5th percentile on ResMed (``daily.cpp:1534``, ``profiles.cpp:704``); SNORE
+# also reports the true max.
+_STATISTICS = ("min", "median", "95th", "99_5th", "max")
 _ROUND_DIGITS = 4
 
 # A session's usable samples as ascending distinct values and how often each occurs.
@@ -238,11 +241,32 @@ def pool_channel_stats(
     for channel, prefix in _CHANNEL_PREFIXES.items():
         if channel not in histograms:
             continue
-        distribution = pooled_channel_distribution(histograms[channel], session_ids)
-        if distribution is not None:
-            for stat, value in zip(_STATISTICS, distribution, strict=True):
+        by_session = histograms[channel]
+        statistics = _reported_statistics(
+            pool_histograms(
+                [by_session[sid] for sid in session_ids if sid in by_session]
+            )
+        )
+        if statistics is not None:
+            for stat, value in zip(_STATISTICS, statistics, strict=True):
                 fields[f"{prefix}_{stat}"] = value
     return DeviceChannelStats.model_validate(fields) if fields else None
+
+
+def _reported_statistics(pooled: PooledHistogram) -> tuple[float, ...] | None:
+    """The ``_STATISTICS`` of the pooled samples, rounded; ``None`` when there are none.
+
+    The 99.5th is nearest rank, like the 95th.
+    """
+    distribution = pooled_distribution(pooled)
+    if distribution is None:
+        return None
+    median, p95, maximum = distribution
+    p99_5 = value_at_rank(pooled, nearest_rank_index(pooled_count(pooled), 0.995))
+    minimum = float(pooled[0][0])
+    return tuple(
+        round(value, _ROUND_DIGITS) for value in (minimum, median, p95, p99_5, maximum)
+    )
 
 
 def mask_on_spans(

@@ -369,12 +369,14 @@ _CHANNELS = (
 def _print_channel_stats(
     title: str, stats: DeviceChannelStats, prefix: str, decimals: int
 ) -> None:
-    """Print a channel's median, 95th and max, skipping a channel with no data."""
+    """Print a channel's distribution, skipping a channel with no data."""
     rows = [
         (label, value)
         for label, suffix in (
+            ("Min", "min"),
             ("Median", "median"),
             ("95th percentile", "95th"),
+            ("99.5th percentile", "99_5th"),
             ("Max", "max"),
         )
         if (value := getattr(stats, f"{prefix}_{suffix}")) is not None

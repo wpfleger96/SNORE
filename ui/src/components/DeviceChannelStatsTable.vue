@@ -5,8 +5,10 @@
             <TableHeader>
                 <TableRow>
                     <TableHead>Channel</TableHead>
+                    <TableHead>Min</TableHead>
                     <TableHead>Median</TableHead>
                     <TableHead>95th</TableHead>
+                    <TableHead>99.5th</TableHead>
                     <TableHead>Max</TableHead>
                 </TableRow>
             </TableHeader>
@@ -41,7 +43,7 @@ import type { DeviceChannelStats } from '@/types'
 
 const props = defineProps<{ stats?: DeviceChannelStats | null }>()
 
-// Each channel's fields are `<field>_median`, `<field>_95th` and `<field>_max`.
+// Each channel's fields are `<field>_<statistic>` for every entry of STATISTICS.
 const CHANNELS = [
     { glossaryKey: 'fl_device', field: 'device_flg', decimals: 2 },
     { glossaryKey: 'snore_device', field: 'snore', decimals: 2 },
@@ -52,7 +54,7 @@ const CHANNELS = [
     { glossaryKey: 'ie_ratio_device', field: 'ie_ratio', decimals: 1 },
     { glossaryKey: 'pulse_device', field: 'pulse', decimals: 0 },
 ] as const
-const STATISTICS = ['median', '95th', 'max'] as const
+const STATISTICS = ['min', 'median', '95th', '99_5th', 'max'] as const
 
 const rows = computed(() => {
     const s = props.stats

@@ -330,7 +330,7 @@ constants in `constants.py`; annotation labels map via `parsers/event_labels.py`
   EDF headers before full loads (`_preload_str_file`) and falling back to the next candidate when
   a winner is corrupt.
 
-**Device channel statistics** (median, 95th, max of the FL, snore, `rr`, `tv` (mL on every import
+**Device channel statistics** (min, median, 95th, 99.5th, max of the FL, snore, `rr`, `tv` (mL on every import
 source), `mv`, `ti`, `ie_ratio` and `pulse` waveforms; FL and snore have no summary columns, and
 ResMed stamps one STR value per day on every session's respiratory columns):
 `services/channel_stats.py` computes them on read from `Waveform.data_blob`, reducing each session
