@@ -24,12 +24,19 @@ from snore.services.channel_stats import (
     pool_channel_stats,
 )
 from snore.services.event_service import (
+    ahi_event_flags,
     apnea_seconds_by_session,
     device_reported_types,
     reported_counts,
 )
 from snore.services.leak_redline import LeakSource, load_leak_redline
 from snore.services.mask_log_service import MaskLogService
+from snore.services.pressure_views import (
+    PressureSource,
+    PressureViews,
+    load_pressure_views,
+)
+from snore.services.running_ahi import RunningAhiSource, running_ahi
 from snore.services.schemas import (
     DeletePreview,
     SessionDetail,
@@ -40,7 +47,7 @@ from snore.services.schemas import (
 )
 from snore.services.tidal_volume import tidal_volume_ml
 from snore.services.waveform_service import clear_waveform_array_cache
-from snore.therapy_hours import effective_session_hours
+from snore.therapy_hours import effective_session_hours, parse_mask_on_segments
 from snore.utils.db_chunk import iter_id_chunks
 
 __all__ = ["SessionService", "session_statistics"]
@@ -270,7 +277,28 @@ class SessionService(ProfileScopedService):
 
         channel_stats = None
         leak_redline = None
+        pressure_views = PressureViews()
+        running = None
         if include_channel_stats:
+            flags = await ahi_event_flags(self.db_session, [session.id])
+            pressure_views = await load_pressure_views(
+                self.db_session,
+                [PressureSource.of(session.id, stats_record, session.duration_seconds)],
+                flags,
+            )
+            running = running_ahi(
+                [
+                    RunningAhiSource(
+                        session_id=session.id,
+                        start_time=session.start_time,
+                        end_time=session.end_time,
+                        mask_on_segments=parse_mask_on_segments(
+                            session.mask_on_segments, session.id
+                        ),
+                    )
+                ],
+                flags,
+            )
             histograms = await load_channel_histograms(
                 self.db_session, [session.id], REPORTED_CHANNELS
             )
@@ -322,6 +350,8 @@ class SessionService(ProfileScopedService):
             channel_stats=channel_stats,
             time_in_apnea_seconds=apnea_seconds[session.id],
             leak_redline=leak_redline,
+            **pressure_views.model_dump(),
+            running_ahi=running,
             mask_on_spans=mask_on_spans(
                 session.id, session.start_time, session.mask_on_segments
             ),

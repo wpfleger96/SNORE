@@ -320,6 +320,13 @@
                             :decimals="1"
                         />
                         <StatCard
+                            v-if="session.pressure_99_5th != null"
+                            label="Pressure 99.5th"
+                            :value="session.pressure_99_5th"
+                            unit="cmH₂O"
+                            :decimals="1"
+                        />
+                        <StatCard
                             label="EPAP Mean"
                             :value="session.statistics.epap_mean"
                             unit="cmH₂O"
@@ -347,6 +354,13 @@
                         <StatCard
                             label="EPAP 95th"
                             :value="session.statistics.epap_95th"
+                            unit="cmH₂O"
+                            :decimals="1"
+                        />
+                        <StatCard
+                            v-if="session.epap_99_5th != null"
+                            label="EPAP 99.5th"
+                            :value="session.epap_99_5th"
                             unit="cmH₂O"
                             :decimals="1"
                         />
@@ -430,6 +444,13 @@
                         <StatCard
                             label="Leak 95th"
                             :value="session.statistics.leak_95th"
+                            unit="L/min"
+                            :decimals="1"
+                        />
+                        <StatCard
+                            v-if="session.leak_99_5th != null"
+                            label="Leak 99.5th"
+                            :value="session.leak_99_5th"
                             unit="L/min"
                             :decimals="1"
                         />
@@ -867,6 +888,8 @@
         </div>
 
         <DeviceChannelStatsTable :stats="session.channel_stats" />
+        <TimeAtPressureChart :tap="session.time_at_pressure" />
+        <RunningAhiChart :segments="session.running_ahi" />
         <MaskOnSpansTable :spans="session.mask_on_spans" />
         <MaskOnSpansTable
             title="Large Leak Spans"
@@ -1060,6 +1083,8 @@ import MultiWaveformView from '@/components/MultiWaveformView.vue'
 import StatCard from '@/components/StatCard.vue'
 import DeviceChannelStatsTable from '@/components/DeviceChannelStatsTable.vue'
 import MaskOnSpansTable from '@/components/MaskOnSpansTable.vue'
+import RunningAhiChart from '@/components/RunningAhiChart.vue'
+import TimeAtPressureChart from '@/components/TimeAtPressureChart.vue'
 import { getSession } from '@/api/sessions'
 import { getSessionEvents } from '@/api/events'
 import { getDay } from '@/api/days'

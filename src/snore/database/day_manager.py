@@ -51,6 +51,60 @@ POOLED_PERCENTILE_SOURCES: dict[str, dict[str, float]] = {
 type ChannelSamples = dict[tuple[str, int], np.ndarray]
 
 
+def contributing_prefixes(
+    stats: Statistics, duration_seconds: float | None
+) -> frozenset[str]:
+    """The ``POOLED_PERCENTILE_SOURCES`` prefixes a session's samples count toward.
+
+    A session counts toward a prefix when it has mask-on time and a stored
+    value for any of the prefix's columns.
+    """
+    if effective_session_hours(stats.usage_hours, duration_seconds) <= 0:
+        return frozenset()
+    return frozenset(
+        prefix
+        for prefix, columns in POOLED_PERCENTILE_SOURCES.items()
+        if any(getattr(stats, name) is not None for name in columns)
+    )
+
+
+def has_usable_samples(values: np.ndarray) -> bool:
+    """Whether a decoded channel holds any finite sample to pool."""
+    return bool(np.isfinite(values).any())
+
+
+async def summary_channel_choices(
+    db_session: AsyncSession, session_ids: Sequence[int]
+) -> dict[str, list[tuple[str, int]]]:
+    """Channel -> the ``(prefix, session_id)`` pairs it is the choice for.
+
+    A session's channel for a ``SUMMARY_CHANNELS`` prefix is the first one it
+    has a stored row for, the rule ``finalize_statistics`` used for the session
+    value.
+    """
+    # session_id and waveform_type are stored before data_blob, so this never
+    # reads a blob.
+    channel_rows = await db_session.execute(
+        select(Waveform.session_id, Waveform.waveform_type).where(
+            Waveform.session_id.in_(session_ids),
+            Waveform.waveform_type.in_(
+                {c.value for chans in SUMMARY_CHANNELS.values() for c in chans}
+            ),
+        )
+    )
+    stored: dict[int, set[str]] = {}
+    for session_id, waveform_type in channel_rows:
+        stored.setdefault(session_id, set()).add(waveform_type)
+
+    chosen: dict[str, list[tuple[str, int]]] = {}
+    for session_id, channels in stored.items():
+        for prefix, preference in SUMMARY_CHANNELS.items():
+            choice = next((c.value for c in preference if c.value in channels), None)
+            if choice is not None:
+                chosen.setdefault(choice, []).append((prefix, session_id))
+    return chosen
+
+
 class DayManager:
     """Manages day splitting and aggregation logic (OSCAR-compatible)."""
 
@@ -157,31 +211,8 @@ class DayManager:
         caller falls back rather than reading a channel the session value did
         not come from.
         """
-        # session_id and waveform_type are stored before data_blob, so this
-        # never reads a blob.
-        channel_rows = await db_session.execute(
-            select(Waveform.session_id, Waveform.waveform_type).where(
-                Waveform.session_id.in_(session_ids),
-                Waveform.waveform_type.in_(
-                    {c.value for chans in SUMMARY_CHANNELS.values() for c in chans}
-                ),
-            )
-        )
-        stored: dict[int, set[str]] = {}
-        for session_id, waveform_type in channel_rows:
-            stored.setdefault(session_id, set()).add(waveform_type)
-
-        # channel -> [(prefix, session_id)] the channel was chosen for.
-        chosen: dict[str, list[tuple[str, int]]] = {}
-        for session_id, channels in stored.items():
-            for prefix, preference in SUMMARY_CHANNELS.items():
-                choice = next(
-                    (c.value for c in preference if c.value in channels), None
-                )
-                if choice is not None:
-                    chosen.setdefault(choice, []).append((prefix, session_id))
-
         samples: ChannelSamples = {}
+        chosen = await summary_channel_choices(db_session, session_ids)
         for channel, keys in chosen.items():
             values, _ = await decode_channel_blobs(
                 db_session,
@@ -191,7 +222,7 @@ class DayManager:
             )
             for prefix, session_id in keys:
                 finite = values[channel].get(session_id)
-                if finite is not None and finite.size:
+                if finite is not None and has_usable_samples(finite):
                     samples[(prefix, session_id)] = finite
         return samples
 
@@ -203,21 +234,18 @@ class DayManager:
     ) -> dict[str, float | None]:
         """Each ``POOLED_PERCENTILE_SOURCES`` prefix's columns from its pooled samples.
 
-        A session contributes to a prefix when it has mask-on time and a value
-        for any of the prefix's columns.  Each prefix pools its contributing
-        sessions' samples; if one of them has none, the prefix's columns fall
-        back to the usage-weighted mean of the session values.  A prefix with
-        no contributing session is None.
+        A session contributes to a prefix per ``contributing_prefixes``.  Each
+        prefix pools its contributing sessions' samples; if one of them has
+        none, the prefix's columns fall back to the usage-weighted mean of the
+        session values.  A prefix with no contributing session is None.
         """
+        prefixes = {
+            session.id: contributing_prefixes(stats, session.duration_seconds)
+            for stats, session in stat_pairs
+        }
         result: dict[str, float | None] = {}
         for prefix, columns in POOLED_PERCENTILE_SOURCES.items():
-            contributing = [
-                session.id
-                for stats, session in stat_pairs
-                if any(getattr(stats, name) is not None for name in columns)
-                and effective_session_hours(stats.usage_hours, session.duration_seconds)
-                > 0
-            ]
+            contributing = [sid for sid, used in prefixes.items() if prefix in used]
             pooled = [
                 samples[(prefix, sid)]
                 for sid in contributing

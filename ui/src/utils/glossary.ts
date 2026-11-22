@@ -106,6 +106,16 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Summed duration of the device-scored apneas and hypopneas, as OSCAR’s Daily page shows it.',
         long: 'Adds up the duration the device recorded for each event that counts toward AHI; RERAs and flow limitations are not included. ResMed records no duration for hypopneas, so on ResMed this is time in apnea only. OSCAR counts each of those hypopneas as −1 second, so its total reads lower by the hypopnea count.',
     },
+    time_at_pressure: {
+        label: 'Time at Pressure',
+        short: 'Minutes spent at each pressure, in 0.2 cmH₂O steps, with the device-scored apneas and hypopneas flagged at each, as OSCAR’s Daily page shows it.',
+        long: 'Each pressure sample counts until the next one, so mask-off gaps add nothing, and the first 10 seconds after each mask-on are skipped while pressure settles, as in OSCAR. An event counts at the pressure delivered when the device flagged it; RERAs, flow limitations and snores are not counted. Covers the same channel and sessions as the pressure median.',
+    },
+    running_ahi: {
+        label: 'Running AHI',
+        short: 'Device-scored apneas and hypopneas in the 60 minutes up to each minute of the night, per hour, as OSCAR draws it.',
+        long: 'Each mask-on segment starts its own line. OSCAR divides by the full hour, so the first hour of each segment reads low; the line breaks over mask-off time.',
+    },
     fl_class_ge4_pct: {
         label: 'FL Class ≥4',
         short: 'Share of confidently-classified breaths with a flow-limitation class of 4 or higher (more flattened inspiratory shapes).',

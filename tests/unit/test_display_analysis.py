@@ -21,6 +21,7 @@ from snore.analysis.shared.types import (
 from snore.analysis.types import AnalysisEvent, AnalysisResult
 from snore.cli.display import experimental_legend
 from snore.cli.display.analysis import (
+    _minutes,
     create_flow_limitation_panel,
     create_header_panel,
     create_machine_events_table,
@@ -352,3 +353,13 @@ class TestAnalysisExperimentalLegend:
         assert "%*" in table_out
         assert "70.0%" in table_out
         assert "30.0%" in table_out
+
+
+@pytest.mark.parametrize(
+    ("seconds", "shown"),
+    [(0.0, "0.0"), (2.0, "<0.1"), (3.0, "0.1"), (90.0, "1.5")],
+)
+def test_time_at_pressure_minutes_mark_time_too_short_to_round_up(
+    seconds: float, shown: str
+) -> None:
+    assert _minutes(seconds) == shown

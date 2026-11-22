@@ -42,7 +42,6 @@ Four edge cases deliberately differ:
 from __future__ import annotations
 
 import logging
-import math
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -53,7 +52,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from snore.constants import LEAK_REDLINE_LPM
-from snore.database.waveform_blobs import decode_channel_series, recording_gaps
+from snore.database.waveform_blobs import (
+    check_series_offsets,
+    decode_channel_series,
+    recording_gaps,
+)
 from snore.services.channel_stats import (
     ChannelHistogram,
     PooledHistogram,
@@ -101,16 +104,9 @@ def large_leak_offsets(
     the sample rate is not positive or the offsets are not finite, non-negative
     and strictly increasing, since spans built on them would be wrong.
     """
-    if not (math.isfinite(sample_rate) and sample_rate > 0):
-        raise ValueError(f"unusable sample rate {sample_rate}")
+    check_series_offsets(timestamps, sample_rate)
     if timestamps.size == 0:
         return np.empty((0, 2))
-    if (
-        not np.all(np.isfinite(timestamps))
-        or timestamps[0] < 0
-        or np.any(np.diff(timestamps) <= 0)
-    ):
-        raise ValueError("sample offsets are not finite and strictly increasing")
     offsets = timestamps.astype(np.float64)
     # joined[i]: samples i and i + 1 are in the same recording segment.
     joined = ~recording_gaps(offsets, sample_rate)

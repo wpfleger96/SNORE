@@ -126,6 +126,23 @@ def deserialize_waveform_blob(
 type SeriesReducer[T] = Callable[[str, np.ndarray, np.ndarray, float], T]
 
 
+def check_series_offsets(timestamps: np.ndarray, sample_rate: float) -> None:
+    """Raise ``ValueError`` unless a series' sample times are usable.
+
+    Usable: a positive, finite sample rate, and offsets that are finite,
+    non-negative and strictly increasing, since anything time-weighted or
+    span-shaped built on other values would be wrong.
+    """
+    if not (math.isfinite(sample_rate) and sample_rate > 0):
+        raise ValueError(f"unusable sample rate {sample_rate}")
+    if timestamps.size and (
+        not np.all(np.isfinite(timestamps))
+        or timestamps[0] < 0
+        or np.any(np.diff(timestamps) <= 0)
+    ):
+        raise ValueError("sample offsets are not finite and strictly increasing")
+
+
 def recording_gaps(offsets: np.ndarray, sample_rate: float) -> np.ndarray:
     """``gaps[i]`` is True when a recording gap lies between samples i and i + 1.
 

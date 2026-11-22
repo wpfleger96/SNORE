@@ -22,11 +22,14 @@ from snore.services.channel_stats import (
     pool_channel_stats,
 )
 from snore.services.event_service import (
+    ahi_event_flags,
     apnea_seconds_by_session,
     device_reported_types,
     reported_counts,
 )
 from snore.services.leak_redline import LeakSource, load_leak_redline
+from snore.services.pressure_views import PressureSource, load_pressure_views
+from snore.services.running_ahi import RunningAhiSource, running_ahi
 from snore.services.schemas import (
     DayDetail,
     DayExperimentalMetrics,
@@ -34,7 +37,7 @@ from snore.services.schemas import (
     HealthNightSummaryRead,
     MaskOnSpan,
 )
-from snore.therapy_hours import effective_session_hours
+from snore.therapy_hours import effective_session_hours, parse_mask_on_segments
 
 if TYPE_CHECKING:
     from snore.analysis.shared.versioning import NullReason
@@ -83,17 +86,15 @@ def _decode_stored_segments(session_id: int, stored: str | None) -> object:
 
 
 def _day_mask_on_spans(
-    sessions: Sequence[tuple[int, datetime, str | None]],
+    sessions: Sequence[tuple[int, datetime, object]],
 ) -> list[MaskOnSpan] | None:
-    """Spans of ``(id, start_time, stored segments)``, ``None`` if any is unknown.
+    """Spans of ``(id, start_time, decoded segments)``, ``None`` if any is unknown.
 
     Sessions can overlap, so the spans are sorted rather than concatenated.
     """
     spans: list[MaskOnSpan] = []
-    for session_id, start_time, stored in sessions:
-        session_spans = mask_on_spans(
-            session_id, start_time, _decode_stored_segments(session_id, stored)
-        )
+    for session_id, start_time, decoded in sessions:
+        session_spans = mask_on_spans(session_id, start_time, decoded)
         if session_spans is None:
             return None
         spans.extend(session_spans)
@@ -191,13 +192,14 @@ class DayService(ProfileScopedService):
                     models.Session.id,
                     models.Session.enabled,
                     models.Session.start_time,
+                    models.Session.end_time,
                     # Selected as text: the column type's own JSON decode raises
                     # on an invalid stored value, failing the whole fetch.
                     type_coerce(models.Session.mask_on_segments, Text).label(
                         "mask_on_segments"
                     ),
                     models.Session.duration_seconds,
-                    models.Statistics.usage_hours,
+                    models.Statistics,
                 )
                 .outerjoin(
                     models.Statistics,
@@ -210,6 +212,10 @@ class DayService(ProfileScopedService):
         # Like the Day aggregates, device detail covers enabled sessions only.
         enabled_rows = [row for row in session_rows if row.enabled]
         enabled_ids = [row.id for row in enabled_rows]
+        segments = {
+            row.id: _decode_stored_segments(row.id, row.mask_on_segments)
+            for row in enabled_rows
+        }
         histograms = await load_channel_histograms(
             self.db_session, enabled_ids, REPORTED_CHANNELS
         )
@@ -220,15 +226,37 @@ class DayService(ProfileScopedService):
                     session_id=row.id,
                     start_time=row.start_time,
                     mask_on_hours=effective_session_hours(
-                        row.usage_hours, row.duration_seconds
+                        row.Statistics.usage_hours if row.Statistics else None,
+                        row.duration_seconds,
                     ),
                 )
                 for row in enabled_rows
             ],
         )
         apnea_seconds = await apnea_seconds_by_session(self.db_session, enabled_ids)
+        flags = await ahi_event_flags(self.db_session, enabled_ids)
+        pressure_views = await load_pressure_views(
+            self.db_session,
+            [
+                PressureSource.of(row.id, row.Statistics, row.duration_seconds)
+                for row in enabled_rows
+            ],
+            flags,
+        )
+        running = running_ahi(
+            [
+                RunningAhiSource(
+                    session_id=row.id,
+                    start_time=row.start_time,
+                    end_time=row.end_time,
+                    mask_on_segments=parse_mask_on_segments(segments[row.id], row.id),
+                )
+                for row in enabled_rows
+            ],
+            flags,
+        )
         spans = _day_mask_on_spans(
-            [(row.id, row.start_time, row.mask_on_segments) for row in enabled_rows]
+            [(row.id, row.start_time, segments[row.id]) for row in enabled_rows]
         )
 
         health_summary_row = (
@@ -265,6 +293,8 @@ class DayService(ProfileScopedService):
                     sum(apnea_seconds.values()) if enabled_ids else None
                 ),
                 "leak_redline": leak_redline,
+                **pressure_views.model_dump(),
+                "running_ahi": running,
                 "mask_on_spans": spans,
             }
         )

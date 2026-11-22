@@ -41,6 +41,20 @@ vi.mock('@/components/WaveformChart.vue', () => ({ default: { template: '<div />
 vi.mock('@/components/WaveformToolbar.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/MultiWaveformView.vue', () => ({ default: { template: '<div />' } }))
 
+vi.mock('uplot', () => ({
+    default: function UPlotMock(this: Record<string, unknown>) {
+        this.destroy = vi.fn()
+        this.setSize = vi.fn()
+    },
+}))
+vi.stubGlobal(
+    'ResizeObserver',
+    class {
+        observe() {}
+        disconnect() {}
+    },
+)
+
 // Stub InfoHint so stat-card labels render as plain text (no Popover/teleport).
 vi.mock('@/components/InfoHint.vue', () => ({
     default: { template: '<span class="info-hint-stub" />' },
@@ -226,5 +240,55 @@ describe('SessionDetailView device channel and mask-on sections', () => {
         )
 
         expect(sectionHeadings(wrapper)).toEqual(['Mask-On Spans', 'Large Leak Spans'])
+    })
+})
+
+describe('SessionDetailView pressure views', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    async function openSections(wrapper: VueWrapper, names: string[]): Promise<void> {
+        for (const header of wrapper.findAll('.collapsible-header')) {
+            if (names.includes(header.text())) await header.trigger('click')
+        }
+        await flushPromises()
+    }
+
+    it('test_99_5th_cards_and_pressure_charts_render_from_the_session_payload', async () => {
+        const wrapper = await mountSession(
+            { pressure_95th: 12.0, epap_95th: 8.0, leak_95th: 10.0 },
+            {
+                pressure_99_5th: 13.46,
+                epap_99_5th: 8.84,
+                leak_99_5th: 22.0,
+                time_at_pressure: {
+                    pressures: [8, 8.2],
+                    pressure_seconds: [120, 60],
+                    epap_seconds: null,
+                    event_counts: {},
+                },
+                running_ahi: [{ session_id: 7, start: '2026-05-03T22:00:00', values: [0, 1] }],
+            },
+        )
+        await openSections(wrapper, ['Pressure', 'Leak'])
+
+        expect(findCard(wrapper, 'Pressure 99.5th')?.find('.stat-value').text()).toBe('13.5 cmH₂O')
+        expect(findCard(wrapper, 'EPAP 99.5th')?.find('.stat-value').text()).toBe('8.8 cmH₂O')
+        expect(findCard(wrapper, 'Leak 99.5th')?.find('.stat-value').text()).toBe('22.0 L/min')
+        const headings = wrapper.findAll('section h2').map((h) => h.text())
+        expect(headings).toEqual(['Time at Pressure', 'Running AHI'])
+    })
+
+    it('test_null_views_hide_their_cards_and_charts', async () => {
+        const wrapper = await mountSession(
+            { pressure_95th: 12.0 },
+            { pressure_99_5th: null, time_at_pressure: null, running_ahi: null },
+        )
+        await openSections(wrapper, ['Pressure'])
+
+        expect(findCard(wrapper, 'Pressure 95th')).toBeDefined()
+        expect(findCard(wrapper, 'Pressure 99.5th')).toBeUndefined()
+        expect(wrapper.findAll('section h2')).toHaveLength(0)
     })
 })
