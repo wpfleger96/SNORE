@@ -6565,7 +6565,7 @@ export interface components {
             avg_ahi?: number | null
             /**
              * Avg Epap
-             * @description Average EPAP (cmH2O)
+             * @description Usage-weighted mean EPAP of the enabled sessions (cmH2O)
              */
             avg_epap?: number | null
             /**
@@ -6580,7 +6580,7 @@ export interface components {
             avg_leak?: number | null
             /**
              * Avg Minute Ventilation
-             * @description Average minute ventilation (L/min)
+             * @description Usage-weighted mean minute ventilation of the enabled sessions (L/min)
              */
             avg_minute_ventilation?: number | null
             /**
@@ -6590,17 +6590,17 @@ export interface components {
             avg_pressure?: number | null
             /**
              * Avg Pulse
-             * @description Average pulse (BPM)
+             * @description Usage-weighted mean pulse of the enabled sessions (BPM)
              */
             avg_pulse?: number | null
             /**
              * Avg Rei
-             * @description Average REI
+             * @description Usage-weighted mean REI of the enabled sessions
              */
             avg_rei?: number | null
             /**
              * Avg Respiratory Rate
-             * @description Average respiratory rate (breaths/min)
+             * @description Usage-weighted mean respiratory rate of the enabled sessions (breaths/min)
              */
             avg_respiratory_rate?: number | null
             /**
@@ -6610,7 +6610,7 @@ export interface components {
             avg_spo2?: number | null
             /**
              * Avg Tidal Volume
-             * @description Average tidal volume (mL)
+             * @description Usage-weighted mean tidal volume of the enabled sessions (mL)
              */
             avg_tidal_volume?: number | null
             /**
@@ -6635,7 +6635,10 @@ export interface components {
              * @description Days with therapy hours from enabled sessions
              */
             days_with_data: number
-            /** Event Counts */
+            /**
+             * Event Counts
+             * @description Device-scored events of the enabled sessions, by type
+             */
             event_counts?: components['schemas']['EventTypeCount'][]
             /**
              * First Date
@@ -6671,7 +6674,7 @@ export interface components {
             total_hours: number
             /**
              * Total Spo2 Time Below 90
-             * @description Total seconds with SpO2 below 90%
+             * @description Total seconds with SpO2 below 90% in enabled sessions
              * @default 0
              */
             total_spo2_time_below_90: number
@@ -6771,23 +6774,23 @@ export interface components {
             bedtime: components['schemas']['TrendSeries']
             /** @description Average daily headline CAI per period (can mix device-reported and recounted days) */
             cai: components['schemas']['TrendSeries']
-            /** @description Average EPAP (cmH2O) per period */
+            /** @description Usage-weighted mean EPAP of each period's enabled sessions (cmH2O) */
             epap: components['schemas']['TrendSeries']
             /** @description Average daily headline HI per period (can mix device-reported and recounted days) */
             hi: components['schemas']['TrendSeries']
             /** @description Average leak (L/min) per period */
             leak: components['schemas']['TrendSeries']
-            /** @description Average minute ventilation (L/min) per period */
+            /** @description Usage-weighted mean minute ventilation of each period's enabled sessions (L/min) */
             mv: components['schemas']['TrendSeries']
             /** @description Average daily headline OAI per period (can mix device-reported and recounted days) */
             oai: components['schemas']['TrendSeries']
             /** @description Average pressure (cmH2O) per period */
             pressure: components['schemas']['TrendSeries']
-            /** @description Average pulse (BPM) per period */
+            /** @description Usage-weighted mean pulse of each period's enabled sessions (BPM) */
             pulse: components['schemas']['TrendSeries']
             /** @description Average device-scored RERA index per period */
             rera: components['schemas']['TrendSeries']
-            /** @description Average respiratory rate (breaths/min) per period */
+            /** @description Usage-weighted mean respiratory rate of each period's enabled sessions (breaths/min) */
             rr: components['schemas']['TrendSeries']
             /** @description Average sleep efficiency % per night, per period (Apple Health) */
             sleep_efficiency?: components['schemas']['TrendSeries'] | null

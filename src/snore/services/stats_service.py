@@ -244,7 +244,7 @@ class StatsService(ProfileScopedService):
                     )
                     .join(models.Session)
                     .join(models.Day)
-                    .where(models.Day.id.in_(chunk))
+                    .where(models.Day.id.in_(chunk), models.Session.enabled.is_(True))
                     .group_by(models.Event.event_type)
                 )
             ).all()
@@ -270,7 +270,9 @@ class StatsService(ProfileScopedService):
                         select(models.Statistics, models.Session.import_source)
                         .join(models.Session)
                         .join(models.Day)
-                        .where(models.Day.id.in_(chunk))
+                        .where(
+                            models.Day.id.in_(chunk), models.Session.enabled.is_(True)
+                        )
                     )
                 ).all()
             )
@@ -521,7 +523,7 @@ class StatsService(ProfileScopedService):
         day_records: list[models.Day],
         period_stats: list[PeriodStatistics],
     ) -> dict[date, dict[str, float | None]]:
-        """Compute usage-weighted session-level means per period."""
+        """Usage-weighted means over each period's enabled sessions."""
         if not day_records or not period_stats:
             return {
                 ps.period_start: {"epap": None, "rr": None, "pulse": None, "mv": None}
@@ -540,7 +542,9 @@ class StatsService(ProfileScopedService):
                             models.Statistics.session_id == models.Session.id,
                         )
                         .join(models.Day, models.Session.day_id == models.Day.id)
-                        .where(models.Day.id.in_(chunk))
+                        .where(
+                            models.Day.id.in_(chunk), models.Session.enabled.is_(True)
+                        )
                     )
                 ).all()
             )

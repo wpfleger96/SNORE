@@ -1016,7 +1016,9 @@ class TherapySummary(BaseModel):
             " (can mix device-reported and recounted days)"
         ),
     )
-    avg_rei: float | None = Field(default=None, description="Average REI")
+    avg_rei: float | None = Field(
+        default=None, description="Usage-weighted mean REI of the enabled sessions"
+    )
     avg_pressure: float | None = Field(
         default=None,
         description="Usage-weighted mean of the daily median pressure (cmH2O)",
@@ -1027,26 +1029,40 @@ class TherapySummary(BaseModel):
     max_pressure: float | None = Field(
         default=None, description="Highest daily median pressure (cmH2O)"
     )
-    avg_epap: float | None = Field(default=None, description="Average EPAP (cmH2O)")
+    avg_epap: float | None = Field(
+        default=None,
+        description="Usage-weighted mean EPAP of the enabled sessions (cmH2O)",
+    )
     avg_leak: float | None = Field(
         default=None, description="Usage-weighted mean of the daily median leak (L/min)"
     )
     avg_spo2: float | None = Field(default=None, description="Average SpO2 (%)")
     min_spo2: float | None = Field(default=None, description="Minimum SpO2 (%)")
     total_spo2_time_below_90: int = Field(
-        default=0, description="Total seconds with SpO2 below 90%"
+        default=0, description="Total seconds with SpO2 below 90% in enabled sessions"
     )
-    avg_pulse: float | None = Field(default=None, description="Average pulse (BPM)")
+    avg_pulse: float | None = Field(
+        default=None,
+        description="Usage-weighted mean pulse of the enabled sessions (BPM)",
+    )
     avg_respiratory_rate: float | None = Field(
-        default=None, description="Average respiratory rate (breaths/min)"
+        default=None,
+        description="Usage-weighted mean respiratory rate of the enabled sessions "
+        "(breaths/min)",
     )
     avg_tidal_volume: float | None = Field(
-        default=None, description="Average tidal volume (mL)"
+        default=None,
+        description="Usage-weighted mean tidal volume of the enabled sessions (mL)",
     )
     avg_minute_ventilation: float | None = Field(
-        default=None, description="Average minute ventilation (L/min)"
+        default=None,
+        description="Usage-weighted mean minute ventilation of the enabled "
+        "sessions (L/min)",
     )
-    event_counts: list[EventTypeCount] = Field(default_factory=list)
+    event_counts: list[EventTypeCount] = Field(
+        default_factory=list,
+        description="Device-scored events of the enabled sessions, by type",
+    )
 
 
 class ExperimentalStats(BaseModel):
@@ -1759,12 +1775,20 @@ class TrendsResponse(BaseModel):
         )
     )
     rera: TrendSeries = Field(description="Average device-scored RERA index per period")
-    epap: TrendSeries = Field(description="Average EPAP (cmH2O) per period")
-    rr: TrendSeries = Field(
-        description="Average respiratory rate (breaths/min) per period"
+    epap: TrendSeries = Field(
+        description="Usage-weighted mean EPAP of each period's enabled sessions (cmH2O)"
     )
-    pulse: TrendSeries = Field(description="Average pulse (BPM) per period")
-    mv: TrendSeries = Field(description="Average minute ventilation (L/min) per period")
+    rr: TrendSeries = Field(
+        description="Usage-weighted mean respiratory rate of each period's enabled "
+        "sessions (breaths/min)"
+    )
+    pulse: TrendSeries = Field(
+        description="Usage-weighted mean pulse of each period's enabled sessions (BPM)"
+    )
+    mv: TrendSeries = Field(
+        description="Usage-weighted mean minute ventilation of each period's enabled "
+        "sessions (L/min)"
+    )
     tv: TrendSeries = Field(
         description=(
             "Usage-weighted mean tidal volume (mL) of each period's enabled sessions"

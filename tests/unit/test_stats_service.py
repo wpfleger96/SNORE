@@ -908,6 +908,85 @@ class TestQueryDaysFiltering:
         assert result[0].date == today - timedelta(days=2)
 
 
+class TestDisabledSessionsExcluded:
+    """Summary and per-period session values cover enabled sessions only."""
+
+    async def _night_with_disabled_session(
+        self, db: AsyncSession, device: Device
+    ) -> date:
+        night = date.today()
+        day, enabled = await _create_day_with_session(db, device, night)
+        disabled = Session(
+            device_id=device.id,
+            day_id=day.id,
+            device_session_id="test_disabled",
+            start_time=enabled.end_time,
+            end_time=enabled.end_time + timedelta(hours=8),
+            duration_seconds=8 * 3600,
+            enabled=False,
+        )
+        db.add(disabled)
+        await db.flush()
+        for session, value in ((enabled, 10.0), (disabled, 30.0)):
+            db.add(
+                Statistics(
+                    session_id=session.id,
+                    usage_hours=8.0,
+                    epap_mean=value,
+                    respiratory_rate_mean=value,
+                    pulse_mean=value,
+                    minute_ventilation_mean=value,
+                    tidal_volume_mean=value / 20,  # litres on this import source
+                    rei=value,
+                )
+            )
+            db.add(
+                Event(
+                    session_id=session.id,
+                    event_type="OA" if session is enabled else "CA",
+                    start_time=session.start_time,
+                    duration_seconds=10.0,
+                )
+            )
+        await db.flush()
+        return night
+
+    async def test_summary_disabled_session_is_excluded(
+        self, async_db_session, async_test_device
+    ):
+        await self._night_with_disabled_session(async_db_session, async_test_device)
+
+        summary = await StatsService(async_db_session, profile_id=1).get_summary()
+
+        assert summary is not None
+        assert summary.avg_epap == 10.0
+        assert summary.avg_respiratory_rate == 10.0
+        assert summary.avg_pulse == 10.0
+        assert summary.avg_minute_ventilation == 10.0
+        assert summary.avg_tidal_volume == 500.0
+        assert summary.avg_rei == 10.0
+        assert [(e.event_type, e.count) for e in summary.event_counts] == [("OA", 1)]
+
+    async def test_period_session_values_disabled_session_is_excluded(
+        self, async_db_session, async_test_device
+    ):
+        night = await self._night_with_disabled_session(
+            async_db_session, async_test_device
+        )
+        service = StatsService(async_db_session, profile_id=1)
+
+        extras = await service._aggregate_session_stats_per_period(
+            await service._query_days(), await service.get_period_statistics("month")
+        )
+
+        assert extras[night.replace(day=1)] == {
+            "epap": 10.0,
+            "rr": 10.0,
+            "pulse": 10.0,
+            "mv": 10.0,
+        }
+
+
 class TestAggregateSessionStatsPerPeriod:
     """Test _aggregate_session_stats_per_period with hand-computed weighted means."""
 
