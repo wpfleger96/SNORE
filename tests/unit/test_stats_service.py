@@ -1026,7 +1026,7 @@ class TestGetTrends:
     async def test_get_trends_returns_every_series_key(
         self, async_db_session, async_test_device
     ):
-        """get_trends returns all 13 metric keys."""
+        """get_trends returns every device metric key."""
         today = date.today()
         await _create_day_with_session(
             async_db_session,
@@ -1053,6 +1053,11 @@ class TestGetTrends:
             "rr",
             "pulse",
             "mv",
+            "tv",
+            "uai",
+            "time_in_apnea",
+            "bedtime",
+            "wake_time",
         }
         assert result.model_fields_set == expected
 
@@ -1100,10 +1105,198 @@ class TestGetTrends:
         assert len(result.ahi) == 1
 
     async def test_get_trends_empty_returns_empty_series(self, async_db_session):
-        """Empty database returns 13-key dict with empty lists."""
+        """Empty database returns every device metric key with an empty list."""
         service = StatsService(async_db_session, profile_id=1)
         result = await service.get_trends("week")
 
-        assert len(result.model_fields_set) == 13
+        assert len(result.model_fields_set) == 18
         for field in result.model_fields_set:
             assert getattr(result, field) == []
+
+
+async def _add_session(
+    db_session: AsyncSession,
+    day: Day,
+    start: datetime,
+    end: datetime,
+    *,
+    enabled: bool = True,
+    import_source: str | None = None,
+    tidal_volume_mean: float | None = None,
+) -> Session:
+    """Add one session to ``day``, with a Statistics row carrying its usage hours."""
+    sess = Session(
+        device_id=day.device_id,
+        day_id=day.id,
+        device_session_id=f"s_{uuid.uuid4().hex[:8]}",
+        start_time=start,
+        end_time=end,
+        duration_seconds=(end - start).total_seconds(),
+        enabled=enabled,
+        import_source=import_source,
+    )
+    db_session.add(sess)
+    await db_session.flush()
+    db_session.add(
+        Statistics(
+            session_id=sess.id,
+            usage_hours=(end - start).total_seconds() / 3600,
+            tidal_volume_mean=tidal_volume_mean,
+        )
+    )
+    await db_session.flush()
+    return sess
+
+
+async def _add_day(db_session: AsyncSession, device: Device, day_date: date) -> Day:
+    day = Day(device_id=device.id, date=day_date, total_therapy_hours=7.0, ahi=1.0)
+    db_session.add(day)
+    await db_session.flush()
+    return day
+
+
+class TestPeriodSessionValues:
+    """Tidal volume, time in apnea and session times on period statistics."""
+
+    async def test_session_times_across_midnight_average_without_wrap(
+        self, async_db_session, async_test_device
+    ):
+        night_a = await _add_day(async_db_session, async_test_device, date(2024, 3, 4))
+        await _add_session(
+            async_db_session,
+            night_a,
+            datetime(2024, 3, 4, 23, 0),
+            datetime(2024, 3, 5, 2, 0),
+        )
+        await _add_session(
+            async_db_session,
+            night_a,
+            datetime(2024, 3, 5, 3, 0),
+            datetime(2024, 3, 5, 7, 0),
+        )
+        night_b = await _add_day(async_db_session, async_test_device, date(2024, 3, 5))
+        await _add_session(
+            async_db_session,
+            night_b,
+            datetime(2024, 3, 6, 1, 0),
+            datetime(2024, 3, 6, 8, 0),
+        )
+
+        service = StatsService(
+            async_db_session, profile_id=async_test_device.profile_id
+        )
+        (week,) = await service.get_period_statistics(
+            "week", include_channel_stats=False
+        )
+        days = await service.get_period_statistics("day", include_channel_stats=False)
+
+        # 23:00 → 11.0 and 01:00 → 13.0 average to 00:00 (12.0), not to noon.
+        assert week.avg_bedtime_hours == pytest.approx(12.0)
+        assert week.avg_wake_time_hours == pytest.approx(19.5)
+        assert [(d.avg_bedtime_hours, d.avg_wake_time_hours) for d in days] == [
+            (11.0, 19.0),
+            (13.0, 20.0),
+        ]
+
+    async def test_night_with_only_disabled_sessions_leaves_values_null(
+        self, async_db_session, async_test_device
+    ):
+        day = await _add_day(async_db_session, async_test_device, date(2024, 3, 4))
+        await _add_session(
+            async_db_session,
+            day,
+            datetime(2024, 3, 4, 23, 0),
+            datetime(2024, 3, 5, 7, 0),
+            enabled=False,
+            tidal_volume_mean=0.5,
+        )
+
+        service = StatsService(
+            async_db_session, profile_id=async_test_device.profile_id
+        )
+        (week,) = await service.get_period_statistics(
+            "week", include_channel_stats=False
+        )
+
+        assert week.avg_tidal_volume_ml is None
+        assert week.avg_time_in_apnea_minutes is None
+        assert week.avg_bedtime_hours is None
+        assert week.avg_wake_time_hours is None
+
+    async def test_tidal_volume_mixed_import_sources_averages_in_ml(
+        self, async_db_session, async_test_device
+    ):
+        day = await _add_day(async_db_session, async_test_device, date(2024, 3, 4))
+        # ResMed stores litres, OSCAR binary stores mL; weights are 2 h and 6 h.
+        await _add_session(
+            async_db_session,
+            day,
+            datetime(2024, 3, 4, 22, 0),
+            datetime(2024, 3, 5, 0, 0),
+            tidal_volume_mean=0.4,
+        )
+        await _add_session(
+            async_db_session,
+            day,
+            datetime(2024, 3, 5, 0, 0),
+            datetime(2024, 3, 5, 6, 0),
+            import_source=OSCAR_BINARY_PARSER_ID,
+            tidal_volume_mean=500.0,
+        )
+
+        service = StatsService(
+            async_db_session, profile_id=async_test_device.profile_id
+        )
+        (week,) = await service.get_period_statistics(
+            "week", include_channel_stats=False
+        )
+
+        assert week.avg_tidal_volume_ml == pytest.approx((400 * 2 + 500 * 6) / 8)
+
+    async def test_time_in_apnea_null_duration_hypopnea_adds_nothing(
+        self, async_db_session, async_test_device
+    ):
+        night_a = await _add_day(async_db_session, async_test_device, date(2024, 3, 4))
+        sess = await _add_session(
+            async_db_session,
+            night_a,
+            datetime(2024, 3, 4, 23, 0),
+            datetime(2024, 3, 5, 7, 0),
+        )
+        event_time = datetime(2024, 3, 5, 1, 0)
+        for event_type, seconds in [
+            ("OA", 20.0),
+            ("CA", 16.0),
+            ("H", None),
+            ("RE", 30.0),
+        ]:
+            async_db_session.add(
+                Event(
+                    session_id=sess.id,
+                    event_type=event_type,
+                    start_time=event_time,
+                    duration_seconds=seconds,
+                )
+            )
+        night_b = await _add_day(async_db_session, async_test_device, date(2024, 3, 5))
+        await _add_session(
+            async_db_session,
+            night_b,
+            datetime(2024, 3, 5, 23, 0),
+            datetime(2024, 3, 6, 7, 0),
+        )
+        await async_db_session.flush()
+
+        service = StatsService(
+            async_db_session, profile_id=async_test_device.profile_id
+        )
+        (week,) = await service.get_period_statistics(
+            "week", include_channel_stats=False
+        )
+        trends = await service.get_trends("week")
+
+        # 36 s of OA + CA on one night, none on the other; RERA is not an AHI event.
+        assert week.avg_time_in_apnea_minutes == pytest.approx(0.3)
+        [(start, minutes)] = trends.time_in_apnea
+        assert start == date(2024, 3, 4)
+        assert minutes == pytest.approx(0.3)

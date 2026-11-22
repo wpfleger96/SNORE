@@ -1788,7 +1788,7 @@ class TestStatsPeriod:
         assert result.exit_code == 0
         assert "FL 95th" in result.output
         assert "Snore 95th" in result.output
-        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        row = next(line for line in result.output.splitlines() if "Oct 2025" in line)
         assert row.split()[-2:] == ["0.50", "2.00"]
 
     def test_stats_period_shows_na_for_absent_channels(
@@ -1800,7 +1800,7 @@ class TestStatsPeriod:
         )
 
         assert result.exit_code == 0
-        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        row = next(line for line in result.output.splitlines() if "Oct 2025" in line)
         assert row.split()[-2:] == ["N/A", "N/A"]
 
     def test_stats_period_table_fits_80_columns(
@@ -1812,9 +1812,28 @@ class TestStatsPeriod:
         )
 
         assert result.exit_code == 0
-        [header] = [line for line in result.output.splitlines() if "FL 95th" in line]
-        [row] = [line for line in result.output.splitlines() if "Oct 2025" in line]
-        assert max(len(header), len(row)) <= 80
+        lines = [
+            line
+            for line in result.output.splitlines()
+            if any(key in line for key in ("FL 95th", "Bedtime", "Oct 2025"))
+        ]
+        assert len(lines) == 4
+        assert max(len(line) for line in lines) <= 80
+
+    def test_stats_period_shows_breakdown_and_session_times(
+        self, cli_runner, populated_test_db_full
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["stats", "--db", str(populated_test_db_full), "--period", "month"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "AHI Breakdown and Sessions" in result.output
+        _, row = [line for line in result.output.splitlines() if "Oct 2025" in line]
+        # Every session runs 22:00 to 06:00; its "Apnea" events are not AHI types.
+        assert row.split()[-2:] == ["22:00", "06:00"]
+        assert "0.0m" in row.split()
 
     def test_stats_trend_prints_unmarked_ahi_trend(
         self, cli_runner, populated_test_db_with_day_stats

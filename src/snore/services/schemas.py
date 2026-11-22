@@ -144,6 +144,15 @@ _IE_CHANNEL = "device I:E ratio channel (%), excluding out-of-range samples"
 _PULSE_CHANNEL = "oximeter pulse channel (bpm), excluding invalid readings"
 
 
+_NIGHTS_WITH_SESSIONS = (
+    "over the period's nights with an enabled session (null when it has none)"
+)
+_HOURS_AFTER_NOON = (
+    "in hours after noon of the night's date, so 23:30 is 11.5 and 07:00 the next "
+    "morning is 19.0"
+)
+
+
 class PeriodStatistics(BaseModel):
     """Statistics for a time period (week, month, year)."""
 
@@ -224,6 +233,15 @@ class PeriodStatistics(BaseModel):
             "devices that have scored a RERA; null when none in the period has"
         ),
     )
+    avg_uai: float | None = Field(
+        default=None,
+        description=(
+            "Unclassified apnea index (events/hour): the period's UA count over all "
+            "its therapy hours, so it stacks with avg_oai, avg_cai and avg_hi. A day "
+            "from a device that has never scored a UA adds its hours but no events; "
+            "null when no day's device in the period has"
+        ),
+    )
     device_flg_95th: float | None = Field(
         default=None,
         description=(
@@ -236,6 +254,35 @@ class PeriodStatistics(BaseModel):
         description=(
             f"95th percentile of the {_SNORE_CHANNEL}, over the pooled samples of "
             "every enabled session in the period; null when none has the channel"
+        ),
+    )
+    avg_tidal_volume_ml: float | None = Field(
+        default=None,
+        description=(
+            "Usage-weighted mean tidal volume (mL) of the period's enabled sessions; "
+            "null when none has one"
+        ),
+    )
+    avg_time_in_apnea_minutes: float | None = Field(
+        default=None,
+        description=(
+            f"Mean time in apnea (minutes) per night, {_NIGHTS_WITH_SESSIONS}: the "
+            "summed durations of its AHI events, where an event with no recorded "
+            "duration (every ResMed hypopnea) adds nothing"
+        ),
+    )
+    avg_bedtime_hours: float | None = Field(
+        default=None,
+        description=(
+            f"Mean start of each night's first enabled session, {_NIGHTS_WITH_SESSIONS}"
+            f", {_HOURS_AFTER_NOON}"
+        ),
+    )
+    avg_wake_time_hours: float | None = Field(
+        default=None,
+        description=(
+            f"Mean end of each night's last enabled session, {_NIGHTS_WITH_SESSIONS}"
+            f", {_HOURS_AFTER_NOON}"
         ),
     )
 
@@ -1718,6 +1765,35 @@ class TrendsResponse(BaseModel):
     )
     pulse: TrendSeries = Field(description="Average pulse (BPM) per period")
     mv: TrendSeries = Field(description="Average minute ventilation (L/min) per period")
+    tv: TrendSeries = Field(
+        description=(
+            "Usage-weighted mean tidal volume (mL) of each period's enabled sessions"
+        )
+    )
+    uai: TrendSeries = Field(
+        description=(
+            "Average unclassified apnea index per period, over all therapy hours "
+            "(null when no day's device has scored a UA). oai + cai + hi + uai is the "
+            "AHI breakdown, within about 0.2 of ahi, usually slightly below: a day's "
+            "headline indices can mix device-reported and recounted values, and "
+            "device values are stored to one decimal"
+        )
+    )
+    time_in_apnea: TrendSeries = Field(
+        description=f"Mean time in apnea (minutes) per night, {_NIGHTS_WITH_SESSIONS}"
+    )
+    bedtime: TrendSeries = Field(
+        description=(
+            f"Mean start of each night's first enabled session, "
+            f"{_NIGHTS_WITH_SESSIONS}, {_HOURS_AFTER_NOON}"
+        )
+    )
+    wake_time: TrendSeries = Field(
+        description=(
+            f"Mean end of each night's last enabled session, "
+            f"{_NIGHTS_WITH_SESSIONS}, {_HOURS_AFTER_NOON}"
+        )
+    )
     # Apple Health series: keys are omitted (not null) when no night has data.
     total_sleep_hours: TrendSeries | None = Field(
         default=None,

@@ -9,11 +9,13 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from snore.database.models import Event
 from snore.mcp.tools.period_stats import get_period_stats
 from tests.integration.conftest import (
     _make_apple_night,
     _make_day_session,
     _make_device,
+    _make_event,
     _make_profile,
 )
 
@@ -81,3 +83,57 @@ async def test_range_bounds_and_profile_scope_apply(
         (date(2026, 3, 2), 1),
         (date(2026, 3, 3), 1),
     ]
+
+
+async def test_periods_carry_session_times_and_time_in_apnea(
+    async_db_session: AsyncSession, async_test_profile: Any
+) -> None:
+    device = await _make_device(async_db_session, async_test_profile.id)
+    # 22:00 → 06:00 and 23:00 → 07:00: bedtimes 10.0 and 11.0 hours after noon.
+    _, first = await _make_day_session(
+        async_db_session, device, date(2026, 3, 2), start_hour=22
+    )
+    await _make_day_session(async_db_session, device, date(2026, 3, 3), start_hour=23)
+    async_db_session.add(
+        Event(
+            session_id=first.id,
+            event_type="CA",
+            start_time=first.start_time,
+            duration_seconds=60.0,
+        )
+    )
+    await async_db_session.flush()
+
+    [march] = (
+        await get_period_stats(async_db_session, profile_id=async_test_profile.id)
+    ).periods
+
+    assert march.avg_bedtime_hours == 10.5
+    assert march.avg_wake_time_hours == 18.5
+    assert march.avg_time_in_apnea_minutes == 0.5
+    assert march.avg_tidal_volume_ml is None
+
+
+async def test_range_starting_mid_period_counts_only_nights_in_range(
+    async_db_session: AsyncSession, async_test_profile: Any
+) -> None:
+    device = await _make_device(async_db_session, async_test_profile.id)
+    _, before = await _make_day_session(
+        async_db_session, device, date(2026, 3, 2), start_hour=18
+    )
+    await _make_event(async_db_session, before, event_type="CA", duration_seconds=60.0)
+    for night, start_hour in ((date(2026, 3, 3), 23), (date(2026, 3, 4), 21)):
+        await _make_day_session(async_db_session, device, night, start_hour=start_hour)
+
+    [march] = (
+        await get_period_stats(
+            async_db_session, profile_id=async_test_profile.id, start=date(2026, 3, 3)
+        )
+    ).periods
+
+    # The March 2 night (18:00 bedtime, 1 min in apnea) is outside the range.
+    assert march.period_start == date(2026, 3, 1)
+    assert march.days_used == 2
+    assert march.avg_bedtime_hours == 10.0
+    assert march.avg_wake_time_hours == 18.0
+    assert march.avg_time_in_apnea_minutes == 0.0

@@ -19,6 +19,7 @@ from snore.cli.display import (
     print_table,
 )
 from snore.constants import COMPLIANCE_THRESHOLD_HOURS, LEAK_REDLINE_LPM
+from snore.parsers.base import night_clock_time
 from snore.services.schemas import PeriodStatistics
 
 
@@ -165,6 +166,7 @@ async def stats(
             print_header(f"Therapy Statistics ({period_names[period]})", wide=True)
 
             period_rows = []
+            breakdown_rows = []
             for period_stat in period_stats:  # type: PeriodStatistics
                 if period == "day":
                     period_label = str(period_stat.period_start)
@@ -177,6 +179,25 @@ async def stats(
                     period_label = f"{period_stat.period_start.year} {half}"
                 else:
                     period_label = str(period_stat.period_start.year)
+
+                breakdown_rows.append(
+                    (
+                        period_label,
+                        *(
+                            _number_cell(value, "{:.1f}")
+                            for value in (
+                                period_stat.avg_oai,
+                                period_stat.avg_cai,
+                                period_stat.avg_hi,
+                                period_stat.avg_uai,
+                            )
+                        ),
+                        _number_cell(period_stat.avg_time_in_apnea_minutes, "{:.1f}m"),
+                        _number_cell(period_stat.avg_tidal_volume_ml, "{:.0f} mL"),
+                        _clock_cell(period_stat.avg_bedtime_hours),
+                        _clock_cell(period_stat.avg_wake_time_hours),
+                    )
+                )
 
                 days_str = f"{period_stat.days_used}/{period_stat.days_in_period}"
 
@@ -203,11 +224,11 @@ async def stats(
                         period_label,
                         days_str,
                         hours_str,
-                        _percent_cell(period_stat.compliance_pct),
+                        _number_cell(period_stat.compliance_pct, "{:.0f}%"),
                         avg_ahi_str,
                         med_ahi_str,
-                        _channel_cell(period_stat.device_flg_95th),
-                        _channel_cell(period_stat.snore_95th),
+                        _number_cell(period_stat.device_flg_95th, "{:.2f}"),
+                        _number_cell(period_stat.snore_95th, "{:.2f}"),
                     )
                 )
 
@@ -223,6 +244,22 @@ async def stats(
                     Column("Snore 95th", 11),
                 ],
                 period_rows,
+            )
+
+            print_subsection("AHI Breakdown and Sessions")
+            print_table(
+                [
+                    Column("Period", 12),
+                    Column("OAI", 6),
+                    Column("CAI", 6),
+                    Column("HI", 6),
+                    Column("UAI", 6),
+                    Column("In Apnea", 10),
+                    Column("Avg TV", 9),
+                    Column("Bedtime", 9),
+                    Column("Wake", 0),
+                ],
+                breakdown_rows,
             )
 
             print_footer(wide=True)
@@ -316,11 +353,13 @@ async def stats(
     console.print()
 
 
-def _percent_cell(value: float | None) -> str:
-    """Format a whole-number percent cell, ``N/A`` when there is no value."""
-    return f"{value:.0f}%" if value is not None else "N/A"
+def _number_cell(value: float | None, fmt: str) -> str:
+    """Format ``value`` with ``fmt``, ``N/A`` when there is no value."""
+    return fmt.format(value) if value is not None else "N/A"
 
 
-def _channel_cell(value: float | None) -> str:
-    """Format a device-channel percentile cell, ``N/A`` when the channel is absent."""
-    return f"{value:.2f}" if value is not None else "N/A"
+def _clock_cell(hours_after_noon: float | None) -> str:
+    """Format hours after noon of a night's date as a 24-hour clock time."""
+    if hours_after_noon is None:
+        return "N/A"
+    return night_clock_time(hours_after_noon).strftime("%H:%M")

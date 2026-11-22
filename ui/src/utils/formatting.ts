@@ -105,6 +105,12 @@ export function formatTimeOffset(secs: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+/** e.g. "23:30" from 11.5 — a 24-hour clock time from hours after noon of a night's date. */
+export function formatHoursAfterNoon(hours: number): string {
+    const minutes = (((12 * 60 + Math.round(hours * 60)) % 1440) + 1440) % 1440
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
 /** e.g. "12.3s" — event duration; null, undefined and 0 mean the device recorded none, shown as "—". */
 export function formatDuration(seconds: number | null | undefined): string {
     return seconds ? `${seconds.toFixed(1)}s` : '—'

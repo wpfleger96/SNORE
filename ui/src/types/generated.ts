@@ -4882,6 +4882,11 @@ export interface components {
              */
             avg_ahi?: number | null
             /**
+             * Avg Bedtime Hours
+             * @description Mean start of each night's first enabled session, over the period's nights with an enabled session (null when it has none), in hours after noon of the night's date, so 23:30 is 11.5 and 07:00 the next morning is 19.0
+             */
+            avg_bedtime_hours?: number | null
+            /**
              * Avg Cai
              * @description Usage-weighted average of daily headline CAI (events/hour) (can mix device-reported and recounted days)
              */
@@ -4927,10 +4932,30 @@ export interface components {
              */
             avg_spo2?: number | null
             /**
+             * Avg Tidal Volume Ml
+             * @description Usage-weighted mean tidal volume (mL) of the period's enabled sessions; null when none has one
+             */
+            avg_tidal_volume_ml?: number | null
+            /**
+             * Avg Time In Apnea Minutes
+             * @description Mean time in apnea (minutes) per night, over the period's nights with an enabled session (null when it has none): the summed durations of its AHI events, where an event with no recorded duration (every ResMed hypopnea) adds nothing
+             */
+            avg_time_in_apnea_minutes?: number | null
+            /**
              * Avg Total Sleep Hours
              * @description Average total sleep hours per night (Apple Health)
              */
             avg_total_sleep_hours?: number | null
+            /**
+             * Avg Uai
+             * @description Unclassified apnea index (events/hour): the period's UA count over all its therapy hours, so it stacks with avg_oai, avg_cai and avg_hi. A day from a device that has never scored a UA adds its hours but no events; null when no day's device in the period has
+             */
+            avg_uai?: number | null
+            /**
+             * Avg Wake Time Hours
+             * @description Mean end of each night's last enabled session, over the period's nights with an enabled session (null when it has none), in hours after noon of the night's date, so 23:30 is 11.5 and 07:00 the next morning is 19.0
+             */
+            avg_wake_time_hours?: number | null
             /**
              * Compliance Pct
              * @description days_compliant as a percent of the period's calendar days (to 0.1), leaving out days before the range's first or after its last day with therapy hours from enabled sessions, as OSCAR's Statistics page does; null when the period has no calendar day in that span
@@ -6742,6 +6767,8 @@ export interface components {
         TrendsResponse: {
             /** @description Average daily headline AHI per period (can mix device-reported and recounted days) */
             ahi: components['schemas']['TrendSeries']
+            /** @description Mean start of each night's first enabled session, over the period's nights with an enabled session (null when it has none), in hours after noon of the night's date, so 23:30 is 11.5 and 07:00 the next morning is 19.0 */
+            bedtime: components['schemas']['TrendSeries']
             /** @description Average daily headline CAI per period (can mix device-reported and recounted days) */
             cai: components['schemas']['TrendSeries']
             /** @description Average EPAP (cmH2O) per period */
@@ -6766,10 +6793,18 @@ export interface components {
             sleep_efficiency?: components['schemas']['TrendSeries'] | null
             /** @description Average SpO2 (%) per period */
             spo2: components['schemas']['TrendSeries']
+            /** @description Mean time in apnea (minutes) per night, over the period's nights with an enabled session (null when it has none) */
+            time_in_apnea: components['schemas']['TrendSeries']
             /** @description Average total sleep hours per night, per period (Apple Health) */
             total_sleep_hours?: components['schemas']['TrendSeries'] | null
+            /** @description Usage-weighted mean tidal volume (mL) of each period's enabled sessions */
+            tv: components['schemas']['TrendSeries']
+            /** @description Average unclassified apnea index per period, over all therapy hours (null when no day's device has scored a UA). oai + cai + hi + uai is the AHI breakdown, within about 0.2 of ahi, usually slightly below: a day's headline indices can mix device-reported and recounted values, and device values are stored to one decimal */
+            uai: components['schemas']['TrendSeries']
             /** @description Average therapy hours per day, per period */
             usage: components['schemas']['TrendSeries']
+            /** @description Mean end of each night's last enabled session, over the period's nights with an enabled session (null when it has none), in hours after noon of the night's date, so 23:30 is 11.5 and 07:00 the next morning is 19.0 */
+            wake_time: components['schemas']['TrendSeries']
         }
         /** UserInfo */
         UserInfo: {

@@ -116,6 +116,21 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
         short: 'Device-scored apneas and hypopneas in the 60 minutes up to each minute of the night, per hour, as OSCAR draws it.',
         long: 'Each mask-on segment starts its own line. OSCAR divides by the full hour, so the first hour of each segment reads low; the line breaks over mask-off time.',
     },
+    time_in_apnea_trend: {
+        label: 'Time in Apnea per Night',
+        short: 'Average time in apnea per night with therapy, as OSCAR’s Overview TTIA chart shows it.',
+        long: 'Each night’s total is the summed duration the device recorded for its AHI events, over its enabled sessions, and the period shows the mean over its nights with an enabled session. ResMed records no duration for hypopneas, so on ResMed this is time in apnea only.',
+    },
+    ahi_breakdown: {
+        label: 'AHI Breakdown',
+        short: 'OAI, CAI, HI and the unclassified apnea index stacked, as OSCAR’s Overview AHI chart shows them.',
+        long: 'OAI, CAI and HI are the nightly headline indices (device-reported when trusted, otherwise SNORE’s recount), and UAI is the device’s unclassified apneas per therapy hour. UAI counts every therapy hour, so a device that never scores UA adds hours but no events. The stack sits within about 0.2 of the AHI, usually slightly below, because a night’s indices can mix device-reported and recounted values, and the device stores each index to one decimal.',
+    },
+    session_times: {
+        label: 'Session Times',
+        short: 'Average bedtime (first session start) and wake time (last session end) per night.',
+        long: 'OSCAR’s Overview draws every session of every night; SNORE averages each night’s first start and last end over the period, counting enabled sessions only.',
+    },
     fl_class_ge4_pct: {
         label: 'FL Class ≥4',
         short: 'Share of confidently-classified breaths with a flow-limitation class of 4 or higher (more flattened inspiratory shapes).',

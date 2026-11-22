@@ -255,6 +255,12 @@ export interface TrendData {
     cai?: [string, number | null][]
     hi?: [string, number | null][]
     rera?: [string, number | null][]
+    tv?: [string, number | null][]
+    uai?: [string, number | null][]
+    time_in_apnea?: [string, number | null][]
+    // Hours after noon of each night's date (23:30 is 11.5).
+    bedtime?: [string, number | null][]
+    wake_time?: [string, number | null][]
     total_sleep_hours?: [string, number | null][]
     sleep_efficiency?: [string, number | null][]
 }
