@@ -2,6 +2,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
     formatDuration,
+    formatHoursAfterNoon,
     formatPercent,
     formatPercentPointsDelta,
     formatRelativeTime,
@@ -16,6 +17,18 @@ describe('formatDuration', () => {
 
     it.each([null, undefined, 0])('test_absent_duration_%s_shows_em_dash', (value) => {
         expect(formatDuration(value)).toBe('—')
+    })
+})
+
+describe('formatHoursAfterNoon', () => {
+    it.each([
+        [11.5, '23:30'],
+        [19, '07:00'],
+        [0, '12:00'],
+        [12, '00:00'],
+        [-0.5, '11:30'],
+    ])('test_%s_hours_after_noon_reads_%s', (hours, clock) => {
+        expect(formatHoursAfterNoon(hours)).toBe(clock)
     })
 })
 

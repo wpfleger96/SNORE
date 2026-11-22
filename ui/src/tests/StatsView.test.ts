@@ -20,6 +20,7 @@ vi.mock('@/api/stats', () => ({
 vi.mock('@/utils/formatting', () => ({
     formatDateFull: (d: string) => d,
     formatDateMonthDay: (d: string) => d,
+    formatHoursAfterNoon: (h: number) => `clock ${h}`,
     ahiClass: () => '',
 }))
 
@@ -39,7 +40,7 @@ vi.mock('@/components/ui/toggle-group', () => ({
 vi.mock('@/components/TrendChart.vue', () => ({
     default: defineComponent({
         name: 'TrendChart',
-        props: ['labels', 'datasets', 'height', 'syncKey'],
+        props: ['labels', 'datasets', 'height', 'syncKey', 'stacked', 'formatValue'],
         template: '<canvas class="trend-chart-stub" />',
     }),
 }))
@@ -271,6 +272,98 @@ describe('StatsView', () => {
             const wrapper = await mountAndLoad()
 
             expect(wrapper.find('[data-value="spo2"]').exists()).toBe(true)
+        })
+    })
+
+    describe('OSCAR overview trends', () => {
+        const series = (...values: (number | null)[]) =>
+            values.map((v, i) => [`2026-0${i + 4}-01`, v]) as [string, number | null][]
+        const chart = (wrapper: VueWrapper) => wrapper.findComponent({ name: 'TrendChart' })
+
+        afterEach(() => {
+            localStorage.clear()
+        })
+
+        it('test_ahi_breakdown_stacks_oai_cai_hi_uai_in_one_chart', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['ahi_breakdown']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: series(1.6, 1.1),
+                oai: series(0.5, 0.4),
+                cai: series(0.3, 0.2),
+                hi: series(0.6, 0.5),
+                uai: series(0.2, null),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(chart(wrapper).props('stacked')).toBe(true)
+            expect(chart(wrapper).props('datasets')).toEqual([
+                expect.objectContaining({ label: 'OAI', values: [0.5, 0.4] }),
+                expect.objectContaining({ label: 'CAI', values: [0.3, 0.2] }),
+                expect.objectContaining({ label: 'HI', values: [0.6, 0.5] }),
+                expect.objectContaining({ label: 'UAI', values: [0.2, null] }),
+            ])
+        })
+
+        it('test_session_times_chart_draws_bedtime_and_wake_as_clock_times', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['session_times']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: series(1, 1),
+                bedtime: series(11.5, 12.25),
+                wake_time: series(19, 19.5),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(chart(wrapper).props('stacked')).toBeUndefined()
+            expect(chart(wrapper).props('datasets')).toEqual([
+                expect.objectContaining({ label: 'Bedtime', values: [11.5, 12.25] }),
+                expect.objectContaining({ label: 'Wake', values: [19, 19.5] }),
+            ])
+            expect(chart(wrapper).props('formatValue')(11.5)).toBe('clock 11.5')
+        })
+
+        it('test_time_in_apnea_chart_plots_minutes', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['time_in_apnea']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: series(1),
+                time_in_apnea: series(4.5),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(chart(wrapper).props('datasets')).toEqual([
+                expect.objectContaining({ label: 'Time in Apnea (min)', values: [4.5] }),
+            ])
+        })
+
+        it('test_all_null_tidal_volume_offers_no_toggle', async () => {
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: series(1),
+                tv: series(null),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(wrapper.find('[data-value="tv"]').exists()).toBe(false)
+        })
+
+        it('test_tidal_volume_chart_plots_ml', async () => {
+            localStorage.setItem('snore:trend-metrics', JSON.stringify(['tv']))
+            vi.mocked(getTrends).mockResolvedValue({
+                ...EMPTY_TRENDS,
+                ahi: series(1),
+                tv: series(480),
+            })
+
+            const wrapper = await mountAndLoad()
+
+            expect(wrapper.find('[data-value="tv"]').exists()).toBe(true)
+            expect(chart(wrapper).props('datasets')[0].values).toEqual([480])
         })
     })
 

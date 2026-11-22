@@ -11,11 +11,27 @@ import { parseLocalDate } from '@/utils/formatting'
 
 const { isDark } = useDarkMode()
 
+interface Dataset {
+    label: string
+    values: (number | null)[]
+    color: string
+}
+
+// A drawn series: `shown` is what its legend reports, which is the component's own value when
+// `values` holds a stack's running total.
+interface DrawnSeries extends Dataset {
+    shown: (number | null)[]
+}
+
 const props = defineProps<{
     labels: string[]
-    datasets: { label: string; values: (number | null)[]; color: string }[]
+    datasets: Dataset[]
     height?: number
     syncKey?: uPlot.SyncPubSub
+    // Stacks the datasets as bars, the first at the bottom.
+    stacked?: boolean
+    // Formats y-axis ticks and legend values.
+    formatValue?: (value: number) => string
 }>()
 
 const containerRef = ref<HTMLDivElement>()
@@ -25,6 +41,26 @@ function axisColors() {
     return isDark.value ? { axis: '#a1a1aa', grid: '#27272a' } : { axis: '#888', grid: '#eee' }
 }
 
+function legendText(value: number | null): string {
+    if (value == null) return '--'
+    return props.formatValue ? props.formatValue(value) : String(Number(value.toFixed(2)))
+}
+
+// Each bar is drawn from zero, so a stack is its running totals drawn tallest first, each shorter
+// total painted over the one before. A missing component adds nothing to its period's stack, and
+// a period with no component has no bar.
+function stackedSeries(): DrawnSeries[] {
+    const running = props.labels.map(() => 0)
+    const hasAny = props.labels.map((_, i) => props.datasets.some((ds) => ds.values[i] != null))
+    return props.datasets
+        .map((ds) => ({
+            ...ds,
+            shown: ds.values,
+            values: ds.values.map((v, i) => (hasAny[i] ? (running[i] += v ?? 0) : null)),
+        }))
+        .reverse()
+}
+
 function createChart(): void {
     if (!containerRef.value || !props.labels.length) return
 
@@ -32,6 +68,10 @@ function createChart(): void {
 
     const colors = axisColors()
     const timestamps = props.labels.map((d) => parseLocalDate(d).getTime() / 1000)
+    const drawn: DrawnSeries[] = props.stacked
+        ? stackedSeries()
+        : props.datasets.map((ds) => ({ ...ds, shown: ds.values }))
+    const format = props.formatValue
     const width = containerRef.value.clientWidth || 800
 
     const opts: uPlot.Options = {
@@ -54,25 +94,30 @@ function createChart(): void {
                 stroke: colors.axis,
                 grid: { stroke: colors.grid },
                 ticks: { stroke: colors.axis },
+                ...(format ? { values: (_u: uPlot, splits: number[]) => splits.map(format) } : {}),
             },
         ],
         series: [
             {},
-            ...props.datasets.map((ds) => ({
+            ...drawn.map((ds) => ({
                 label: ds.label,
                 stroke: ds.color,
-                width: 2,
-                spanGaps: true,
-                points: { size: 4 },
+                ...(props.stacked
+                    ? { fill: ds.color, paths: uPlot.paths.bars!({ size: [0.6, 64] }) }
+                    : { width: 2, spanGaps: true, points: { size: 4 } }),
+                ...(props.stacked || format
+                    ? {
+                          value: (_u: uPlot, _v: unknown, _si: number, idx: number | null) =>
+                              legendText(idx == null ? null : ds.shown[idx]),
+                      }
+                    : {}),
             })),
         ],
     }
 
     const data: uPlot.AlignedData = [
         timestamps,
-        ...props.datasets.map(
-            (ds) => ds.values.map((v) => v ?? undefined) as (number | undefined)[],
-        ),
+        ...drawn.map((ds) => ds.values.map((v) => v ?? undefined) as (number | undefined)[]),
     ]
 
     chart = new uPlot(opts, data, containerRef.value)
@@ -98,7 +143,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-    () => [props.labels, props.datasets, props.height, props.syncKey] as const,
+    () => [props.labels, props.datasets, props.height, props.syncKey, props.stacked] as const,
     () => createChart(),
     { deep: true },
 )

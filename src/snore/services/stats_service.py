@@ -2,7 +2,8 @@
 
 from bisect import bisect_right
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from statistics import fmean
 
 from sqlalchemy import Row, func, select
 
@@ -18,9 +19,13 @@ from snore.analysis.calculations import (
     therapy_date_range,
 )
 from snore.database import models
+from snore.parsers.base import hours_into_night
 from snore.services._base import ProfileScopedService
 from snore.services.channel_stats import load_channel_histograms, pool_channel_stats
-from snore.services.event_service import device_event_types
+from snore.services.event_service import (
+    apnea_seconds_by_session,
+    device_event_types,
+)
 from snore.services.schemas import (
     DataRange,
     DeviceChannelStats,
@@ -40,6 +45,9 @@ from snore.utils.stats import usage_weighted_means, weighted_mean
 # Type alias for the health nights list used across multiple helpers.
 # ---------------------------------------------------------------------------
 _HealthNights = list[models.HealthNightlySummary]
+
+# One enabled session: id, night, start, end, import source, stored TV, usage hours.
+_SessionRow = Row[int, date, datetime, datetime, str | None, float | None, float | None]
 
 __all__ = ["StatsService"]
 
@@ -392,6 +400,95 @@ class StatsService(ProfileScopedService):
             for ps in period_stats
         ]
 
+    async def _with_session_values(
+        self,
+        day_records: list[models.Day],
+        period_stats: list[PeriodStatistics],
+    ) -> list[PeriodStatistics]:
+        """Return period stats with tidal volume, time in apnea and session times.
+
+        All four come from the period's enabled sessions, read from Session,
+        Statistics and Event rows, never from waveform blobs.  Time in apnea,
+        bedtime and wake time are means over the period's nights (``Day.date``)
+        with an enabled session; a period with none keeps them null.
+        """
+        if not period_stats:
+            return period_stats
+
+        rows: list[_SessionRow] = []
+        for chunk in iter_id_chunks([day.id for day in day_records]):
+            rows.extend(
+                (
+                    await self.db_session.execute(
+                        select(
+                            models.Session.id,
+                            models.Day.date,
+                            models.Session.start_time,
+                            models.Session.end_time,
+                            models.Session.import_source,
+                            models.Statistics.tidal_volume_mean,
+                            models.Statistics.usage_hours,
+                        )
+                        .join(models.Day, models.Session.day_id == models.Day.id)
+                        .outerjoin(
+                            models.Statistics,
+                            models.Statistics.session_id == models.Session.id,
+                        )
+                        .where(
+                            models.Day.id.in_(chunk), models.Session.enabled.is_(True)
+                        )
+                    )
+                ).all()
+            )
+        apnea_seconds: dict[int, float] = {}
+        for chunk in iter_id_chunks([row.id for row in rows]):
+            apnea_seconds |= await apnea_seconds_by_session(self.db_session, chunk)
+
+        period_start_of = _period_start_lookup(period_stats)
+        nights_by_period: dict[date, dict[date, list[_SessionRow]]] = {}
+        for row in rows:
+            pstart = period_start_of(row.date)
+            if pstart is not None:
+                nights = nights_by_period.setdefault(pstart, {})
+                nights.setdefault(row.date, []).append(row)
+
+        def period_values(
+            nights: dict[date, list[_SessionRow]],
+        ) -> dict[str, float | None]:
+            return {
+                # Stored tidal volume mixes units by import source; weight it in mL.
+                "avg_tidal_volume_ml": weighted_mean(
+                    (tv, row.usage_hours)
+                    for night in nights.values()
+                    for row in night
+                    if row.usage_hours
+                    and row.usage_hours > 0
+                    and (
+                        tv := tidal_volume_ml(row.tidal_volume_mean, row.import_source)
+                    )
+                    is not None
+                ),
+                "avg_time_in_apnea_minutes": fmean(
+                    sum(apnea_seconds[row.id] for row in night) / 60
+                    for night in nights.values()
+                ),
+                "avg_bedtime_hours": fmean(
+                    hours_into_night(min(row.start_time for row in night), night_date)
+                    for night_date, night in nights.items()
+                ),
+                "avg_wake_time_hours": fmean(
+                    hours_into_night(max(row.end_time for row in night), night_date)
+                    for night_date, night in nights.items()
+                ),
+            }
+
+        return [
+            ps.model_copy(update=period_values(nights_by_period[ps.period_start]))
+            if ps.period_start in nights_by_period
+            else ps
+            for ps in period_stats
+        ]
+
     async def get_period_statistics(
         self,
         period_type: PeriodType,
@@ -414,6 +511,7 @@ class StatsService(ProfileScopedService):
             period_stats = await self._with_channel_percentiles(
                 day_records, period_stats
             )
+        period_stats = await self._with_session_values(day_records, period_stats)
         if not period_stats:
             return period_stats
         health_nights = await self._query_health_nights(
@@ -489,7 +587,9 @@ class StatsService(ProfileScopedService):
         day_records = await self._query_days(
             days_limit, from_date=from_date, to_date=to_date
         )
-        period_stats = await self._period_statistics(day_records, period_type)
+        period_stats = await self._with_session_values(
+            day_records, await self._period_statistics(day_records, period_type)
+        )
         session_extras = await self._aggregate_session_stats_per_period(
             day_records, period_stats
         )

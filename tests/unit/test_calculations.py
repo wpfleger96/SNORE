@@ -477,6 +477,7 @@ class TestNewPeriodFields:
         hi: float | None = None,
         reras: int = 0,
         total_therapy_hours: float = 8.0,
+        unclassified_apneas: int = 0,
     ) -> Day:
         from snore.database.models import Day as DayModel
 
@@ -488,6 +489,7 @@ class TestNewPeriodFields:
             cai=cai,
             hi=hi,
             reras=reras,
+            unclassified_apneas=unclassified_apneas,
         )
         db_session.add(day)
         db_session.flush()
@@ -633,6 +635,37 @@ class TestNewPeriodFields:
 
         assert result[0].avg_rera == pytest.approx(0.25)
 
+    def test_avg_uai_is_usage_weighted(self, db_session, test_device):
+        """avg_uai is total unclassified apneas over total therapy hours."""
+        days = [
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 8, 1),
+                unclassified_apneas=4,
+                total_therapy_hours=8.0,
+            ),
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 8, 2),
+                unclassified_apneas=0,
+                total_therapy_hours=2.0,
+            ),
+        ]
+
+        result = _periods(days, "month", "UA")
+
+        assert result[0].avg_uai == pytest.approx(0.4)
+
+    def test_avg_uai_without_reporting_device_is_none(self, db_session, test_device):
+        """Zero UAs on a device that never scores them is no measurement."""
+        days = [self._make_day(db_session, test_device, date(2024, 8, 1))]
+
+        result = _periods(days, "month", "RE")
+
+        assert result[0].avg_uai is None
+
     def test_oai_cai_hi_usage_weighted(self, db_session, test_device):
         """avg_oai/cai/hi weight each day by total_therapy_hours, not equally."""
         days = [
@@ -765,6 +798,11 @@ class TestCalculateTrends:
             "rr",
             "pulse",
             "mv",
+            "tv",
+            "uai",
+            "time_in_apnea",
+            "bedtime",
+            "wake_time",
         }
         assert set(result.keys()) == expected_keys
         assert isinstance(result["ahi"], list)
@@ -802,7 +840,7 @@ class TestCalculateTrends:
             assert trend_ahi == period_stats[i].avg_ahi
 
     def test_trends_empty(self):
-        """Empty period statistics returns empty lists for all 13 keys."""
+        """Empty period statistics returns empty lists for all 18 keys."""
         result = calculate_trends([])
 
         expected_keys = {
@@ -819,6 +857,11 @@ class TestCalculateTrends:
             "rr",
             "pulse",
             "mv",
+            "tv",
+            "uai",
+            "time_in_apnea",
+            "bedtime",
+            "wake_time",
         }
         assert set(result.keys()) == expected_keys
         for key in expected_keys:
@@ -850,7 +893,7 @@ class TestCalculateTrendsExtended:
         return _periods(day_records, "month")
 
     def test_every_series_key_always_present(self, db_session, test_device):
-        """calculate_trends_extended always returns exactly 13 keys."""
+        """calculate_trends_extended always returns exactly 18 keys."""
         period_stats = self._make_period_stats(db_session, test_device)
         result = calculate_trends_extended(period_stats, {})
 
@@ -868,6 +911,11 @@ class TestCalculateTrendsExtended:
             "rr",
             "pulse",
             "mv",
+            "tv",
+            "uai",
+            "time_in_apnea",
+            "bedtime",
+            "wake_time",
         }
         assert set(result.keys()) == expected
 
@@ -879,6 +927,32 @@ class TestCalculateTrendsExtended:
         for key in ("epap", "rr", "pulse", "mv"):
             for _, value in result[key]:
                 assert value is None
+
+    def test_period_session_values_become_series(self):
+        """tv, uai, time_in_apnea, bedtime and wake_time copy their period fields."""
+        stat = PeriodStatistics(
+            period_type="day",
+            period_start=date(2024, 1, 1),
+            period_end=date(2024, 1, 1),
+            avg_tidal_volume_ml=480.0,
+            avg_uai=0.2,
+            avg_time_in_apnea_minutes=3.5,
+            avg_bedtime_hours=11.5,
+            avg_wake_time_hours=19.0,
+        )
+
+        result = calculate_trends_extended([stat], {})
+
+        assert {
+            key: result[key]
+            for key in ("tv", "uai", "time_in_apnea", "bedtime", "wake_time")
+        } == {
+            "tv": [(date(2024, 1, 1), 480.0)],
+            "uai": [(date(2024, 1, 1), 0.2)],
+            "time_in_apnea": [(date(2024, 1, 1), 3.5)],
+            "bedtime": [(date(2024, 1, 1), 11.5)],
+            "wake_time": [(date(2024, 1, 1), 19.0)],
+        }
 
     def test_extras_values_land_on_correct_period_start(self, db_session, test_device):
         """Values from session_extras are associated with the correct period_start."""
@@ -902,11 +976,11 @@ class TestCalculateTrendsExtended:
         assert pulse_by_date[feb_start] == pytest.approx(65.0)
 
     def test_empty_period_stats_returns_empty_lists(self):
-        """Empty period_stats yields empty lists for all 13 keys."""
+        """Empty period_stats yields empty lists for all 18 keys."""
         result = calculate_trends_extended([], {})
 
         assert all(v == [] for v in result.values())
-        assert len(result) == 13
+        assert len(result) == 18
 
 
 class TestCalculateAhiTrendDirection:

@@ -89,9 +89,11 @@
                     </p>
                     <TrendChart
                         :labels="trendLabels"
-                        :datasets="[metricDataset(key)]"
+                        :datasets="metricDatasets(key)"
                         :height="200"
                         :sync-key="trendSync"
+                        :stacked="METRIC_CONFIG[key].stacked"
+                        :format-value="METRIC_CONFIG[key].formatValue"
                     />
                 </div>
             </template>
@@ -125,12 +127,14 @@ import ErrorState from '@/components/ErrorState.vue'
 import InfoHint from '@/components/InfoHint.vue'
 import { getPeriods, getTrends, getRecords, getDataRange } from '@/api/stats'
 import { useApiLoad } from '@/composables/useApiLoad'
-import { formatDateFull } from '@/utils/formatting'
+import { formatDateFull, formatHoursAfterNoon } from '@/utils/formatting'
 import { GLOSSARY } from '@/utils/glossary'
 import type { PeriodStatistics, TrendData } from '@/types'
 
 type PeriodSeriesKey = 'device_flg_95th' | 'snore_95th'
+type SeriesKey = keyof TrendData | PeriodSeriesKey
 type Series = [string, number | null][]
+type MetricSeries = { key: SeriesKey; label: string; color: string }
 
 // ────────────────────────────── Metric config ──────────────────────────────
 
@@ -138,16 +142,16 @@ type Series = [string, number | null][]
 // (glossary: resp_rate) and the device-channel series. Labels are composed from GLOSSARY where the
 // label matches the desired display name; the others keep local names because theirs differ.
 // hideWhenEmpty marks a series a device may never produce, so isOffered drops its toggle when the
-// series is all null.
+// series is all null. A metric with parts draws each part as its own series on one chart.
 const METRIC_CONFIG: Record<
     string,
     {
         label: string
         glossaryKey: string
-        key: keyof TrendData | PeriodSeriesKey
-        color: string
         hideWhenEmpty?: boolean
-    }
+        stacked?: boolean
+        formatValue?: (value: number) => string
+    } & ({ key: SeriesKey; color: string } | { parts: MetricSeries[] })
 > = {
     ahi: {
         label: `${GLOSSARY.ahi.label} (events/hr)`,
@@ -160,6 +164,16 @@ const METRIC_CONFIG: Record<
         glossaryKey: 'usage',
         key: 'usage',
         color: '#16a34a',
+    },
+    // OSCAR's Session Times chart (overview.cpp:293-295), as one bedtime and wake time per period.
+    session_times: {
+        label: GLOSSARY.session_times.label,
+        glossaryKey: 'session_times',
+        formatValue: formatHoursAfterNoon,
+        parts: [
+            { key: 'bedtime', label: 'Bedtime', color: '#4338ca' },
+            { key: 'wake_time', label: 'Wake', color: '#f59e0b' },
+        ],
     },
     spo2: {
         label: `${GLOSSARY.spo2.label} (%)`,
@@ -193,6 +207,13 @@ const METRIC_CONFIG: Record<
         color: '#d97706',
     },
     mv: { label: 'Minute Vent (L/min)', glossaryKey: 'mv', key: 'mv', color: '#059669' },
+    tv: {
+        label: `${GLOSSARY.tidal_volume.label} (mL)`,
+        glossaryKey: 'tidal_volume',
+        key: 'tv',
+        color: '#0891b2',
+        hideWhenEmpty: true,
+    },
     oai: {
         label: `${GLOSSARY.oai.label} (events/hr)`,
         glossaryKey: 'oai',
@@ -211,12 +232,31 @@ const METRIC_CONFIG: Record<
         key: 'hi',
         color: '#ca8a04',
     },
+    // OSCAR's AHI breakdown chart (overview.cpp:279-285, gAHIChart.h:25-26), stacked from the bottom.
+    ahi_breakdown: {
+        label: `${GLOSSARY.ahi_breakdown.label} (events/hr)`,
+        glossaryKey: 'ahi_breakdown',
+        stacked: true,
+        parts: [
+            { key: 'oai', label: GLOSSARY.oai.label, color: '#be123c' },
+            { key: 'cai', label: GLOSSARY.cai.label, color: '#0284c7' },
+            { key: 'hi', label: GLOSSARY.hi.label, color: '#ca8a04' },
+            { key: 'uai', label: 'UAI', color: '#64748b' },
+        ],
+    },
     rera: {
         label: 'RERA (events/hr)',
         glossaryKey: 'rera',
         key: 'rera',
         color: '#ea580c',
         hideWhenEmpty: true,
+    },
+    // OSCAR's TTIA chart (overview.cpp:302-304), as the mean per night with therapy.
+    time_in_apnea: {
+        label: `${GLOSSARY.time_in_apnea.label} (min)`,
+        glossaryKey: 'time_in_apnea',
+        key: 'time_in_apnea',
+        color: '#9333ea',
     },
     device_flg_95th: {
         label: 'FL 95th',
@@ -392,21 +432,26 @@ const trendSeries = computed<Partial<Record<keyof TrendData | PeriodSeriesKey, S
     },
 )
 
-function hasData(key: string): boolean {
+function metricSeries(key: string): MetricSeries[] {
     const cfg = METRIC_CONFIG[key]
-    if (!cfg || !trendSeries.value) return false
-    const series = trendSeries.value[cfg.key]
-    return Array.isArray(series) && series.length > 0 && series.some((t) => t[1] !== null)
+    return 'parts' in cfg ? cfg.parts : [{ key: cfg.key, label: cfg.label, color: cfg.color }]
 }
 
-function metricDataset(key: string): { label: string; values: (number | null)[]; color: string } {
-    const cfg = METRIC_CONFIG[key]
-    const series = trendSeries.value?.[cfg.key] ?? []
-    return {
-        label: cfg.label,
-        values: series.map((t) => t[1]),
-        color: cfg.color,
-    }
+function hasData(key: string): boolean {
+    if (!METRIC_CONFIG[key] || !trendSeries.value) return false
+    return metricSeries(key).some(({ key: seriesKey }) =>
+        trendSeries.value?.[seriesKey]?.some((t) => t[1] !== null),
+    )
+}
+
+function metricDatasets(
+    key: string,
+): { label: string; values: (number | null)[]; color: string }[] {
+    return metricSeries(key).map(({ key: seriesKey, label, color }) => ({
+        label,
+        values: (trendSeries.value?.[seriesKey] ?? []).map((t) => t[1]),
+        color,
+    }))
 }
 
 const anyVisibleChart = computed(() => selectedMetrics.value.some((key) => hasData(key)))

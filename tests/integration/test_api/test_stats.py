@@ -4,7 +4,14 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from snore.database.models import Day, Device, HealthNightlySummary, Profile, User
+from snore.database.models import (
+    Day,
+    Device,
+    Event,
+    HealthNightlySummary,
+    Profile,
+    User,
+)
 
 _TREND_KEYS = {
     "ahi",
@@ -20,6 +27,11 @@ _TREND_KEYS = {
     "rr",
     "pulse",
     "mv",
+    "tv",
+    "uai",
+    "time_in_apnea",
+    "bedtime",
+    "wake_time",
 }
 
 
@@ -230,7 +242,7 @@ class TestStatsTrends:
     def test_trends_payload_has_every_series_key(
         self, api_client, db_session, test_device
     ):
-        """/trends always returns exactly 15 metric keys."""
+        """/trends always returns every device metric key."""
         db_session.add(
             Day(
                 device_id=test_device.id,
@@ -260,6 +272,11 @@ class TestStatsTrends:
             "rr",
             "pulse",
             "mv",
+            "tv",
+            "uai",
+            "time_in_apnea",
+            "bedtime",
+            "wake_time",
         }
         assert set(data.keys()) == expected_keys
 
@@ -372,6 +389,75 @@ class TestStatsTrends:
         assert data["ahi"] == [["2024-03-01", 2.5]]
         assert data["total_sleep_hours"] == [["2024-03-01", 7.5]]
         assert data["sleep_efficiency"] == [["2024-03-01", 90.0]]
+
+
+class TestStatsSessionValues:
+    """TV, time in apnea, session times and UAI on /periods and /trends."""
+
+    @pytest.fixture
+    def _night(self, db_session, test_device, test_session_factory):
+        """One ResMed night 23:30 → 07:00 with 30 s of apnea and two UAs."""
+        day = Day(
+            device_id=test_device.id,
+            date=date(2024, 3, 15),
+            session_count=1,
+            total_therapy_hours=7.5,
+            ahi=1.0,
+            oai=0.4,
+            cai=0.1,
+            hi=0.2,
+            unclassified_apneas=2,
+        )
+        db_session.add(day)
+        db_session.flush()
+        session = test_session_factory(
+            test_device.id,
+            start_time=datetime(2024, 3, 15, 23, 30),
+            duration_hours=7.5,
+            usage_hours=7.5,
+            tidal_volume_mean=0.45,
+        )
+        session.day_id = day.id
+        start = datetime(2024, 3, 16, 2, 0)
+        db_session.add_all(
+            [
+                Event(
+                    session_id=session.id,
+                    event_type="OA",
+                    start_time=start,
+                    duration_seconds=12.0,
+                ),
+                Event(
+                    session_id=session.id,
+                    event_type="UA",
+                    start_time=start,
+                    duration_seconds=18.0,
+                ),
+                Event(session_id=session.id, event_type="UA", start_time=start),
+                Event(session_id=session.id, event_type="H", start_time=start),
+            ]
+        )
+        db_session.flush()
+
+    @pytest.mark.usefixtures("_night")
+    def test_periods_carry_session_values(self, api_client):
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=day").json()
+
+        assert period["avg_tidal_volume_ml"] == pytest.approx(450.0)
+        assert period["avg_time_in_apnea_minutes"] == pytest.approx(0.5)
+        assert period["avg_bedtime_hours"] == pytest.approx(11.5)
+        assert period["avg_wake_time_hours"] == pytest.approx(19.0)
+        assert period["avg_uai"] == pytest.approx(2 / 7.5)
+
+    @pytest.mark.usefixtures("_night")
+    def test_trends_carry_session_values(self, api_client):
+        data = api_client.get("/api/v1/stats/trends?period_type=month").json()
+
+        assert data["tv"] == [["2024-03-01", pytest.approx(450.0)]]
+        assert data["time_in_apnea"] == [["2024-03-01", pytest.approx(0.5)]]
+        assert data["bedtime"] == [["2024-03-01", pytest.approx(11.5)]]
+        assert data["wake_time"] == [["2024-03-01", pytest.approx(19.0)]]
+        assert data["uai"] == [["2024-03-01", pytest.approx(2 / 7.5)]]
 
 
 class TestStatsRecords:

@@ -36,6 +36,7 @@ __all__ = [
     "build_root_metadata",
     "date_in_range",
     "filter_units_by_date",
+    "hours_into_night",
     "parse_iso_date",
     "session_night",
 ]
@@ -54,6 +55,15 @@ def session_night(start: datetime) -> date:
     if start.time() < _NIGHT_SPLIT_TIME:
         return start.date() - timedelta(days=1)
     return start.date()
+
+
+def hours_into_night(moment: datetime, night: date) -> float:
+    """Return the hours from noon of ``night`` to ``moment``.
+
+    Noon starts a night (``session_night``), so its clock times rise across
+    midnight and average without wrapping: 23:30 is 11.5, 07:00 next day 19.0.
+    """
+    return (moment - datetime.combine(night, _NIGHT_SPLIT_TIME)).total_seconds() / 3600
 
 
 def parse_iso_date(value: str | None) -> date | None:
