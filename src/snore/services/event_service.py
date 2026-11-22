@@ -59,8 +59,9 @@ async def apnea_seconds_by_session(
     """Return each session's total time in apnea, in seconds.
 
     OSCAR's "Total time in apnea" (``daily.cpp:1636-1642``): the summed
-    durations of the AHI event types.  An event with no recorded duration adds
-    nothing, as in OSCAR, which on ResMed is every hypopnea.  Every requested
+    durations of the AHI event types.  An event with no recorded duration, on
+    ResMed every hypopnea, adds nothing; OSCAR stores that duration as -1, so
+    its total is one second lower per such event.  Every requested
     id gets an entry, 0.0 when it has no such event.  ``session_ids`` must
     already be scoped to the caller: nothing here checks ownership.
     """

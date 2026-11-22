@@ -3156,7 +3156,7 @@ export interface components {
             spo2_min?: number | null
             /**
              * Time In Apnea Seconds
-             * @description OSCAR's total time in apnea: the summed durations of the day's enabled sessions' device-scored AHI events, in seconds. Events with no recorded duration add nothing, which on ResMed is every hypopnea; null when the day has no enabled session
+             * @description OSCAR's total time in apnea: the summed durations of the day's enabled sessions' device-scored obstructive, central, mixed and unclassified apneas and hypopneas, in seconds (RERAs and flow limitations excluded). Events with no recorded duration add nothing, which on ResMed is every hypopnea. Null when the day has no enabled session.
              */
             time_in_apnea_seconds: number | null
             /**
@@ -5736,7 +5736,7 @@ export interface components {
             therapy_mode: string | null
             /**
              * Time In Apnea Seconds
-             * @description OSCAR's total time in apnea: the summed durations of this session's device-scored AHI events, in seconds. Events with no recorded duration add nothing, which on ResMed is every hypopnea
+             * @description OSCAR's total time in apnea: the summed durations of this session's device-scored obstructive, central, mixed and unclassified apneas and hypopneas, in seconds (RERAs and flow limitations excluded). Events with no recorded duration add nothing, which on ResMed is every hypopnea.
              */
             time_in_apnea_seconds: number
             /** Waveform Count */

@@ -71,22 +71,24 @@ async def test_session_time_in_apnea_sums_ahi_event_durations_only(
         ("CA", 20.5),
         ("UA", 11.0),
         ("CAA", 10.0),
+        ("H", 9.0),
+        ("RE", 7.0),
+        ("FL", 30.0),
     ]:
         await _make_event(
             async_db_session, session, event_type=event_type, duration_seconds=seconds
         )
-    await _make_event(async_db_session, session, event_type="FL", duration_seconds=30.0)
     await _undurated_event(async_db_session, session, "H")
-    await _undurated_event(async_db_session, session, "RE")
 
     detail = await SessionService(async_db_session, profile_id).get_session_detail(
         session.id
     )
 
-    assert detail.time_in_apnea_seconds == pytest.approx(53.5)
+    # OA + CA + UA + CAA + H; the RERA, the FL and the undurated H add nothing.
+    assert detail.time_in_apnea_seconds == pytest.approx(62.5)
 
 
-async def test_session_without_events_has_zero_time_in_apnea(
+async def test_session_with_only_undurated_events_has_zero_time_in_apnea(
     async_db_session: AsyncSession, profile_device: tuple[int, Device]
 ) -> None:
     profile_id, device = profile_device

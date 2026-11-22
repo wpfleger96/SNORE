@@ -1581,7 +1581,7 @@ class TestSessionShowExpanded:
         )
 
         assert result.exit_code == 0
-        assert "Time in Apnea: 1:02:05" in result.output
+        assert "Time in Apnea: 01:02:05" in result.output
 
     def test_session_show_omits_absent_device_detail(
         self, cli_runner, db_with_device_channels

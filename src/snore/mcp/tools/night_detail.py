@@ -1,7 +1,8 @@
 """get_night_detail: one night as the web Day page shows it.
 
 Combines ``DayService.get_day`` (the device night), each of its sessions'
-Statistics row (what the Session page shows, without decoding waveforms) and
+Statistics row and time in apnea (what the Session page shows, without decoding
+waveforms) and
 ``HealthService.get_night_detail`` (the Apple Health night).  Every query is
 profile-scoped through Device.profile_id (Apple Health by profile_id).
 """
@@ -114,7 +115,7 @@ async def _only_night_device_id(
 async def _night_sessions(
     db_session: AsyncSession, profile_id: int, day: DayDetail
 ) -> list[NightSession]:
-    """The day's sessions with their Statistics rows, ascending by start.
+    """The day's sessions with their Statistics rows and time in apnea, by start.
 
     Only the served Session columns are selected: the JSON columns decode
     through ``ValidatedJSON``, which raises on an invalid stored value.

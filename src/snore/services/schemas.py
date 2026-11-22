@@ -766,8 +766,9 @@ class LeakRedlineStats(BaseModel):
 
 TIME_IN_APNEA_DESCRIPTION = (
     "OSCAR's total time in apnea: the summed durations of {scope} device-scored "
-    "AHI events, in seconds. Events with no recorded duration add nothing, "
-    "which on ResMed is every hypopnea"
+    "obstructive, central, mixed and unclassified apneas and hypopneas, in "
+    "seconds (RERAs and flow limitations excluded). Events with no recorded "
+    "duration add nothing, which on ResMed is every hypopnea."
 )
 
 
@@ -1248,7 +1249,7 @@ class DayDetail(DayListItem):
         description=TIME_IN_APNEA_DESCRIPTION.format(
             scope="the day's enabled sessions'"
         )
-        + "; null when the day has no enabled session",
+        + " Null when the day has no enabled session.",
     )
     leak_redline: LeakRedlineStats | None = Field(
         default=None,
