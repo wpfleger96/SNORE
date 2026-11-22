@@ -11,6 +11,7 @@ and implement these methods - the rest of the system automatically works.
 from __future__ import annotations
 
 import logging
+import math
 import os
 
 from abc import ABC, abstractmethod
@@ -37,6 +38,7 @@ __all__ = [
     "date_in_range",
     "filter_units_by_date",
     "hours_into_night",
+    "night_clock_time",
     "parse_iso_date",
     "session_night",
 ]
@@ -64,6 +66,17 @@ def hours_into_night(moment: datetime, night: date) -> float:
     midnight and average without wrapping: 23:30 is 11.5, 07:00 next day 19.0.
     """
     return (moment - datetime.combine(night, _NIGHT_SPLIT_TIME)).total_seconds() / 3600
+
+
+def night_clock_time(hours: float) -> time:
+    """Return the clock time ``hours`` after noon, the inverse of ``hours_into_night``.
+
+    Rounds to the nearest minute with halves up, as JavaScript's ``Math.round``
+    does, and wraps past midnight: 11.5 is 23:30 and 25.0 is 13:00.
+    """
+    split = _NIGHT_SPLIT_TIME.hour * 60 + _NIGHT_SPLIT_TIME.minute
+    minutes = (split + math.floor(hours * 60 + 0.5)) % (24 * 60)
+    return time(minutes // 60, minutes % 60)
 
 
 def parse_iso_date(value: str | None) -> date | None:

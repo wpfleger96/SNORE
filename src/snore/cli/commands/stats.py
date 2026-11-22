@@ -19,6 +19,7 @@ from snore.cli.display import (
     print_table,
 )
 from snore.constants import COMPLIANCE_THRESHOLD_HOURS, LEAK_REDLINE_LPM
+from snore.parsers.base import night_clock_time
 from snore.services.schemas import PeriodStatistics
 
 
@@ -223,11 +224,11 @@ async def stats(
                         period_label,
                         days_str,
                         hours_str,
-                        _percent_cell(period_stat.compliance_pct),
+                        _number_cell(period_stat.compliance_pct, "{:.0f}%"),
                         avg_ahi_str,
                         med_ahi_str,
-                        _channel_cell(period_stat.device_flg_95th),
-                        _channel_cell(period_stat.snore_95th),
+                        _number_cell(period_stat.device_flg_95th, "{:.2f}"),
+                        _number_cell(period_stat.snore_95th, "{:.2f}"),
                     )
                 )
 
@@ -352,16 +353,6 @@ async def stats(
     console.print()
 
 
-def _percent_cell(value: float | None) -> str:
-    """Format a whole-number percent cell, ``N/A`` when there is no value."""
-    return f"{value:.0f}%" if value is not None else "N/A"
-
-
-def _channel_cell(value: float | None) -> str:
-    """Format a device-channel percentile cell, ``N/A`` when the channel is absent."""
-    return f"{value:.2f}" if value is not None else "N/A"
-
-
 def _number_cell(value: float | None, fmt: str) -> str:
     """Format ``value`` with ``fmt``, ``N/A`` when there is no value."""
     return fmt.format(value) if value is not None else "N/A"
@@ -371,5 +362,4 @@ def _clock_cell(hours_after_noon: float | None) -> str:
     """Format hours after noon of a night's date as a 24-hour clock time."""
     if hours_after_noon is None:
         return "N/A"
-    minutes = (12 * 60 + round(hours_after_noon * 60)) % (24 * 60)
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+    return night_clock_time(hours_after_noon).strftime("%H:%M")

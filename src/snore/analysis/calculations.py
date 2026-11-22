@@ -226,24 +226,29 @@ def _get_period_boundaries(
     return periods
 
 
-def _reported_index(
-    days: list[models.Day],
-    count_field: str,
-    event_type: str,
-    reported_by_device: Mapping[int, Collection[str]],
+def _stacked_uai(
+    days: list[models.Day], reported_by_device: Mapping[int, Collection[str]]
 ) -> float | None:
-    """Usage-weighted index (events/hour) of a Day count, skipping days whose
-    device has never scored ``event_type``, as their zero is not a measurement."""
-    return weighted_mean(
-        (getattr(day, count_field) / day.total_therapy_hours, day.total_therapy_hours)
-        for day in days
+    """Unclassified apneas per hour over every day's therapy hours.
+
+    A day whose device has never scored a UA adds its hours but no events, so
+    the index stacks with OAI, CAI and HI over the same hours.  None when no
+    day's device has scored a UA.
+    """
+    used = [day for day in days if (day.total_therapy_hours or 0.0) > 0]
+    scored = [
+        day.unclassified_apneas
+        for day in used
         if reported_count(
-            getattr(day, count_field), event_type, reported_by_device[day.device_id]
+            day.unclassified_apneas,
+            EVENT_TYPE_UNCLASSIFIED_APNEA,
+            reported_by_device[day.device_id],
         )
         is not None
-        and day.total_therapy_hours is not None
-        and day.total_therapy_hours > 0
-    )
+    ]
+    if not scored:
+        return None
+    return sum(scored) / sum(day.total_therapy_hours for day in used)
 
 
 def calculate_period_statistics(
@@ -258,8 +263,9 @@ def calculate_period_statistics(
         day_records: List of Day records
         period_type: One of 'day', 'week', 'month', '6month', 'year'
         reported_by_device: Event types each device in ``day_records`` has scored.
-            A zero RERA count from a device that never scored one is not a
-            measurement, so ``avg_rera`` skips that day.
+            A zero RERA or UA count from a device that never scored one is not a
+            measurement: ``avg_rera`` skips that day, and ``avg_uai`` counts its
+            hours but no events.
 
     Returns:
         List of PeriodStatistics for each period
@@ -316,15 +322,17 @@ def calculate_period_statistics(
         avg_cai = usage_weighted_avg(days_in_period, "cai")
         avg_hi = usage_weighted_avg(days_in_period, "hi")
 
-        avg_rera = _reported_index(
-            days_in_period, "reras", EVENT_TYPE_RERA, reported_by_device
+        avg_rera = weighted_mean(
+            (day.reras / day.total_therapy_hours, day.total_therapy_hours)
+            for day in days_in_period
+            if reported_count(
+                day.reras, EVENT_TYPE_RERA, reported_by_device[day.device_id]
+            )
+            is not None
+            and day.total_therapy_hours is not None
+            and day.total_therapy_hours > 0
         )
-        avg_uai = _reported_index(
-            days_in_period,
-            "unclassified_apneas",
-            EVENT_TYPE_UNCLASSIFIED_APNEA,
-            reported_by_device,
-        )
+        avg_uai = _stacked_uai(days_in_period, reported_by_device)
 
         results.append(
             PeriodStatistics(
@@ -397,9 +405,8 @@ def calculate_trends_extended(
             expected sub-keys: epap, rr, pulse, mv (absent → None)
 
     Returns:
-        Dictionary with 18 metric keys, each mapping to a list of (date, value) tuples:
-        ahi, usage, spo2, leak, pressure, oai, cai, hi, rera, epap, rr, pulse, mv,
-        tv, uai, time_in_apnea, bedtime, wake_time
+        Dictionary mapping each ``_TREND_KEYS`` metric to a list of (date, value)
+        tuples, one per period.
     """
     trends: dict[str, list[tuple[date, float | None]]] = {k: [] for k in _TREND_KEYS}
 
@@ -436,8 +443,8 @@ def calculate_trends(
     Extract trend data from period statistics.
 
     Delegates to calculate_trends_extended with no session extras.
-    Returns all 18 metric keys; callers that only need the original 4
-    (ahi, usage, spo2, leak) can index by key as before.
+    Returns every ``_TREND_KEYS`` metric; callers that only need some of them
+    index by key.
 
     Args:
         period_stats: List of PeriodStatistics

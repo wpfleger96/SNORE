@@ -236,9 +236,10 @@ class PeriodStatistics(BaseModel):
     avg_uai: float | None = Field(
         default=None,
         description=(
-            "Usage-weighted unclassified apnea index (events/hour), each day's UA "
-            "count over its therapy hours, over days from devices that have scored a "
-            "UA; null when none in the period has"
+            "Unclassified apnea index (events/hour): the period's UA count over all "
+            "its therapy hours, so it stacks with avg_oai, avg_cai and avg_hi. A day "
+            "from a device that has never scored a UA adds its hours but no events; "
+            "null when no day's device in the period has"
         ),
     )
     device_flg_95th: float | None = Field(
@@ -1764,22 +1765,34 @@ class TrendsResponse(BaseModel):
     )
     pulse: TrendSeries = Field(description="Average pulse (BPM) per period")
     mv: TrendSeries = Field(description="Average minute ventilation (L/min) per period")
-    tv: TrendSeries = Field(description="Average tidal volume (mL) per period")
+    tv: TrendSeries = Field(
+        description=(
+            "Usage-weighted mean tidal volume (mL) of each period's enabled sessions"
+        )
+    )
     uai: TrendSeries = Field(
         description=(
-            "Average unclassified apnea index per period. oai + cai + hi + uai is the "
-            "AHI breakdown; on device-reported days it is within about 0.2 of ahi, as "
-            "each device index is stored to one decimal"
+            "Average unclassified apnea index per period, over all therapy hours "
+            "(null when no day's device has scored a UA). oai + cai + hi + uai is the "
+            "AHI breakdown, within about 0.2 of ahi, usually slightly below: a day's "
+            "headline indices can mix device-reported and recounted values, and "
+            "device values are stored to one decimal"
         )
     )
     time_in_apnea: TrendSeries = Field(
-        description="Average time in apnea (minutes) per night with therapy, per period"
+        description=f"Mean time in apnea (minutes) per night, {_NIGHTS_WITH_SESSIONS}"
     )
     bedtime: TrendSeries = Field(
-        description=f"Average first session start per period, {_HOURS_AFTER_NOON}"
+        description=(
+            f"Mean start of each night's first enabled session, "
+            f"{_NIGHTS_WITH_SESSIONS}, {_HOURS_AFTER_NOON}"
+        )
     )
     wake_time: TrendSeries = Field(
-        description=f"Average last session end per period, {_HOURS_AFTER_NOON}"
+        description=(
+            f"Mean end of each night's last enabled session, "
+            f"{_NIGHTS_WITH_SESSIONS}, {_HOURS_AFTER_NOON}"
+        )
     )
     # Apple Health series: keys are omitted (not null) when no night has data.
     total_sleep_hours: TrendSeries | None = Field(

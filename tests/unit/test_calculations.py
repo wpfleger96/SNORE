@@ -666,6 +666,39 @@ class TestNewPeriodFields:
 
         assert result[0].avg_uai is None
 
+    def test_avg_uai_mixed_devices_counts_all_hours(
+        self, db_session, test_device, test_profile
+    ):
+        """A device that never scores UA adds its hours, so UAI stacks with OAI."""
+        from snore.database.models import Device
+
+        other = Device(
+            profile_id=test_profile.id,
+            manufacturer="Other",
+            model="No UA",
+            serial_number="NO_UA_1",
+        )
+        db_session.add(other)
+        db_session.flush()
+        days = [
+            self._make_day(
+                db_session,
+                test_device,
+                date(2024, 8, 1),
+                unclassified_apneas=4,
+                total_therapy_hours=8.0,
+            ),
+            self._make_day(
+                db_session, other, date(2024, 8, 2), total_therapy_hours=2.0
+            ),
+        ]
+
+        result = calculate_period_statistics(
+            days, "month", {test_device.id: {"UA"}, other.id: set()}
+        )
+
+        assert result[0].avg_uai == pytest.approx(4 / 10)
+
     def test_oai_cai_hi_usage_weighted(self, db_session, test_device):
         """avg_oai/cai/hi weight each day by total_therapy_hours, not equally."""
         days = [
@@ -840,7 +873,7 @@ class TestCalculateTrends:
             assert trend_ahi == period_stats[i].avg_ahi
 
     def test_trends_empty(self):
-        """Empty period statistics returns empty lists for all 18 keys."""
+        """Empty period statistics returns empty lists for every trend key."""
         result = calculate_trends([])
 
         expected_keys = {
@@ -893,7 +926,7 @@ class TestCalculateTrendsExtended:
         return _periods(day_records, "month")
 
     def test_every_series_key_always_present(self, db_session, test_device):
-        """calculate_trends_extended always returns exactly 18 keys."""
+        """calculate_trends_extended always returns every trend key."""
         period_stats = self._make_period_stats(db_session, test_device)
         result = calculate_trends_extended(period_stats, {})
 
@@ -976,7 +1009,7 @@ class TestCalculateTrendsExtended:
         assert pulse_by_date[feb_start] == pytest.approx(65.0)
 
     def test_empty_period_stats_returns_empty_lists(self):
-        """Empty period_stats yields empty lists for all 18 keys."""
+        """Empty period_stats yields empty lists for every trend key."""
         result = calculate_trends_extended([], {})
 
         assert all(v == [] for v in result.values())

@@ -1,8 +1,12 @@
 import uuid
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
+
+from sqlalchemy.orm import Session as OrmSession
 
 from snore.database.models import (
     Day,
@@ -10,6 +14,7 @@ from snore.database.models import (
     Event,
     HealthNightlySummary,
     Profile,
+    Session,
     User,
 )
 
@@ -458,6 +463,193 @@ class TestStatsSessionValues:
         assert data["bedtime"] == [["2024-03-01", pytest.approx(11.5)]]
         assert data["wake_time"] == [["2024-03-01", pytest.approx(19.0)]]
         assert data["uai"] == [["2024-03-01", pytest.approx(2 / 7.5)]]
+
+    def test_multi_device_night_counts_as_one_night(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        other = Device(
+            profile_id=test_device.profile_id,
+            manufacturer="Other",
+            model="No UA",
+            serial_number=f"SN_{uuid.uuid4().hex[:8]}",
+        )
+        db_session.add(other)
+        db_session.flush()
+        # Device A 22:00 → 02:00 scores UAs; device B 02:30 → 07:00 never does.
+        first = _night_session(
+            db_session,
+            test_session_factory,
+            _day(db_session, test_device, 4.0, unclassified_apneas=2),
+            datetime(2024, 3, 15, 22, 0),
+            4.0,
+            tidal_volume_mean=0.4,
+        )
+        second = _night_session(
+            db_session,
+            test_session_factory,
+            _day(db_session, other, 4.5),
+            datetime(2024, 3, 16, 2, 30),
+            4.5,
+            tidal_volume_mean=0.5,
+        )
+        _add_event(db_session, first, "UA", 20.0)
+        _add_event(db_session, second, "CA", 40.0)
+
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=day").json()
+
+        assert period["avg_bedtime_hours"] == pytest.approx(10.0)
+        assert period["avg_wake_time_hours"] == pytest.approx(19.0)
+        assert period["avg_time_in_apnea_minutes"] == pytest.approx(1.0)
+        assert period["avg_tidal_volume_ml"] == pytest.approx(
+            round((400 * 4 + 500 * 4.5) / 8.5, 1)
+        )
+        # Device B's hours count toward UAI with no UA events, as they do for OAI.
+        assert period["avg_uai"] == pytest.approx(2 / 8.5)
+
+    def test_disabled_session_excluded_from_session_values(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        day = _day(db_session, test_device, 6.0)
+        enabled = _night_session(
+            db_session,
+            test_session_factory,
+            day,
+            datetime(2024, 3, 15, 23, 0),
+            6.0,
+            tidal_volume_mean=0.4,
+        )
+        disabled = _night_session(
+            db_session,
+            test_session_factory,
+            day,
+            datetime(2024, 3, 16, 5, 30),
+            3.5,
+            enabled=False,
+            tidal_volume_mean=0.6,
+        )
+        _add_event(db_session, enabled, "OA", 30.0)
+        _add_event(db_session, disabled, "CA", 60.0)
+
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=day").json()
+
+        assert period["avg_bedtime_hours"] == pytest.approx(11.0)
+        assert period["avg_wake_time_hours"] == pytest.approx(17.0)
+        assert period["avg_time_in_apnea_minutes"] == pytest.approx(0.5)
+        assert period["avg_tidal_volume_ml"] == pytest.approx(400.0)
+
+    def test_session_without_statistics_keeps_times_and_apnea(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        day = _day(db_session, test_device, 8.0)
+        _night_session(
+            db_session,
+            test_session_factory,
+            day,
+            datetime(2024, 3, 15, 22, 0),
+            4.0,
+            tidal_volume_mean=0.5,
+        )
+        bare = _night_session(
+            db_session, test_session_factory, day, datetime(2024, 3, 16, 3, 0), 4.0
+        )
+        _add_event(db_session, bare, "CA", 30.0)
+
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=day").json()
+
+        assert period["avg_bedtime_hours"] == pytest.approx(10.0)
+        assert period["avg_wake_time_hours"] == pytest.approx(19.0)
+        assert period["avg_time_in_apnea_minutes"] == pytest.approx(0.5)
+        assert period["avg_tidal_volume_ml"] == pytest.approx(500.0)
+
+    def test_session_ending_after_noon_wakes_past_24_hours(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        # 05:00 belongs to the March 15 night; ending at 13:00 is 25 h after its noon.
+        _night_session(
+            db_session,
+            test_session_factory,
+            _day(db_session, test_device, 8.0),
+            datetime(2024, 3, 16, 5, 0),
+            8.0,
+        )
+
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=day").json()
+        data = api_client.get("/api/v1/stats/trends?period_type=month").json()
+
+        assert period["avg_bedtime_hours"] == pytest.approx(17.0)
+        assert period["avg_wake_time_hours"] == pytest.approx(25.0)
+        assert data["wake_time"] == [["2024-03-01", pytest.approx(25.0)]]
+
+    def test_device_never_scoring_ua_leaves_uai_null(
+        self, api_client, db_session, test_device, test_session_factory
+    ):
+        session = _night_session(
+            db_session,
+            test_session_factory,
+            _day(db_session, test_device, 8.0, oai=0.5),
+            datetime(2024, 3, 15, 22, 0),
+            8.0,
+        )
+        _add_event(db_session, session, "OA", 10.0)
+
+        (period,) = api_client.get("/api/v1/stats/periods?period_type=month").json()
+        data = api_client.get("/api/v1/stats/trends?period_type=month").json()
+
+        assert period["avg_uai"] is None
+        assert period["avg_oai"] == pytest.approx(0.5)
+        assert data["uai"] == [["2024-03-01", None]]
+        assert data["oai"] == [["2024-03-01", pytest.approx(0.5)]]
+
+
+def _day(
+    db_session: OrmSession, device: Device, hours: float, **day_kwargs: Any
+) -> Day:
+    """The March 15, 2024 night of ``device`` with ``hours`` of therapy."""
+    day = Day(
+        device_id=device.id,
+        date=date(2024, 3, 15),
+        total_therapy_hours=hours,
+        **day_kwargs,
+    )
+    db_session.add(day)
+    db_session.flush()
+    return day
+
+
+def _night_session(
+    db_session: OrmSession,
+    session_factory: Callable[..., Session],
+    day: Day,
+    start: datetime,
+    hours: float,
+    *,
+    enabled: bool = True,
+    **stats_kwargs: float,
+) -> Session:
+    """A session of ``day``; ``stats_kwargs`` add a Statistics row with usage hours."""
+    if stats_kwargs:
+        stats_kwargs["usage_hours"] = hours
+    session = session_factory(
+        day.device_id, start, duration_hours=hours, **stats_kwargs
+    )
+    session.day_id = day.id
+    session.enabled = enabled
+    db_session.flush()
+    return session
+
+
+def _add_event(
+    db_session: OrmSession, session: Session, event_type: str, seconds: float
+) -> None:
+    db_session.add(
+        Event(
+            session_id=session.id,
+            event_type=event_type,
+            start_time=session.start_time,
+            duration_seconds=seconds,
+        )
+    )
+    db_session.flush()
 
 
 class TestStatsRecords:
