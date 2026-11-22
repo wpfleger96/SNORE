@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from rich import box
@@ -14,9 +15,21 @@ from rich.text import Text
 from snore.analysis.modes.types import ModeResult
 from snore.analysis.shared.types import SessionFlowAnalysis
 from snore.analysis.types import AnalysisEvent, AnalysisResult
-from snore.cli.display import console, mark_experimental, mark_field, print_kv
+from snore.cli.display import (
+    Column,
+    console,
+    mark_experimental,
+    mark_field,
+    print_kv,
+    print_table,
+)
 from snore.constants import FLOW_LIMITATION_CLASSES, LEAK_REDLINE_LPM
-from snore.services.schemas import DeviceChannelStats, LeakRedlineStats
+from snore.services.schemas import (
+    DeviceChannelStats,
+    LeakRedlineStats,
+    RunningAhiSegment,
+    TimeAtPressure,
+)
 from snore.waveform import format_time_offset
 
 if TYPE_CHECKING:
@@ -411,6 +424,44 @@ def _print_leak_redline(leak: LeakRedlineStats) -> None:
         )
 
 
+def _print_time_at_pressure(tap: TimeAtPressure) -> None:
+    """Print the minutes and AHI events at each occupied pressure bucket."""
+    console.print("\n  Time at Pressure:")
+    epap = tap.epap_seconds
+    columns = [
+        Column("cmH₂O", 7),
+        Column("Pressure min", 14),
+        *([Column("EPAP min", 10)] if epap is not None else []),
+        *(Column(event_type, 6) for event_type in tap.event_counts),
+    ]
+    rows = []
+    for i, pressure in enumerate(tap.pressures):
+        counts = [counts[i] for counts in tap.event_counts.values()]
+        if not (tap.pressure_seconds[i] or (epap and epap[i]) or any(counts)):
+            continue
+        rows.append(
+            [
+                f"{pressure:.1f}",
+                f"{tap.pressure_seconds[i] / 60:.1f}",
+                *([f"{epap[i] / 60:.1f}"] if epap is not None else []),
+                *(str(count) for count in counts),
+            ]
+        )
+    print_table(columns, rows, indent=2)
+
+
+def _print_running_ahi(segments: list[RunningAhiSegment]) -> None:
+    """Print each mask-on segment's running AHI peak and when it was reached."""
+    console.print("\n  Running AHI (60-minute window):")
+    for segment in segments:
+        peak = max(segment.values, default=0)
+        at = segment.start + timedelta(minutes=segment.values.index(peak))
+        console.print(
+            f"    Segment from {segment.start:%Y-%m-%d %H:%M}: "
+            f"Peak {peak}/h at {at:%H:%M}"
+        )
+
+
 def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
     """Print a full session detail view to stdout."""
     import pint
@@ -521,6 +572,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
                 )
             if stats.pressure_95th is not None:
                 console.print(f"      95th percentile: {stats.pressure_95th:.1f} cmH₂O")
+            if detail.pressure_99_5th is not None:
+                console.print(
+                    f"      99.5th percentile: {detail.pressure_99_5th:.1f} cmH₂O"
+                )
 
         has_epap = any(
             [
@@ -540,6 +595,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
                 )
             if stats.epap_95th is not None:
                 console.print(f"      95th percentile: {stats.epap_95th:.1f} cmH₂O")
+            if detail.epap_99_5th is not None:
+                console.print(
+                    f"      99.5th percentile: {detail.epap_99_5th:.1f} cmH₂O"
+                )
 
         has_leak = any(
             [
@@ -558,6 +617,10 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
                 )
             if stats.leak_95th is not None:
                 console.print(f"      95th percentile: {stats.leak_95th:.1f} L/min")
+            if detail.leak_99_5th is not None:
+                console.print(
+                    f"      99.5th percentile: {detail.leak_99_5th:.1f} L/min"
+                )
 
         has_spo2 = any(
             [
@@ -621,6 +684,12 @@ def display_session_detail(detail: SessionDetail, show_settings: bool) -> None:
 
     if detail.leak_redline:
         _print_leak_redline(detail.leak_redline)
+
+    if detail.time_at_pressure:
+        _print_time_at_pressure(detail.time_at_pressure)
+
+    if detail.running_ahi:
+        _print_running_ahi(detail.running_ahi)
 
     if detail.mask_on_spans:
         console.print("\n  Mask-On Spans:")

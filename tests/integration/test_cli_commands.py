@@ -1588,6 +1588,29 @@ class TestSessionShowExpanded:
         assert result.exit_code == 0
         assert "Time in Apnea: 01:02:05" in result.output
 
+    def test_session_show_displays_pressure_views(
+        self, cli_runner, db_with_apnea_events
+    ):
+        result = cli_runner.invoke(
+            cli,
+            ["session", "show", "1", "--db", str(db_with_apnea_events)],
+        )
+
+        assert result.exit_code == 0
+        output = result.output
+        assert "99.5th percentile: 2.0 cmH₂O" in output
+        tap = output[output.index("Time at Pressure:") : output.index("Running AHI")]
+        assert tap.split("\n")[1].split() == [
+            "cmH₂O",
+            "Pressure",
+            "min",
+            "CA",
+            "H",
+            "OA",
+        ]
+        # The hour-long OA is flagged at its end, 23:00, and joins the CA and H.
+        assert "Segment from 2025-10-01 22:00: Peak 3/h at 23:00" in output
+
     def test_session_show_omits_absent_device_detail(
         self, cli_runner, db_with_device_channels
     ):

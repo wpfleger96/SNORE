@@ -3034,6 +3034,11 @@ export interface components {
              */
             epap_95th?: number | null
             /**
+             * Epap 99 5Th
+             * @description 99.5th percentile of the day's enabled sessions' pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            epap_99_5th?: number | null
+            /**
              * Epap Max
              * @description Max EPAP (cmH2O)
              */
@@ -3078,6 +3083,11 @@ export interface components {
              */
             leak_95th?: number | null
             /**
+             * Leak 99 5Th
+             * @description 99.5th percentile of the day's enabled sessions' pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            leak_99_5th?: number | null
+            /**
              * Leak Max
              * @description Max leak (L/min)
              */
@@ -3121,6 +3131,11 @@ export interface components {
              */
             pressure_95th?: number | null
             /**
+             * Pressure 99 5Th
+             * @description 99.5th percentile of the day's enabled sessions' pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            pressure_99_5th?: number | null
+            /**
              * Pressure Max
              * @description Max pressure (cmH2O)
              */
@@ -3140,6 +3155,11 @@ export interface components {
              * @description Device-scored RERA count for the night; null when the device has never scored one
              */
             reras?: number | null
+            /**
+             * Running Ahi
+             * @description OSCAR's running AHI per mask-on segment of the day's enabled sessions, ascending (a session with unknown segments is one segment)
+             */
+            running_ahi?: components['schemas']['RunningAhiSegment'][] | null
             /** Session Count */
             session_count: number
             /** Session Ids */
@@ -3154,6 +3174,8 @@ export interface components {
              * @description Min SpO2 (%)
              */
             spo2_min?: number | null
+            /** @description Time at Pressure over the day's enabled sessions; null when none has a pressure channel or any one's is unusable */
+            time_at_pressure?: components['schemas']['TimeAtPressure'] | null
             /**
              * Time In Apnea Seconds
              * @description OSCAR's total time in apnea: the summed durations of the day's enabled sessions' device-scored obstructive, central, mixed and unclassified apneas and hypopneas, in seconds (RERAs and flow limitations excluded). Events with no recorded duration add nothing, which on ResMed is every hypopnea. Null when the day has no enabled session.
@@ -5633,6 +5655,25 @@ export interface components {
             total_rows_deleted: number
         }
         /**
+         * RunningAhiSegment
+         * @description OSCAR's running AHI over one mask-on segment.
+         */
+        RunningAhiSegment: {
+            /** Session Id */
+            session_id: number
+            /**
+             * Start
+             * Format: date-time
+             * @description Device wall-clock start of the segment, the time of values[0]
+             */
+            start: string
+            /**
+             * Values
+             * @description One value per minute from start: the device-scored AHI events flagged in the segment in the 60 minutes up to that minute, as events per hour (OSCAR divides by the full hour, so the first hour reads low)
+             */
+            values: number[]
+        }
+        /**
          * RxAllResponse
          * @description Combined RX data derived from a single database query.
          */
@@ -5779,6 +5820,11 @@ export interface components {
              * Format: date-time
              */
             end_time: string
+            /**
+             * Epap 99 5Th
+             * @description 99.5th percentile of this session's pooled EPAP samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            epap_99_5th?: number | null
             /** Event Count */
             event_count: number
             /** Has Event Data */
@@ -5789,6 +5835,11 @@ export interface components {
             id: number
             /** Import Source */
             import_source?: string | null
+            /**
+             * Leak 99 5Th
+             * @description 99.5th percentile of this session's pooled leak samples (L/min), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            leak_99_5th?: number | null
             /** @description This session's time over the leak redline and Large Leak spans; null when it has no valid leak sample or its leak data is unusable, and always null on PATCH responses */
             leak_redline?: components['schemas']['LeakRedlineStats'] | null
             /**
@@ -5798,6 +5849,16 @@ export interface components {
             mask_on_spans?: components['schemas']['MaskOnSpan'][] | null
             /** Parser Version */
             parser_version?: string | null
+            /**
+             * Pressure 99 5Th
+             * @description 99.5th percentile of this session's pooled pressure samples (cmH2O), OSCAR's Max column on ResMed: the same channel and linear method as the 95th. Null when no session has the channel or any has no usable stored waveform for it
+             */
+            pressure_99_5th?: number | null
+            /**
+             * Running Ahi
+             * @description OSCAR's running AHI per mask-on segment, ascending (the whole session as one segment when its segments are unknown); always null on PATCH responses
+             */
+            running_ahi?: components['schemas']['RunningAhiSegment'][] | null
             /** Settings */
             settings?: components['schemas']['SessionSetting'][] | null
             /**
@@ -5814,6 +5875,8 @@ export interface components {
             therapy_day: string
             /** Therapy Mode */
             therapy_mode: string | null
+            /** @description This session's Time at Pressure; null when its pressure channel is absent or unusable, and always null on PATCH responses */
+            time_at_pressure?: components['schemas']['TimeAtPressure'] | null
             /**
              * Time In Apnea Seconds
              * @description OSCAR's total time in apnea: the summed durations of this session's device-scored obstructive, central, mixed and unclassified apneas and hypopneas, in seconds (RERAs and flow limitations excluded). Events with no recorded duration add nothing, which on ResMed is every hypopnea.
@@ -6584,6 +6647,36 @@ export interface components {
              * @default 0
              */
             total_spo2_time_below_90: number
+        }
+        /**
+         * TimeAtPressure
+         * @description OSCAR's Time at Pressure: mask-on time in each 0.2 cmH2O pressure bucket.
+         *
+         *     Columnar: entry ``i`` of every list is the bucket centred on ``pressures[i]``.
+         */
+        TimeAtPressure: {
+            /**
+             * Epap Seconds
+             * @description Seconds EPAP spent in each bucket, over the sessions epap_median covers; null when none has a usable EPAP channel
+             */
+            epap_seconds?: number[] | null
+            /**
+             * Event Counts
+             * @description Per device-scored AHI event type with at least one event (OA, CA, CAA, MA, UA, H): how many were flagged while the pressure channel was in each bucket
+             */
+            event_counts: {
+                [key: string]: number[]
+            }
+            /**
+             * Pressure Seconds
+             * @description Seconds the pressure channel behind pressure_median spent in each bucket, over the sessions that value covers
+             */
+            pressure_seconds: number[]
+            /**
+             * Pressures
+             * @description Bucket centres (cmH2O), ascending in 0.2 steps from the lowest to the highest bucket with time or events; a bucket holds its centre -0.1 up to +0.1
+             */
+            pressures: number[]
         }
         /** TotpChallengeRequest */
         TotpChallengeRequest: {

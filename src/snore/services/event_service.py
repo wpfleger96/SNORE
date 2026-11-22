@@ -81,6 +81,42 @@ async def apnea_seconds_by_session(
     return totals
 
 
+async def ahi_event_flags(
+    db_session: AsyncSession, session_ids: Collection[int]
+) -> dict[int, list[tuple[str, float]]]:
+    """Each session's device-scored AHI events as ``(event_type, flag offset)``.
+
+    The flag offset is seconds from session start to the event's flag time,
+    its start plus its recorded duration (none adds nothing): ResMed flags an
+    event at its end, the time OSCAR stores (``resmed_loader.cpp:3797-3810``).
+    Ascending by flag offset; every requested id gets an entry.
+    ``session_ids`` must already be scoped to the caller.
+    """
+    flags: dict[int, list[tuple[str, float]]] = {sid: [] for sid in session_ids}
+    if not flags:
+        return flags
+    rows = await db_session.execute(
+        select(
+            models.Event.session_id,
+            models.Event.event_type,
+            models.Event.start_time,
+            models.Event.duration_seconds,
+            models.Session.start_time,
+        )
+        .join(models.Session, models.Session.id == models.Event.session_id)
+        .where(
+            models.Event.session_id.in_(flags),
+            models.Event.event_type.in_(AHI_EVENT_TYPES),
+        )
+    )
+    for session_id, event_type, start, duration, session_start in rows:
+        offset = (start - session_start).total_seconds() + (duration or 0.0)
+        flags[session_id].append((event_type, offset))
+    for events in flags.values():
+        events.sort(key=lambda event: event[1])
+    return flags
+
+
 def reported_counts(
     row: models.Day | models.Statistics, reported: Collection[str]
 ) -> dict[str, int | None]:

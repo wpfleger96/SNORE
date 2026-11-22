@@ -786,6 +786,62 @@ class LeakRedlineStats(BaseModel):
     )
 
 
+class TimeAtPressure(BaseModel):
+    """OSCAR's Time at Pressure: mask-on time in each 0.2 cmH2O pressure bucket.
+
+    Columnar: entry ``i`` of every list is the bucket centred on ``pressures[i]``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pressures: list[float] = Field(
+        description="Bucket centres (cmH2O), ascending in 0.2 steps from the lowest "
+        "to the highest bucket with time or events; a bucket holds its centre "
+        "-0.1 up to +0.1"
+    )
+    pressure_seconds: list[float] = Field(
+        description="Seconds the pressure channel behind pressure_median spent in "
+        "each bucket, over the sessions that value covers"
+    )
+    epap_seconds: list[float] | None = Field(
+        default=None,
+        description="Seconds EPAP spent in each bucket, over the sessions "
+        "epap_median covers; null when none has a usable EPAP channel",
+    )
+    event_counts: dict[str, list[int]] = Field(
+        description="Per device-scored AHI event type with at least one event "
+        "(OA, CA, CAA, MA, UA, H): how many were flagged while the pressure "
+        "channel was in each bucket"
+    )
+
+
+class RunningAhiSegment(BaseModel):
+    """OSCAR's running AHI over one mask-on segment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: int
+    start: datetime = Field(
+        description="Device wall-clock start of the segment, the time of values[0]"
+    )
+    values: list[int] = Field(
+        description="One value per minute from start: the device-scored AHI events "
+        "flagged in the segment in the 60 minutes up to that minute, as events "
+        "per hour (OSCAR divides by the full hour, so the first hour reads low)"
+    )
+
+
+def _p99_5_field(channel: str, unit: str, scope: str) -> Any:
+    """A pressure, EPAP or leak 99.5th field, computed on read."""
+    return Field(
+        default=None,
+        description=f"99.5th percentile of {scope} pooled {channel} samples "
+        f"({unit}), OSCAR's Max column on ResMed: the same channel and linear "
+        "method as the 95th. Null when no session has the channel or any has no "
+        "usable stored waveform for it",
+    )
+
+
 TIME_IN_APNEA_DESCRIPTION = (
     "OSCAR's total time in apnea: the summed durations of {scope} device-scored "
     "obstructive, central, mixed and unclassified apneas and hypopneas, in "
@@ -836,6 +892,20 @@ class SessionDetail(BaseModel):
         description="This session's time over the leak redline and Large Leak "
         "spans; null when it has no valid leak sample or its leak data is "
         "unusable, and always null on PATCH responses",
+    )
+    pressure_99_5th: float | None = _p99_5_field("pressure", "cmH2O", "this session's")
+    epap_99_5th: float | None = _p99_5_field("EPAP", "cmH2O", "this session's")
+    leak_99_5th: float | None = _p99_5_field("leak", "L/min", "this session's")
+    time_at_pressure: TimeAtPressure | None = Field(
+        default=None,
+        description="This session's Time at Pressure; null when its pressure "
+        "channel is absent or unusable, and always null on PATCH responses",
+    )
+    running_ahi: list[RunningAhiSegment] | None = Field(
+        default=None,
+        description="OSCAR's running AHI per mask-on segment, ascending (the "
+        "whole session as one segment when its segments are unknown); always "
+        "null on PATCH responses",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,
@@ -1278,6 +1348,25 @@ class DayDetail(DayListItem):
         description="Time over the leak redline and Large Leak spans of the day's "
         "enabled sessions with leak data; null when none has a valid leak sample "
         "or any one's leak data is unusable",
+    )
+    pressure_99_5th: float | None = _p99_5_field(
+        "pressure", "cmH2O", "the day's enabled sessions'"
+    )
+    epap_99_5th: float | None = _p99_5_field(
+        "EPAP", "cmH2O", "the day's enabled sessions'"
+    )
+    leak_99_5th: float | None = _p99_5_field(
+        "leak", "L/min", "the day's enabled sessions'"
+    )
+    time_at_pressure: TimeAtPressure | None = Field(
+        default=None,
+        description="Time at Pressure over the day's enabled sessions; null when "
+        "none has a pressure channel or any one's is unusable",
+    )
+    running_ahi: list[RunningAhiSegment] | None = Field(
+        default=None,
+        description="OSCAR's running AHI per mask-on segment of the day's enabled "
+        "sessions, ascending (a session with unknown segments is one segment)",
     )
     mask_on_spans: list[MaskOnSpan] | None = Field(
         default=None,

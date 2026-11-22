@@ -129,6 +129,13 @@
                 unit="cmH₂O"
                 :decimals="1"
             />
+            <StatCard
+                v-if="data.pressure_99_5th != null"
+                label="Pressure 99.5th"
+                :value="data.pressure_99_5th"
+                unit="cmH₂O"
+                :decimals="1"
+            />
         </div>
 
         <!-- EPAP group -->
@@ -172,6 +179,13 @@
                 unit="cmH₂O"
                 :decimals="1"
             />
+            <StatCard
+                v-if="data.epap_99_5th != null"
+                label="EPAP 99.5th"
+                :value="data.epap_99_5th"
+                unit="cmH₂O"
+                :decimals="1"
+            />
         </div>
 
         <!-- Leak group -->
@@ -210,6 +224,13 @@
                 v-if="data.leak_95th != null"
                 label="Leak 95th"
                 :value="data.leak_95th"
+                unit="L/min"
+                :decimals="1"
+            />
+            <StatCard
+                v-if="data.leak_99_5th != null"
+                label="Leak 99.5th"
+                :value="data.leak_99_5th"
                 unit="L/min"
                 :decimals="1"
             />
@@ -261,6 +282,8 @@
         </div>
 
         <DeviceChannelStatsTable :stats="data.channel_stats" />
+        <TimeAtPressureChart :tap="data.time_at_pressure" />
+        <RunningAhiChart :segments="data.running_ahi" />
         <MaskOnSpansTable :spans="data.mask_on_spans" />
         <MaskOnSpansTable
             title="Large Leak Spans"
@@ -352,6 +375,8 @@ import { isAxiosError } from 'axios'
 import StatCard from '@/components/StatCard.vue'
 import DeviceChannelStatsTable from '@/components/DeviceChannelStatsTable.vue'
 import MaskOnSpansTable from '@/components/MaskOnSpansTable.vue'
+import RunningAhiChart from '@/components/RunningAhiChart.vue'
+import TimeAtPressureChart from '@/components/TimeAtPressureChart.vue'
 import {
     Table,
     TableBody,

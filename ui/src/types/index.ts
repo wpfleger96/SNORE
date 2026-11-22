@@ -25,6 +25,8 @@ export type SessionSetting = Schemas['SessionSetting']
 export type SessionDetail = Schemas['SessionDetail']
 export type DeviceChannelStats = Schemas['DeviceChannelStats']
 export type MaskOnSpan = Schemas['MaskOnSpan']
+export type RunningAhiSegment = Schemas['RunningAhiSegment']
+export type TimeAtPressure = Schemas['TimeAtPressure']
 export type LargeLeakSpan = Schemas['LargeLeakSpan']
 
 // Waveforms

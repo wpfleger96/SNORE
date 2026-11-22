@@ -51,6 +51,38 @@ POOLED_PERCENTILE_SOURCES: dict[str, dict[str, float]] = {
 type ChannelSamples = dict[tuple[str, int], np.ndarray]
 
 
+async def summary_channel_choices(
+    db_session: AsyncSession, session_ids: Sequence[int]
+) -> dict[str, list[tuple[str, int]]]:
+    """Channel -> the ``(prefix, session_id)`` pairs it is the choice for.
+
+    A session's channel for a ``SUMMARY_CHANNELS`` prefix is the first one it
+    has a stored row for, the rule ``finalize_statistics`` used for the session
+    value.
+    """
+    # session_id and waveform_type are stored before data_blob, so this never
+    # reads a blob.
+    channel_rows = await db_session.execute(
+        select(Waveform.session_id, Waveform.waveform_type).where(
+            Waveform.session_id.in_(session_ids),
+            Waveform.waveform_type.in_(
+                {c.value for chans in SUMMARY_CHANNELS.values() for c in chans}
+            ),
+        )
+    )
+    stored: dict[int, set[str]] = {}
+    for session_id, waveform_type in channel_rows:
+        stored.setdefault(session_id, set()).add(waveform_type)
+
+    chosen: dict[str, list[tuple[str, int]]] = {}
+    for session_id, channels in stored.items():
+        for prefix, preference in SUMMARY_CHANNELS.items():
+            choice = next((c.value for c in preference if c.value in channels), None)
+            if choice is not None:
+                chosen.setdefault(choice, []).append((prefix, session_id))
+    return chosen
+
+
 class DayManager:
     """Manages day splitting and aggregation logic (OSCAR-compatible)."""
 
@@ -157,31 +189,8 @@ class DayManager:
         caller falls back rather than reading a channel the session value did
         not come from.
         """
-        # session_id and waveform_type are stored before data_blob, so this
-        # never reads a blob.
-        channel_rows = await db_session.execute(
-            select(Waveform.session_id, Waveform.waveform_type).where(
-                Waveform.session_id.in_(session_ids),
-                Waveform.waveform_type.in_(
-                    {c.value for chans in SUMMARY_CHANNELS.values() for c in chans}
-                ),
-            )
-        )
-        stored: dict[int, set[str]] = {}
-        for session_id, waveform_type in channel_rows:
-            stored.setdefault(session_id, set()).add(waveform_type)
-
-        # channel -> [(prefix, session_id)] the channel was chosen for.
-        chosen: dict[str, list[tuple[str, int]]] = {}
-        for session_id, channels in stored.items():
-            for prefix, preference in SUMMARY_CHANNELS.items():
-                choice = next(
-                    (c.value for c in preference if c.value in channels), None
-                )
-                if choice is not None:
-                    chosen.setdefault(choice, []).append((prefix, session_id))
-
         samples: ChannelSamples = {}
+        chosen = await summary_channel_choices(db_session, session_ids)
         for channel, keys in chosen.items():
             values, _ = await decode_channel_blobs(
                 db_session,

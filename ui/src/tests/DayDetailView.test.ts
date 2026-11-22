@@ -252,6 +252,36 @@ describe('DayDetailView time in apnea', () => {
     })
 })
 
+describe('DayDetailView 99.5th percentiles', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('test_99_5th_cards_render_beside_the_95th', async () => {
+        const wrapper = await mountDay(
+            makeDay({
+                pressure_95th: 12.0,
+                pressure_99_5th: 13.46,
+                epap_95th: 8.0,
+                epap_99_5th: 8.84,
+                leak_95th: 10.0,
+                leak_99_5th: 22.0,
+            }),
+        )
+
+        expect(findCard(wrapper, 'Pressure 99.5th')?.find('.stat-value').text()).toBe('13.5 cmH₂O')
+        expect(findCard(wrapper, 'EPAP 99.5th')?.find('.stat-value').text()).toBe('8.8 cmH₂O')
+        expect(findCard(wrapper, 'Leak 99.5th')?.find('.stat-value').text()).toBe('22.0 L/min')
+    })
+
+    it('test_absent_99_5th_hides_its_card', async () => {
+        const wrapper = await mountDay(makeDay({ pressure_95th: 12.0, pressure_99_5th: null }))
+
+        expect(findCard(wrapper, 'Pressure 95th')).toBeDefined()
+        expect(findCard(wrapper, 'Pressure 99.5th')).toBeUndefined()
+    })
+})
+
 describe('DayDetailView leak redline', () => {
     beforeEach(() => {
         vi.clearAllMocks()
